@@ -1,27 +1,31 @@
-# Instructions for AI coding assistants
+# AI 编码助手工作说明
 
-## Project Purpose
+## 项目目的
 
-This project is a fishery AI architecture prototype. It studies LLM integration, RAG, Tool architecture, and Agent evolution. Current V0.1 behavior is a fixed offline-capable analysis flow.
+本项目是智慧渔业 AI 架构原型，用于研究 LLM 集成、RAG、工具架构及 Agent 演进。当前 V0.1 采用固定的、可离线运行的分析流程。
 
-## Architecture Principles
+## 架构原则
 
-1. Deterministic facts come from programs and data sources.
-2. LLM responsibilities are reasoning, explanation, and natural-language interaction.
-3. Do not let an LLM invent sensor values, detection results, or database facts.
-4. Keep RAG, Tools, Memory, Database, and Agent as separate concepts.
-5. Do not introduce frameworks without a concrete requirement.
+1. 确定性事实来自程序和数据源。
+2. LLM 负责推理、解释和自然语言交互。
+3. 不允许 LLM 编造传感器数值、检测结果或数据库事实。
+4. 将 RAG、Tools、Memory、Database 和 Agent 作为不同概念处理。
+5. 没有具体需求时，不引入框架。
 
-## Development Rules
+## 开发规则
 
-- Before major changes, explain the reason, identify affected modules, and update documentation.
-- Treat `_` in Windows paths as a literal character; prefer PowerShell `-LiteralPath` for file operations.
-- Do not modify `D:\Fishery_Project`; it is a read-only reference.
-- Do not commit secrets or local model files.
-- Do not add unused abstractions or unnecessary empty modules.
+- 重大修改前，说明原因、指出受影响模块，并更新文档。
+- Windows 路径中的 `_` 是普通字符；文件操作优先使用 PowerShell `-LiteralPath`。
+- 不得修改 `D:\Fishery_Project`；它仅是只读参考。
+- 不得提交密钥或本地模型文件。
+- 不得增加未使用的抽象或不必要的空模块。
 
-## Testing Rules
+## 测试规则
 
-- Preserve offline tests with every change.
-- Avoid real API calls in tests.
-- Add tests for new behavior.
+- 每次修改都应保持离线测试可用。
+- 测试不得调用真实 API。
+- 新行为应增加相应测试。
+
+## 文档语言
+
+- 新增或更新的项目文档使用中文；代码标识符、协议名称和命令可保留原文。

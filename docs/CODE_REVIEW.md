@@ -1,13 +1,13 @@
-# Code Review Log
+# 代码评审记录
 
-## Date:
+## 日期：
 
-## Reviewer:
+## 评审人：
 
-## Scope:
+## 范围：
 
-## Findings:
+## 发现：
 
-## Changes:
+## 修改：
 
-## Follow-up:
+## 后续事项：
