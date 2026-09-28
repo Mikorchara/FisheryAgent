@@ -1,0 +1,63 @@
+{
+  "water_quality": {
+    "normal": {
+      "values": {"temp": 28, "ph": 7.5, "oxygen": 6.4},
+      "observed_at": "2026-09-27T00:00:00Z",
+      "retrieved_at": "2026-09-27T00:00:20Z",
+      "source": "mock:sensor-normal"
+    },
+    "low_oxygen": {
+      "values": {"temp": 28, "ph": 7.5, "oxygen": 2.2},
+      "observed_at": "2026-09-27T00:00:00Z",
+      "retrieved_at": "2026-09-27T00:00:20Z",
+      "source": "mock:sensor-low-oxygen"
+    },
+    "partial": {
+      "values": {"temp": 28, "ph": "--", "oxygen": 6.4},
+      "observed_at": "2026-09-27T00:00:00Z",
+      "retrieved_at": "2026-09-27T00:00:20Z",
+      "source": "mock:sensor-partial"
+    },
+    "stale": {
+      "values": {"temp": 28, "ph": 7.5, "oxygen": 6.4},
+      "observed_at": "2026-09-26T23:00:00Z",
+      "retrieved_at": "2026-09-27T00:00:20Z",
+      "source": "mock:sensor-stale"
+    },
+    "partial_stale": {
+      "values": {"temp": 28, "ph": "--", "oxygen": 6.4},
+      "observed_at": "2026-09-26T23:00:00Z",
+      "retrieved_at": "2026-09-27T00:00:20Z",
+      "source": "mock:sensor-partial-stale"
+    }
+  },
+  "detection": {
+    "normal": {
+      "event_id": "mock-detection-001",
+      "observed_at": "2026-09-27T00:00:00Z",
+      "source": "mock:camera-1",
+      "model_id": "mock-detector-v1",
+      "frame_id": "frame-001",
+      "detections": [
+        {"label": "eel", "confidence": 0.93, "bbox": [10, 20, 40, 60], "track_id": "1"},
+        {"label": "eel", "confidence": 0.88, "bbox": [60, 20, 90, 55], "track_id": "2"}
+      ]
+    },
+    "count_jump": {
+      "event_id": "mock-detection-002",
+      "observed_at": "2026-09-27T00:00:05Z",
+      "source": "mock:camera-1",
+      "model_id": "mock-detector-v1",
+      "frame_id": "frame-002",
+      "detections": [
+        {"label": "eel", "confidence": 0.91},
+        {"label": "eel", "confidence": 0.92},
+        {"label": "eel", "confidence": 0.87},
+        {"label": "eel", "confidence": 0.83},
+        {"label": "eel", "confidence": 0.89},
+        {"label": "eel", "confidence": 0.90},
+        {"label": "eel", "confidence": 0.86}
+      ]
+    }
+  }
+}
