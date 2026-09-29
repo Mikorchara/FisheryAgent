@@ -27,8 +27,9 @@ def _usage_lines(usage, *, title: str) -> str:
 def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
-    parser = argparse.ArgumentParser(description="Fishery AI offline demo or explicit real validation")
-    parser.add_argument("command", choices=["demo", "validate-real"])
+    parser = argparse.ArgumentParser(description="Fishery AI demo, validation or local developer UI")
+    parser.add_argument("command", choices=["demo", "validate-real", "web"])
+    parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--profile", choices=["cloud-demo", "local-demo"], default="cloud-demo")
     parser.add_argument("--scenario", choices=["normal", "low_oxygen", "partial", "stale", "partial_stale"],
                         default="low_oxygen")
@@ -39,6 +40,12 @@ def main() -> None:
                                  "output-limit", "stream", "full-chain", "invalid-model"])
     parser.add_argument("--confirm-network", action="store_true")
     args = parser.parse_args()
+    if args.command == "web":
+        if not 1 <= args.port <= 65535:
+            parser.error("--port must be between 1 and 65535")
+        from .web import run_web
+        run_web(port=args.port)
+        return
     if args.command == "validate-real":
         from .real_validation import run_real_validation
         raise SystemExit(run_real_validation(

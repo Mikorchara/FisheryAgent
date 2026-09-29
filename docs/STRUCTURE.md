@@ -8,14 +8,14 @@
 Fishery_AI_Prototype/
 ├─ README.md                      # 项目定位、V0.1 已实现/范围外、与其他项目的关系、命令速查
 ├─ AGENTS.md                      # AI 协作约定：生产项目只读、测试必须离线、文档用中文、禁止自动发起付费 LLM 调用
-├─ pyproject.toml                 # 包元数据 + 运行依赖(openai/httpx/python-dotenv) + 包内资源声明
-├─ .env.example                   # 环境变量模板，仅 DEEPSEEK_API_KEY 空占位；真实 Key 不入库
+├─ pyproject.toml                 # 包元数据 + 运行依赖(openai/httpx/python-dotenv/Flask) + 包内资源声明
+├─ .env.example                   # DeepSeek/Qwen Key 的空占位；真实 Key 不入库
 ├─ .gitignore                     # 忽略 .venv/、.env、outputs/、*.egg-info/、build/、模型权重(*.pt 等)
 ├─ .venv/                         # 本地虚拟环境（不入库）
 ├─ src/
 │  └─ fishery_ai/
 │     ├─ __init__.py              # 包标识与 __version__ = "0.1.0"
-│     ├─ __main__.py              # CLI 入口：离线 demo 与显式 validate-real；demo 覆写 socket 阻断联网
+│     ├─ __main__.py              # CLI 入口：demo、validate-real、web；demo 覆写 socket 阻断联网
 │     ├─ composition.py           # 装配根：把 Mock 仓库/诊断/检索/Profile/MockGateway/Trace 组装成 Orchestrator
 │     ├─ application.py           # 编排：冻结 Profile → 取水质 → 诊断 → 检索 → 拼 prompt → 调网关 → 解析 → 落 Trace
 │     ├─ contracts.py             # 领域/结果合同；Usage 来源与字段、内存 UsageAccumulator
@@ -25,6 +25,7 @@ Fishery_AI_Prototype/
 │     ├─ model_options.py         # 生成/思考选项、三态能力与严格校验
 │     ├─ openai_compatible_adapter.py  # 唯一直接 import openai 的文件：选项翻译、Usage 映射、重试与流式响应
 │     ├─ real_validation.py      # 仅显式入口使用：加载 .env、单项受控 Cloud 检查与脱敏输出
+│     ├─ web.py                  # 本地开发验证 UI：薄 Flask 路由，复用现有 Orchestrator
 │     ├─ observability.py         # 白名单 JSONL Trace（不落 Key、不落 prompt、不落模型正文）
 │     ├─ repositories.py          # 从 scenarios.json 读取固定 Mock 水质与检测输入
 │     └─ resources/
@@ -34,12 +35,16 @@ Fishery_AI_Prototype/
 │        ├─ mock/
 │           ├─ scenarios.json     # 固定输入：5 个水质场景 + 2 组检测场景
 │           └─ profiles.json      # 仅供 Mock 演示的 EXPERIMENTAL/CUSTOM Profile；没有真实 VERIFIED 预设
-│        └─ profiles/
-│           └─ deepseek_experimental.json # A2 真实验证用实验 Profile，无 Key、无 VERIFIED 宣称
+│        ├─ profiles/
+│           ├─ deepseek_experimental.json # DeepSeek 实验 Profile，无 Key
+│           └─ qwen_experimental.json     # Qwen 实验 Profile，无 Key
+│        └─ web/                  # 包内 HTML/CSS/JS；无需前端构建工具
 ├─ tests/
 │  ├─ test_v01.py                 # V0.1 离线回归：合同/诊断/检索/网关/编排/Trace
 │  ├─ test_v011_a1.py             # A1 离线测试：状态、能力、参数映射、Usage、安全与网络阻断
-│  └─ test_v011_a2.py             # A2 真实入口的离线假网关测试；不读取 .env
+│  ├─ test_v011_a2.py             # A2 真实入口的离线假网关测试；不读取 .env
+│  ├─ test_v011_a2_1.py           # A2.1 能力和安全错误分类离线测试
+│  └─ test_v011_a3_web.py         # A3 Flask 客户端、Mock/Cloud 路由与安全边界离线测试
 ├─ scripts/
 │  └─ run_mock_demo.py            # 未安装包时从源码直接跑 demo 的薄包装
 ├─ docs/
@@ -56,7 +61,8 @@ Fishery_AI_Prototype/
 │     ├─ V0.1.1_LOCAL_RUNTIME_VALIDATION.md     # 真实本地/云模型验证计划与验收标准（尚未执行）
 │     ├─ MULTI_MODEL_PARAMETER_ARCHITECTURE_PLAN.md # 多模型架构评审计划（历史决策依据）
 │     ├─ V0.1.1_A1_MULTI_MODEL_IMPLEMENTATION_REPORT.md # A1 实施范围、测试与待决策事项
-│     └─ V0.1.1_A2_DEEPSEEK_VALIDATION_REPORT.md # A2 部分真实验证、失败与后续清单
+│     ├─ V0.1.1_A2_DEEPSEEK_VALIDATION_REPORT.md # A2 部分真实验证、失败与后续清单
+│     └─ V0.1.1_A3_0_DEVELOPER_WEB_UI.md # 开发验证 UI 架构、使用和限制
 ├─ data/                          # 空目录残留：资源已迁入包内 resources/，此目录可删（git 不跟踪空目录）
 │  ├─ knowledge/
 │  └─ mock/

@@ -15,8 +15,8 @@ python -m pip install -e .
 
 如果 PowerShell 无法识别不带扩展名的激活命令，可改用 `.\.venv\Scripts\Activate.ps1`；也可以不激活环境，直接调用 `.\.venv\Scripts\python.exe`。
 
-`pyproject.toml` 声明运行时依赖：官方 `openai` SDK，以及用于超时配置的 `httpx`。默认 TF-IDF 实现只使用 Python；替代检索后端可选用 `scikit-learn`，默认流程和测试不依赖它。项目不另行维护 `requirements.txt`。
-`python-dotenv` 仅由显式真实验证入口在 CLI 边界加载当前工作目录的 `.env`；普通 Demo 和测试不读取该文件。
+`pyproject.toml` 声明运行时依赖：官方 `openai` SDK、用于超时配置的 `httpx`、读取本地 `.env` 的 `python-dotenv`，以及开发验证页面使用的 Flask。默认 TF-IDF 实现只使用 Python；替代检索后端可选用 `scikit-learn`，默认流程和测试不依赖它。项目不另行维护 `requirements.txt`。
+`python-dotenv` 仅由显式真实验证入口或 Web 启动边界读取当前工作目录的 `.env`；普通 Demo 和离线测试不读取该文件。
 
 ## 离线测试
 
@@ -48,3 +48,16 @@ python -m fishery_ai validate-real --check basic --confirm-network
 ```
 
 该命令使用单独的 DeepSeek EXPERIMENTAL Profile，不改变 `demo` 的离线语义。真实入口每次只执行指定的一项检查，自动重试设为 0；输出仅显示 `Secret: PRESENT/MISSING`，不显示 Key。缺失 Secret 时不会调用 API。当前可用检查与已实测结果见 [A2 报告](deep-dive/V0.1.1_A2_DEEPSEEK_VALIDATION_REPORT.md)；不要把实验探测能力当作已验证的普通业务配置。
+
+## 本地 Developer Validation Web UI
+
+先在项目虚拟环境安装当前包（已有环境也需在新增 Flask 依赖后重新执行）：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m fishery_ai web
+```
+
+启动后浏览器访问 `http://127.0.0.1:8765`；可用 `--port 8766` 更换端口。默认只绑定 `127.0.0.1`，默认选中 Mock，完全离线。页面可选已有水质 Mock 场景，也可选 Qwen Plus 与 DeepSeek Flash 的 **EXPERIMENTAL** Cloud Profile。Cloud 分析需勾选 **REAL NETWORK REQUEST**，可能产生费用；请求使用当前工作目录 `.env` 或进程环境中的 `DASHSCOPE_API_KEY`、`DEEPSEEK_API_KEY`，不会提供 Key 输入框或返回 Key。关闭终端即可停止本地服务。
+
+页面复用固定 Orchestrator，当前仅提供非流式 Chat 分析。运行时 Trace 写入被 Git 忽略的 `outputs/web-traces.jsonl`，不写 Prompt、模型正文或 Secret。离线测试使用 Flask 进程内测试客户端与假 Gateway，绝不请求 Cloud。详情见 [A3.0 实施记录](deep-dive/V0.1.1_A3_0_DEVELOPER_WEB_UI.md)。

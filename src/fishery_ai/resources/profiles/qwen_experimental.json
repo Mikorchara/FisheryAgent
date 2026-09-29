@@ -1,0 +1,24 @@
+{
+  "profiles": [
+    {
+      "profile_id": "qwen-plus-experimental",
+      "display_name": "Qwen Plus（实验）",
+      "provider_kind": "cloud",
+      "adapter_id": "openai_chat",
+      "provider_id": "qwen",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen-plus",
+      "secret_env": "DASHSCOPE_API_KEY",
+      "profile_status": "experimental",
+      "connect_timeout_s": 5,
+      "read_timeout_s": 30,
+      "total_timeout_s": 120,
+      "max_retries": 0,
+      "capabilities": {
+        "source": "experimental",
+        "model_id": "qwen-plus",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      }
+    }
+  ]
+}
