@@ -50,11 +50,19 @@ def _build_model_request(context: AnalysisContext, request: AnalysisRequest) -> 
                          for item in context.evidence) or "- 未检索到相关知识"
     task = ("请回答用户当前问题：" + context.question) if context.mode == Mode.CHAT else "请给出当前养殖环境的评估与管理建议。"
     system = (
-        "你是鳗鲡养殖分析助手。传感器值、观测时间、规则结论、证据来源和模型身份由程序提供，"
-        "不要编造或改写它们。只输出 JSON 对象，字段为 inference 字符串、"
-        "recommendations 字符串数组、uncertainty 字符串数组。缺少数据时说明不确定性。"
+        "你是鳗鲡养殖分析助手。Observed Facts 是当前观测，Rule Results 是程序的确定性判断；"
+        "RAG Evidence 仅是背景知识，不代表现场已发生其中描述的疾病。"
+        "传感器值、观测时间、规则结论、证据来源和模型身份由程序提供，不要编造或改写。"
+        "没有鱼体症状、检测结果或其他直接支持证据时，不得诊断具体疾病；"
+        "没有足够疾病证据时，不得直接推荐具体药物、剂量或治疗方案。"
+        "可以建议进一步观察、取样检测或显微镜检查。优先处理已确认的严重水质异常，特别是低溶氧。"
+        "Inference 只写推断，Recommendations 只写建议，Uncertainty 写当前缺少的信息；"
+        "若无疾病证据，应在 Uncertainty 中说明无法判断具体疾病。"
+        "只输出 JSON 对象，字段为 inference 字符串、recommendations 字符串数组、"
+        "uncertainty 字符串数组。"
     )
-    user = f"当前水质：{facts}\n规则结果：\n{rules}\n检索证据：\n{evidence}\n任务：{task}"
+    user = (f"Observed Facts（当前观测）：{facts}\nRule Results（程序判断）：\n{rules}"
+            f"\nRAG Evidence（仅供参考的背景知识）：\n{evidence}\n任务：{task}")
     return ModelRequest(context.mode, (ModelMessage("system", system), ModelMessage("user", user)),
                         generation=request.generation, reasoning=request.reasoning)
 
@@ -107,8 +115,11 @@ class Orchestrator:
         values = f"水温{_value(reading.temperature_c)} pH{_value(reading.ph)} 溶解氧{_value(reading.dissolved_oxygen_mg_l)}"
         query = (f"{request.question} {values}" if request.mode == Mode.CHAT
                  else f"{values} 养殖管理建议")
+        rule_query = " ".join(f"{item.code} {item.message} {' '.join(item.facts_used)}"
+                              for item in findings)
+        query = f"{query} {rule_query}"
         evidence = self.knowledge.search(query, top_k=5 if request.mode == Mode.CHAT else 4,
-                                         retrieved_at=started_at)
+                                         retrieved_at=started_at, intent_text=request.question)
         context = AnalysisContext(request.mode, request.question, reading, findings, evidence)
         model_request = _build_model_request(context, request)
         try:

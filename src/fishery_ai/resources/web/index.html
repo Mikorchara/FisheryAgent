@@ -25,6 +25,30 @@
         <select id="profile"></select>
         <p id="profile-meta" class="helper"></p>
 
+        <details id="custom-editor" class="custom-editor">
+          <summary>添加 CUSTOM Profile</summary>
+          <p class="helper">仅保存连接信息和 Secret 环境变量名，不填写真实 API Key。高级能力默认 UNKNOWN。</p>
+          <label for="custom-name">Display Name</label>
+          <input id="custom-name" type="text" maxlength="80" placeholder="实验服务">
+          <label for="custom-provider">provider_id</label>
+          <input id="custom-provider" type="text" maxlength="64" placeholder="school_llm">
+          <label for="custom-adapter">adapter_id</label>
+          <select id="custom-adapter">
+            <option value="openai_chat">openai_chat</option>
+            <option value="generic_openai_chat">generic_openai_chat</option>
+          </select>
+          <label for="custom-url">base_url</label>
+          <input id="custom-url" type="url" placeholder="https://example.com/v1">
+          <label for="custom-model">model</label>
+          <input id="custom-model" type="text" maxlength="128" placeholder="model-id">
+          <label for="custom-secret-env">secret_env（本地可留空）</label>
+          <input id="custom-secret-env" type="text" placeholder="SCHOOL_LLM_API_KEY" autocomplete="off">
+          <label for="custom-deployment">deployment</label>
+          <select id="custom-deployment"><option value="cloud">cloud</option><option value="local">local</option></select>
+          <button id="save-profile" class="secondary" type="button">保存本地 Profile</button>
+          <p id="custom-status" class="status" role="status" aria-live="polite"></p>
+        </details>
+
         <label for="scenario">水质场景</label>
         <select id="scenario"></select>
         <p class="helper">场景直接读取项目中已有的固定 Mock 数据。</p>
@@ -34,7 +58,7 @@
 
         <div id="real-warning" class="real-warning" hidden>
           <strong>REAL NETWORK REQUEST</strong>
-          <p>将向所选 Cloud 服务发送一次真实分析请求，可能产生费用。</p>
+          <p>将向所选 Cloud 或 Local 服务发送一次真实分析请求；Cloud 可能产生费用。</p>
           <label class="confirm"><input id="confirm-network" type="checkbox"> 我确认发送真实网络请求</label>
         </div>
 
@@ -44,8 +68,9 @@
 
       <main class="results" id="results" hidden>
         <section class="panel output-panel">
-          <div class="panel-heading"><span class="step">02</span><h2>Model Output</h2></div>
-          <pre id="model-output" class="model-output"></pre>
+          <div class="panel-heading"><span class="step">02</span><h2>Model Inference · 模型推断</h2></div>
+          <p class="helper">以下内容由模型生成，需结合上方事实和规则核查。</p>
+          <p id="model-inference" class="model-output"></p>
         </section>
 
         <div class="result-grid">
@@ -61,6 +86,7 @@
 
         <section class="panel">
           <div class="panel-heading"><span class="step">05</span><h2>RAG Evidence</h2></div>
+          <p class="helper">检索内容是背景知识，不代表现场已发生相应疾病。点击条目查看全文。</p>
           <ul id="evidence" class="item-list evidence-list"></ul>
         </section>
 
@@ -68,7 +94,7 @@
           <section class="panel">
             <div class="panel-heading"><span class="step">06</span><h2>Structured Result</h2></div>
             <dl id="structured" class="facts-grid"></dl>
-            <h3>Recommendations</h3><ul id="recommendations" class="item-list"></ul>
+            <h3>Model Recommendations · 模型建议（待核查）</h3><ul id="recommendations" class="item-list"></ul>
             <h3>Uncertainty</h3><ul id="uncertainty" class="item-list"></ul>
           </section>
           <section class="panel">
@@ -76,6 +102,11 @@
             <dl id="runtime" class="facts-grid"></dl>
           </section>
         </div>
+
+        <details class="panel raw-output">
+          <summary>Raw Model Output · 调试原文</summary>
+          <pre id="model-output" class="model-output"></pre>
+        </details>
       </main>
       <div class="empty-state panel" id="empty-state">
         <span class="empty-symbol" aria-hidden="true">◎</span>

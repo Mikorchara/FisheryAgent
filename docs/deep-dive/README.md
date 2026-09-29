@@ -11,5 +11,6 @@
 - [V0.1.1-A2.1 DeepSeek 兼容性加固与网络诊断](V0.1.1_A2_1_DEEPSEEK_COMPATIBILITY_AND_NETWORK_DIAGNOSTICS.md)：记录模型 ID 更新、ON/OFF 能力分离、脱敏网络诊断与受控复测边界。
 - [V0.1.1-A2.2 Qwen 网络对照测试](V0.1.1_A2_2_QWEN_NETWORK_CONTROL_TEST.md)：记录同一 SDK/HTTPX/Adapter 路径的最小 Qwen 请求，并与 DeepSeek A2.1 的连接超时对照。
 - [V0.1.1-A3.0 开发验证 Web UI](V0.1.1_A3_0_DEVELOPER_WEB_UI.md)：记录本地页面的薄 Web 架构、启动方法、Secret 边界和离线测试。
+- [V0.1.1-A3.0.2 Grounding 与自定义 Profile](V0.1.1_A3_0_2_GROUNDING_AND_CUSTOM_PROFILE.md)：记录水质检索排序、事实与背景知识边界、自定义配置持久化和验证结果。
 
 历史报告描述的是编写时的状态。当前环境准备与项目范围请以[文档导航](../README.md)为准。

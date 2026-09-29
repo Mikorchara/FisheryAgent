@@ -49,6 +49,8 @@
 
 本地页面使用 `python -m fishery_ai web` 启动，只监听 `127.0.0.1:8765`。默认 Mock 离线；Qwen / DeepSeek Cloud 请求需在页面明确确认，Profile 仍为 EXPERIMENTAL。页面复用现有 Orchestrator，展示模型正文、水质事实、规则、RAG 证据、结构化结果及 Usage。安装依赖与安全说明见 [构建与运行](docs/BUILD_RUN.md)。
 
+A3.0.2 对水质问题的检索排序和 Prompt Grounding 做了小范围加固：疾病知识仍可用于明确疾病问题，但背景证据不能当作现场诊断；页面将证据与模型建议分开标注。开发者还可在页面创建 CUSTOM OpenAI-compatible Profile，配置写入被 Git 忽略的 `outputs/custom_profiles/`，只保存 Secret 环境变量名，不保存 Key。详见 [A3.0.2 记录](docs/deep-dive/V0.1.1_A3_0_2_GROUNDING_AND_CUSTOM_PROFILE.md)。
+
 ## Profile 与 Secret
 
 离线示例位于 `src/fishery_ai/resources/mock/profiles.json`。`cloud-demo` 使用远程 OpenAI 兼容 URL，仅保存 `secret_env: DEEPSEEK_API_KEY` 引用；`local-demo` 使用 `http://localhost:11434/v1`，Key 可为空，模型名是待替换占位符。这个文件是 Mock 演示输入，不是 VERIFIED 预设列表。默认超时为 connect 5 秒、read/stream idle 30 秒、total 120 秒，最多重试一次。仅在尚未输出正文且错误可重试时重试。

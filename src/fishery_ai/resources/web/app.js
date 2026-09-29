@@ -55,14 +55,63 @@ function selectedProfile() {
   return profiles.find((item) => item.profile_id === $("profile").value);
 }
 
+function renderProfiles(selectedId = "mock-demo") {
+  $("profile").replaceChildren();
+  const builtIn = document.createElement("optgroup");
+  builtIn.label = "Built-in Profiles";
+  const custom = document.createElement("optgroup");
+  custom.label = "User Custom Profiles";
+  for (const item of profiles) {
+    const option = document.createElement("option");
+    option.value = item.profile_id;
+    option.textContent = item.display_name;
+    (item.source === "user_custom" ? custom : builtIn).append(option);
+  }
+  $("profile").append(builtIn, custom);
+  $("profile").value = selectedId;
+  updateProfile();
+}
+
 function updateProfile() {
   const profile = selectedProfile();
   if (!profile) return;
-  $("profile-meta").textContent = `${profile.provider} · ${profile.model} · ${profile.profile_status.toUpperCase()} · ${profile.runtime_type}`;
+  $("profile-meta").textContent = `${profile.provider} · ${profile.model} · ${profile.profile_status.toUpperCase()} · ${profile.runtime_type} · ${profile.source === "user_custom" ? "用户自定义" : "预置"}`;
   const real = profile.runtime_type !== "mock";
   $("real-warning").hidden = !real;
   $("confirm-network").checked = false;
-  setStatus(real ? "此 Profile 会发起真实网络请求，请先确认。" : "Mock 模式始终离线。", false);
+  setStatus(real ? "此 Profile 会发起真实模型请求，请先确认。" : "Mock 模式始终离线。", false);
+}
+
+async function saveCustomProfile() {
+  const button = $("save-profile");
+  button.disabled = true;
+  $("custom-status").textContent = "正在保存本地 Profile…";
+  const values = {
+    display_name: $("custom-name").value,
+    provider_id: $("custom-provider").value,
+    adapter_id: $("custom-adapter").value,
+    base_url: $("custom-url").value,
+    model: $("custom-model").value,
+    secret_env: $("custom-secret-env").value,
+    provider_kind: $("custom-deployment").value,
+  };
+  try {
+    const response = await fetch("/api/profiles", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(values),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      $("custom-status").textContent = `保存失败：${show(data.error_code)}`;
+      return;
+    }
+    profiles.push(data.profile);
+    renderProfiles(data.profile.profile_id);
+    $("custom-status").textContent = "已保存。若 Secret 仅写在 .env，请重启 Web 服务后使用。";
+  } catch (_) {
+    $("custom-status").textContent = "保存失败：NETWORK_ERROR";
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function render(data, latency) {
@@ -70,6 +119,7 @@ function render(data, latency) {
   const runtime = data.runtime || {};
   const usage = data.usage || {};
   const displayedProvider = profiles.find((item) => item.profile_id === runtime.profile_id)?.provider || runtime.provider_id;
+  $("model-inference").textContent = data.inference || (data.error_code ? `模型调用失败：${data.error_code}` : "无模型推断");
   $("model-output").textContent = data.generated_text || (data.error_code ? `模型调用失败：${data.error_code}` : "无模型正文");
   addPairs("facts", [
     ["水温 (°C)", reading.temperature_c], ["pH", reading.ph],
@@ -79,7 +129,17 @@ function render(data, latency) {
     ["检测摘要", data.observed_facts?.detection_summary ? JSON.stringify(data.observed_facts.detection_summary) : null],
   ]);
   addList("rules", data.rule_results, (li, item) => block(li, `${item.code} · ${item.severity}`, item.message, `规则版本：${item.rule_version}`));
-  addList("evidence", data.evidence, (li, item) => block(li, `${item.evidence_id} · ${item.category}`, item.text, `来源：${item.source_id} · 分数：${show(item.score)}`));
+  addList("evidence", data.evidence, (li, item) => {
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    const content = document.createElement("p");
+    summary.textContent = `${item.evidence_id} · ${item.category} · ${show(item.score)}`;
+    content.textContent = item.text;
+    const source = document.createElement("small");
+    source.textContent = `来源：${item.source_id}`;
+    details.append(summary, content, source);
+    li.append(details);
+  });
   addPairs("structured", [
     ["Inference", data.inference], ["解析成功", data.structured_parse_ok ? "是" : "否"],
     ["状态", data.status], ["错误码", data.error_code], ["Trace ID", data.trace_id],
@@ -107,7 +167,7 @@ async function analyze() {
     return;
   }
   $("analyze").disabled = true;
-  setStatus(real ? "正在等待真实 Cloud 模型…" : "正在执行离线 Mock 分析…");
+  setStatus(real ? "正在等待真实模型…" : "正在执行离线 Mock 分析…");
   try {
     const response = await fetch("/api/analyze", {
       method: "POST",
@@ -140,12 +200,7 @@ async function init() {
     if (!response.ok) throw new Error("config");
     const config = await response.json();
     profiles = config.profiles;
-    for (const item of profiles) {
-      const option = document.createElement("option");
-      option.value = item.profile_id;
-      option.textContent = item.display_name;
-      $("profile").append(option);
-    }
+    renderProfiles();
     for (const scenario of config.scenarios) {
       const option = document.createElement("option");
       option.value = scenario;
@@ -155,7 +210,7 @@ async function init() {
     $("scenario").value = "low_oxygen";
     $("profile").addEventListener("change", updateProfile);
     $("analyze").addEventListener("click", analyze);
-    updateProfile();
+    $("save-profile").addEventListener("click", saveCustomProfile);
   } catch (_) {
     setStatus("页面配置加载失败：CONFIG_ERROR", true);
   }

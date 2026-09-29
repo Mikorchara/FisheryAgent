@@ -32,7 +32,8 @@ class WebUITests(unittest.TestCase):
         self.addCleanup(self.dns_patch.stop)
 
     def _client(self, gateway_factory=None):
-        kwargs = {"trace_path": self.trace_path}
+        kwargs = {"trace_path": self.trace_path,
+                  "custom_profiles_dir": Path(self.temp.name) / "custom_profiles"}
         if gateway_factory is not None:
             kwargs["real_gateway_factory"] = gateway_factory
         return create_app(**kwargs).test_client()

@@ -144,13 +144,45 @@ class KnowledgeService:
         elif backend != "keyword":
             raise ValueError("backend must be portable, sklearn or keyword")
 
-    def search(self, query: str, *, top_k: int = 5, retrieved_at: datetime | None = None
+    def _intent(self, text: str) -> tuple[bool, bool]:
+        lowered = text.lower()
+        disease_terms = ("疾病", "病害", "鱼病", "患病", "感染", "寄生虫", "治疗",
+                         "用药", "药物", "症状", "病原", "白点", "出血", "溃烂", "鳃丝", "体表")
+        named_disease = any(
+            name and name in lowered
+            for item in self.kg["diseases"]
+            for name in (item["name"].split("(")[0].strip().lower(),
+                         item["name"].split("(")[0].strip().removesuffix("病").lower())
+            if len(name) >= 2
+        )
+        disease_intent = named_disease or any(term in lowered for term in disease_terms)
+        water_intent = any(term in lowered for term in (
+            "水质", "溶氧", "溶解氧", "缺氧", "氧气", "水温", "ph", "酸碱", "氨氮"))
+        return disease_intent, water_intent
+
+    def _adjust_score(self, index: int, score: float, *, disease_intent: bool,
+                      water_intent: bool) -> float:
+        if score <= 0:
+            return score
+        category = self.chunks[index]["type"]
+        if category == "disease":
+            return score + 0.12 if disease_intent else score * 0.1
+        if water_intent and category == "water_quality":
+            return score + 0.15
+        if water_intent and category == "relationships":
+            return score + 0.28
+        return score
+
+    def search(self, query: str, *, top_k: int = 5, retrieved_at: datetime | None = None,
+               intent_text: str | None = None
                ) -> tuple[KnowledgeEvidence, ...]:
         if top_k < 1:
             return ()
         timestamp = retrieved_at or utcnow()
+        disease_intent, water_intent = self._intent(query if intent_text is None else intent_text)
         if self.backend == "keyword":
-            ranked = self._keyword_scores(query, top_k)
+            ranked = self._keyword_scores(query, top_k, disease_intent=disease_intent,
+                                          water_intent=water_intent)
         else:
             expanded = query
             for key, value in self.EXPANSIONS.items():
@@ -165,10 +197,12 @@ class KnowledgeService:
             for index, chunk in enumerate(self.chunks):
                 for keyword in chunk.get("keywords", []):
                     word = keyword.lower()
-                    if word in query_lower or any(query_lower[j:j + 2] in word
-                                                  for j in range(len(query_lower) - 1)):
+                    if len(word) >= 2 and word in query_lower:
                         scores[index] += 0.3
                         break
+            scores = [self._adjust_score(i, score, disease_intent=disease_intent,
+                                         water_intent=water_intent)
+                      for i, score in enumerate(scores)]
             ranked = [(i, scores[i]) for i in sorted(range(len(scores)),
                       key=lambda i: (scores[i], i), reverse=True)[:top_k] if scores[i] >= 0.04]
         return tuple(KnowledgeEvidence(
@@ -178,7 +212,8 @@ class KnowledgeService:
             source_version=self.source_version, retrieved_at=timestamp,
         ) for i, score in ranked)
 
-    def _keyword_scores(self, query: str, top_k: int) -> list[tuple[int, float]]:
+    def _keyword_scores(self, query: str, top_k: int, *, disease_intent: bool,
+                        water_intent: bool) -> list[tuple[int, float]]:
         lowered = query.lower()
         scored = []
         for index, chunk in enumerate(self.chunks):
@@ -186,6 +221,8 @@ class KnowledgeService:
             if any(word in lowered for word in chunk["text"][:80].split()):
                 score += 1
             if score:
-                scored.append((index, float(score)))
+                scored.append((index, self._adjust_score(
+                    index, float(score), disease_intent=disease_intent,
+                    water_intent=water_intent)))
         scored.sort(key=lambda item: -item[1])
         return scored[:top_k]

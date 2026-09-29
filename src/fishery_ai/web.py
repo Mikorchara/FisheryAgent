@@ -13,6 +13,7 @@ from flask import Flask, Response, jsonify, request
 
 from .application import Orchestrator, result_to_dict
 from .contracts import AnalysisRequest, Mode, Status
+from .custom_profiles import CustomProfileStore
 from .domain import DiagnosisService
 from .knowledge import KnowledgeService
 from .model_gateway import (MockGateway, ModelGateway, ModelProfile, ProfileRegistry)
@@ -25,7 +26,7 @@ RESOURCE_ROOT = files("fishery_ai").joinpath("resources")
 MOCK_PROFILE_ID = "mock-demo"
 
 
-def _profiles() -> tuple[ModelProfile, ...]:
+def _builtin_profiles() -> tuple[ModelProfile, ...]:
     mock = ModelProfile(
         profile_id=MOCK_PROFILE_ID, display_name="Mock 离线演示",
         provider_kind="mock", base_url="http://mock.invalid/v1", model="offline-mock",
@@ -40,11 +41,16 @@ def _profiles() -> tuple[ModelProfile, ...]:
 
 
 def create_app(*, trace_path: Path | None = None,
+               custom_profiles_dir: Path | None = None,
                real_gateway_factory: Callable[[], ModelGateway] = OpenAICompatibleAdapter) -> Flask:
     """Construct without loading .env or making a network request."""
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
-    profiles = {profile.profile_id: profile for profile in _profiles()}
+    store = CustomProfileStore(custom_profiles_dir or Path.cwd() / "outputs/custom_profiles")
+    builtins = _builtin_profiles()
+    profiles = {profile.profile_id: profile for profile in (*builtins, *store.load())}
+    sources = {profile.profile_id: "built_in" for profile in builtins}
+    sources.update({profile_id: "user_custom" for profile_id in profiles if profile_id not in sources})
     repository = MockRepository(RESOURCE_ROOT.joinpath("mock/scenarios.json"))
     scenarios = tuple(repository.data["water_quality"])
     diagnosis = DiagnosisService()
@@ -82,10 +88,31 @@ def create_app(*, trace_path: Path | None = None,
                 "provider": profile.provider_id if profile.profile_id != MOCK_PROFILE_ID else "mock",
                 "model": profile.model,
                 "profile_status": profile.profile_status.value,
-                "runtime_type": "mock" if profile.profile_id == MOCK_PROFILE_ID else "cloud",
+                "runtime_type": "mock" if profile.profile_id == MOCK_PROFILE_ID else profile.provider_kind,
+                "source": sources[profile.profile_id],
             } for profile in profiles.values()],
             "scenarios": scenarios,
         })
+
+    @app.post("/api/profiles")
+    def add_profile():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error("INVALID_PROFILE", 400)
+        try:
+            profile = store.create(payload)
+        except (ValueError, TypeError):
+            return error("INVALID_PROFILE", 400)
+        except OSError:
+            return error("PROFILE_SAVE_FAILED", 500)
+        profiles[profile.profile_id] = profile
+        sources[profile.profile_id] = "user_custom"
+        return jsonify({"profile": {
+            "profile_id": profile.profile_id, "display_name": profile.display_name,
+            "provider": profile.provider_id, "model": profile.model,
+            "profile_status": profile.profile_status.value,
+            "runtime_type": profile.provider_kind, "source": "user_custom",
+        }}), 201
 
     @app.post("/api/analyze")
     def analyze():
@@ -129,11 +156,14 @@ def create_app(*, trace_path: Path | None = None,
 
 
 def run_web(*, port: int = 8765) -> None:
-    """Load only the two expected Secret variables at the CLI boundary."""
+    """Load only Secret names referenced by current Profiles at the CLI boundary."""
     from dotenv import dotenv_values
 
     values = dotenv_values(Path.cwd() / ".env")
-    for name in ("DASHSCOPE_API_KEY", "DEEPSEEK_API_KEY"):
+    store = CustomProfileStore(Path.cwd() / "outputs/custom_profiles")
+    names = {profile.secret_env for profile in (*_builtin_profiles(), *store.load())
+             if profile.secret_env}
+    for name in names:
         if not os.environ.get(name) and values.get(name):
             os.environ[name] = values[name]
     app = create_app()
