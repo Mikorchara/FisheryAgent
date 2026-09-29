@@ -64,7 +64,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual((local.provider_id, local.adapter_id, local.provider_kind,
                           local.profile_status),
                          ("custom", "generic_openai_chat", "local", ProfileStatus.CUSTOM))
-        self.assertEqual(local.capabilities.reasoning, Support.UNKNOWN)
+        self.assertEqual(local.capabilities.reasoning_on, Support.UNKNOWN)
         self.assertEqual(local.capabilities.temperature, Support.UNKNOWN)
         self.assertEqual(local.capabilities.max_output_tokens, Support.UNKNOWN)
         self.assertNotIn("verified", {cloud.profile_status.value, local.profile_status.value})
@@ -146,12 +146,12 @@ class ContractTests(unittest.TestCase):
             with self.subTest(mode=mode), self.assertRaises(OptionValidationError) as caught:
                 validate_options(GenerationOptions(), ReasoningOptions(mode), caps)
             self.assertEqual(caught.exception.code, "OPTION_UNKNOWN")
-        unsupported = replace(caps, reasoning=Support.UNSUPPORTED)
+        unsupported = replace(caps, reasoning_on=Support.UNSUPPORTED)
         with self.assertRaises(OptionValidationError) as caught:
             validate_options(GenerationOptions(), ReasoningOptions(ReasoningMode.ON), unsupported)
         self.assertEqual(caught.exception.code, "OPTION_UNSUPPORTED")
-        supported = replace(caps, reasoning=Support.SUPPORTED,
-                            reasoning_toggle=Support.SUPPORTED)
+        supported = replace(caps, reasoning_on=Support.SUPPORTED,
+                            reasoning_off=Support.SUPPORTED)
         validate_options(GenerationOptions(), ReasoningOptions(ReasoningMode.ON), supported)
         validate_options(GenerationOptions(), ReasoningOptions(ReasoningMode.OFF), supported)
 
@@ -167,7 +167,7 @@ class ContractTests(unittest.TestCase):
             validate_options(GenerationOptions(temperature=0.7), ReasoningOptions(), caps)
         self.assertEqual(caught.exception.code, "OPTION_UNSUPPORTED")
         caps = replace(caps, temperature=Support.SUPPORTED,
-                       reasoning=Support.SUPPORTED, reasoning_toggle=Support.SUPPORTED,
+                       reasoning_on=Support.SUPPORTED,
                        reasoning_temperature_conflict=True)
         validate_options(GenerationOptions(), ReasoningOptions(ReasoningMode.ON), caps)
         with self.assertRaises(OptionValidationError) as caught:
@@ -179,7 +179,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "INVALID_OPTION_VALUE")
 
     def test_effort_values_are_exact_model_values(self):
-        caps = ModelCapabilities(reasoning=Support.SUPPORTED, reasoning_toggle=Support.SUPPORTED,
+        caps = ModelCapabilities(reasoning_on=Support.SUPPORTED,
                                  reasoning_effort=Support.SUPPORTED,
                                  effort_values=("low", "high"))
         validate_options(GenerationOptions(), ReasoningOptions(ReasoningMode.ON, "high"), caps)
@@ -220,8 +220,8 @@ class AdapterTests(unittest.TestCase):
 
     def test_provider_specific_reasoning_is_isolated(self):
         cloud = self.registry.snapshot("cloud-demo", {})
-        caps = replace(cloud.capabilities, reasoning=Support.SUPPORTED,
-                       reasoning_toggle=Support.SUPPORTED)
+        caps = replace(cloud.capabilities, reasoning_on=Support.SUPPORTED,
+                       reasoning_off=Support.SUPPORTED)
         cloud = replace(cloud, capabilities=caps)
         on = replace(self.request, reasoning=ReasoningOptions(ReasoningMode.ON))
         off = replace(self.request, reasoning=ReasoningOptions(ReasoningMode.OFF))

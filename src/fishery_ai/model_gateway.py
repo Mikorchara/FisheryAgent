@@ -61,8 +61,8 @@ class ModelProfile:
             raise ValueError("capabilities belong to a different base_url or exact model")
         declared = self.capabilities.source != "unknown" or any(
             getattr(self.capabilities, name).value != "unknown" for name in (
-                "streaming", "temperature", "top_p", "max_output_tokens", "reasoning",
-                "reasoning_toggle", "reasoning_effort", "structured_output", "tool_calling",
+                "streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
+                "reasoning_off", "reasoning_effort", "structured_output", "tool_calling",
                 "streaming_usage"))
         if declared and (self.capabilities.model_id != self.model
                          or self.capabilities.base_url != self.base_url):
@@ -73,8 +73,8 @@ class ModelProfile:
                     or self.capabilities.base_url != self.base_url):
                 raise ValueError("verified profile requires scoped, dated user verification")
             if all(getattr(self.capabilities, name).value == "unknown" for name in (
-                    "streaming", "temperature", "top_p", "max_output_tokens", "reasoning",
-                    "reasoning_toggle", "reasoning_effort", "structured_output", "tool_calling")):
+                    "streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
+                    "reasoning_off", "reasoning_effort", "structured_output", "tool_calling")):
                 raise ValueError("verified profile requires an explicit capability result")
             try:
                 validate_options(self.default_generation, self.default_reasoning, self.capabilities)
@@ -91,7 +91,7 @@ class ModelProfile:
             # Only a fully unknown capability set may follow a changed model.
             if not any(value not in ("unknown", False) for key, value in capability_data.items()
                        if key in ("streaming", "temperature", "top_p", "max_output_tokens",
-                                  "reasoning", "reasoning_toggle", "reasoning_effort",
+                                  "reasoning_on", "reasoning_off", "reasoning_effort",
                                   "structured_output", "tool_calling", "streaming_usage")):
                 capability_data.setdefault("model_id", values["model"])
                 capability_data.setdefault("base_url", values["base_url"])
@@ -189,6 +189,8 @@ def effective_options(request: ModelRequest, runtime: RuntimeSnapshot
 class ModelResponse:
     text: str
     usage: Usage = field(default_factory=Usage)
+    returned_model: str | None = None
+    reasoning_present: bool = False
 
 
 @dataclass(frozen=True)

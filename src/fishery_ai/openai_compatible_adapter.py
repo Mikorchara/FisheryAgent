@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+import socket
+import ssl
 import time
 
 import httpx
@@ -37,6 +39,7 @@ class OpenAICompatibleAdapter:
 
     def __init__(self, client_factory: Callable[[RuntimeSnapshot, float], object] | None = None):
         self._client_factory = client_factory or self._make_client
+        self.request_attempts = 0
 
     @staticmethod
     def _make_client(runtime: RuntimeSnapshot, remaining: float) -> OpenAI:
@@ -99,12 +102,59 @@ class OpenAICompatibleAdapter:
     @staticmethod
     def _map_error(exc: Exception) -> GatewayError:
         if isinstance(exc, (APIConnectionError, APITimeoutError)):
-            return RetryableGatewayError("CONNECTION_OR_TIMEOUT")
+            # Inspect types only. Exception text can include a URL or request details.
+            causes = []
+            current = exc
+            for _ in range(8):
+                if current is None or current in causes:
+                    break
+                causes.append(current)
+                current = current.__cause__ or current.__context__
+            if any(isinstance(item, socket.gaierror) for item in causes):
+                return RetryableGatewayError("DNS_ERROR")
+            if any(isinstance(item, ssl.SSLError) for item in causes):
+                return RetryableGatewayError("TLS_ERROR")
+            if any(isinstance(item, httpx.ProxyError) for item in causes):
+                return RetryableGatewayError("PROXY_ERROR")
+            if any(isinstance(item, httpx.ConnectTimeout) for item in causes):
+                return RetryableGatewayError("CONNECT_TIMEOUT")
+            if any(isinstance(item, httpx.ReadTimeout) for item in causes):
+                return RetryableGatewayError("READ_TIMEOUT")
+            if isinstance(exc, APITimeoutError):
+                return RetryableGatewayError("TIMEOUT")
+            return RetryableGatewayError("CONNECTION_ERROR")
         if isinstance(exc, APIStatusError):
             code = f"HTTP_{exc.status_code}"
             return (RetryableGatewayError(code) if exc.status_code in RETRYABLE_STATUS
                     else GatewayError(code))
         return GatewayError("SDK_ERROR")
+
+    def list_models(self, runtime: RuntimeSnapshot) -> list[dict]:
+        """Explicit diagnostic only; return allowlisted public model metadata."""
+        self._check_secret(runtime)
+        client = None
+        try:
+            client = self._client_factory(runtime, runtime.total_timeout_s)
+            response = client.models.list()
+            result = []
+            for item in response.data:
+                if getattr(item, "id", None) != runtime.model:
+                    continue
+                extra = getattr(item, "model_extra", None) or {}
+                result.append({
+                    "id": item.id,
+                    "context_length": extra.get("context_length"),
+                    "max_output_tokens": extra.get("max_output_tokens"),
+                    "reasoning_effort_levels": extra.get("reasoning_effort_levels"),
+                })
+            return result
+        except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
+            raise self._map_error(exc) from exc
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise GatewayError("INVALID_RESPONSE") from exc
+        finally:
+            if client is not None:
+                client.close()
 
     def complete(self, request: ModelRequest, runtime: RuntimeSnapshot) -> ModelResponse:
         kwargs = self._kwargs(request, runtime, stream=False)
@@ -114,13 +164,20 @@ class OpenAICompatibleAdapter:
             client = None
             try:
                 client = self._client_factory(runtime, self._remaining(deadline))
+                self.request_attempts += 1
                 response = client.chat.completions.create(**kwargs)
                 content = response.choices[0].message.content
                 if not isinstance(content, str):
                     raise GatewayError("INVALID_RESPONSE")
-                return ModelResponse(content, _usage(response.usage))
+                return ModelResponse(
+                    content, _usage(getattr(response, "usage", None)),
+                    returned_model=getattr(response, "model", None),
+                    reasoning_present=bool(getattr(response.choices[0].message,
+                                                   "reasoning_content", None)),
+                )
             except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
-                error = self._map_error(exc)
+                error = (RetryableGatewayError("TOTAL_TIMEOUT") if time.monotonic() >= deadline
+                         else self._map_error(exc))
                 if not isinstance(error, RetryableGatewayError) or attempt >= runtime.max_retries:
                     raise error from exc
             except RetryableGatewayError:
@@ -143,19 +200,23 @@ class OpenAICompatibleAdapter:
             emitted = False
             try:
                 client = self._client_factory(runtime, self._remaining(deadline))
+                self.request_attempts += 1
                 sdk_stream = client.chat.completions.create(**kwargs)
                 for chunk in sdk_stream:
                     self._remaining(deadline)
                     delta = chunk.choices[0].delta.content if chunk.choices else None
+                    reasoning_delta = (getattr(chunk.choices[0].delta, "reasoning_content", None)
+                                       if chunk.choices else None)
                     usage = _usage(getattr(chunk, "usage", None))
-                    if delta:
+                    if delta or reasoning_delta:
                         emitted = True
-                    if delta or usage.source != UsageSource.UNAVAILABLE:
+                    if delta or reasoning_delta or usage.source != UsageSource.UNAVAILABLE:
                         yield ModelEvent(delta=delta or "", usage=usage if usage.source != UsageSource.UNAVAILABLE
-                                         else None)
+                                         else None, reasoning_delta=reasoning_delta)
                 return
             except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
-                error = self._map_error(exc)
+                error = (RetryableGatewayError("TOTAL_TIMEOUT") if time.monotonic() >= deadline
+                         else self._map_error(exc))
                 if emitted or not isinstance(error, RetryableGatewayError) or attempt >= runtime.max_retries:
                     raise error from exc
             except RetryableGatewayError:

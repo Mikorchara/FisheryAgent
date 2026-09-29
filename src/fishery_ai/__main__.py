@@ -27,14 +27,22 @@ def _usage_lines(usage, *, title: str) -> str:
 def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
-    parser = argparse.ArgumentParser(description="Fishery AI V0.1 offline demo")
-    parser.add_argument("demo", choices=["demo"])
+    parser = argparse.ArgumentParser(description="Fishery AI offline demo or explicit real validation")
+    parser.add_argument("command", choices=["demo", "validate-real"])
     parser.add_argument("--profile", choices=["cloud-demo", "local-demo"], default="cloud-demo")
     parser.add_argument("--scenario", choices=["normal", "low_oxygen", "partial", "stale", "partial_stale"],
                         default="low_oxygen")
     parser.add_argument("--mode", choices=["chat", "advice"], default="advice")
     parser.add_argument("--question", default="当前水质有哪些风险？")
+    parser.add_argument("--check", default="basic",
+                        choices=["network", "basic", "auto", "on", "off", "effort-low", "temperature", "top-p",
+                                 "output-limit", "stream", "full-chain", "invalid-model"])
+    parser.add_argument("--confirm-network", action="store_true")
     args = parser.parse_args()
+    if args.command == "validate-real":
+        from .real_validation import run_real_validation
+        raise SystemExit(run_real_validation(
+            check=args.check, scenario=args.scenario, confirm_network=args.confirm_network))
     def deny_network(*_args, **_kwargs):
         raise RuntimeError("network access is disabled in the offline demo")
     socket.socket.connect = deny_network

@@ -44,8 +44,8 @@ class ModelCapabilities:
     temperature: Support = Support.UNKNOWN
     top_p: Support = Support.UNKNOWN
     max_output_tokens: Support = Support.UNKNOWN
-    reasoning: Support = Support.UNKNOWN
-    reasoning_toggle: Support = Support.UNKNOWN
+    reasoning_on: Support = Support.UNKNOWN
+    reasoning_off: Support = Support.UNKNOWN
     reasoning_effort: Support = Support.UNKNOWN
     structured_output: Support = Support.UNKNOWN
     tool_calling: Support = Support.UNKNOWN
@@ -59,8 +59,8 @@ class ModelCapabilities:
     verified_at: str | None = None
 
     def __post_init__(self) -> None:
-        for name in ("streaming", "temperature", "top_p", "max_output_tokens", "reasoning",
-                     "reasoning_toggle", "reasoning_effort", "structured_output", "tool_calling",
+        for name in ("streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
+                     "reasoning_off", "reasoning_effort", "structured_output", "tool_calling",
                      "streaming_usage"):
             value = getattr(self, name)
             if isinstance(value, bool):  # Existing profile JSON remains readable.
@@ -116,12 +116,13 @@ def validate_options(generation: GenerationOptions, reasoning: ReasoningOptions,
                 or not math.isfinite(value) or not 0 < value <= 1):
             raise OptionValidationError("INVALID_OPTION_VALUE", "top_p")
         _require("top_p", capabilities.top_p)
-    if reasoning.mode != ReasoningMode.AUTO:
-        _require("reasoning", capabilities.reasoning)
-        _require("reasoning_toggle", capabilities.reasoning_toggle)
+    if reasoning.effort is not None and reasoning.mode != ReasoningMode.ON:
+        raise OptionValidationError("OPTION_CONFLICT", "reasoning.effort")
+    if reasoning.mode == ReasoningMode.ON:
+        _require("reasoning_on", capabilities.reasoning_on)
+    elif reasoning.mode == ReasoningMode.OFF:
+        _require("reasoning_off", capabilities.reasoning_off)
     if reasoning.effort is not None:
-        if reasoning.mode != ReasoningMode.ON:
-            raise OptionValidationError("OPTION_CONFLICT", "reasoning.effort")
         _require("reasoning_effort", capabilities.reasoning_effort)
         if reasoning.effort not in capabilities.effort_values:
             raise OptionValidationError("INVALID_OPTION_VALUE", "reasoning.effort")

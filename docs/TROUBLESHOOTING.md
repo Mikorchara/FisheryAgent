@@ -2,7 +2,8 @@
 
 | 范围 | 当前状态与初步检查方向 |
 | --- | --- |
-| 真实 OpenAI-compatible 服务 | 尚未验证任何真实服务。选择 Cloud 或 Local Profile 时，Mock 演示仍使用 `MockGateway`；须在目标工作站单独验证所选接口。 |
+| 真实 OpenAI-compatible 服务 | A2 的 DeepSeek 最小 Chat Completion、AUTO 和 ON 已通过；其他能力与全链路仍未验证。默认 Mock 演示继续使用 `MockGateway`；真实调用仅从显式 `validate-real --confirm-network` 入口启动。 |
+| DeepSeek 连接/超时 | A2 的 OFF（两次）与 effort=low（一次）均返回 `CONNECTION_OR_TIMEOUT`，没有 Provider 响应，不能据此判定参数不受支持。已停止重复探测；后续须在网络稳定时单独复核。 |
 | 本地模型部署 | 本项目不会下载或启动模型。真实连接测试前，须确认本地服务、模型 ID 与兼容接口。 |
 | 流式响应 | 兼容性取决于服务端的 Chat Completions 流式实现。SDK 适配器与重试边界目前只有离线假客户端覆盖。 |
 | 知识来源 | 包内旧版知识 JSON 缺少逐块出版或出处信息，详见[来源说明](../src/fishery_ai/resources/knowledge/SOURCE.md)。 |

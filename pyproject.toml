@@ -10,10 +10,11 @@ requires-python = ">=3.11"
 dependencies = [
     "openai>=1.0,<3.0",
     "httpx>=0.27,<1.0",
+    "python-dotenv>=1.0,<2.0",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-fishery_ai = ["resources/knowledge/*", "resources/mock/*"]
+fishery_ai = ["resources/knowledge/*", "resources/mock/*", "resources/profiles/*"]

@@ -18,6 +18,7 @@
 
 ## V0.1.1：后续真实运行时验证
 
+- A2 已对 DeepSeek 实验 Profile 完成最小 Cloud Chat Completion、AUTO 与 ON；其余能力与 Fishery 全链路仍未验证，详见 [A2 报告](deep-dive/V0.1.1_A2_DEEPSEEK_VALIDATION_REPORT.md)。
 - 在 GPU 工作站上验证真实本地模型。
 - 检查所选 OpenAI-compatible 服务的流式响应与兼容性。
 - 记录实际模型标识、延迟、错误处理及服务差异。

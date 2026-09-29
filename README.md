@@ -39,6 +39,12 @@
 
 实现范围、风险与待验证资料见 [V0.1.1-A1 实施报告](docs/deep-dive/V0.1.1_A1_MULTI_MODEL_IMPLEMENTATION_REPORT.md)。
 
+## V0.1.1-A2：DeepSeek Cloud 验证进度
+
+上一轮以实验配置 `deepseek-v4-flash` 完成最小 Chat Completion、Reasoning AUTO 和 ON 三项请求，响应实际报告 `deepseek-flash`；OFF 与 effort 探测遇连接/超时错误。当前实验 Profile 已将请求 Model ID 更新为 `deepseek-flash`，仍为 **EXPERIMENTAL**。本轮 A2.1 网络诊断的 `/models` 步骤超时，未继续发送模型生成请求。逐项证据见 [A2 历史报告](docs/deep-dive/V0.1.1_A2_DEEPSEEK_VALIDATION_REPORT.md)和 [A2.1 后续报告](docs/deep-dive/V0.1.1_A2_1_DEEPSEEK_COMPATIBILITY_AND_NETWORK_DIAGNOSTICS.md)。
+
+真实入口为 `python -m fishery_ai validate-real --check basic --confirm-network`，只在显式执行时从当前工作目录的被忽略 `.env` 加载 Secret 并可能产生费用。默认 `demo` 和离线测试仍不联网。
+
 ## Profile 与 Secret
 
 离线示例位于 `src/fishery_ai/resources/mock/profiles.json`。`cloud-demo` 使用远程 OpenAI 兼容 URL，仅保存 `secret_env: DEEPSEEK_API_KEY` 引用；`local-demo` 使用 `http://localhost:11434/v1`，Key 可为空，模型名是待替换占位符。这个文件是 Mock 演示输入，不是 VERIFIED 预设列表。默认超时为 connect 5 秒、read/stream idle 30 秒、total 120 秒，最多重试一次。仅在尚未输出正文且错误可重试时重试。

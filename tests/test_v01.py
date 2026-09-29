@@ -168,7 +168,8 @@ class KnowledgeTests(unittest.TestCase):
         for relative in ("resources/knowledge/eel_knowledge.json",
                          "resources/knowledge/SOURCE.md",
                          "resources/mock/profiles.json",
-                         "resources/mock/scenarios.json"):
+                         "resources/mock/scenarios.json",
+                         "resources/profiles/deepseek_experimental.json"):
             self.assertTrue(package.joinpath(relative).is_file(), relative)
 
 

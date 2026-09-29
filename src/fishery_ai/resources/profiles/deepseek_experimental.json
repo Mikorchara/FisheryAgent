@@ -1,0 +1,25 @@
+{
+  "profiles": [
+    {
+      "profile_id": "deepseek-v4-flash-experimental",
+      "display_name": "DeepSeek Flash experimental validation",
+      "provider_kind": "cloud",
+      "adapter_id": "openai_chat",
+      "provider_id": "deepseek",
+      "base_url": "https://api.deepseek.com",
+      "model": "deepseek-flash",
+      "secret_env": "DEEPSEEK_API_KEY",
+      "profile_status": "experimental",
+      "connect_timeout_s": 5,
+      "read_timeout_s": 30,
+      "total_timeout_s": 120,
+      "max_retries": 0,
+      "capabilities": {
+        "source": "experimental",
+        "model_id": "deepseek-flash",
+        "reasoning_on": "supported",
+        "base_url": "https://api.deepseek.com"
+      }
+    }
+  ]
+}
