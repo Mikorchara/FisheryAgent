@@ -85,15 +85,15 @@ class OpenAICompatibleAdapter:
         if generation.top_p is not None:
             kwargs["top_p"] = generation.top_p
         if reasoning.mode != ReasoningMode.AUTO:
-            if runtime.provider_id == "deepseek" and runtime.adapter_id == "openai_chat":
+            if runtime.service_id == "deepseek_api" and runtime.adapter_id == "openai_chat":
                 kwargs["extra_body"] = {"thinking": {"type": "enabled" if reasoning.mode == ReasoningMode.ON
                                                      else "disabled"}}
-            elif runtime.provider_id == "qwen" and runtime.adapter_id == "openai_chat":
+            elif runtime.service_id == "dashscope" and runtime.adapter_id == "openai_chat":
                 kwargs["extra_body"] = {"enable_thinking": reasoning.mode == ReasoningMode.ON}
             else:
                 raise GatewayError("OPTION_UNSUPPORTED", option="reasoning")
         if reasoning.effort is not None:
-            if runtime.provider_id == "deepseek" and runtime.adapter_id == "openai_chat":
+            if runtime.service_id == "deepseek_api" and runtime.adapter_id == "openai_chat":
                 kwargs["extra_body"]["reasoning_effort"] = reasoning.effort
             else:
                 raise GatewayError("OPTION_UNSUPPORTED", option="reasoning.effort")

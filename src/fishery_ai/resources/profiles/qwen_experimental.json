@@ -6,6 +6,8 @@
       "provider_kind": "cloud",
       "adapter_id": "openai_chat",
       "provider_id": "qwen",
+      "service_id": "dashscope",
+      "model_family": "qwen",
       "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
       "model": "qwen-plus",
       "secret_env": "DASHSCOPE_API_KEY",
@@ -15,7 +17,8 @@
       "total_timeout_s": 120,
       "max_retries": 0,
       "capabilities": {
-        "source": "experimental",
+        "source": "USER_VERIFIED",
+        "service_id": "dashscope",
         "model_id": "qwen-plus",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "streaming": "supported"

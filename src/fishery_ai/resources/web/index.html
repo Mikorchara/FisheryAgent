@@ -52,9 +52,12 @@
           <details id="advanced-settings" class="advanced-settings">
             <summary>高级连接设置</summary>
             <p class="helper">仅在需要自定义 Provider 身份、Adapter、Secret 变量名或部署类型时修改。</p>
-            <label for="custom-provider">provider_id <span class="required">必填</span></label>
+            <label for="custom-provider">service_id <span class="required">必填</span></label>
             <input id="custom-provider" type="text" maxlength="64" required>
-            <p class="helper">小写机器标识；generic_openai_chat 使用 custom。</p>
+            <p class="helper">API 服务平台标识，例如 dashscope、deepseek_api；自定义兼容服务使用 custom。</p>
+            <label for="custom-family">model_family <span class="optional">可选</span></label>
+            <select id="custom-family"><option value="">未知（不自动推断）</option><option value="qwen">qwen</option><option value="deepseek">deepseek</option><option value="unknown">unknown</option></select>
+            <p class="helper">模型家族仅用于描述身份，不会据此继承任何 Capability。</p>
             <label for="custom-adapter">adapter_id <span class="required">必选</span></label>
             <select id="custom-adapter"><option value="openai_chat">openai_chat</option><option value="generic_openai_chat">generic_openai_chat</option></select>
             <p class="helper">当前均使用 OpenAI-compatible Chat Completions 传输。</p>
@@ -82,7 +85,9 @@
 
         <label for="response-mode">Response Mode</label>
         <select id="response-mode"><option value="normal">Normal</option><option value="streaming">Streaming</option></select>
-        <p class="helper">Qwen Plus 实验配置已完成一次 Streaming 验证；其他真实 Profile 的能力未经确认时会返回 OPTION_UNKNOWN，不会发起模型请求。</p>
+        <p id="streaming-capability" class="helper">Streaming 能力：读取中</p>
+        <button id="probe-streaming" class="secondary" type="button" hidden>验证当前 Profile 的 Streaming 能力（真实联网）</button>
+        <p id="capability-probe-status" class="status" role="status" aria-live="polite"></p>
 
         <div id="real-warning" class="real-warning" hidden>
           <strong>REAL NETWORK REQUEST</strong>

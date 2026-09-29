@@ -158,7 +158,8 @@ def run_real_validation(*, check: str, scenario: str, confirm_network: bool) -> 
     profile = registry._profiles[PROFILE_ID]
     present = bool(os.environ.get(profile.secret_env))
     print("REAL NETWORK VALIDATION")
-    print(f"Provider: {profile.provider_id}")
+    print(f"Service: {profile.service_id}")
+    print(f"Model family: {profile.model_family}")
     print(f"Model: {profile.model}")
     print(f"Profile Status: {profile.profile_status.value.upper()}")
     print(f"Base URL: {profile.base_url}")

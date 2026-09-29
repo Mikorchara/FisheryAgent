@@ -277,6 +277,8 @@ class RuntimeInfo:
     adapter_id: str = "generic_openai_chat"
     provider_id: str = "custom"
     profile_status: str = "custom"
+    service_id: str = "custom"
+    model_family: str = "unknown"
 
 
 @dataclass(frozen=True)

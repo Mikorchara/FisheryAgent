@@ -13,8 +13,10 @@ from .model_gateway import ModelProfile
 from .model_options import ProfileStatus
 
 
-PROFILE_FIELDS = ("display_name", "provider_id", "adapter_id", "base_url",
+PROFILE_FIELDS = ("display_name", "service_id", "model_family", "adapter_id", "base_url",
                   "model", "secret_env", "provider_kind")
+LEGACY_PROFILE_FIELDS = ("display_name", "provider_id", "adapter_id", "base_url",
+                         "model", "secret_env", "provider_kind")
 
 
 class ProfileFieldError(ValueError):
@@ -37,7 +39,8 @@ class CustomProfileStore:
         profiles = []
         for path in sorted(self.directory.glob("custom-*.json")):
             data = json.loads(path.read_text(encoding="utf-8"))
-            if set(data) != set(PROFILE_FIELDS) | {"profile_id", "profile_status", "max_retries"}:
+            shared = {"profile_id", "profile_status", "max_retries"}
+            if set(data) not in (set(PROFILE_FIELDS) | shared, set(LEGACY_PROFILE_FIELDS) | shared):
                 raise ValueError("invalid stored custom profile fields")
             if data["profile_id"] != path.stem or data["profile_status"] != "custom":
                 raise ValueError("invalid stored custom profile identity")
@@ -49,6 +52,15 @@ class CustomProfileStore:
 
     @staticmethod
     def validate(fields: dict) -> dict[str, str]:
+        fields = dict(fields)
+        if "provider_id" in fields and "service_id" not in fields:
+            legacy = fields.pop("provider_id")
+            aliases = {"qwen": ("dashscope", "qwen"),
+                       "deepseek": ("deepseek_api", "deepseek"),
+                       "custom": ("custom", "unknown")}
+            fallback = (legacy, "unknown") if isinstance(legacy, str) else (legacy, "unknown")
+            fields["service_id"], fields["model_family"] = aliases.get(legacy, fallback) if isinstance(
+                legacy, str) else fallback
         for name in PROFILE_FIELDS:
             if name not in fields:
                 raise ProfileFieldError(name, "REQUIRED", f"{name} 字段不可缺少。")
@@ -64,8 +76,12 @@ class CustomProfileStore:
             raise ProfileFieldError("display_name", "INVALID_FORMAT", "显示名称必填，最多 80 个字符，不能包含换行。")
         if not 1 <= len(values["model"]) <= 128 or any(ord(c) < 32 for c in values["model"]):
             raise ProfileFieldError("model", "INVALID_FORMAT", "model 必填，最多 128 个字符，不能包含换行。")
-        if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", values["provider_id"]):
-            raise ProfileFieldError("provider_id", "INVALID_FORMAT", "provider_id 使用小写字母开头的机器标识，可含数字、_ 和 -。")
+        if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", values["service_id"]):
+            raise ProfileFieldError("service_id", "INVALID_FORMAT", "service_id 使用小写字母开头的机器标识，可含数字、_ 和 -。")
+        if not values["model_family"]:
+            values["model_family"] = "unknown"
+        if values["model_family"] not in ("qwen", "deepseek", "unknown"):
+            raise ProfileFieldError("model_family", "UNSUPPORTED", "model_family 只能是 qwen、deepseek 或 unknown。")
         if values["provider_kind"] not in ("cloud", "local"):
             raise ProfileFieldError("provider_kind", "UNSUPPORTED", "deployment 只能选择 cloud 或 local。")
         if values["provider_kind"] == "cloud" and not values["secret_env"]:
@@ -74,8 +90,8 @@ class CustomProfileStore:
             raise ProfileFieldError("secret_env", "INVALID_FORMAT", "secret_env 只接受大写环境变量名，例如 DASHSCOPE_API_KEY，不能填写 Key 值。")
         if values["adapter_id"] not in ("openai_chat", "generic_openai_chat"):
             raise ProfileFieldError("adapter_id", "UNSUPPORTED", "adapter_id 只能选择页面提供的 OpenAI-compatible 类型。")
-        if values["adapter_id"] == "generic_openai_chat" and values["provider_id"] != "custom":
-            raise ProfileFieldError("provider_id", "CONFLICT", "generic_openai_chat 需要 provider_id 为 custom。")
+        if values["adapter_id"] == "generic_openai_chat" and values["service_id"] != "custom":
+            raise ProfileFieldError("service_id", "CONFLICT", "generic_openai_chat 需要 service_id 为 custom。")
         try:
             parsed = urlsplit(values["base_url"])
             valid_url = (parsed.scheme in ("http", "https") and bool(parsed.netloc)
@@ -89,11 +105,15 @@ class CustomProfileStore:
 
     @staticmethod
     def build(values: dict[str, str], profile_id: str) -> tuple[ModelProfile, dict]:
+        legacy_provider = {"dashscope": "qwen", "deepseek_api": "deepseek"}.get(
+            values["service_id"], "custom" if values["service_id"] == "custom"
+            else values["service_id"])
         profile = ModelProfile(
             profile_id=profile_id, display_name=values["display_name"],
             provider_kind=values["provider_kind"], base_url=values["base_url"],
             model=values["model"], secret_env=values["secret_env"] or None,
-            adapter_id=values["adapter_id"], provider_id=values["provider_id"],
+            adapter_id=values["adapter_id"], provider_id=legacy_provider,
+            service_id=values["service_id"], model_family=values["model_family"],
             profile_status=ProfileStatus.CUSTOM, max_retries=0,
         )
         data = {"profile_id": profile.profile_id, "profile_status": "custom",

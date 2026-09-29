@@ -13,6 +13,20 @@ class Support(str, Enum):
     UNKNOWN = "unknown"
 
 
+class CapabilitySource(str, Enum):
+    OFFICIAL_DOCS = "OFFICIAL_DOCS"
+    USER_VERIFIED = "USER_VERIFIED"
+    UNKNOWN = "UNKNOWN"
+
+    @classmethod
+    def parse(cls, value: str | CapabilitySource) -> CapabilitySource:
+        if isinstance(value, cls):
+            return value
+        legacy = {"official_docs": cls.OFFICIAL_DOCS, "user_verified": cls.USER_VERIFIED,
+                  "unknown": cls.UNKNOWN, "experimental": cls.UNKNOWN}
+        return legacy[value] if value in legacy else cls(value)
+
+
 class ProfileStatus(str, Enum):
     VERIFIED = "verified"
     EXPERIMENTAL = "experimental"
@@ -53,10 +67,12 @@ class ModelCapabilities:
     max_tokens_field: str | None = None
     effort_values: tuple[str, ...] = ()
     reasoning_temperature_conflict: bool = False
-    source: str = "unknown"
+    source: CapabilitySource = CapabilitySource.UNKNOWN
     model_id: str | None = None
     base_url: str | None = None
     verified_at: str | None = None
+    service_id: str | None = None
+    evidence: tuple[tuple[str, CapabilitySource], ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
@@ -67,8 +83,16 @@ class ModelCapabilities:
                 value = Support.SUPPORTED if value else Support.UNSUPPORTED
             object.__setattr__(self, name, Support(value))
         object.__setattr__(self, "effort_values", tuple(self.effort_values))
-        if self.source not in ("user_verified", "official_docs", "experimental", "unknown"):
-            raise ValueError("invalid capability source")
+        object.__setattr__(self, "source", CapabilitySource.parse(self.source))
+        evidence = self.evidence.items() if isinstance(self.evidence, dict) else self.evidence
+        normalized = tuple(sorted((name, CapabilitySource.parse(source))
+                                  for name, source in evidence))
+        allowed = {"streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
+                   "reasoning_off", "reasoning_effort", "structured_output", "tool_calling",
+                   "streaming_usage"}
+        if any(name not in allowed for name, _ in normalized):
+            raise ValueError("invalid capability evidence field")
+        object.__setattr__(self, "evidence", normalized)
         if self.reasoning_effort == Support.SUPPORTED and not self.effort_values:
             raise ValueError("supported reasoning effort requires allowed values")
         if self.reasoning_effort != Support.SUPPORTED and self.effort_values:
@@ -77,6 +101,9 @@ class ModelCapabilities:
             raise ValueError("invalid max_tokens_field")
         if self.max_output_tokens == Support.SUPPORTED and self.max_tokens_field is None:
             raise ValueError("supported output limit requires a verified API field")
+
+    def source_for(self, capability: str) -> CapabilitySource:
+        return dict(self.evidence).get(capability, self.source)
 
 
 class OptionValidationError(Exception):

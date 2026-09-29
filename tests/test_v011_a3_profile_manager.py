@@ -68,10 +68,10 @@ class ProfileManagerTests(unittest.TestCase):
     def test_presets_and_presence_only_secret_status(self):
         presets = self.client.get("/api/config").get_json()["presets"]
         by_id = {item["id"]: item for item in presets}
-        self.assertEqual(set(by_id), {"qwen", "deepseek", "custom"})
-        self.assertEqual(by_id["qwen"]["base_url"],
+        self.assertEqual(set(by_id), {"dashscope", "deepseek_api", "custom"})
+        self.assertEqual(by_id["dashscope"]["base_url"],
                          "https://dashscope.aliyuncs.com/compatible-mode/v1")
-        self.assertEqual(by_id["deepseek"]["secret_env"], "DEEPSEEK_API_KEY")
+        self.assertEqual(by_id["deepseek_api"]["secret_env"], "DEEPSEEK_API_KEY")
         self.assertEqual(by_id["custom"]["adapter_id"], "generic_openai_chat")
         with patch.dict(os.environ, {}, clear=True):
             missing = self.client.post("/api/secret-status", json={"secret_env": "SCHOOL_LLM_API_KEY"})

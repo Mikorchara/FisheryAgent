@@ -5,6 +5,8 @@ from __future__ import annotations
 from importlib.resources import files
 from pathlib import Path
 from typing import Callable
+from dataclasses import replace
+from datetime import datetime, timezone
 import json
 import os
 import re
@@ -14,12 +16,14 @@ import uuid
 from flask import Flask, Response, jsonify, request, stream_with_context
 
 from .application import Orchestrator, result_to_dict
+from .capability_store import CapabilityStore
 from .contracts import AnalysisRequest, Mode, Status
 from .custom_profiles import CustomProfileStore, ProfileFieldError
 from .domain import DiagnosisService
 from .knowledge import KnowledgeService
 from .model_gateway import (GatewayError, MockGateway, ModelGateway, ModelMessage,
                             ModelProfile, ModelRequest, ProfileRegistry)
+from .model_options import CapabilitySource, Support
 from .observability import JsonlTraceSink
 from .openai_compatible_adapter import OpenAICompatibleAdapter
 from .repositories import MockRepository
@@ -31,15 +35,29 @@ TEST_TTL_S = 600
 
 
 def _profile_public(profile: ModelProfile, source: str) -> dict:
+    capability_scope_matches = (
+        profile.capabilities.service_id == profile.service_id
+        and profile.capabilities.model_id == profile.model
+        and profile.capabilities.base_url == profile.base_url
+    )
     return {"profile_id": profile.profile_id, "display_name": profile.display_name,
-            "provider": "mock" if profile.profile_id == MOCK_PROFILE_ID else profile.provider_id,
+            "provider": "mock" if profile.profile_id == MOCK_PROFILE_ID else profile.service_id,
+            "service_id": profile.service_id, "model_family": profile.model_family,
+            "provider_id": profile.provider_id,
             "model": profile.model, "profile_status": profile.profile_status.value,
             "runtime_type": "mock" if profile.profile_id == MOCK_PROFILE_ID else profile.provider_kind,
-            "source": source}
+            "source": source,
+            "capabilities": {
+                "streaming": (profile.capabilities.streaming.value if capability_scope_matches
+                              else "unknown"),
+                "streaming_scope_matches": capability_scope_matches,
+                "source": (profile.capabilities.source_for("streaming").value
+                           if capability_scope_matches else CapabilitySource.UNKNOWN.value),
+            }}
 
 
 def _fingerprint(values: dict[str, str]) -> tuple[str, ...]:
-    return tuple(values[key] for key in ("provider_id", "adapter_id", "base_url",
+    return tuple(values[key] for key in ("service_id", "model_family", "adapter_id", "base_url",
                                          "model", "secret_env", "provider_kind"))
 
 
@@ -59,13 +77,17 @@ def _builtin_profiles() -> tuple[ModelProfile, ...]:
 
 def create_app(*, trace_path: Path | None = None,
                custom_profiles_dir: Path | None = None,
+               capability_evidence_dir: Path | None = None,
                real_gateway_factory: Callable[[], ModelGateway] = OpenAICompatibleAdapter) -> Flask:
     """Construct without loading .env or making a network request."""
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
     store = CustomProfileStore(custom_profiles_dir or Path.cwd() / "outputs/custom_profiles")
+    capability_store = CapabilityStore(capability_evidence_dir or
+                                        Path.cwd() / "outputs/capability-evidence")
     builtins = _builtin_profiles()
-    profiles = {profile.profile_id: profile for profile in (*builtins, *store.load())}
+    loaded_profiles = (*builtins, *store.load())
+    profiles = {profile.profile_id: capability_store.apply(profile) for profile in loaded_profiles}
     names = [profile.display_name.casefold() for profile in profiles.values()]
     if len(names) != len(set(names)):
         raise ValueError("duplicate Profile display_name")
@@ -140,6 +162,7 @@ def create_app(*, trace_path: Path | None = None,
             return error("INVALID_PROFILE", 400)
         except OSError:
             return error("PROFILE_SAVE_FAILED", 500)
+        profile = capability_store.apply(profile)
         profiles[profile.profile_id] = profile
         sources[profile.profile_id] = "user_custom"
         if isinstance(payload.get("test_id"), str):
@@ -167,15 +190,18 @@ def create_app(*, trace_path: Path | None = None,
 
     @app.get("/api/config")
     def config():
-        known = {profile.provider_id: profile for profile in builtins
+        known = {profile.service_id: profile for profile in builtins
                  if profile.profile_id != MOCK_PROFILE_ID}
-        presets = [{"id": name, "label": label, "provider_id": profile.provider_id,
+        presets = [{"id": name, "label": label, "service_id": profile.service_id,
+                    "model_family": profile.model_family,
                     "adapter_id": profile.adapter_id, "base_url": profile.base_url,
                     "model": profile.model, "secret_env": profile.secret_env,
-                    "provider_kind": profile.provider_kind}
-                   for name, label in (("qwen", "Qwen"), ("deepseek", "DeepSeek"))
+                    "provider_kind": profile.provider_kind, "provider_id": profile.provider_id}
+                   for name, label in (("dashscope", "Qwen · DashScope"),
+                                       ("deepseek_api", "DeepSeek API"))
                    for profile in (known[name],)]
         presets.append({"id": "custom", "label": "Custom OpenAI-compatible",
+                        "service_id": "custom", "model_family": "unknown",
                         "provider_id": "custom", "adapter_id": "generic_openai_chat",
                         "base_url": "http://localhost:11434/v1", "model": "",
                         "secret_env": "", "provider_kind": "local"})
@@ -280,12 +306,59 @@ def create_app(*, trace_path: Path | None = None,
         return jsonify({"profile": _profile_public(profile, sources[profile_id]),
                         "editable": sources[profile_id] == "user_custom",
                         "fields": {"display_name": profile.display_name,
-                                   "provider_id": profile.provider_id,
+                                   "service_id": profile.service_id,
+                                   "model_family": profile.model_family,
                                    "adapter_id": profile.adapter_id,
                                    "base_url": profile.base_url,
                                    "model": profile.model,
                                    "secret_env": profile.secret_env or "",
                                    "provider_kind": profile.provider_kind}})
+
+    @app.post("/api/profiles/<profile_id>/probe")
+    def probe_profile_capability(profile_id: str):
+        payload = request.get_json(silent=True)
+        if (not isinstance(payload, dict) or payload.get("confirm_network") is not True
+                or payload.get("capability") != "streaming"):
+            return error("NETWORK_CONFIRMATION_REQUIRED", 403)
+        profile = profiles.get(profile_id)
+        if profile is None:
+            return error("PROFILE_NOT_FOUND", 404)
+        if profile.capabilities.streaming != Support.UNKNOWN:
+            return error("CAPABILITY_ALREADY_KNOWN", 409)
+        if secret_missing(profile):
+            return error("SECRET_MISSING", 503)
+
+        # Only this explicit probe gets a temporary capability allowance. Analysis uses
+        # the stored Profile unchanged and remains subject to the normal capability gate.
+        runtime = ProfileRegistry([profile]).snapshot(profile_id)
+        probe_capabilities = replace(profile.capabilities, streaming=Support.SUPPORTED,
+                                     service_id=profile.service_id, base_url=profile.base_url,
+                                     model_id=profile.model)
+        runtime = replace(runtime, capabilities=probe_capabilities, max_retries=0)
+        started = time.monotonic()
+        try:
+            gateway = real_gateway_factory()
+            output_chars = 0
+            for event in gateway.stream(ModelRequest(
+                    Mode.CHAT, (ModelMessage("user", "只回复 OK"),)), runtime):
+                output_chars += len(event.delta or "")
+            if output_chars == 0:
+                return jsonify({"status": "failure", "error_code": "PROBE_NO_CONTENT",
+                                "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
+        except GatewayError as exc:
+            code = exc.code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,40}", exc.code) else "GATEWAY_ERROR"
+            return jsonify({"status": "failure", "error_code": code,
+                            "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
+        except Exception:
+            return jsonify({"status": "failure", "error_code": "INTERNAL_ERROR",
+                            "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
+
+        verified_at = datetime.now(timezone.utc).isoformat()
+        profiles[profile_id] = capability_store.save_streaming(
+            profile, Support.SUPPORTED, verified_at)
+        capability = _profile_public(profiles[profile_id], sources[profile_id])["capabilities"]
+        return jsonify({"status": "success", "capability": capability,
+                        "latency_ms": round((time.monotonic() - started) * 1000, 3)})
 
     @app.put("/api/profiles/<profile_id>")
     def update_profile(profile_id: str):

@@ -89,7 +89,17 @@ function updateProfile() {
   for (const id of Object.values(customFields)) $(id).value = "";
   $("secret-status").textContent = "";
   invalidateTest();
-  $("profile-meta").textContent = `${profile.provider} · ${profile.model} · ${profile.profile_status.toUpperCase()} · ${profile.runtime_type} · ${profile.source === "user_custom" ? "用户自定义" : "预置"}`;
+  $("profile-meta").textContent = `${profile.service_id || profile.provider} · ${profile.model_family || "unknown"} · ${profile.model} · ${profile.profile_status.toUpperCase()} · ${profile.runtime_type} · ${profile.source === "user_custom" ? "用户自定义" : "预置"}`;
+  const streaming = profile.capabilities?.streaming || "unknown";
+  const capabilitySource = profile.capabilities?.source || "UNKNOWN";
+  const capabilityLabel = streaming === "supported" && capabilitySource === "OFFICIAL_DOCS"
+    ? "官方文档支持" : streaming === "supported" && capabilitySource === "USER_VERIFIED"
+      ? "本机已验证" : streaming === "unsupported" ? "不支持" : "未验证";
+  const scope = profile.capabilities?.streaming_scope_matches === true
+    ? "已绑定当前精确 Model / Base URL" : "未绑定当前 Model / Base URL";
+  $("streaming-capability").textContent = `Streaming 能力：${capabilityLabel}（${streaming.toUpperCase()}）· ${scope}`;
+  $("probe-streaming").hidden = profile.runtime_type === "mock" || streaming !== "unknown";
+  $("capability-probe-status").textContent = "";
   const real = profile.runtime_type !== "mock";
   $("real-warning").hidden = !real;
   $("confirm-network").checked = false;
@@ -117,7 +127,7 @@ function updateProfile() {
 }
 
 const customFields = {
-  display_name: "custom-name", provider_id: "custom-provider",
+  display_name: "custom-name", service_id: "custom-provider", model_family: "custom-family",
   adapter_id: "custom-adapter", base_url: "custom-url", model: "custom-model",
   secret_env: "custom-secret-env", provider_kind: "custom-deployment",
 };
@@ -136,7 +146,7 @@ function setFormMode(mode) {
 
 function fillProfileForm(fields, profile) {
   $("provider-preset").value = profile.runtime_type === "mock" ? "built_in_mock"
-    : presets.some((preset) => preset.id === fields.provider_id) ? fields.provider_id : "custom";
+    : presets.some((preset) => preset.id === fields.service_id) ? fields.service_id : "custom";
   for (const [field, id] of Object.entries(customFields)) $(id).value = fields[field] || "";
   $("model-options").hidden = true;
   $("models-status").textContent = "";
@@ -156,7 +166,7 @@ function collectFields() {
 }
 
 function connectionFingerprint(fields) {
-  return JSON.stringify([fields.provider_id, fields.adapter_id, fields.base_url, fields.model,
+  return JSON.stringify([fields.service_id, fields.model_family, fields.adapter_id, fields.base_url, fields.model,
     fields.secret_env, fields.provider_kind]);
 }
 
@@ -188,7 +198,8 @@ function selectPreset() {
   if (formMode === "view") return;
   const preset = presets.find((item) => item.id === $("provider-preset").value);
   if (!preset) return;
-  $("custom-provider").value = preset.provider_id;
+  $("custom-provider").value = preset.service_id;
+  $("custom-family").value = preset.model_family || "unknown";
   $("custom-adapter").value = preset.adapter_id;
   $("custom-url").value = preset.id === "custom" ? "" : preset.base_url;
   $("custom-model").value = "";
@@ -207,6 +218,7 @@ function newProfile() {
   $("custom-name").value = "";
   $("provider-preset").value = "";
   $("custom-provider").value = "";
+  $("custom-family").value = "";
   $("custom-adapter").value = "openai_chat";
   $("custom-url").value = "";
   $("custom-model").value = "";
@@ -262,6 +274,33 @@ async function refreshProfiles(selectedId) {
   renderProfiles(selectedId);
 }
 
+async function probeSelectedCapability() {
+  const selected = selectedProfile();
+  if (!selected || selected.runtime_type === "mock"
+      || selected.capabilities?.streaming !== "unknown") return;
+  if (!window.confirm("这会向所选服务发送一次最小 Streaming 请求；Cloud 服务可能产生费用。继续吗？")) return;
+  const button = $("probe-streaming");
+  button.disabled = true;
+  $("capability-probe-status").textContent = "正在显式验证 Streaming 能力…";
+  try {
+    const response = await fetch(`/api/profiles/${encodeURIComponent(selected.profile_id)}/probe`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({capability: "streaming", confirm_network: true}),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      $("capability-probe-status").textContent = `验证失败：${data.error_code || `HTTP_${response.status}`}`;
+      return;
+    }
+    await refreshProfiles(selected.profile_id);
+    $("capability-probe-status").textContent = "验证成功：本机已验证；结果绑定到当前 service_id、Base URL 和 Model。";
+  } catch (_) {
+    $("capability-probe-status").textContent = "验证失败：NETWORK_ERROR";
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function profileError(field, message) {
   const control = $(field === "provider_preset" ? "provider-preset" : customFields[field]);
   if (control) {
@@ -293,8 +332,13 @@ function validateForm({modelOptional = false} = {}) {
       return null;
     }
   }
-  if (!/^[a-z][a-z0-9_-]{0,63}$/.test(values.provider_id)) {
-    profileError("provider_id", "使用小写字母开头的机器标识，可含数字、_ 和 -。");
+  if (!/^[a-z][a-z0-9_-]{0,63}$/.test(values.service_id)) {
+    profileError("service_id", "使用小写字母开头的机器标识，可含数字、_ 和 -。");
+    return null;
+  }
+  if (!values.model_family) values.model_family = "unknown";
+  if (!["qwen", "deepseek", "unknown"].includes(values.model_family)) {
+    profileError("model_family", "请选择 qwen、deepseek 或 unknown。");
     return null;
   }
   if (values.secret_env && !/^[A-Z_][A-Z0-9_]{0,127}$/.test(values.secret_env)) {
@@ -453,7 +497,8 @@ function render(data, latency, ttft = null, streaming = false) {
   addList("recommendations", data.recommendations, (li, item) => { li.textContent = item; });
   addList("uncertainty", data.uncertainty, (li, item) => { li.textContent = item; });
   addPairs("runtime", [
-    ["Provider", displayedProvider], ["Model", runtime.model],
+    ["Service ID", runtime.service_id || displayedProvider], ["Model family", runtime.model_family],
+    ["Legacy provider_id", runtime.provider_id], ["Model", runtime.model],
     ["Profile", runtime.profile_id], ["Profile 状态", runtime.profile_status],
     ["Input Tokens", usage.input_tokens], ["Output Tokens", usage.output_tokens],
     ["Total Tokens", usage.total_tokens], ["Reasoning Tokens", usage.reasoning_tokens],
@@ -541,7 +586,8 @@ async function analyzeStreaming(body) {
       if (kind === "content_delta") $("streaming-output").textContent += data.delta || "";
       if (kind === "usage") {
         liveUsage = data.usage || {};
-        addPairs("runtime", [["Provider", runtime.provider_id], ["Model", runtime.model],
+        addPairs("runtime", [["Service ID", runtime.service_id], ["Model family", runtime.model_family],
+          ["Legacy provider_id", runtime.provider_id], ["Model", runtime.model],
           ["Input Tokens", liveUsage.input_tokens], ["Output Tokens", liveUsage.output_tokens],
           ["Total Tokens", liveUsage.total_tokens], ["Usage Source", liveUsage.source]]);
       }
@@ -638,6 +684,7 @@ async function init() {
     $("new-profile").addEventListener("click", newProfile);
     $("edit-profile").addEventListener("click", editSelected);
     $("delete-profile").addEventListener("click", deleteSelected);
+    $("probe-streaming").addEventListener("click", probeSelectedCapability);
     $("query-models").addEventListener("click", queryModels);
     $("model-options").addEventListener("change", () => { if ($("model-options").value) $("custom-model").value = $("model-options").value; invalidateTest(); });
     $("test-profile").addEventListener("click", testConnection);

@@ -61,6 +61,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual((cloud.provider_id, cloud.adapter_id, cloud.provider_kind,
                           cloud.profile_status),
                          ("deepseek", "openai_chat", "cloud", ProfileStatus.EXPERIMENTAL))
+        self.assertEqual((cloud.service_id, cloud.model_family), ("deepseek_api", "deepseek"))
         self.assertEqual((local.provider_id, local.adapter_id, local.provider_kind,
                           local.profile_status),
                          ("custom", "generic_openai_chat", "local", ProfileStatus.CUSTOM))
@@ -229,10 +230,11 @@ class AdapterTests(unittest.TestCase):
                          {"thinking": {"type": "enabled"}})
         self.assertEqual(OpenAICompatibleAdapter._kwargs(off, cloud, stream=False)["extra_body"],
                          {"thinking": {"type": "disabled"}})
-        qwen = replace(cloud, provider_id="qwen")
+        qwen = replace(cloud, provider_id="qwen", service_id="dashscope", model_family="qwen")
         self.assertEqual(OpenAICompatibleAdapter._kwargs(on, qwen, stream=False)["extra_body"],
                          {"enable_thinking": True})
-        generic = replace(cloud, provider_id="custom", adapter_id="generic_openai_chat")
+        generic = replace(cloud, provider_id="custom", service_id="custom",
+                          model_family="unknown", adapter_id="generic_openai_chat")
         with self.assertRaises(GatewayError) as caught:
             OpenAICompatibleAdapter._kwargs(on, generic, stream=False)
         self.assertEqual(caught.exception.code, "OPTION_UNSUPPORTED")

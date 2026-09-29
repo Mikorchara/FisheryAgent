@@ -6,6 +6,8 @@
       "provider_kind": "cloud",
       "adapter_id": "openai_chat",
       "provider_id": "deepseek",
+      "service_id": "deepseek_api",
+      "model_family": "deepseek",
       "base_url": "https://api.deepseek.com",
       "model": "deepseek-flash",
       "secret_env": "DEEPSEEK_API_KEY",
@@ -15,9 +17,11 @@
       "total_timeout_s": 120,
       "max_retries": 0,
       "capabilities": {
-        "source": "experimental",
+        "source": "OFFICIAL_DOCS",
+        "service_id": "deepseek_api",
         "model_id": "deepseek-flash",
         "reasoning_on": "supported",
+        "streaming": "supported",
         "base_url": "https://api.deepseek.com"
       }
     }

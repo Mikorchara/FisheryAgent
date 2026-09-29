@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterator, Mapping, Protocol
 import json
@@ -11,8 +11,8 @@ import re
 from urllib.parse import urlsplit
 
 from .contracts import Mode, RuntimeInfo, Usage
-from .model_options import (GenerationOptions, ModelCapabilities, OptionValidationError,
-                            ProfileStatus, ReasoningMode, ReasoningOptions,
+from .model_options import (CapabilitySource, GenerationOptions, ModelCapabilities,
+                            OptionValidationError, ProfileStatus, ReasoningMode, ReasoningOptions,
                             validate_options)
 
 
@@ -37,6 +37,8 @@ class ModelProfile:
     profile_status: ProfileStatus = ProfileStatus.CUSTOM
     default_generation: GenerationOptions = field(default_factory=GenerationOptions)
     default_reasoning: ReasoningOptions = field(default_factory=ReasoningOptions)
+    service_id: str | None = None
+    model_family: str | None = None
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.base_url)
@@ -51,26 +53,54 @@ class ModelProfile:
             raise ValueError("base_url must be an HTTP(S) URL without query or fragment")
         if self.secret_env is not None and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.secret_env):
             raise ValueError("secret_env must be an environment variable name")
+        legacy_services = {"qwen": "dashscope", "deepseek": "deepseek_api"}
+        service_id = self.service_id or legacy_services.get(self.provider_id, self.provider_id)
+        family = self.model_family or self.provider_id
+        if family not in ("qwen", "deepseek", "unknown"):
+            family = "unknown"
+        if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", service_id):
+            raise ValueError("service_id must be a lowercase machine identifier")
+        object.__setattr__(self, "service_id", service_id)
+        object.__setattr__(self, "model_family", family)
+        if self.adapter_id == "generic_openai_chat" and service_id != "custom":
+            raise ValueError("generic adapter requires service_id custom")
+        if self.adapter_id == "generic_openai_chat" and self.provider_id != "custom":
+            raise ValueError("generic adapter requires legacy provider_id custom")
         if min(self.connect_timeout_s, self.read_timeout_s, self.total_timeout_s) <= 0:
             raise ValueError("timeouts must be positive")
         if self.max_retries < 0 or self.max_retries > 3:
             raise ValueError("max_retries must be between 0 and 3")
         object.__setattr__(self, "profile_status", ProfileStatus(self.profile_status))
-        if (self.capabilities.model_id not in (None, self.model)
-                or self.capabilities.base_url not in (None, self.base_url)):
-            raise ValueError("capabilities belong to a different base_url or exact model")
-        declared = self.capabilities.source != "unknown" or any(
+        capabilities = self.capabilities
+        declared = capabilities.source != CapabilitySource.UNKNOWN or any(
             getattr(self.capabilities, name).value != "unknown" for name in (
                 "streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
                 "reasoning_off", "reasoning_effort", "structured_output", "tool_calling",
                 "streaming_usage"))
+        if (declared and capabilities.service_id is None
+                and capabilities.model_id == self.model and capabilities.base_url == self.base_url):
+            # Legacy profile migration: bind older model/base_url evidence to its derived service.
+            capabilities = replace(capabilities, service_id=service_id)
+            object.__setattr__(self, "capabilities", capabilities)
+        if (capabilities.model_id not in (None, self.model)
+                or capabilities.base_url not in (None, self.base_url)
+                or capabilities.service_id not in (None, service_id)):
+            raise ValueError("capabilities belong to a different service, base_url or exact model")
         if declared and (self.capabilities.model_id != self.model
-                         or self.capabilities.base_url != self.base_url):
-            raise ValueError("declared capabilities require exact model and base_url scope")
+                         or self.capabilities.base_url != self.base_url
+                         or self.capabilities.service_id != service_id):
+            raise ValueError("declared capabilities require exact service, model and base_url scope")
         if self.profile_status == ProfileStatus.VERIFIED:
-            if (self.capabilities.source != "user_verified" or not self.capabilities.verified_at
+            declared_user_verified = any(
+                getattr(self.capabilities, name).value != "unknown"
+                and self.capabilities.source_for(name) == CapabilitySource.USER_VERIFIED
+                for name in ("streaming", "temperature", "top_p", "max_output_tokens",
+                             "reasoning_on", "reasoning_off", "reasoning_effort",
+                             "structured_output", "tool_calling", "streaming_usage"))
+            if (not declared_user_verified or not self.capabilities.verified_at
                     or self.capabilities.model_id != self.model
-                    or self.capabilities.base_url != self.base_url):
+                    or self.capabilities.base_url != self.base_url
+                    or self.capabilities.service_id != service_id):
                 raise ValueError("verified profile requires scoped, dated user verification")
             if all(getattr(self.capabilities, name).value == "unknown" for name in (
                     "streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
@@ -86,8 +116,20 @@ class ModelProfile:
     @classmethod
     def from_dict(cls, data: dict) -> ModelProfile:
         values = dict(data)
+        legacy_provider = values.get("provider_id", "custom")
+        services = {"qwen": "dashscope", "deepseek": "deepseek_api"}
+        values.setdefault("service_id", services.get(legacy_provider, legacy_provider))
+        values.setdefault("provider_id", {"dashscope": "qwen", "deepseek_api": "deepseek"}.get(
+            values["service_id"], values["service_id"]))
+        values.setdefault("model_family", legacy_provider if legacy_provider in ("qwen", "deepseek")
+                          else "unknown")
         capability_data = dict(values.get("capabilities", {}))
-        if not capability_data or capability_data.get("source", "unknown") == "unknown":
+        if capability_data.get("source") == "experimental":
+            capability_data["source"] = "UNKNOWN"
+        if isinstance(capability_data.get("evidence"), dict):
+            capability_data["evidence"] = tuple(capability_data["evidence"].items())
+        if not capability_data or str(capability_data.get("source", "unknown")).lower() in (
+                "unknown", "experimental"):
             # Only a fully unknown capability set may follow a changed model.
             if not any(value not in ("unknown", False) for key, value in capability_data.items()
                        if key in ("streaming", "temperature", "top_p", "max_output_tokens",
@@ -95,6 +137,7 @@ class ModelProfile:
                                   "structured_output", "tool_calling", "streaming_usage")):
                 capability_data.setdefault("model_id", values["model"])
                 capability_data.setdefault("base_url", values["base_url"])
+                capability_data.setdefault("service_id", values["service_id"])
         values["capabilities"] = ModelCapabilities(**capability_data)
         values["default_generation"] = GenerationOptions(**values.get("default_generation", {}))
         reasoning_data = dict(values.get("default_reasoning", {}))
@@ -123,10 +166,13 @@ class RuntimeSnapshot:
     default_generation: GenerationOptions
     default_reasoning: ReasoningOptions
     api_key: str | None = field(default=None, repr=False, compare=False)
+    service_id: str = "custom"
+    model_family: str = "unknown"
 
     def public_info(self) -> RuntimeInfo:
         return RuntimeInfo(self.profile_id, self.provider_kind, self.model,
-                           self.adapter_id, self.provider_id, self.profile_status.value)
+                           self.adapter_id, self.provider_id, self.profile_status.value,
+                           self.service_id, self.model_family)
 
 
 class ProfileRegistry:
@@ -154,6 +200,8 @@ class ProfileRegistry:
             adapter_id=profile.adapter_id, provider_id=profile.provider_id,
             profile_status=profile.profile_status, default_generation=profile.default_generation,
             default_reasoning=profile.default_reasoning, api_key=key,
+            service_id=profile.service_id or profile.provider_id,
+            model_family=profile.model_family or "unknown",
         )
 
 

@@ -137,7 +137,13 @@ test('page rendering failure is not mislabeled as a network failure', async () =
 test('Runtime selection immediately fills the actual read-only Profile, then edit and new modes', async () => {
   const profiles = [
     {profile_id: 'qwen-plus-experimental', display_name: 'Qwen 预置', provider: 'qwen',
-      model: 'qwen-plus', profile_status: 'experimental', runtime_type: 'cloud', source: 'built_in'},
+      model: 'qwen-plus', profile_status: 'experimental', runtime_type: 'cloud', source: 'built_in',
+      service_id: 'dashscope', model_family: 'qwen',
+      capabilities: {streaming: 'supported', streaming_scope_matches: true, source: 'USER_VERIFIED'}},
+    {profile_id: 'deepseek-v4-flash-experimental', display_name: 'DeepSeek 预置', provider: 'deepseek_api',
+      model: 'deepseek-flash', profile_status: 'experimental', runtime_type: 'cloud', source: 'built_in',
+      service_id: 'deepseek_api', model_family: 'deepseek',
+      capabilities: {streaming: 'supported', streaming_scope_matches: true, source: 'OFFICIAL_DOCS'}},
     {profile_id: 'custom-one', display_name: '学校服务', provider: 'school',
       model: 'school-model', profile_status: 'custom', runtime_type: 'local', source: 'user_custom'},
     {profile_id: 'mock-demo', display_name: 'Mock', provider: 'mock',
@@ -145,11 +151,15 @@ test('Runtime selection immediately fills the actual read-only Profile, then edi
   ];
   const details = {
     'qwen-plus-experimental': {editable: false, fields: {display_name: 'Qwen 预置',
-      provider_id: 'qwen', adapter_id: 'openai_chat',
+      provider_id: 'qwen', service_id: 'dashscope', model_family: 'qwen', adapter_id: 'openai_chat',
       base_url: 'https://example.invalid/v1', model: 'qwen-plus',
       secret_env: 'DASHSCOPE_API_KEY', provider_kind: 'cloud'}},
+    'deepseek-v4-flash-experimental': {editable: false, fields: {display_name: 'DeepSeek 预置',
+      provider_id: 'deepseek', service_id: 'deepseek_api', model_family: 'deepseek',
+      adapter_id: 'openai_chat', base_url: 'https://example.invalid/v1', model: 'deepseek-flash',
+      secret_env: 'DEEPSEEK_API_KEY', provider_kind: 'cloud'}},
     'custom-one': {editable: true, fields: {display_name: '学校服务',
-      provider_id: 'school', adapter_id: 'openai_chat',
+      provider_id: 'school', service_id: 'school', model_family: 'unknown', adapter_id: 'openai_chat',
       base_url: 'http://localhost:11434/v1', model: 'school-model',
       secret_env: '', provider_kind: 'local'}},
     'mock-demo': {editable: false, fields: {display_name: 'Mock', provider_id: 'custom',
@@ -158,23 +168,30 @@ test('Runtime selection immediately fills the actual read-only Profile, then edi
   };
   const page = makePage(async (url) => ({ok: true, json: async () =>
     url === '/api/secret-status' ? {status: 'MISSING'} : details[url.split('/').at(-1)]}));
-  vm.runInContext(`profiles = ${JSON.stringify(profiles)}; presets = [{id:'qwen',provider_id:'qwen'}, {id:'custom',provider_id:'custom'}]`, page.context);
+  vm.runInContext(`profiles = ${JSON.stringify(profiles)}; presets = [{id:'dashscope',service_id:'dashscope'}, {id:'custom',service_id:'custom'}]`, page.context);
   page.element('profile').value = 'qwen-plus-experimental';
   vm.runInContext('updateProfile()', page.context);
   await new Promise(setImmediate);
   assert.equal(page.element('custom-name').value, 'Qwen 预置');
   assert.equal(page.element('custom-model').value, 'qwen-plus');
   assert.equal(page.element('custom-url').value, 'https://example.invalid/v1');
+  assert.match(page.element('streaming-capability').textContent, /本机已验证.*SUPPORTED.*精确 Model \/ Base URL/);
   assert.equal(page.element('custom-name').disabled, true);
   assert.equal(page.element('edit-profile').hidden, true);
   assert.equal(page.element('delete-profile').hidden, true);
   assert.equal(page.element('save-profile').hidden, true);
+
+  page.element('profile').value = 'deepseek-v4-flash-experimental';
+  vm.runInContext('updateProfile()', page.context);
+  assert.match(page.element('streaming-capability').textContent, /官方文档支持.*SUPPORTED/);
 
   page.element('profile').value = 'custom-one';
   vm.runInContext('updateProfile()', page.context);
   await new Promise(setImmediate);
   assert.equal(page.element('custom-name').value, '学校服务');
   assert.equal(page.element('custom-model').value, 'school-model');
+  assert.match(page.element('streaming-capability').textContent, /UNKNOWN.*未绑定当前 Model \/ Base URL/);
+  assert.equal(page.element('probe-streaming').hidden, false);
   assert.equal(page.element('edit-profile').hidden, false);
   assert.equal(page.element('delete-profile').hidden, false);
   await vm.runInContext('editSelected()', page.context);
@@ -209,7 +226,8 @@ test('late Profile response cannot overwrite a newer selection or clean New form
   let finishQwen;
   const qwenReply = new Promise((resolve) => { finishQwen = resolve; });
   const details = {editable: false, fields: {display_name: 'Qwen 预置',
-    provider_id: 'qwen', adapter_id: 'openai_chat', base_url: 'https://example.invalid/v1',
+    provider_id: 'qwen', service_id: 'dashscope', model_family: 'qwen',
+    adapter_id: 'openai_chat', base_url: 'https://example.invalid/v1',
     model: 'qwen-plus', secret_env: '', provider_kind: 'cloud'}};
   const page = makePage(async (url) => {
     if (url.endsWith('/qwen-plus-experimental')) return qwenReply;
@@ -220,10 +238,13 @@ test('late Profile response cannot overwrite a newer selection or clean New form
   });
   vm.runInContext(`profiles = ${JSON.stringify([
     {profile_id: 'qwen-plus-experimental', display_name: 'Qwen', provider: 'qwen',
-      model: 'qwen-plus', profile_status: 'experimental', runtime_type: 'cloud', source: 'built_in'},
+      model: 'qwen-plus', profile_status: 'experimental', runtime_type: 'cloud', source: 'built_in',
+      service_id: 'dashscope', model_family: 'qwen',
+      capabilities: {streaming: 'supported', streaming_scope_matches: true, source: 'USER_VERIFIED'}},
     {profile_id: 'custom-one', display_name: '学校服务', provider: 'school',
-      model: 'school-model', profile_status: 'custom', runtime_type: 'local', source: 'user_custom'},
-  ])}; presets = [{id:'qwen',provider_id:'qwen'}, {id:'custom',provider_id:'custom'}]`, page.context);
+      model: 'school-model', profile_status: 'custom', runtime_type: 'local', source: 'user_custom',
+      service_id: 'school', model_family: 'unknown'},
+  ])}; presets = [{id:'dashscope',service_id:'dashscope'}, {id:'custom',service_id:'custom'}]`, page.context);
   page.element('profile').value = 'qwen-plus-experimental';
   vm.runInContext('updateProfile()', page.context);
   assert.equal(page.element('custom-name').value, '');
