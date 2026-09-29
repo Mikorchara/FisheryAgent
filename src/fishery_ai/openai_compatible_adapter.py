@@ -8,20 +8,28 @@ import time
 import httpx
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
-from .contracts import Usage
+from .contracts import Usage, UsageSource
 from .model_gateway import (GatewayError, ModelEvent, ModelRequest, ModelResponse,
-                            RetryableGatewayError, RuntimeSnapshot)
+                            RetryableGatewayError, RuntimeSnapshot, effective_options)
+from .model_options import (OptionValidationError, ReasoningMode,
+                            Support, validate_options)
 
 
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
 
-def _usage(value: object) -> Usage | None:
+def _usage(value: object) -> Usage:
     if value is None:
-        return None
-    return Usage(getattr(value, "prompt_tokens", None),
-                 getattr(value, "completion_tokens", None),
-                 getattr(value, "total_tokens", None))
+        return Usage()
+    details = getattr(value, "completion_tokens_details", None)
+    prompt_details = getattr(value, "prompt_tokens_details", None)
+    values = (getattr(value, "prompt_tokens", None),
+              getattr(value, "completion_tokens", None),
+              getattr(value, "total_tokens", None),
+              getattr(details, "reasoning_tokens", None),
+              getattr(prompt_details, "cached_tokens", None))
+    return Usage(*values, source=UsageSource.PROVIDER) if any(
+        item is not None for item in values) else Usage()
 
 
 class OpenAICompatibleAdapter:
@@ -55,10 +63,38 @@ class OpenAICompatibleAdapter:
 
     @staticmethod
     def _kwargs(request: ModelRequest, runtime: RuntimeSnapshot, *, stream: bool) -> dict:
-        return {"model": runtime.model,
-                "messages": [{"role": message.role, "content": message.content}
-                             for message in request.messages],
-                "max_tokens": request.max_tokens, "stream": stream}
+        generation, reasoning = effective_options(request, runtime)
+        try:
+            validate_options(generation, reasoning, runtime.capabilities, streaming=stream)
+        except OptionValidationError as exc:
+            raise GatewayError(exc.code, option=exc.option) from exc
+        kwargs = {"model": runtime.model,
+                  "messages": [{"role": message.role, "content": message.content}
+                               for message in request.messages]}
+        if stream:
+            kwargs["stream"] = True
+            if runtime.capabilities.streaming_usage == Support.SUPPORTED:
+                kwargs["stream_options"] = {"include_usage": True}
+        if generation.max_output_tokens is not None:
+            kwargs[runtime.capabilities.max_tokens_field] = generation.max_output_tokens
+        if generation.temperature is not None:
+            kwargs["temperature"] = generation.temperature
+        if generation.top_p is not None:
+            kwargs["top_p"] = generation.top_p
+        if reasoning.mode != ReasoningMode.AUTO:
+            if runtime.provider_id == "deepseek" and runtime.adapter_id == "openai_chat":
+                kwargs["extra_body"] = {"thinking": {"type": "enabled" if reasoning.mode == ReasoningMode.ON
+                                                     else "disabled"}}
+            elif runtime.provider_id == "qwen" and runtime.adapter_id == "openai_chat":
+                kwargs["extra_body"] = {"enable_thinking": reasoning.mode == ReasoningMode.ON}
+            else:
+                raise GatewayError("OPTION_UNSUPPORTED", option="reasoning")
+        if reasoning.effort is not None:
+            if runtime.provider_id == "deepseek" and runtime.adapter_id == "openai_chat":
+                kwargs["extra_body"]["reasoning_effort"] = reasoning.effort
+            else:
+                raise GatewayError("OPTION_UNSUPPORTED", option="reasoning.effort")
+        return kwargs
 
     @staticmethod
     def _map_error(exc: Exception) -> GatewayError:
@@ -71,13 +107,14 @@ class OpenAICompatibleAdapter:
         return GatewayError("SDK_ERROR")
 
     def complete(self, request: ModelRequest, runtime: RuntimeSnapshot) -> ModelResponse:
+        kwargs = self._kwargs(request, runtime, stream=False)
         self._check_secret(runtime)
         deadline = time.monotonic() + runtime.total_timeout_s
         for attempt in range(runtime.max_retries + 1):
             client = None
             try:
                 client = self._client_factory(runtime, self._remaining(deadline))
-                response = client.chat.completions.create(**self._kwargs(request, runtime, stream=False))
+                response = client.chat.completions.create(**kwargs)
                 content = response.choices[0].message.content
                 if not isinstance(content, str):
                     raise GatewayError("INVALID_RESPONSE")
@@ -97,8 +134,7 @@ class OpenAICompatibleAdapter:
         raise GatewayError("UNREACHABLE")
 
     def stream(self, request: ModelRequest, runtime: RuntimeSnapshot) -> Iterator[ModelEvent]:
-        if not runtime.capabilities.streaming:
-            raise GatewayError("STREAMING_UNSUPPORTED")
+        kwargs = self._kwargs(request, runtime, stream=True)
         self._check_secret(runtime)
         deadline = time.monotonic() + runtime.total_timeout_s
         for attempt in range(runtime.max_retries + 1):
@@ -107,15 +143,16 @@ class OpenAICompatibleAdapter:
             emitted = False
             try:
                 client = self._client_factory(runtime, self._remaining(deadline))
-                sdk_stream = client.chat.completions.create(**self._kwargs(request, runtime, stream=True))
+                sdk_stream = client.chat.completions.create(**kwargs)
                 for chunk in sdk_stream:
                     self._remaining(deadline)
                     delta = chunk.choices[0].delta.content if chunk.choices else None
-                    usage = _usage(chunk.usage)
+                    usage = _usage(getattr(chunk, "usage", None))
                     if delta:
                         emitted = True
-                    if delta or usage:
-                        yield ModelEvent(delta=delta or "", usage=usage)
+                    if delta or usage.source != UsageSource.UNAVAILABLE:
+                        yield ModelEvent(delta=delta or "", usage=usage if usage.source != UsageSource.UNAVAILABLE
+                                         else None)
                 return
             except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
                 error = self._map_error(exc)

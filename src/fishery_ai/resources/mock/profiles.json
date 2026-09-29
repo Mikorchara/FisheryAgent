@@ -3,7 +3,10 @@
     {
       "profile_id": "cloud-demo",
       "display_name": "Cloud OpenAI-compatible example",
-      "provider_kind": "openai-compatible-cloud",
+      "provider_kind": "cloud",
+      "adapter_id": "openai_chat",
+      "provider_id": "deepseek",
+      "profile_status": "experimental",
       "base_url": "https://api.deepseek.com",
       "model": "deepseek-v4-flash",
       "secret_env": "DEEPSEEK_API_KEY",
@@ -11,12 +14,19 @@
       "read_timeout_s": 30,
       "total_timeout_s": 120,
       "max_retries": 1,
-      "capabilities": {"streaming": true, "tool_calling": false}
+      "capabilities": {
+        "source": "experimental",
+        "model_id": "deepseek-v4-flash",
+        "base_url": "https://api.deepseek.com"
+      }
     },
     {
       "profile_id": "local-demo",
       "display_name": "Local OpenAI-compatible example",
-      "provider_kind": "openai-compatible-local",
+      "provider_kind": "local",
+      "adapter_id": "generic_openai_chat",
+      "provider_id": "custom",
+      "profile_status": "custom",
       "base_url": "http://localhost:11434/v1",
       "model": "replace-with-installed-model",
       "secret_env": null,
@@ -24,7 +34,7 @@
       "read_timeout_s": 30,
       "total_timeout_s": 120,
       "max_retries": 1,
-      "capabilities": {"streaming": true, "tool_calling": false}
+      "capabilities": {"source": "unknown"}
     }
   ]
 }

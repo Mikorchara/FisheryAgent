@@ -1,6 +1,6 @@
 # 项目结构
 
-本文件登记仓库内每一份文件与目录的作用。源码（`src/fishery_ai/`）约 900 行，测试约 380 行。
+本文件登记主要文件与目录的作用。行数随 V0.1.1-A1 持续变化，不作为架构合同。
 
 ## 1. 目录树（每项末尾为该条目作用）
 
@@ -15,14 +15,15 @@ Fishery_AI_Prototype/
 ├─ src/
 │  └─ fishery_ai/
 │     ├─ __init__.py              # 包标识与 __version__ = "0.1.0"
-│     ├─ __main__.py              # CLI 入口：demo 子命令；运行时覆写 socket 以阻断任何联网
+│     ├─ __main__.py              # CLI 入口：离线 demo、每请求和内存会话 Usage 显示；覆写 socket 阻断联网
 │     ├─ composition.py           # 装配根：把 Mock 仓库/诊断/检索/Profile/MockGateway/Trace 组装成 Orchestrator
 │     ├─ application.py           # 编排：冻结 Profile → 取水质 → 诊断 → 检索 → 拼 prompt → 调网关 → 解析 → 落 Trace
-│     ├─ contracts.py             # 全部不可变合同与校验：水质、检测、证据、规则、请求、结果
+│     ├─ contracts.py             # 领域/结果合同；Usage 来源与字段、内存 UsageAccumulator
 │     ├─ domain.py                # 确定性水质诊断：11 条阈值规则，每指标只输出最严重的一条
 │     ├─ knowledge.py             # 知识分块(31 块) + TF-IDF 检索 + 证据构建；三后端 portable/sklearn/keyword
-│     ├─ model_gateway.py         # 网关协议 + Profile/RuntimeSnapshot + MockGateway + 错误类型
-│     ├─ openai_compatible_adapter.py  # 唯一直接 import openai 的文件：真实 complete/stream、超时、错误映射、条件重试
+│     ├─ model_gateway.py         # Profile 分类/身份、精确模型快照、请求/响应、Gateway 与 MockGateway
+│     ├─ model_options.py         # 生成/思考选项、三态能力与严格校验
+│     ├─ openai_compatible_adapter.py  # 唯一直接 import openai 的文件：选项翻译、Usage 映射、重试与流式响应
 │     ├─ observability.py         # 白名单 JSONL Trace（不落 Key、不落 prompt、不落模型正文）
 │     ├─ repositories.py          # 从 scenarios.json 读取固定 Mock 水质与检测输入
 │     └─ resources/
@@ -31,9 +32,10 @@ Fishery_AI_Prototype/
 │        │  └─ SOURCE.md          # 该快照的来源、commit、SHA-256 溯源说明
 │        └─ mock/
 │           ├─ scenarios.json     # 固定输入：5 个水质场景 + 2 组检测场景
-│           └─ profiles.json      # 示例 Profile：cloud-demo（只引用环境变量名）/ local-demo（本地占位模型名）
+│           └─ profiles.json      # 仅供 Mock 演示的 EXPERIMENTAL/CUSTOM Profile；没有真实 VERIFIED 预设
 ├─ tests/
-│  └─ test_v01.py                 # 离线测试：合同/诊断/检索/Profile/网关/编排/Trace + 网络阻断 + 导入隔离断言
+│  ├─ test_v01.py                 # V0.1 离线回归：合同/诊断/检索/网关/编排/Trace
+│  └─ test_v011_a1.py             # A1 离线测试：状态、能力、参数映射、Usage、安全与网络阻断
 ├─ scripts/
 │  └─ run_mock_demo.py            # 未安装包时从源码直接跑 demo 的薄包装
 ├─ docs/
@@ -47,7 +49,9 @@ Fishery_AI_Prototype/
 │     ├─ README.md                              # 深度文档索引
 │     ├─ V0.1_IMPLEMENTATION_REPORT.md          # 第一轮实现记录（描述写作时状态）
 │     ├─ V0.1_HARDENING_REPORT.md               # SDK 接管、打包迁移、数据合同加固记录
-│     └─ V0.1.1_LOCAL_RUNTIME_VALIDATION.md     # 真实本地/云模型验证计划与验收标准（尚未执行）
+│     ├─ V0.1.1_LOCAL_RUNTIME_VALIDATION.md     # 真实本地/云模型验证计划与验收标准（尚未执行）
+│     ├─ MULTI_MODEL_PARAMETER_ARCHITECTURE_PLAN.md # 多模型架构评审计划（历史决策依据）
+│     └─ V0.1.1_A1_MULTI_MODEL_IMPLEMENTATION_REPORT.md # A1 实施范围、测试与待决策事项
 ├─ data/                          # 空目录残留：资源已迁入包内 resources/，此目录可删（git 不跟踪空目录）
 │  ├─ knowledge/
 │  └─ mock/
@@ -60,11 +64,12 @@ Fishery_AI_Prototype/
 
 | 文件 | 主要符号 | 说明 |
 |---|---|---|
-| `contracts.py` | `WaterQualityReading`、`Detection`/`DetectionEvent`/`DetectionSummary`、`ObservedFacts`、`RuleFinding`、`KnowledgeEvidence`、`Usage`、`RuntimeInfo`、`AnalysisRequest`、`AnalysisResult`、`Quality`/`Freshness`/`Mode`/`Status` | 全部 `frozen` 数据类；构造时即校验时间、范围、质量与新鲜度一致性 |
+| `contracts.py` | `WaterQualityReading`、`Detection`/`DetectionEvent`/`DetectionSummary`、`ObservedFacts`、`RuleFinding`、`KnowledgeEvidence`、`Usage`/`UsageSource`/`UsageAccumulator`、`RuntimeInfo`、`AnalysisRequest`、`AnalysisResult`、`Quality`/`Freshness`/`Mode`/`Status` | 领域与结果合同；Usage 缺失保持未知，会话累计不持久化 |
 | `domain.py` | `DiagnosisService.diagnose()`、`RULE_VERSION` | 纯函数式诊断，不依赖模型与网络 |
 | `knowledge.py` | `chunk_knowledge()`、`KnowledgeService.search()`、`_PortableTfidf`、`EXPANSIONS` | 兼容生产块 ID、扩展词与 0.04 门槛 |
-| `model_gateway.py` | `ModelProfile`、`ProfileRegistry`、`RuntimeSnapshot`、`ModelRequest`/`ModelResponse`/`ModelEvent`、`ModelGateway`、`MockGateway`、`GatewayError`/`RetryableGatewayError` | `RuntimeSnapshot` 不可变且 `api_key` 不出现在 `repr` |
-| `openai_compatible_adapter.py` | `OpenAICompatibleAdapter.complete()/.stream()`、`RETRYABLE_STATUS` | SDK 自动重试关闭，重试边界由网关掌握；正文已输出后不再重试 |
+| `model_gateway.py` | `ModelProfile`、`ProfileRegistry`、`RuntimeSnapshot`、`ModelRequest`/`ModelResponse`/`ModelEvent`、`ModelGateway`、`MockGateway`、`GatewayError`/`RetryableGatewayError` | Provider/协议/模型/部署身份分开；`RuntimeSnapshot` 不可变且 `api_key` 不出现在 `repr` |
+| `model_options.py` | `ProfileStatus`、`Support`、`GenerationOptions`、`ReasoningOptions`、`ModelCapabilities`、`validate_options()` | 显式高级选项严格校验；能力绑定当前精确模型 |
+| `openai_compatible_adapter.py` | `OpenAICompatibleAdapter.complete()/.stream()`、`RETRYABLE_STATUS` | SDK 自动重试关闭；能力验证后映射标准/受控 Provider 字段；正文已输出后不再重试 |
 | `application.py` | `Orchestrator.analyze()`、`_build_model_request()`、`_parse_model_text()`、`result_to_dict()` | Chat/Advice 共用同一构建路径，仅任务句与 top_k 不同 |
 | `observability.py` | `JsonlTraceSink.record()` | 显式字段白名单，附带线程锁 |
 
@@ -77,11 +82,11 @@ MockRepository(水质) → DiagnosisService(规则) → KnowledgeService(证据)
                               ↓
                     ModelGateway 合同
                     ├── MockGateway（默认，离线）
-                    └── OpenAICompatibleAdapter → OpenAI 兼容服务 / 本地模型
+                    └── ModelCapabilities 校验 → OpenAICompatibleAdapter → OpenAI 兼容服务
                               ↓
               AnalysisResult + JsonlTraceSink(白名单字段)
 ```
 
 ## 4. 当前尚未存在的模块
 
-Agent Loop、Tool Calling、Memory、向量数据库、生产项目适配器、YOLO/Detection 接入编排、应用层流式接口（网关的 `stream()` 已实现但编排只用 `complete()`）、真实模型部署。
+Agent Loop、Tool Calling、Memory、向量数据库、生产项目适配器、YOLO/Detection 接入编排、应用层流式接口（网关的 `stream()` 已实现但编排只用 `complete()`）、真实模型部署、自动跨 Provider failover 与费用计算。

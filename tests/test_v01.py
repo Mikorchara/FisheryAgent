@@ -24,10 +24,12 @@ _original_connect = socket.socket.connect
 _original_connect_ex = socket.socket.connect_ex
 _original_sendto = socket.socket.sendto
 _original_create_connection = socket.create_connection
+_original_getaddrinfo = socket.getaddrinfo
 socket.socket.connect = _network_forbidden
 socket.socket.connect_ex = _network_forbidden
 socket.socket.sendto = _network_forbidden
 socket.create_connection = _network_forbidden
+socket.getaddrinfo = _network_forbidden
 
 
 def tearDownModule():
@@ -35,6 +37,7 @@ def tearDownModule():
     socket.socket.connect_ex = _original_connect_ex
     socket.socket.sendto = _original_sendto
     socket.create_connection = _original_create_connection
+    socket.getaddrinfo = _original_getaddrinfo
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +54,7 @@ from fishery_ai.model_gateway import (Capabilities, GatewayError, MockGateway,
                                       ModelMessage, ModelProfile, ModelRequest,
                                       ProfileRegistry,
                                       RetryableGatewayError)
+from fishery_ai.model_options import Support
 from fishery_ai.openai_compatible_adapter import OpenAICompatibleAdapter
 from fishery_ai import openai_compatible_adapter as sdk_adapter
 from fishery_ai.observability import JsonlTraceSink
@@ -185,7 +189,9 @@ class ProfileAndGatewayTests(unittest.TestCase):
         self.assertEqual(local.base_url, "http://localhost:11434/v1")
         with self.assertRaises(FrozenInstanceError):
             cloud.model = "changed"
-        self.registry._profiles["cloud-demo"] = replace(self.registry._profiles["cloud-demo"], model="new")
+        old = self.registry._profiles["cloud-demo"]
+        self.registry._profiles["cloud-demo"] = replace(
+            old, model="new", capabilities=replace(old.capabilities, model_id="new"))
         self.assertEqual(cloud.model, "deepseek-v4-flash")
 
     def test_invalid_profile_and_mock_gateway(self):
@@ -204,7 +210,7 @@ class ProfileAndGatewayTests(unittest.TestCase):
         calls = {"complete": 0, "stream": 0, "closed": 0}
 
         def complete_create(**kwargs):
-            self.assertFalse(kwargs["stream"])
+            self.assertFalse(kwargs.get("stream", False))
             calls["complete"] += 1
             if calls["complete"] == 1:
                 raise RetryableGatewayError("HTTP_503")
@@ -232,6 +238,8 @@ class ProfileAndGatewayTests(unittest.TestCase):
 
         gateway = OpenAICompatibleAdapter(factory)
         runtime = self.registry.snapshot("local-demo", {})
+        runtime = replace(runtime, capabilities=replace(runtime.capabilities,
+                                                         streaming=Support.SUPPORTED))
         request = ModelRequest(Mode.CHAT, (ModelMessage("user", "hello"),))
         response = gateway.complete(request, runtime)
         self.assertEqual(response.text, "ok")
@@ -270,6 +278,8 @@ class ProfileAndGatewayTests(unittest.TestCase):
 
     def test_sdk_connection_error_is_retryable_before_stream_content_only(self):
         runtime = self.registry.snapshot("local-demo", {})
+        runtime = replace(runtime, capabilities=replace(runtime.capabilities,
+                                                         streaming=Support.SUPPORTED))
         request = ModelRequest(Mode.CHAT, (ModelMessage("user", "hello"),))
         calls = 0
 
@@ -351,8 +361,10 @@ class OrchestratorAndTraceTests(unittest.TestCase):
 
             class SwitchingGateway(MockGateway):
                 def complete(self, request, runtime):
+                    old = registry._profiles[runtime.profile_id]
                     registry._profiles[runtime.profile_id] = replace(
-                        registry._profiles[runtime.profile_id], model="switched-model")
+                        old, model="switched-model",
+                        capabilities=replace(old.capabilities, model_id="switched-model"))
                     return super().complete(request, runtime)
 
             gateway = SwitchingGateway()
@@ -380,7 +392,7 @@ class OrchestratorAndTraceTests(unittest.TestCase):
             self.assertTrue(cloud.inference)
             self.assertTrue(cloud.recommendations)
             self.assertTrue(cloud.uncertainty)
-            self.assertIsNone(cloud.usage)
+            self.assertEqual(cloud.usage.source.value, "unavailable")
             self.assertEqual(len(mock.calls), 2)
             self.assertIsNone(mock.calls[0][1].api_key)
             data = result_to_dict(cloud)

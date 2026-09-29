@@ -8,7 +8,15 @@
 - 不依赖特定运行时的 ModelGateway、Cloud/Local Profile 与 OpenAI SDK 适配器。
 - 离线测试与 Mock 演示。
 
-## V0.1.1：下一阶段验证
+## V0.1.1-A1：多模型合同与能力校验（已实现，真实连接待验证）
+
+- Profile 的 Provider、协议适配器、精确模型和 Cloud/Local 部署标签分离。
+- VERIFIED / EXPERIMENTAL / CUSTOM 分类；当前没有真实 VERIFIED 预设，不自动跨 Provider 切换。
+- 可选生成与思考参数、精确模型能力、发送前严格校验及适配器内映射。
+- Provider Usage、缺失值和内存中的验证会话累计；不计算费用。
+- 详见 [A1 实施报告](deep-dive/V0.1.1_A1_MULTI_MODEL_IMPLEMENTATION_REPORT.md)。
+
+## V0.1.1：后续真实运行时验证
 
 - 在 GPU 工作站上验证真实本地模型。
 - 检查所选 OpenAI-compatible 服务的流式响应与兼容性。

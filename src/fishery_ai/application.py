@@ -11,7 +11,7 @@ import time
 import uuid
 
 from .contracts import (AnalysisRequest, AnalysisResult, KnowledgeEvidence, Mode,
-                        ObservedFacts, RuleFinding, Status, WaterQualityReading, utcnow)
+                        ObservedFacts, RuleFinding, Status, Usage, WaterQualityReading, utcnow)
 from .domain import DiagnosisService
 from .knowledge import KnowledgeService
 from .model_gateway import (GatewayError, ModelGateway, ModelMessage, ModelRequest,
@@ -36,7 +36,7 @@ def _value(value: float | None) -> str:
     return "--" if value is None else f"{value:g}"
 
 
-def _build_model_request(context: AnalysisContext) -> ModelRequest:
+def _build_model_request(context: AnalysisContext, request: AnalysisRequest) -> ModelRequest:
     reading = context.reading
     facts = (
         f"水温 {_value(reading.temperature_c)} °C；pH {_value(reading.ph)}；"
@@ -56,7 +56,7 @@ def _build_model_request(context: AnalysisContext) -> ModelRequest:
     )
     user = f"当前水质：{facts}\n规则结果：\n{rules}\n检索证据：\n{evidence}\n任务：{task}"
     return ModelRequest(context.mode, (ModelMessage("system", system), ModelMessage("user", user)),
-                        max_tokens=4096 if context.mode == Mode.ADVICE else 2048)
+                        generation=request.generation, reasoning=request.reasoning)
 
 
 def _parse_model_text(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...], bool]:
@@ -110,7 +110,7 @@ class Orchestrator:
         evidence = self.knowledge.search(query, top_k=5 if request.mode == Mode.CHAT else 4,
                                          retrieved_at=started_at)
         context = AnalysisContext(request.mode, request.question, reading, findings, evidence)
-        model_request = _build_model_request(context)
+        model_request = _build_model_request(context, request)
         try:
             response: ModelResponse = self.gateway.complete(model_request, runtime)
             inference, recommendations, uncertainty, parse_ok = _parse_model_text(response.text)
@@ -120,7 +120,7 @@ class Orchestrator:
                 rule_results=findings, evidence=evidence, inference=inference,
                 recommendations=recommendations, uncertainty=uncertainty,
                 generated_text=response.text, structured_parse_ok=parse_ok,
-                usage=response.usage,
+                usage=response.usage or Usage(),
             )
         except GatewayError as exc:
             result = AnalysisResult(
@@ -129,6 +129,7 @@ class Orchestrator:
                 rule_results=findings, evidence=evidence, inference="",
                 recommendations=(), uncertainty=("模型调用失败；规则和证据仍可检查。",),
                 generated_text="", structured_parse_ok=False, error_code=exc.code,
+                error_option=exc.option,
             )
         finished_at = self.clock()
         self.traces.record(result, mode=request.mode, started_at=started_at,

@@ -5,5 +5,7 @@
 - [V0.1 实现报告](V0.1_IMPLEMENTATION_REPORT.md)：记录初始实现与当时的测试结果。
 - [V0.1 工程加固报告](V0.1_HARDENING_REPORT.md)：记录 SDK、打包和数据合同的改进。
 - [V0.1.1 本地运行时验证计划](V0.1.1_LOCAL_RUNTIME_VALIDATION.md)：规定真实 Cloud/Local 接口、全链路、流式、质量与性能的验证方法及验收标准。
+- [多模型 API、能力与参数架构评审计划](MULTI_MODEL_PARAMETER_ARCHITECTURE_PLAN.md)：对照正式项目和当时原型，记录设计依据与取舍；部分决策已在 V0.1.1-A1 实施。
+- [V0.1.1-A1 多模型合同实施报告](V0.1.1_A1_MULTI_MODEL_IMPLEMENTATION_REPORT.md)：记录 Profile 分类、能力校验、适配器映射、Usage 统计、离线验证与剩余决策。
 
 历史报告描述的是编写时的状态。当前环境准备与项目范围请以[文档导航](../README.md)为准。

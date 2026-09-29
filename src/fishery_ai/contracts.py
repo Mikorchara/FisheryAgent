@@ -8,6 +8,8 @@ from enum import Enum
 import math
 from typing import Any
 
+from .model_options import GenerationOptions, ReasoningOptions
+
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -42,6 +44,12 @@ class Mode(str, Enum):
 class Status(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class UsageSource(str, Enum):
+    PROVIDER = "provider"
+    ESTIMATED = "estimated"
+    UNAVAILABLE = "unavailable"
 
 
 def _number(value: Any, lower: float, upper: float) -> tuple[float | None, bool]:
@@ -207,6 +215,58 @@ class Usage:
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    source: UsageSource = UsageSource.UNAVAILABLE
+
+    def __post_init__(self) -> None:
+        values = (self.input_tokens, self.output_tokens, self.total_tokens,
+                  self.reasoning_tokens, self.cached_input_tokens)
+        if any(value is not None and (type(value) is not int or value < 0) for value in values):
+            raise ValueError("token counts must be nonnegative integers")
+        if not isinstance(self.source, UsageSource):
+            raise ValueError("source must be a UsageSource")
+        if self.source == UsageSource.UNAVAILABLE and any(value is not None for value in values):
+            raise ValueError("unavailable usage cannot contain token counts")
+        if self.source != UsageSource.UNAVAILABLE and all(value is None for value in values):
+            raise ValueError("available usage requires at least one token count")
+
+
+@dataclass(frozen=True)
+class SessionUsage:
+    request_count: int
+    reported_count: int
+    usage: Usage
+
+    @property
+    def complete(self) -> bool:
+        return self.request_count > 0 and self.request_count == self.reported_count
+
+
+class UsageAccumulator:
+    """In-memory validation-session totals; missing fields remain unknown."""
+
+    def __init__(self) -> None:
+        self._items: list[Usage] = []
+
+    def add(self, usage: Usage | None) -> None:
+        self._items.append(usage or Usage())
+
+    def snapshot(self) -> SessionUsage:
+        reported = [item for item in self._items if item.source == UsageSource.PROVIDER]
+        if not reported:
+            return SessionUsage(len(self._items), 0, Usage())
+        if len(reported) != len(self._items):
+            return SessionUsage(len(self._items), len(reported), Usage())
+
+        def total(field_name: str) -> int | None:
+            values = [getattr(item, field_name) for item in reported]
+            return sum(values) if len(reported) == len(self._items) and all(
+                value is not None for value in values) else None
+
+        return SessionUsage(len(self._items), len(reported), Usage(
+            total("input_tokens"), total("output_tokens"), total("total_tokens"),
+            total("reasoning_tokens"), total("cached_input_tokens"), UsageSource.PROVIDER))
 
 
 @dataclass(frozen=True)
@@ -214,6 +274,9 @@ class RuntimeInfo:
     profile_id: str
     provider_kind: str
     model: str
+    adapter_id: str = "generic_openai_chat"
+    provider_id: str = "custom"
+    profile_status: str = "custom"
 
 
 @dataclass(frozen=True)
@@ -221,6 +284,8 @@ class AnalysisRequest:
     mode: Mode
     profile_id: str
     question: str = ""
+    generation: GenerationOptions = field(default_factory=GenerationOptions)
+    reasoning: ReasoningOptions | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.mode, Mode):
@@ -229,6 +294,10 @@ class AnalysisRequest:
             raise ValueError("chat requires a question")
         if not self.profile_id:
             raise ValueError("profile_id is required")
+        if not isinstance(self.generation, GenerationOptions):
+            raise ValueError("generation must be GenerationOptions")
+        if self.reasoning is not None and not isinstance(self.reasoning, ReasoningOptions):
+            raise ValueError("reasoning must be ReasoningOptions")
 
 
 @dataclass(frozen=True)
@@ -245,5 +314,6 @@ class AnalysisResult:
     uncertainty: tuple[str, ...]
     generated_text: str
     structured_parse_ok: bool
-    usage: Usage | None = None
+    usage: Usage = field(default_factory=Usage)
     error_code: str | None = None
+    error_option: str | None = None

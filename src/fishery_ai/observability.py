@@ -41,8 +41,9 @@ class JsonlTraceSink:
             "status": result.status.value,
             "structured_parse_ok": result.structured_parse_ok,
             "timing": {"total_ms": round(total_ms, 3)},
-            "usage": asdict(result.usage) if result.usage else None,
+            "usage": asdict(result.usage),
             "error_code": result.error_code,
+            "error_option": result.error_option,
         }
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)

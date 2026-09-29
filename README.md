@@ -1,4 +1,4 @@
-# Fishery AI Prototype V0.1
+# Fishery AI Prototype V0.1 / V0.1.1-A1
 
 这是独立的智慧渔业 AI 架构原型，用固定流程验证数据合同、水质规则、知识检索、模型配置切换和结构化输出。默认运行路径完全离线。生产项目 `D:\Fishery_Project` 仅作为只读参考和知识快照来源。
 
@@ -30,9 +30,18 @@
 - Agent Loop: not implemented
 - Fine-tuning: pending task definition and additional data
 
+## V0.1.1-A1：多模型参数与 Usage 合同
+
+- Profile 分开记录部署位置（原 `provider_kind`）、`adapter_id`、`provider_id` 与精确模型；状态为 `verified`、`experimental` 或 `custom`。当前没有真实 VERIFIED 预设。示例 `cloud-demo` 为 EXPERIMENTAL，`local-demo` 为 CUSTOM，均未经过本项目真实 API 验证。
+- `GenerationOptions` 的输出上限、temperature、top_p 默认均不发送；`ReasoningOptions.AUTO` 不强制开关。显式高级参数遇未知或不支持能力会在发送前失败，冲突组合也不会静默删改。Capability 声明绑定 Base URL 与精确模型；修改模型或地址不能继承旧声明。
+- 通用自定义 `generic_openai_chat` 默认只发送 `model/messages`；有证据的字段由同一个 `OpenAICompatibleAdapter` 翻译。DeepSeek/Qwen 的思考开关仅在相应 Provider 身份且精确模型 Capability 允许时映射，当前示例均未声明其已验证可用。
+- 每请求 `AnalysisResult.usage` 显示 Provider 返回的输入、输出、总 Token 与可选思考/缓存 Token。缺失用 `unavailable` 表示，不伪造为 0。离线 CLI 同时显示一次请求和当前验证会话累计；累计仅驻留内存，不是对话 Memory。没有费用估算或跨 Provider 自动故障切换。
+
+实现范围、风险与待验证资料见 [V0.1.1-A1 实施报告](docs/deep-dive/V0.1.1_A1_MULTI_MODEL_IMPLEMENTATION_REPORT.md)。
+
 ## Profile 与 Secret
 
-示例位于 `src/fishery_ai/resources/mock/profiles.json`。`cloud-demo` 使用远程 OpenAI 兼容 URL，仅保存 `secret_env: DEEPSEEK_API_KEY` 引用；`local-demo` 使用 `http://localhost:11434/v1`，Key 可为空，模型名是待替换占位符。默认超时为 connect 5 秒、read/stream idle 30 秒、total 120 秒，最多重试一次。仅在尚未输出正文且错误可重试时重试。
+离线示例位于 `src/fishery_ai/resources/mock/profiles.json`。`cloud-demo` 使用远程 OpenAI 兼容 URL，仅保存 `secret_env: DEEPSEEK_API_KEY` 引用；`local-demo` 使用 `http://localhost:11434/v1`，Key 可为空，模型名是待替换占位符。这个文件是 Mock 演示输入，不是 VERIFIED 预设列表。默认超时为 connect 5 秒、read/stream idle 30 秒、total 120 秒，最多重试一次。仅在尚未输出正文且错误可重试时重试。
 
 **Mock Demo 会选择并冻结相应 Profile，但始终由 Mock Gateway 生成回答。** Demo 不解析真实 Secret，并显式拦截 socket 连接。真实 Adapter 已实现最小 OpenAI 兼容 `complete`/`stream`；SDK 仅在适配器中使用，其自动重试关闭，由 Gateway 控制重试边界。自动测试使用假 SDK 客户端。
 
@@ -55,7 +64,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -B -m fishery_ai demo --profile local-demo --scenario partial_stale --mode chat --question "当前水质如何？"
 ```
 
-可选场景：`normal`、`low_oxygen`、`partial`、`stale`、`partial_stale`。Demo 展示水质事实、规则、RAG 证据、Mock 生成结果和 Runtime；它会在当前工作目录的 `outputs/mock-traces.jsonl` 追加 trace，已安装后可从其他目录运行。Mock 输入固定，便于复现。工作区的 `outputs/` 被 `.gitignore` 忽略。
+可选场景：`normal`、`low_oxygen`、`partial`、`stale`、`partial_stale`。Demo 展示水质事实、规则、RAG 证据、Mock 生成结果、Runtime 和 Usage；Mock 不返回 Token 统计，因此各字段显示 `unavailable`。它会在当前工作目录的 `outputs/mock-traces.jsonl` 追加 trace，已安装后可从其他目录运行。Mock 输入固定，便于复现。工作区的 `outputs/` 被 `.gitignore` 忽略。
 
 ## 后续在 GPU 工作站验证本地模型
 

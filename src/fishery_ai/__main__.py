@@ -7,7 +7,21 @@ import sys
 
 from .application import result_to_dict
 from .composition import build_offline_demo
-from .contracts import AnalysisRequest, Mode
+from .contracts import AnalysisRequest, Mode, UsageAccumulator
+
+
+def _usage_lines(usage, *, title: str) -> str:
+    def show(value):
+        return "unavailable" if value is None else str(value)
+    return "\n".join((
+        title,
+        f"Input Tokens: {show(usage.input_tokens)}",
+        f"Output Tokens: {show(usage.output_tokens)}",
+        f"Reasoning Tokens: {show(usage.reasoning_tokens)}",
+        f"Cached Input Tokens: {show(usage.cached_input_tokens)}",
+        f"Total Tokens: {show(usage.total_tokens)}",
+        f"Source: {usage.source.value}",
+    ))
 
 
 def main() -> None:
@@ -27,10 +41,16 @@ def main() -> None:
     socket.socket.connect_ex = deny_network
     socket.socket.sendto = deny_network
     socket.create_connection = deny_network
+    socket.getaddrinfo = deny_network
     orchestrator, _ = build_offline_demo()
     request = AnalysisRequest(Mode(args.mode), args.profile, args.question if args.mode == "chat" else "")
     result = orchestrator.analyze(request, scenario=args.scenario)
     print(json.dumps(result_to_dict(result), ensure_ascii=False, indent=2))
+    session = UsageAccumulator()
+    session.add(result.usage)
+    print("\n" + _usage_lines(result.usage, title="Request Usage"))
+    print("\n" + _usage_lines(session.snapshot().usage, title="Validation Session Usage"))
+    print(f"Requests with provider usage: {session.snapshot().reported_count}/{session.snapshot().request_count}")
     print("\nOffline MockGateway used. No model or network request was made.")
 
 
