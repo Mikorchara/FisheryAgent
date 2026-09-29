@@ -13,7 +13,7 @@ from flask import Flask, Response, jsonify, request
 
 from .application import Orchestrator, result_to_dict
 from .contracts import AnalysisRequest, Mode, Status
-from .custom_profiles import CustomProfileStore
+from .custom_profiles import CustomProfileStore, ProfileFieldError
 from .domain import DiagnosisService
 from .knowledge import KnowledgeService
 from .model_gateway import (MockGateway, ModelGateway, ModelProfile, ProfileRegistry)
@@ -101,6 +101,10 @@ def create_app(*, trace_path: Path | None = None,
             return error("INVALID_PROFILE", 400)
         try:
             profile = store.create(payload)
+        except ProfileFieldError as exc:
+            return jsonify({"status": "failed", "error_code": "INVALID_PROFILE",
+                            "field": exc.field, "reason": exc.reason,
+                            "message": exc.message}), 400
         except (ValueError, TypeError):
             return error("INVALID_PROFILE", 400)
         except OSError:

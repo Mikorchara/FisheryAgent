@@ -82,10 +82,32 @@ function updateProfile() {
   setStatus(real ? "此 Profile 会发起真实模型请求，请先确认。" : "Mock 模式始终离线。", false);
 }
 
+const customFields = {
+  display_name: "custom-name", provider_id: "custom-provider",
+  adapter_id: "custom-adapter", base_url: "custom-url", model: "custom-model",
+  secret_env: "custom-secret-env", provider_kind: "custom-deployment",
+};
+
+function updateSecretRequirement() {
+  const cloud = $("custom-deployment").value === "cloud";
+  $("custom-secret-env").required = cloud;
+  $("custom-secret-requirement").textContent = cloud ? "Cloud 必填" : "Local 可选";
+}
+
+function profileError(field, message) {
+  const control = $(customFields[field]);
+  if (control) {
+    control.setAttribute("aria-invalid", "true");
+    control.focus();
+  }
+  $("custom-status").textContent = `保存失败：${field || "profile"} — ${message}`;
+  $("custom-status").classList.add("error");
+}
+
 async function saveCustomProfile() {
   const button = $("save-profile");
-  button.disabled = true;
-  $("custom-status").textContent = "正在保存本地 Profile…";
+  for (const id of Object.values(customFields)) $(id).removeAttribute("aria-invalid");
+  $("custom-status").classList.remove("error");
   const values = {
     display_name: $("custom-name").value,
     provider_id: $("custom-provider").value,
@@ -95,20 +117,32 @@ async function saveCustomProfile() {
     secret_env: $("custom-secret-env").value,
     provider_kind: $("custom-deployment").value,
   };
+  for (const [field, id] of Object.entries(customFields)) {
+    const control = $(id);
+    if (!control.checkValidity()) {
+      const message = field === "secret_env" && values.provider_kind === "cloud"
+        ? "Cloud Profile 必须填写 Secret 环境变量名，不能填写真实 Key。"
+        : `${field} 为必填项，或当前格式不正确。`;
+      profileError(field, message);
+      return;
+    }
+  }
+  button.disabled = true;
+  $("custom-status").textContent = "正在保存本地 Profile…";
   try {
     const response = await fetch("/api/profiles", {
       method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(values),
     });
     const data = await response.json();
     if (!response.ok) {
-      $("custom-status").textContent = `保存失败：${show(data.error_code)}`;
+      profileError(data.field || "profile", data.message || show(data.error_code));
       return;
     }
     profiles.push(data.profile);
     renderProfiles(data.profile.profile_id);
     $("custom-status").textContent = "已保存。若 Secret 仅写在 .env，请重启 Web 服务后使用。";
   } catch (_) {
-    $("custom-status").textContent = "保存失败：NETWORK_ERROR";
+    profileError("profile", "页面与本地服务通信失败。");
   } finally {
     button.disabled = false;
   }
@@ -211,6 +245,8 @@ async function init() {
     $("profile").addEventListener("change", updateProfile);
     $("analyze").addEventListener("click", analyze);
     $("save-profile").addEventListener("click", saveCustomProfile);
+    $("custom-deployment").addEventListener("change", updateSecretRequirement);
+    updateSecretRequirement();
   } catch (_) {
     setStatus("页面配置加载失败：CONFIG_ERROR", true);
   }
