@@ -36,8 +36,6 @@
           </div>
           <label for="provider-preset">Provider <span class="required">必选</span></label>
           <select id="provider-preset"></select>
-          <label class="mode-toggle"><input id="advanced-mode" type="checkbox"> 高级模式</label>
-          <p class="helper">简单模式保留常用字段；高级模式可修改 Provider 标识、Adapter、Secret 变量名和部署类型。</p>
           <label for="custom-name">Display Name <span class="required">必填</span></label>
           <input id="custom-name" type="text" maxlength="80" required>
           <p class="helper">选择框中的名称；示例不会自动填写。</p>
@@ -51,7 +49,9 @@
           <button id="query-models" class="secondary" type="button">查询可用模型（真实联网）</button>
           <p id="models-status" class="status" role="status" aria-live="polite"></p>
           <p id="secret-status" class="secret-status" role="status" aria-live="polite">Secret 状态：待检查</p>
-          <div class="advanced-fields" id="advanced-fields" hidden>
+          <details id="advanced-settings" class="advanced-settings">
+            <summary>高级连接设置</summary>
+            <p class="helper">仅在需要自定义 Provider 身份、Adapter、Secret 变量名或部署类型时修改。</p>
             <label for="custom-provider">provider_id <span class="required">必填</span></label>
             <input id="custom-provider" type="text" maxlength="64" required>
             <p class="helper">小写机器标识；generic_openai_chat 使用 custom。</p>
@@ -64,7 +64,7 @@
             <label for="custom-deployment">deployment <span class="required">必选</span></label>
             <select id="custom-deployment"><option value="cloud">cloud</option><option value="local">local</option></select>
             <p class="helper">cloud 为远程服务；local 为本地服务。</p>
-          </div>
+          </details>
           <label for="test-method">连接测试方式</label>
           <select id="test-method"><option value="models">模型列表（优先，非生成）</option><option value="chat">最小 Chat（可能产生费用）</option></select>
           <button id="test-profile" class="secondary" type="button">测试连接（真实联网）</button>
@@ -88,6 +88,10 @@
         <label for="question">问题</label>
         <textarea id="question" rows="4" maxlength="500">当前水质情况怎么样？</textarea>
 
+        <label for="response-mode">Response Mode</label>
+        <select id="response-mode"><option value="normal">Normal</option><option value="streaming">Streaming</option></select>
+        <p class="helper">Qwen Plus 实验配置已完成一次 Streaming 验证；其他真实 Profile 的能力未经确认时会返回 OPTION_UNKNOWN，不会发起模型请求。</p>
+
         <div id="real-warning" class="real-warning" hidden>
           <strong>REAL NETWORK REQUEST</strong>
           <p>将向所选 Cloud 或 Local 服务发送一次真实分析请求；Cloud 可能产生费用。</p>
@@ -103,6 +107,7 @@
           <div class="panel-heading"><span class="step">02</span><h2>Model Inference · 模型推断</h2></div>
           <p class="helper">以下内容由模型生成，需结合上方事实和规则核查。</p>
           <p id="model-inference" class="model-output"></p>
+          <pre id="streaming-output" class="model-output" hidden></pre>
         </section>
 
         <div class="result-grid">

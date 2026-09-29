@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Callable, Protocol
+from typing import Callable, Iterator, Protocol
 import json
 import re
 import time
@@ -30,6 +30,12 @@ class AnalysisContext:
     reading: WaterQualityReading
     findings: tuple[RuleFinding, ...]
     evidence: tuple[KnowledgeEvidence, ...]
+
+
+@dataclass(frozen=True)
+class AnalysisStreamEvent:
+    kind: str
+    data: dict
 
 
 def _value(value: float | None) -> str:
@@ -104,6 +110,18 @@ class Orchestrator:
         self.id_factory = id_factory
         self.resolve_secrets = resolve_secrets
 
+    def _retrieve_evidence(self, request: AnalysisRequest, reading: WaterQualityReading,
+                           findings: tuple[RuleFinding, ...], started_at: datetime
+                           ) -> tuple[KnowledgeEvidence, ...]:
+        values = f"水温{_value(reading.temperature_c)} pH{_value(reading.ph)} 溶解氧{_value(reading.dissolved_oxygen_mg_l)}"
+        query = (f"{request.question} {values}" if request.mode == Mode.CHAT
+                 else f"{values} 养殖管理建议")
+        rule_query = " ".join(f"{item.code} {item.message} {' '.join(item.facts_used)}"
+                              for item in findings)
+        query = f"{query} {rule_query}"
+        return self.knowledge.search(query, top_k=5 if request.mode == Mode.CHAT else 4,
+                                     retrieved_at=started_at, intent_text=request.question)
+
     def analyze(self, request: AnalysisRequest, *, scenario: str = "normal") -> AnalysisResult:
         started_at = self.clock()
         start_tick = time.monotonic()
@@ -112,14 +130,7 @@ class Orchestrator:
                                          environ=None if self.resolve_secrets else {})
         reading = self.repository.water_quality(scenario)
         findings = self.diagnosis.diagnose(reading)  # Always runs, including Advice.
-        values = f"水温{_value(reading.temperature_c)} pH{_value(reading.ph)} 溶解氧{_value(reading.dissolved_oxygen_mg_l)}"
-        query = (f"{request.question} {values}" if request.mode == Mode.CHAT
-                 else f"{values} 养殖管理建议")
-        rule_query = " ".join(f"{item.code} {item.message} {' '.join(item.facts_used)}"
-                              for item in findings)
-        query = f"{query} {rule_query}"
-        evidence = self.knowledge.search(query, top_k=5 if request.mode == Mode.CHAT else 4,
-                                         retrieved_at=started_at, intent_text=request.question)
+        evidence = self._retrieve_evidence(request, reading, findings, started_at)
         context = AnalysisContext(request.mode, request.question, reading, findings, evidence)
         model_request = _build_model_request(context, request)
         try:
@@ -147,10 +158,97 @@ class Orchestrator:
                            finished_at=finished_at, total_ms=(time.monotonic() - start_tick) * 1000)
         return result
 
+    def analyze_stream(self, request: AnalysisRequest, *, scenario: str = "normal"
+                       ) -> Iterator[AnalysisStreamEvent]:
+        """Stream the same fixed analysis; only model transport differs from analyze()."""
+        started_at = self.clock()
+        start_tick = time.monotonic()
+        request_id, trace_id = self.id_factory(), self.id_factory()
+        yield AnalysisStreamEvent("analysis_started", {"request_id": request_id,
+                                                       "trace_id": trace_id})
+        runtime = None
+        reading = None
+        findings: tuple[RuleFinding, ...] = ()
+        evidence: tuple[KnowledgeEvidence, ...] = ()
+        chunks: list[str] = []
+        usage = Usage()
+        usage_emitted = False
+        ttft_ms: float | None = None
+        try:
+            runtime = self.profiles.snapshot(request.profile_id,
+                                             environ=None if self.resolve_secrets else {})
+            reading = self.repository.water_quality(scenario)
+            yield AnalysisStreamEvent("facts_ready", {"observed_facts":
+                _public_data(ObservedFacts(reading)), "runtime": _public_data(runtime.public_info())})
+            findings = self.diagnosis.diagnose(reading)
+            yield AnalysisStreamEvent("rules_ready", {"rule_results": _public_data(findings)})
+            evidence = self._retrieve_evidence(request, reading, findings, started_at)
+            yield AnalysisStreamEvent("evidence_ready", {"evidence": _public_data(evidence)})
+            context = AnalysisContext(request.mode, request.question, reading, findings, evidence)
+            stream = self.gateway.stream(_build_model_request(context, request), runtime)
+            try:
+                for event in stream:
+                    if event.delta:
+                        chunks.append(event.delta)
+                        if ttft_ms is None:
+                            ttft_ms = (time.monotonic() - start_tick) * 1000
+                        yield AnalysisStreamEvent("content_delta", {"delta": event.delta})
+                    if event.usage is not None:
+                        usage = event.usage
+                        usage_emitted = True
+                        yield AnalysisStreamEvent("usage", {"usage": _public_data(usage)})
+            finally:
+                close = getattr(stream, "close", None)
+                if callable(close):
+                    close()
+            if not usage_emitted:
+                yield AnalysisStreamEvent("usage", {"usage": _public_data(usage)})
+            raw_text = "".join(chunks)
+            inference, recommendations, uncertainty, parse_ok = _parse_model_text(raw_text)
+            result = AnalysisResult(
+                request_id=request_id, trace_id=trace_id, status=Status.COMPLETED,
+                runtime=runtime.public_info(), observed_facts=ObservedFacts(reading),
+                rule_results=findings, evidence=evidence, inference=inference,
+                recommendations=recommendations, uncertainty=uncertainty,
+                generated_text=raw_text, structured_parse_ok=parse_ok, usage=usage,
+            )
+            total_ms = (time.monotonic() - start_tick) * 1000
+            self.traces.record(result, mode=request.mode, started_at=started_at,
+                               finished_at=self.clock(), total_ms=total_ms)
+            yield AnalysisStreamEvent("completed", {"result": result_to_dict(result),
+                                                     "ttft_ms": round(ttft_ms, 3) if ttft_ms is not None else None,
+                                                     "total_latency_ms": round(total_ms, 3)})
+        except Exception as exc:
+            code = exc.code if isinstance(exc, GatewayError) else "INTERNAL_ERROR"
+            if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,40}", code):
+                code = "GATEWAY_ERROR"
+            total_ms = (time.monotonic() - start_tick) * 1000
+            if runtime is None or reading is None:
+                yield AnalysisStreamEvent("failed", {"error_code": code,
+                                                     "ttft_ms": None,
+                                                     "total_latency_ms": round(total_ms, 3)})
+                return
+            result = AnalysisResult(
+                request_id=request_id, trace_id=trace_id, status=Status.FAILED,
+                runtime=runtime.public_info(), observed_facts=ObservedFacts(reading),
+                rule_results=findings, evidence=evidence, inference="",
+                recommendations=(), uncertainty=("模型调用失败；规则和证据仍可检查。",),
+                generated_text="".join(chunks), structured_parse_ok=False,
+                usage=usage, error_code=code,
+            )
+            self.traces.record(result, mode=request.mode, started_at=started_at,
+                               finished_at=self.clock(), total_ms=total_ms)
+            yield AnalysisStreamEvent("failed", {"result": result_to_dict(result),
+                                                 "error_code": code,
+                                                 "ttft_ms": round(ttft_ms, 3) if ttft_ms is not None else None,
+                                                 "total_latency_ms": round(total_ms, 3)})
 
-def result_to_dict(result: AnalysisResult) -> dict:
-    """Public serialization contains only the safe RuntimeInfo, never the RuntimeSnapshot secret."""
+
+def _public_data(value):
+    """Serialize public contracts; RuntimeSnapshot must never be passed here."""
     def convert(value):
+        if hasattr(value, "__dataclass_fields__"):
+            return convert(asdict(value))
         if isinstance(value, datetime):
             return value.isoformat()
         if hasattr(value, "value"):
@@ -160,4 +258,9 @@ def result_to_dict(result: AnalysisResult) -> dict:
         if isinstance(value, (list, tuple)):
             return [convert(item) for item in value]
         return value
-    return convert(asdict(result))
+    return convert(value)
+
+
+def result_to_dict(result: AnalysisResult) -> dict:
+    """Public serialization contains only the safe RuntimeInfo, never the RuntimeSnapshot secret."""
+    return _public_data(result)

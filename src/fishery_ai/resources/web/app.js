@@ -122,7 +122,8 @@ function updateSecretRequirement() {
 }
 
 function collectFields() {
-  return Object.fromEntries(Object.entries(customFields).map(([field, id]) => [field, $(id).value.trim()]));
+  return Object.fromEntries(Object.entries(customFields)
+    .map(([field, id]) => [field, $(id).value.trim()]));
 }
 
 function connectionFingerprint(fields) {
@@ -134,10 +135,6 @@ function invalidateTest() {
   testId = null;
   testedFingerprint = null;
   $("test-status").textContent = "连接字段已改变；Cloud 保存前需重新测试。";
-}
-
-function setAdvancedMode() {
-  $("advanced-fields").hidden = !$("advanced-mode").checked;
 }
 
 async function showSecret(name, targetId) {
@@ -163,8 +160,8 @@ function selectPreset() {
   if (!preset) return;
   $("custom-provider").value = preset.provider_id;
   $("custom-adapter").value = preset.adapter_id;
-  $("custom-url").value = preset.base_url;
-  $("custom-model").value = preset.model;
+  $("custom-url").value = preset.id === "custom" ? "" : preset.base_url;
+  $("custom-model").value = "";
   $("custom-secret-env").value = preset.secret_env || "";
   $("custom-deployment").value = preset.provider_kind;
   $("model-options").hidden = true;
@@ -177,9 +174,21 @@ function newProfile() {
   editingId = null;
   $("save-profile").textContent = "保存 Profile";
   $("custom-name").value = "";
+  $("provider-preset").value = "";
+  $("custom-provider").value = "";
+  $("custom-adapter").value = "openai_chat";
+  $("custom-url").value = "";
+  $("custom-model").value = "";
+  $("custom-secret-env").value = "";
+  $("custom-deployment").value = "cloud";
+  $("model-options").hidden = true;
+  $("advanced-settings").open = false;
+  $("models-status").textContent = "";
+  showSecret("", "secret-status");
+  updateSecretRequirement();
+  invalidateTest();
   $("custom-status").textContent = "新配置尚未保存。";
   $("conflict-panel").hidden = true;
-  selectPreset();
 }
 
 async function editSelected() {
@@ -194,6 +203,7 @@ async function editSelected() {
     ? data.fields.provider_id : "custom";
   for (const [field, id] of Object.entries(customFields)) $(id).value = data.fields[field] || "";
   updateSecretRequirement();
+  $("advanced-settings").open = false;
   showSecret(data.fields.secret_env, "secret-status");
   invalidateTest();
   $("custom-editor").open = true;
@@ -221,7 +231,7 @@ async function refreshProfiles(selectedId) {
 }
 
 function profileError(field, message) {
-  const control = $(customFields[field]);
+  const control = $(field === "provider_preset" ? "provider-preset" : customFields[field]);
   if (control) {
     control.setAttribute("aria-invalid", "true");
     control.focus();
@@ -231,6 +241,11 @@ function profileError(field, message) {
 }
 
 function validateForm({modelOptional = false} = {}) {
+  if (!$("provider-preset").value) {
+    profileError("provider_preset", "请先选择 Provider。");
+    return null;
+  }
+  $("provider-preset").removeAttribute("aria-invalid");
   for (const id of Object.values(customFields)) $(id).removeAttribute("aria-invalid");
   $("custom-status").classList.remove("error");
   const values = collectFields();
@@ -342,8 +357,9 @@ async function saveCustomProfile(action = "create", targetId = null) {
     if (response.status === 409) {
       pendingConflict = data.existing;
       $("conflict-panel").hidden = false;
-      $("conflict-message").textContent = `${data.reason === "SAME_ENDPOINT_MODEL" ? "同一 Provider、地址和模型已有配置，建议更新" : "显示名称已存在"}：${data.existing.display_name}。${data.existing.source === "user_custom" ? "请选择更新、另存为副本或取消。" : "预置配置不可更新，可另存为副本或取消。"}`;
-      $("conflict-update").disabled = data.existing.source !== "user_custom";
+      const canUpdate = data.allowed_actions?.includes("update") === true && data.existing.source === "user_custom";
+      $("conflict-message").textContent = `${data.reason === "SAME_ENDPOINT_MODEL" ? "同一 Provider、地址和模型已有配置" : "显示名称已存在"}：${data.existing.display_name}。${canUpdate ? "可更新已有自定义配置、另存为副本或取消。" : "预置配置只读，可另存为自定义副本或取消。"}`;
+      $("conflict-update").hidden = !canUpdate;
       return;
     }
     if (!response.ok) {
@@ -365,22 +381,23 @@ async function saveCustomProfile(action = "create", targetId = null) {
   }
 }
 
-function render(data, latency) {
-  const reading = data.observed_facts?.water_quality || {};
-  const runtime = data.runtime || {};
-  const usage = data.usage || {};
-  const displayedProvider = profiles.find((item) => item.profile_id === runtime.profile_id)?.provider || runtime.provider_id;
-  $("model-inference").textContent = data.inference || (data.error_code ? `模型调用失败：${data.error_code}` : "无模型推断");
-  $("model-output").textContent = data.generated_text || (data.error_code ? `模型调用失败：${data.error_code}` : "无模型正文");
+function renderFacts(observedFacts) {
+  const reading = observedFacts?.water_quality || {};
   addPairs("facts", [
     ["水温 (°C)", reading.temperature_c], ["pH", reading.ph],
     ["溶氧 (mg/L)", reading.dissolved_oxygen_mg_l], ["质量", reading.quality],
     ["新鲜度", reading.freshness], ["观测时间", reading.observed_at],
     ["获取时间", reading.retrieved_at], ["数据来源", reading.source],
-    ["检测摘要", data.observed_facts?.detection_summary ? JSON.stringify(data.observed_facts.detection_summary) : null],
+    ["检测摘要", observedFacts?.detection_summary ? JSON.stringify(observedFacts.detection_summary) : null],
   ]);
-  addList("rules", data.rule_results, (li, item) => block(li, `${item.code} · ${item.severity}`, item.message, `规则版本：${item.rule_version}`));
-  addList("evidence", data.evidence, (li, item) => {
+}
+
+function renderRules(rules) {
+  addList("rules", rules, (li, item) => block(li, `${item.code} · ${item.severity}`, item.message, `规则版本：${item.rule_version}`));
+}
+
+function renderEvidence(evidence) {
+  addList("evidence", evidence, (li, item) => {
     const details = document.createElement("details");
     const summary = document.createElement("summary");
     const content = document.createElement("p");
@@ -391,6 +408,20 @@ function render(data, latency) {
     details.append(summary, content, source);
     li.append(details);
   });
+}
+
+function render(data, latency, ttft = null, streaming = false) {
+  const runtime = data.runtime || {};
+  const usage = data.usage || {};
+  const displayedProvider = profiles.find((item) => item.profile_id === runtime.profile_id)?.provider || runtime.provider_id;
+  $("model-inference").hidden = false;
+  $("streaming-output").hidden = !streaming;
+  if (streaming) $("streaming-output").textContent = data.generated_text || $("streaming-output").textContent;
+  $("model-inference").textContent = data.inference || (data.error_code ? `模型调用失败：${data.error_code}` : "无模型推断");
+  $("model-output").textContent = data.generated_text || (data.error_code ? `模型调用失败：${data.error_code}` : "无模型正文");
+  renderFacts(data.observed_facts);
+  renderRules(data.rule_results);
+  renderEvidence(data.evidence);
   addPairs("structured", [
     ["Inference", data.inference], ["解析成功", data.structured_parse_ok ? "是" : "否"],
     ["状态", data.status], ["错误码", data.error_code], ["Trace ID", data.trace_id],
@@ -403,10 +434,106 @@ function render(data, latency) {
     ["Input Tokens", usage.input_tokens], ["Output Tokens", usage.output_tokens],
     ["Total Tokens", usage.total_tokens], ["Reasoning Tokens", usage.reasoning_tokens],
     ["Cached Tokens", usage.cached_input_tokens], ["Usage Source", usage.source],
+    ["TTFT (ms)", ttft],
     ["总耗时 (ms)", latency],
   ]);
   $("empty-state").hidden = true;
   $("results").hidden = false;
+}
+
+function prepareStreamView() {
+  $("empty-state").hidden = true;
+  $("results").hidden = false;
+  $("model-inference").hidden = true;
+  $("streaming-output").hidden = false;
+  $("streaming-output").textContent = "";
+  $("model-output").textContent = "";
+  for (const id of ["facts", "rules", "evidence", "structured", "recommendations", "uncertainty", "runtime"]) {
+    $(id).replaceChildren();
+  }
+}
+
+async function analyzeStreaming(body) {
+  try {
+    prepareStreamView();
+  } catch (_) {
+    setStatus("流式页面显示失败：STREAM_DISPLAY_ERROR", true);
+    return;
+  }
+  const response = await fetch("/api/analyze/stream", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    setStatus(`请求未执行：${data.error_code || `HTTP_${response.status}`}`, true);
+    return;
+  }
+  if (!response.body) {
+    setStatus("流式响应不可用：STREAM_UNAVAILABLE", true);
+    return;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let terminal = false;
+  let runtime = {};
+  let liveUsage = {};
+  while (true) {
+    let done, value;
+    try {
+      ({done, value} = await reader.read());
+    } catch (_) {
+      setStatus("流式连接中断：STREAM_INTERRUPTED", true);
+      return;
+    }
+    buffer += decoder.decode(value || new Uint8Array(), {stream: !done});
+    buffer = buffer.replace(/\r\n/g, "\n");
+    let boundary;
+    while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+      const frame = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const kind = frame.split("\n").find((line) => line.startsWith("event: "))?.slice(7);
+      const dataLine = frame.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
+      if (!kind || !dataLine) continue;
+      let data;
+      try {
+        data = JSON.parse(dataLine);
+      } catch (_) {
+        setStatus("流式事件格式错误：STREAM_PROTOCOL_ERROR", true);
+        return;
+      }
+      try {
+      if (kind === "analysis_started") setStatus("分析已开始，正在准备事实和证据…");
+      if (kind === "facts_ready") {
+        runtime = data.runtime || {};
+        renderFacts(data.observed_facts);
+        setStatus("事实已就绪，正在计算规则…");
+      }
+      if (kind === "rules_ready") renderRules(data.rule_results);
+      if (kind === "evidence_ready") {
+        renderEvidence(data.evidence);
+        setStatus("事实、规则与证据已就绪，等待模型输出…");
+      }
+      if (kind === "content_delta") $("streaming-output").textContent += data.delta || "";
+      if (kind === "usage") {
+        liveUsage = data.usage || {};
+        addPairs("runtime", [["Provider", runtime.provider_id], ["Model", runtime.model],
+          ["Input Tokens", liveUsage.input_tokens], ["Output Tokens", liveUsage.output_tokens],
+          ["Total Tokens", liveUsage.total_tokens], ["Usage Source", liveUsage.source]]);
+      }
+      if (kind === "completed" || kind === "failed") {
+        terminal = true;
+        if (data.result) render(data.result, data.total_latency_ms, data.ttft_ms, true);
+        setStatus(kind === "completed" ? "流式分析完成。" : `流式分析失败：${show(data.error_code)}`, kind === "failed");
+      }
+      } catch (_) {
+        setStatus("流式页面显示失败：STREAM_DISPLAY_ERROR", true);
+        return;
+      }
+    }
+    if (done) break;
+  }
+  if (!terminal) setStatus("流式连接中断：STREAM_INTERRUPTED", true);
 }
 
 async function analyze() {
@@ -418,17 +545,23 @@ async function analyze() {
     return;
   }
   $("analyze").disabled = true;
+  const streaming = $("response-mode").value === "streaming";
   setStatus(real ? "正在等待真实模型…" : "正在执行离线 Mock 分析…");
   try {
+    const body = {
+      profile_id: profile.profile_id,
+      scenario: $("scenario").value,
+      question: $("question").value,
+      confirm_network: real && $("confirm-network").checked,
+    };
+    if (streaming) {
+      await analyzeStreaming(body);
+      return;
+    }
     const response = await fetch("/api/analyze", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        profile_id: profile.profile_id,
-        scenario: $("scenario").value,
-        question: $("question").value,
-        confirm_network: real && $("confirm-network").checked,
-      }),
+      body: JSON.stringify(body),
     });
     const payload = await response.json();
     if (payload.result) {
@@ -459,8 +592,11 @@ async function init() {
       option.textContent = preset.label;
       $("provider-preset").append(option);
     }
-    $("provider-preset").value = "qwen";
-    selectPreset();
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "请选择 Provider";
+    $("provider-preset").prepend(placeholder);
+    newProfile();
     for (const scenario of config.scenarios) {
       const option = document.createElement("option");
       option.value = scenario;
@@ -471,7 +607,6 @@ async function init() {
     $("profile").addEventListener("change", updateProfile);
     $("analyze").addEventListener("click", analyze);
     $("provider-preset").addEventListener("change", selectPreset);
-    $("advanced-mode").addEventListener("change", setAdvancedMode);
     $("new-profile").addEventListener("click", newProfile);
     $("edit-profile").addEventListener("click", editSelected);
     $("delete-profile").addEventListener("click", deleteSelected);
@@ -488,7 +623,6 @@ async function init() {
     }
     $("custom-secret-env").addEventListener("change", () => showSecret($("custom-secret-env").value.trim(), "secret-status"));
     updateSecretRequirement();
-    setAdvancedMode();
   } catch (_) {
     setStatus("页面配置加载失败：CONFIG_ERROR", true);
   }

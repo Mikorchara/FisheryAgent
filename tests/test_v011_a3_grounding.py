@@ -188,7 +188,7 @@ class GroundingAndProfileTests(unittest.TestCase):
         self.assertIn("Cloud 必填", html)
         self.assertIn("只填写变量名", html)
         self.assertIn('id="provider-preset"', html)
-        self.assertIn('id="advanced-mode"', html)
+        self.assertIn('id="advanced-settings"', html)
         self.assertIn("data.field", script)
 
 

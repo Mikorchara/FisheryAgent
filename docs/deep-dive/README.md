@@ -14,5 +14,7 @@
 - [V0.1.1-A3.0.2 Grounding 与自定义 Profile](V0.1.1_A3_0_2_GROUNDING_AND_CUSTOM_PROFILE.md)：记录水质检索排序、事实与背景知识边界、自定义配置持久化和验证结果。
 - [V0.1.1-A3.0.3 UTF-8、Profile 体验与 Qwen 复测](V0.1.1_A3_0_3_UTF8_CUSTOM_PROFILE_QWEN_VALIDATION.md)：记录字段级提示、UTF-8 验证记录和唯一一次真实低氧复测。
 - [V0.1.1-A3.0.4 Custom Profile Manager](V0.1.1_A3_0_4_CUSTOM_PROFILE_MANAGER.md)：记录 Provider 预设、模型查询、显式连接测试和自定义配置管理。
+- [V0.1.1-A3.1 应用级 Streaming 与 Profile 页面整理](V0.1.1_A3_1_APPLICATION_STREAMING.md)：记录流式事件、页面呈现、Secret 边界、离线验证和真实能力限制。
+- [V0.1.1-A3.1.1 Streaming 修复与 Profile 冲突保护](V0.1.1_A3_1_1_STREAMING_BUGFIX_PROFILE_COLLISION.md)：记录浏览器根因、Built-in 只读冲突、一次 Qwen 流式验证及测试结果。
 
 历史报告描述的是编写时的状态。当前环境准备与项目范围请以[文档导航](../README.md)为准。

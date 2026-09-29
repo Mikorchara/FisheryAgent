@@ -149,6 +149,7 @@ class ProfileManagerTests(unittest.TestCase):
         collision = self.client.post("/api/profiles", json=second_fields)
         self.assertEqual(collision.status_code, 409)
         self.assertEqual(collision.get_json()["reason"], "SAME_DISPLAY_NAME")
+        self.assertEqual(collision.get_json()["allowed_actions"], ["update", "copy", "cancel"])
         updated = self.client.post("/api/profiles", json={
             **second_fields, "conflict_action": "update", "conflict_profile_id": first_id})
         self.assertEqual(updated.status_code, 200)
@@ -173,6 +174,49 @@ class ProfileManagerTests(unittest.TestCase):
         self.assertEqual(len(list((self.store_dir / "archive").glob(f"{copy_id}-*.json"))), 1)
         self.assertEqual(self.client.delete("/api/profiles/qwen-plus-experimental").status_code, 403)
 
+    def test_builtin_collision_only_allows_copy_or_cancel(self):
+        builtin = next(p for p in _builtin_profiles() if p.provider_id == "qwen")
+        by_name = self.fields(provider_kind="local", secret_env="",
+                              display_name=builtin.display_name,
+                              base_url="http://localhost:11434/v1")
+        conflict = self.client.post("/api/profiles", json=by_name)
+        self.assertEqual(conflict.status_code, 409)
+        self.assertEqual(conflict.get_json()["existing"]["source"], "built_in")
+        self.assertEqual(conflict.get_json()["allowed_actions"], ["copy", "cancel"])
+        denied = self.client.post("/api/profiles", json={**by_name,
+            "conflict_action": "update", "conflict_profile_id": builtin.profile_id})
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.get_json()["error_code"], "PROFILE_NOT_EDITABLE")
+        copy = self.client.post("/api/profiles", json={**by_name, "conflict_action": "copy"})
+        self.assertEqual(copy.status_code, 201)
+        self.assertEqual(copy.get_json()["profile"]["source"], "user_custom")
+        self.assertIn("副本", copy.get_json()["profile"]["display_name"])
+        mixed = self.client.post("/api/profiles", json=by_name)
+        self.assertEqual(mixed.status_code, 409)
+        self.assertEqual(mixed.get_json()["existing"]["source"], "built_in")
+        self.assertEqual(mixed.get_json()["allowed_actions"], ["copy", "cancel"])
+
+        by_endpoint = self.fields(display_name="另一个 Qwen", provider_id=builtin.provider_id,
+                                  base_url=builtin.base_url, model=builtin.model,
+                                  secret_env=builtin.secret_env)
+        with patch.dict(os.environ, {"DASHSCOPE_API_KEY": "offline-fixture"}):
+            tested = self.client.post("/api/profiles/test", json={**by_endpoint,
+                "method": "models", "confirm_network": True}).get_json()
+            endpoint_collision = self.client.post("/api/profiles", json={**by_endpoint,
+                "test_id": tested["test_id"]})
+            self.assertEqual(endpoint_collision.status_code, 409)
+            self.assertEqual(endpoint_collision.get_json()["reason"], "SAME_ENDPOINT_MODEL")
+            self.assertEqual(endpoint_collision.get_json()["allowed_actions"], ["copy", "cancel"])
+        self.assertEqual(self.client.put(f"/api/profiles/{builtin.profile_id}", json=by_name).status_code, 403)
+
+        mock_name = self.fields(provider_kind="local", secret_env="",
+                                base_url="http://localhost:11434/v1",
+                                display_name="Mock 离线演示")
+        mock_collision = self.client.post("/api/profiles", json=mock_name)
+        self.assertEqual(mock_collision.status_code, 409)
+        self.assertEqual(mock_collision.get_json()["existing"]["profile_id"], "mock-demo")
+        self.assertEqual(mock_collision.get_json()["allowed_actions"], ["copy", "cancel"])
+
     def test_adapter_lists_all_models_without_changing_old_default(self):
         class Client:
             def __init__(self):
@@ -196,10 +240,10 @@ class ProfileManagerTests(unittest.TestCase):
         script = self.client.get("/assets/app.js").get_data(as_text=True)
         for marker in ('id="provider-preset"', 'id="secret-status"',
                        'id="query-models"', 'id="test-profile"',
-                       'id="advanced-fields" hidden', 'id="conflict-panel"',
+                       'id="advanced-settings"', 'id="conflict-panel"',
                        'id="edit-profile"', 'id="delete-profile"'):
             self.assertIn(marker, html)
-        self.assertIn("setAdvancedMode", script)
+        self.assertIn("selectPreset", script)
         self.assertIn("PROFILE_CONFLICT", str(self.client.post("/api/profiles", json={
             **self.fields(provider_kind="local", secret_env="",
                           base_url="http://localhost:11434/v1", model="x",

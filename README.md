@@ -55,6 +55,8 @@ A3.0.3 完善了自定义配置的字段说明与安全错误提示，并将受�
 
 A3.0.4 将自定义配置区整理为带 Qwen、DeepSeek 与通用兼容服务预设的 Profile Manager。模型查询和连接测试只由按钮显式发起；Cloud 保存需要当前连接的一次成功测试。支持用户配置的重名处理、编辑及可恢复删除，仍不保存真实 Key。见 [A3.0.4 记录](docs/deep-dive/V0.1.1_A3_0_4_CUSTOM_PROFILE_MANAGER.md)。
 
+A3.1 在同一固定编排上增加应用级 Streaming，页面可选择 Normal 或 Streaming。流式模式先显示事实、规则与证据，再追加模型正文；最终展示结构化结果、TTFT 和 Usage。A3.1.1 修复了浏览器开始流式请求前的页面异常，并保护 Built-in Profile 的冲突处理。一次真实 Qwen 流式请求成功后，仅对应精确 Qwen Profile 的 Streaming 标为 SUPPORTED，仍属 EXPERIMENTAL；其他真实 Profile 保持 UNKNOWN。见 [A3.1 记录](docs/deep-dive/V0.1.1_A3_1_APPLICATION_STREAMING.md)和[A3.1.1 修复报告](docs/deep-dive/V0.1.1_A3_1_1_STREAMING_BUGFIX_PROFILE_COLLISION.md)。
+
 ## Profile 与 Secret
 
 离线示例位于 `src/fishery_ai/resources/mock/profiles.json`。`cloud-demo` 使用远程 OpenAI 兼容 URL，仅保存 `secret_env: DEEPSEEK_API_KEY` 引用；`local-demo` 使用 `http://localhost:11434/v1`，Key 可为空，模型名是待替换占位符。这个文件是 Mock 演示输入，不是 VERIFIED 预设列表。默认超时为 connect 5 秒、read/stream idle 30 秒、total 120 秒，最多重试一次。仅在尚未输出正文且错误可重试时重试。

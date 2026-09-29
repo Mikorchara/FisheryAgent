@@ -11,7 +11,7 @@ import re
 import time
 import uuid
 
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, request, stream_with_context
 
 from .application import Orchestrator, result_to_dict
 from .contracts import AnalysisRequest, Mode, Status
@@ -100,19 +100,21 @@ def create_app(*, trace_path: Path | None = None,
     def secret_missing(profile: ModelProfile) -> bool:
         return bool(profile.secret_env and not os.environ.get(profile.secret_env))
 
-    def conflict(values: dict, *, exclude_id: str | None = None,
-                 ignore_endpoint: bool = False) -> ModelProfile | None:
+    def conflict(values: dict, *, exclude_id: str | None = None) -> ModelProfile | None:
         remaining = [profile for profile in profiles.values()
-                     if profile.profile_id != MOCK_PROFILE_ID and profile.profile_id != exclude_id]
-        if not ignore_endpoint:
-            for profile in remaining:
+                     if profile.profile_id != exclude_id]
+        # Built-in identity wins even if a user Profile also matches another field.
+        for source in ("built_in", "user_custom"):
+            candidates = [profile for profile in remaining
+                          if sources[profile.profile_id] == source]
+            for profile in candidates:
                 if (profile.provider_id == values["provider_id"]
                         and profile.base_url.rstrip("/") == values["base_url"].rstrip("/")
                         and profile.model == values["model"]):
                     return profile
-        for profile in remaining:
-            if profile.display_name.casefold() == values["display_name"].casefold():
-                return profile
+            for profile in candidates:
+                if profile.display_name.casefold() == values["display_name"].casefold():
+                    return profile
         return None
 
     def conflict_response(profile: ModelProfile, values: dict):
@@ -121,6 +123,9 @@ def create_app(*, trace_path: Path | None = None,
                          and profile.model == values["model"])
         return jsonify({"status": "conflict", "error_code": "PROFILE_CONFLICT",
                         "reason": "SAME_ENDPOINT_MODEL" if same_endpoint else "SAME_DISPLAY_NAME",
+                        "allowed_actions": (["update", "copy", "cancel"]
+                                            if sources[profile.profile_id] == "user_custom"
+                                            else ["copy", "cancel"]),
                         "existing": _profile_public(profile, sources[profile.profile_id])}), 409
 
     def test_is_current(values: dict, test_id: object) -> bool:
@@ -150,17 +155,15 @@ def create_app(*, trace_path: Path | None = None,
                       for p in profiles.values()):
                 number += 1
             values["display_name"] = f"{base_name}（副本 {number}）"
-        old = profiles.get(update_id) if update_id else None
-        unchanged_endpoint = bool(old and old.provider_id == values["provider_id"]
-                                  and old.base_url.rstrip("/") == values["base_url"].rstrip("/")
-                                  and old.model == values["model"])
-        matched = conflict(values, exclude_id=update_id, ignore_endpoint=unchanged_endpoint)
+        matched = conflict(values, exclude_id=update_id)
         if matched and action != "copy":
+            if action == "update" and sources[matched.profile_id] != "user_custom":
+                return error("PROFILE_NOT_EDITABLE", 403)
             if (action == "update" and update_id is None
                     and payload.get("conflict_profile_id") == matched.profile_id
                     and sources[matched.profile_id] == "user_custom"):
                 update_id = matched.profile_id
-                second = conflict(values, exclude_id=update_id, ignore_endpoint=True)
+                second = conflict(values, exclude_id=update_id)
                 if second:
                     return conflict_response(second, values)
             else:
@@ -383,6 +386,40 @@ def create_app(*, trace_path: Path | None = None,
         return jsonify({"result": public,
                         "total_latency_ms": round((time.monotonic() - started) * 1000, 3)}), (
                             200 if result.status == Status.COMPLETED else 502)
+
+    @app.post("/api/analyze/stream")
+    def analyze_stream():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error("INVALID_REQUEST", 400)
+        profile_id, scenario, question = (payload.get("profile_id"), payload.get("scenario"),
+                                          payload.get("question"))
+        if (not isinstance(profile_id, str) or profile_id not in profiles
+                or not isinstance(scenario, str) or scenario not in scenarios
+                or not isinstance(question, str) or not question.strip()
+                or len(question) > 500):
+            return error("INVALID_REQUEST", 400)
+        real = profile_id != MOCK_PROFILE_ID
+        if real and payload.get("confirm_network") is not True:
+            return error("NETWORK_CONFIRMATION_REQUIRED", 403)
+        profile = profiles[profile_id]
+        if real and profile.secret_env and not os.environ.get(profile.secret_env):
+            return error("SECRET_MISSING", 503)
+        gateway = real_gateway_factory() if real else MockGateway()
+        orchestrator = Orchestrator(
+            repository, diagnosis, knowledge, ProfileRegistry([profile]), gateway, traces,
+            resolve_secrets=real,
+        )
+        analysis_request = AnalysisRequest(Mode.CHAT, profile_id, question.strip())
+
+        def events():
+            for item in orchestrator.analyze_stream(analysis_request, scenario=scenario):
+                yield (f"event: {item.kind}\n"
+                       f"data: {json.dumps(item.data, ensure_ascii=False, separators=(',', ':'))}\n\n")
+
+        response = Response(stream_with_context(events()), mimetype="text/event-stream")
+        response.headers["X-Accel-Buffering"] = "no"
+        return response
 
     return app
 
