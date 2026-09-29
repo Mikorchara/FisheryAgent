@@ -60,7 +60,9 @@ class WebUITests(unittest.TestCase):
         self.assertEqual({item["profile_status"] for item in config["profiles"]
                           if item["runtime_type"] == "cloud"}, {"experimental"})
         self.assertIn("partial_stale", config["scenarios"])
-        self.assertNotIn("secret_env", response.get_data(as_text=True))
+        self.assertEqual({item["id"] for item in config["presets"]},
+                         {"qwen", "deepseek", "custom"})
+        self.assertIn("DASHSCOPE_API_KEY", response.get_data(as_text=True))
         self.assertNotIn("api_key", response.get_data(as_text=True))
 
     def test_mock_analyze_uses_existing_flow_and_unavailable_usage(self):

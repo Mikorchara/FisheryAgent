@@ -60,7 +60,9 @@ python -m fishery_ai validate-real --check basic --confirm-network
 
 启动后浏览器访问 `http://127.0.0.1:8765`；可用 `--port 8766` 更换端口。默认只绑定 `127.0.0.1`，默认选中 Mock，完全离线。页面可选已有水质 Mock 场景，也可选 Qwen Plus 与 DeepSeek Flash 的 **EXPERIMENTAL** Cloud Profile。真实分析需勾选 **REAL NETWORK REQUEST**，Cloud 可能产生费用；请求使用当前工作目录 `.env` 或进程环境中的 Secret，页面不会提供 Key 输入框或返回 Key。关闭终端即可停止本地服务。
 
-页面的“添加 CUSTOM Profile”区域可填写显示名、Provider、OpenAI-compatible Adapter、Base URL、Model、Secret 环境变量名及 Cloud/Local 类型。配置保存在被 Git 忽略的 `outputs/custom_profiles/custom-*.json`，重启后仍可选择；文件只保存环境变量名，不保存 Key。若新 Profile 的 Secret 只写在 `.env`，保存后需重启 Web 服务，让启动入口加载该变量。缺少 Secret 时返回 `SECRET_MISSING`。自定义 Profile 的高级 Capability 均保持 UNKNOWN，页面没有高级参数编辑器。
+页面的“管理模型配置”区域可选择 Qwen、DeepSeek 或 Custom OpenAI-compatible 预设。简单模式可修改 Base URL、Model 和显示名；高级模式可修改 `provider_id`、Adapter、Secret 环境变量名及 Cloud/Local 类型。页面显示当前进程中 `DASHSCOPE_API_KEY: PRESENT/MISSING` 等状态，只显示变量名，不显示 Key。启动 Web 时会从项目根目录 `.env` 加载环境变量；**运行中修改 `.env` 后需重启 Web 服务**。缺少 Secret 时返回 `SECRET_MISSING`。
+
+“查询可用模型”仅在点击后访问所选服务的模型列表接口；若不支持，可手动填写 Model ID。“测试连接”默认检查模型列表；必要时手动切换到可能收费的最小 Chat。Cloud Profile 保存前必须完成当前连接字段的一次成功测试；Local 可直接保存。重名或相同 Provider+地址+模型时，可明确选择更新、另存副本或取消。仅用户配置可编辑和删除；删除移入 `outputs/custom_profiles/archive/`。用户配置文件位于被 Git 忽略的 `outputs/custom_profiles/`，不含 Key；高级 Capability 仍为 UNKNOWN。详见 [A3.0.4 实施记录](deep-dive/V0.1.1_A3_0_4_CUSTOM_PROFILE_MANAGER.md)。
 
 页面复用固定 Orchestrator，当前仅提供非流式 Chat 分析。RAG 证据是背景知识，模型推断与建议单独标注；证据和原始模型正文默认折叠。运行时 Trace 写入被 Git 忽略的 `outputs/web-traces.jsonl`，不写 Prompt、模型正文或 Secret。离线测试使用 Flask 进程内测试客户端与假 Gateway，绝不请求 Cloud。详情见 [A3.0 实施记录](deep-dive/V0.1.1_A3_0_DEVELOPER_WEB_UI.md)与[A3.0.2 Grounding/Custom Profile 记录](deep-dive/V0.1.1_A3_0_2_GROUNDING_AND_CUSTOM_PROFILE.md)。
 

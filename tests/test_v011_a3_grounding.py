@@ -99,7 +99,7 @@ class GroundingAndProfileTests(unittest.TestCase):
 
     def test_custom_profile_persists_reload_and_secret_is_only_reference(self):
         client = self._app().test_client()
-        created = client.post("/api/profiles", json=self._profile())
+        created = client.post("/api/profiles", json=self._profile(provider_kind="local"))
         self.assertEqual(created.status_code, 201)
         public = created.get_json()["profile"]
         self.assertEqual(public["source"], "user_custom")
@@ -186,8 +186,9 @@ class GroundingAndProfileTests(unittest.TestCase):
         self.assertIn("Built-in Profiles", script)
         self.assertIn("User Custom Profiles", script)
         self.assertIn("Cloud 必填", html)
-        self.assertIn("这里只填环境变量名", html)
-        self.assertIn("示例”只作说明", html)
+        self.assertIn("只填写变量名", html)
+        self.assertIn('id="provider-preset"', html)
+        self.assertIn('id="advanced-mode"', html)
         self.assertIn("data.field", script)
 
 

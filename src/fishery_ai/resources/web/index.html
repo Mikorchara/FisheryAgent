@@ -24,36 +24,61 @@
         <label for="profile">Runtime / Model</label>
         <select id="profile"></select>
         <p id="profile-meta" class="helper"></p>
+        <p id="selected-secret-status" class="helper">Secret 状态：待检查</p>
 
         <details id="custom-editor" class="custom-editor">
-          <summary>添加 CUSTOM Profile</summary>
-          <p class="helper">“示例”只作说明，不会自动填入。仅保存连接信息与 Secret 环境变量名；高级能力默认 UNKNOWN。</p>
+          <summary>管理模型配置</summary>
+          <p class="helper">选择预设后可修改地址和模型。页面只保存 Secret 环境变量名，不接收真实 Key；高级能力默认 UNKNOWN。</p>
+          <div class="manager-actions">
+            <button id="new-profile" class="secondary" type="button">新建</button>
+            <button id="edit-profile" class="secondary" type="button" hidden>编辑所选</button>
+            <button id="delete-profile" class="danger" type="button" hidden>删除所选</button>
+          </div>
+          <label for="provider-preset">Provider <span class="required">必选</span></label>
+          <select id="provider-preset"></select>
+          <label class="mode-toggle"><input id="advanced-mode" type="checkbox"> 高级模式</label>
+          <p class="helper">简单模式保留常用字段；高级模式可修改 Provider 标识、Adapter、Secret 变量名和部署类型。</p>
           <label for="custom-name">Display Name <span class="required">必填</span></label>
           <input id="custom-name" type="text" maxlength="80" required>
-          <p class="helper">页面中显示的名称。示例：学校实验服务。</p>
-          <label for="custom-provider">provider_id <span class="required">必填</span></label>
-          <input id="custom-provider" type="text" maxlength="64" required>
-          <p class="helper">小写机器标识；示例：school_llm。若选择 generic_openai_chat，填写 custom。</p>
-          <label for="custom-adapter">adapter_id <span class="required">必选</span></label>
-          <select id="custom-adapter">
-            <option value="openai_chat">openai_chat</option>
-            <option value="generic_openai_chat">generic_openai_chat</option>
-          </select>
-          <p class="helper">OpenAI-compatible Chat Completions；通用类型仅发送最小参数。</p>
-          <label for="custom-url">base_url <span class="required">必填</span></label>
+          <p class="helper">选择框中的名称；示例不会自动填写。</p>
+          <label for="custom-url">Base URL <span class="required">必填</span></label>
           <input id="custom-url" type="url" required>
-          <p class="helper">服务提供的 API 根地址；示例：https://example.com/v1（不要填 Key 或 URL 凭据）。</p>
-          <label for="custom-model">model <span class="required">必填</span></label>
+          <p class="helper">OpenAI-compatible API 根地址，不要在 URL 中放凭据。</p>
+          <label for="custom-model">Model ID <span class="required">必填</span></label>
           <input id="custom-model" type="text" maxlength="128" required>
-          <p class="helper">服务端提供的精确模型 ID；示例：school-model。</p>
-          <label for="custom-secret-env">secret_env <span id="custom-secret-requirement" class="required">Cloud 必填</span></label>
-          <input id="custom-secret-env" type="text" autocomplete="off" required>
-          <p id="custom-secret-help" class="helper">这里只填环境变量名，例如 DASHSCOPE_API_KEY；绝不填写真实 API Key。Cloud 必填，Local 可留空。</p>
-          <label for="custom-deployment">deployment <span class="required">必选</span></label>
-          <select id="custom-deployment"><option value="cloud">cloud</option><option value="local">local</option></select>
-          <p class="helper">cloud 为远程服务；local 为本地 OpenAI-compatible 服务。两者请求都需显式确认。</p>
-          <button id="save-profile" class="secondary" type="button">保存本地 Profile</button>
+          <select id="model-options" hidden><option value="">选择查询到的模型</option></select>
+          <p class="helper">可手动输入；查询模型成功不代表思考、Streaming 或 Tool Calling 已验证。</p>
+          <button id="query-models" class="secondary" type="button">查询可用模型（真实联网）</button>
+          <p id="models-status" class="status" role="status" aria-live="polite"></p>
+          <p id="secret-status" class="secret-status" role="status" aria-live="polite">Secret 状态：待检查</p>
+          <div class="advanced-fields" id="advanced-fields" hidden>
+            <label for="custom-provider">provider_id <span class="required">必填</span></label>
+            <input id="custom-provider" type="text" maxlength="64" required>
+            <p class="helper">小写机器标识；generic_openai_chat 使用 custom。</p>
+            <label for="custom-adapter">adapter_id <span class="required">必选</span></label>
+            <select id="custom-adapter"><option value="openai_chat">openai_chat</option><option value="generic_openai_chat">generic_openai_chat</option></select>
+            <p class="helper">当前均使用 OpenAI-compatible Chat Completions 传输。</p>
+            <label for="custom-secret-env">secret_env <span id="custom-secret-requirement" class="required">Cloud 必填</span></label>
+            <input id="custom-secret-env" type="text" autocomplete="off" required>
+            <p class="helper">只填写变量名，例如 DASHSCOPE_API_KEY；绝不填写真实 API Key。</p>
+            <label for="custom-deployment">deployment <span class="required">必选</span></label>
+            <select id="custom-deployment"><option value="cloud">cloud</option><option value="local">local</option></select>
+            <p class="helper">cloud 为远程服务；local 为本地服务。</p>
+          </div>
+          <label for="test-method">连接测试方式</label>
+          <select id="test-method"><option value="models">模型列表（优先，非生成）</option><option value="chat">最小 Chat（可能产生费用）</option></select>
+          <button id="test-profile" class="secondary" type="button">测试连接（真实联网）</button>
+          <p id="test-status" class="status" role="status" aria-live="polite"></p>
+          <button id="save-profile" class="secondary" type="button">保存 Profile</button>
           <p id="custom-status" class="status" role="status" aria-live="polite"></p>
+          <div id="conflict-panel" class="conflict-panel" hidden>
+            <p id="conflict-message"></p>
+            <div class="manager-actions">
+              <button id="conflict-update" class="secondary" type="button">更新原配置</button>
+              <button id="conflict-copy" class="secondary" type="button">另存为副本</button>
+              <button id="conflict-cancel" class="secondary" type="button">取消</button>
+            </div>
+          </div>
         </details>
 
         <label for="scenario">水质场景</label>

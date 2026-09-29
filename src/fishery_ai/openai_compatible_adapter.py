@@ -129,7 +129,7 @@ class OpenAICompatibleAdapter:
                     else GatewayError(code))
         return GatewayError("SDK_ERROR")
 
-    def list_models(self, runtime: RuntimeSnapshot) -> list[dict]:
+    def list_models(self, runtime: RuntimeSnapshot, *, all_models: bool = False) -> list[dict]:
         """Explicit diagnostic only; return allowlisted public model metadata."""
         self._check_secret(runtime)
         client = None
@@ -138,15 +138,20 @@ class OpenAICompatibleAdapter:
             response = client.models.list()
             result = []
             for item in response.data:
-                if getattr(item, "id", None) != runtime.model:
+                model_id = getattr(item, "id", None)
+                if not isinstance(model_id, str) or not model_id or len(model_id) > 128:
+                    continue
+                if not all_models and model_id != runtime.model:
                     continue
                 extra = getattr(item, "model_extra", None) or {}
                 result.append({
-                    "id": item.id,
+                    "id": model_id,
                     "context_length": extra.get("context_length"),
                     "max_output_tokens": extra.get("max_output_tokens"),
                     "reasoning_effort_levels": extra.get("reasoning_effort_levels"),
                 })
+                if len(result) >= 200:
+                    break
             return result
         except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
             raise self._map_error(exc) from exc

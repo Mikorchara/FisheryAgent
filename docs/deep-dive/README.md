@@ -13,5 +13,6 @@
 - [V0.1.1-A3.0 开发验证 Web UI](V0.1.1_A3_0_DEVELOPER_WEB_UI.md)：记录本地页面的薄 Web 架构、启动方法、Secret 边界和离线测试。
 - [V0.1.1-A3.0.2 Grounding 与自定义 Profile](V0.1.1_A3_0_2_GROUNDING_AND_CUSTOM_PROFILE.md)：记录水质检索排序、事实与背景知识边界、自定义配置持久化和验证结果。
 - [V0.1.1-A3.0.3 UTF-8、Profile 体验与 Qwen 复测](V0.1.1_A3_0_3_UTF8_CUSTOM_PROFILE_QWEN_VALIDATION.md)：记录字段级提示、UTF-8 验证记录和唯一一次真实低氧复测。
+- [V0.1.1-A3.0.4 Custom Profile Manager](V0.1.1_A3_0_4_CUSTOM_PROFILE_MANAGER.md)：记录 Provider 预设、模型查询、显式连接测试和自定义配置管理。
 
 历史报告描述的是编写时的状态。当前环境准备与项目范围请以[文档导航](../README.md)为准。

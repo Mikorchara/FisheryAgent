@@ -32,6 +32,13 @@ button:disabled { opacity: .55; cursor: wait; }
 .custom-editor label:not(.confirm) { margin-top: 13px; }
 .required { margin-left: 5px; color: #9b4a28; font-size: 11px; font-weight: 700; }
 .custom-editor [aria-invalid="true"] { border-color: #b64b42; background: #fff7f5; }
+.manager-actions { display: flex; gap: 7px; margin-top: 8px; }
+.manager-actions button { margin-top: 5px; padding: 8px 9px; justify-content: center; font-size: 12px; }
+.mode-toggle { display: flex; gap: 7px; align-items: center; margin-top: 15px; font-size: 13px; font-weight: 700; }
+.secret-status { padding: 10px 12px; margin: 12px 0; border-radius: 8px; background: #eaf4ec; font-size: 12px; overflow-wrap: anywhere; }
+.conflict-panel { margin-top: 12px; padding: 10px; border: 1px solid #d9b46a; border-radius: 8px; background: #fff8e9; font-size: 12px; }
+button.danger { background: #a4483c; }
+button.danger:hover { background: #82362d; }
 button.secondary { margin-top: 17px; background: #e1eee4; color: #1a6448; }
 button.secondary:hover { background: #d0e7d7; }
 .status { min-height: 34px; margin: 13px 0 0; color: #667b78; font-size: 12px; line-height: 1.5; }

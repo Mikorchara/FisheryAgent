@@ -53,6 +53,8 @@ A3.0.2 对水质问题的检索排序和 Prompt Grounding 做了小范围加固�
 
 A3.0.3 完善了自定义配置的字段说明与安全错误提示，并将受控 Qwen 验证结果写入 UTF-8 本地记录，避免终端 GBK 导致结果丢失。一次真实低氧复测通过了疾病诊断与药物建议的限定 Grounding 检查；具体操作数值仍需独立核查。见 [A3.0.3 记录](docs/deep-dive/V0.1.1_A3_0_3_UTF8_CUSTOM_PROFILE_QWEN_VALIDATION.md)。
 
+A3.0.4 将自定义配置区整理为带 Qwen、DeepSeek 与通用兼容服务预设的 Profile Manager。模型查询和连接测试只由按钮显式发起；Cloud 保存需要当前连接的一次成功测试。支持用户配置的重名处理、编辑及可恢复删除，仍不保存真实 Key。见 [A3.0.4 记录](docs/deep-dive/V0.1.1_A3_0_4_CUSTOM_PROFILE_MANAGER.md)。
+
 ## Profile 与 Secret
 
 离线示例位于 `src/fishery_ai/resources/mock/profiles.json`。`cloud-demo` 使用远程 OpenAI 兼容 URL，仅保存 `secret_env: DEEPSEEK_API_KEY` 引用；`local-demo` 使用 `http://localhost:11434/v1`，Key 可为空，模型名是待替换占位符。这个文件是 Mock 演示输入，不是 VERIFIED 预设列表。默认超时为 connect 5 秒、read/stream idle 30 秒、total 120 秒，最多重试一次。仅在尚未输出正文且错误可重试时重试。
