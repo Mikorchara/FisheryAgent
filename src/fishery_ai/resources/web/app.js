@@ -4,7 +4,8 @@ let presets = [];
 let editingId = null;
 let testId = null;
 let testedFingerprint = null;
-let pendingConflict = null;
+let formMode = "view";
+let formRevision = 0;
 
 function show(value) {
   return value === null || value === undefined || value === "" ? "unavailable" : String(value);
@@ -80,12 +81,14 @@ function renderProfiles(selectedId = "mock-demo") {
 function updateProfile() {
   const profile = selectedProfile();
   if (!profile) return;
-  if (editingId && editingId !== profile.profile_id) {
-    editingId = null;
-    $("save-profile").textContent = "保存 Profile";
-    invalidateTest();
-    $("custom-status").textContent = "已退出原配置的编辑；当前表单保存后将新建配置。";
-  }
+  const revision = ++formRevision;
+  editingId = null;
+  setFormMode("view");
+  // Clear the previous selection while the new profile details are loading.
+  $("provider-preset").value = "";
+  for (const id of Object.values(customFields)) $(id).value = "";
+  $("secret-status").textContent = "";
+  invalidateTest();
   $("profile-meta").textContent = `${profile.provider} · ${profile.model} · ${profile.profile_status.toUpperCase()} · ${profile.runtime_type} · ${profile.source === "user_custom" ? "用户自定义" : "预置"}`;
   const real = profile.runtime_type !== "mock";
   $("real-warning").hidden = !real;
@@ -93,20 +96,24 @@ function updateProfile() {
   setStatus(real ? "此 Profile 会发起真实模型请求，请先确认。" : "Mock 模式始终离线。", false);
   $("edit-profile").hidden = profile.source !== "user_custom";
   $("delete-profile").hidden = profile.source !== "user_custom";
-  if (!real) {
-    $("selected-secret-status").textContent = "Mock 无需 Secret";
-  } else {
-    const selectedId = profile.profile_id;
-    const preset = presets.find((item) => item.provider_id === profile.provider);
-    const name = preset?.secret_env || "";
-    if (profile.source === "user_custom") {
-      fetch(`/api/profiles/${encodeURIComponent(selectedId)}`).then((response) => response.json())
-        .then((data) => { if ($("profile").value === selectedId) showSecret(data.fields?.secret_env || "", "selected-secret-status"); })
-        .catch(() => { $("selected-secret-status").textContent = "Secret 状态暂不可用"; });
-    } else {
-      showSecret(name, "selected-secret-status");
-    }
-  }
+  $("custom-editor").open = true;
+  $("custom-status").textContent = "正在读取所选配置…";
+  $("selected-secret-status").textContent = real ? "Secret 状态：待检查" : "Mock 无需 Secret";
+  fetch(`/api/profiles/${encodeURIComponent(profile.profile_id)}`)
+    .then((response) => { if (!response.ok) throw new Error("PROFILE_READ_FAILED"); return response.json(); })
+    .then((data) => {
+      if (revision !== formRevision || $("profile").value !== profile.profile_id) return;
+      fillProfileForm(data.fields, profile);
+      $("custom-status").textContent = data.editable
+        ? "正在查看自定义配置；点击“编辑所选”可修改连接参数，名称不可修改。"
+        : "预置配置只读；如需新配置，请点击“新建”。";
+      const current = () => revision === formRevision && $("profile").value === profile.profile_id;
+      showSecret(data.fields.secret_env, "secret-status", current);
+      if (real) showSecret(data.fields.secret_env, "selected-secret-status", current);
+    })
+    .catch(() => {
+      if (revision === formRevision) $("custom-status").textContent = "读取所选配置失败：PROFILE_READ_FAILED";
+    });
 }
 
 const customFields = {
@@ -114,6 +121,28 @@ const customFields = {
   adapter_id: "custom-adapter", base_url: "custom-url", model: "custom-model",
   secret_env: "custom-secret-env", provider_kind: "custom-deployment",
 };
+
+function setFormMode(mode) {
+  formMode = mode;
+  const editable = mode !== "view";
+  $("provider-preset").disabled = !editable;
+  for (const id of Object.values(customFields)) $(id).disabled = !editable;
+  $("custom-name").readOnly = mode === "edit";
+  $("model-options").disabled = !editable;
+  $("test-method").disabled = !editable;
+  for (const id of ["query-models", "test-profile", "save-profile"]) $(id).hidden = !editable;
+  $("save-profile").textContent = mode === "edit" ? "保存连接修改" : "创建 Profile";
+}
+
+function fillProfileForm(fields, profile) {
+  $("provider-preset").value = profile.runtime_type === "mock" ? "built_in_mock"
+    : presets.some((preset) => preset.id === fields.provider_id) ? fields.provider_id : "custom";
+  for (const [field, id] of Object.entries(customFields)) $(id).value = fields[field] || "";
+  $("model-options").hidden = true;
+  $("models-status").textContent = "";
+  $("advanced-settings").open = false;
+  updateSecretRequirement();
+}
 
 function updateSecretRequirement() {
   const cloud = $("custom-deployment").value === "cloud";
@@ -137,10 +166,10 @@ function invalidateTest() {
   $("test-status").textContent = "连接字段已改变；Cloud 保存前需重新测试。";
 }
 
-async function showSecret(name, targetId) {
+async function showSecret(name, targetId, isCurrent = () => true) {
   const target = $(targetId);
   if (!name) {
-    target.textContent = "Secret：未配置（Local 可不需要）";
+    if (isCurrent()) target.textContent = "Secret：未配置（Local 可不需要）";
     return;
   }
   try {
@@ -149,13 +178,14 @@ async function showSecret(name, targetId) {
       body: JSON.stringify({secret_env: name}),
     });
     const data = await response.json();
-    target.textContent = `${name}: ${response.ok ? data.status : "MISSING"}`;
+    if (isCurrent()) target.textContent = `${name}: ${response.ok ? data.status : "MISSING"}`;
   } catch (_) {
-    target.textContent = `${name}: 状态不可用`;
+    if (isCurrent()) target.textContent = `${name}: 状态不可用`;
   }
 }
 
 function selectPreset() {
+  if (formMode === "view") return;
   const preset = presets.find((item) => item.id === $("provider-preset").value);
   if (!preset) return;
   $("custom-provider").value = preset.provider_id;
@@ -171,8 +201,9 @@ function selectPreset() {
 }
 
 function newProfile() {
+  ++formRevision;
   editingId = null;
-  $("save-profile").textContent = "保存 Profile";
+  setFormMode("new");
   $("custom-name").value = "";
   $("provider-preset").value = "";
   $("custom-provider").value = "";
@@ -184,31 +215,33 @@ function newProfile() {
   $("model-options").hidden = true;
   $("advanced-settings").open = false;
   $("models-status").textContent = "";
+  $("custom-editor").open = true;
   showSecret("", "secret-status");
   updateSecretRequirement();
   invalidateTest();
   $("custom-status").textContent = "新配置尚未保存。";
-  $("conflict-panel").hidden = true;
 }
 
 async function editSelected() {
   const selected = selectedProfile();
   if (!selected || selected.source !== "user_custom") return;
-  const response = await fetch(`/api/profiles/${encodeURIComponent(selected.profile_id)}`);
-  if (!response.ok) return profileError("profile", "无法读取所选配置。");
-  const data = await response.json();
+  const revision = ++formRevision;
+  let data;
+  try {
+    const response = await fetch(`/api/profiles/${encodeURIComponent(selected.profile_id)}`);
+    if (!response.ok) throw new Error("PROFILE_READ_FAILED");
+    data = await response.json();
+  } catch (_) {
+    return profileError("profile", "无法读取所选配置。");
+  }
+  if (revision !== formRevision || $("profile").value !== selected.profile_id) return;
   editingId = selected.profile_id;
-  $("save-profile").textContent = "更新 Profile";
-  $("provider-preset").value = presets.some((p) => p.id === data.fields.provider_id)
-    ? data.fields.provider_id : "custom";
-  for (const [field, id] of Object.entries(customFields)) $(id).value = data.fields[field] || "";
-  updateSecretRequirement();
-  $("advanced-settings").open = false;
+  fillProfileForm(data.fields, selected);
+  setFormMode("edit");
   showSecret(data.fields.secret_env, "secret-status");
   invalidateTest();
   $("custom-editor").open = true;
-  $("custom-status").textContent = "正在编辑所选 CUSTOM Profile；Cloud 修改保存前需重新测试。";
-  $("conflict-panel").hidden = true;
+  $("custom-status").textContent = "可修改连接参数；Display Name 创建后不可修改。Cloud 修改保存前需重新测试。";
 }
 
 async function deleteSelected() {
@@ -219,7 +252,6 @@ async function deleteSelected() {
   const data = await response.json();
   if (!response.ok) return profileError("profile", data.error_code || "删除失败");
   await refreshProfiles("mock-demo");
-  newProfile();
   $("custom-status").textContent = "配置已从列表移除，原文件保存在本地 archive。";
 }
 
@@ -241,6 +273,7 @@ function profileError(field, message) {
 }
 
 function validateForm({modelOptional = false} = {}) {
+  if (formMode === "view") return null;
   if (!$("provider-preset").value) {
     profileError("provider_preset", "请先选择 Provider。");
     return null;
@@ -335,7 +368,7 @@ async function testConnection() {
   }
 }
 
-async function saveCustomProfile(action = "create", targetId = null) {
+async function saveCustomProfile() {
   const values = validateForm();
   if (!values) return;
   if (values.provider_kind === "cloud" && (!testId || testedFingerprint !== connectionFingerprint(values))) {
@@ -346,32 +379,23 @@ async function saveCustomProfile(action = "create", targetId = null) {
   button.disabled = true;
   $("custom-status").textContent = "正在保存本地 Profile…";
   try {
-    const directEdit = editingId && action === "create";
+    const directEdit = editingId !== null;
     const url = directEdit ? `/api/profiles/${encodeURIComponent(editingId)}` : "/api/profiles";
     const response = await fetch(url, {
       method: directEdit ? "PUT" : "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({...values, test_id: testId, conflict_action: action,
-        conflict_profile_id: targetId}),
+      body: JSON.stringify({...values, test_id: testId}),
     });
     const data = await response.json();
-    if (response.status === 409) {
-      pendingConflict = data.existing;
-      $("conflict-panel").hidden = false;
-      const canUpdate = data.allowed_actions?.includes("update") === true && data.existing.source === "user_custom";
-      $("conflict-message").textContent = `${data.reason === "SAME_ENDPOINT_MODEL" ? "同一 Provider、地址和模型已有配置" : "显示名称已存在"}：${data.existing.display_name}。${canUpdate ? "可更新已有自定义配置、另存为副本或取消。" : "预置配置只读，可另存为自定义副本或取消。"}`;
-      $("conflict-update").hidden = !canUpdate;
-      return;
-    }
     if (!response.ok) {
-      profileError(data.field || "profile", data.message || show(data.error_code));
+      profileError(data.error_code === "PROFILE_NAME_EXISTS" || data.error_code === "PROFILE_NAME_IMMUTABLE"
+        ? "display_name" : data.field || "profile",
+      data.error_code === "PROFILE_NAME_EXISTS" ? "PROFILE_NAME_EXISTS：名称已被使用，请另取一个名称。"
+        : data.error_code === "PROFILE_NAME_IMMUTABLE" ? "PROFILE_NAME_IMMUTABLE：如需改名，请删除后重新创建。"
+          : data.message || show(data.error_code));
       return;
     }
-    editingId = data.profile.profile_id;
-    $("save-profile").textContent = "更新 Profile";
     testId = null;
     testedFingerprint = null;
-    pendingConflict = null;
-    $("conflict-panel").hidden = true;
     await refreshProfiles(data.profile.profile_id);
     $("custom-status").textContent = "已保存。若 Secret 仅写在 .env，请重启 Web 服务后使用。";
   } catch (_) {
@@ -585,7 +609,6 @@ async function init() {
     const config = await response.json();
     profiles = config.profiles;
     presets = config.presets;
-    renderProfiles();
     for (const preset of presets) {
       const option = document.createElement("option");
       option.value = preset.id;
@@ -596,7 +619,12 @@ async function init() {
     placeholder.value = "";
     placeholder.textContent = "请选择 Provider";
     $("provider-preset").prepend(placeholder);
-    newProfile();
+    const mock = document.createElement("option");
+    mock.value = "built_in_mock";
+    mock.textContent = "Mock（预置，只读）";
+    mock.disabled = true;
+    $("provider-preset").append(mock);
+    renderProfiles();
     for (const scenario of config.scenarios) {
       const option = document.createElement("option");
       option.value = scenario;
@@ -613,12 +641,9 @@ async function init() {
     $("query-models").addEventListener("click", queryModels);
     $("model-options").addEventListener("change", () => { if ($("model-options").value) $("custom-model").value = $("model-options").value; invalidateTest(); });
     $("test-profile").addEventListener("click", testConnection);
-    $("save-profile").addEventListener("click", () => saveCustomProfile());
-    $("conflict-update").addEventListener("click", () => { if (pendingConflict) saveCustomProfile("update", pendingConflict.profile_id); });
-    $("conflict-copy").addEventListener("click", () => saveCustomProfile("copy"));
-    $("conflict-cancel").addEventListener("click", () => { pendingConflict = null; $("conflict-panel").hidden = true; });
+    $("save-profile").addEventListener("click", saveCustomProfile);
     $("custom-deployment").addEventListener("change", updateSecretRequirement);
-    for (const field of ("custom-provider", "custom-adapter", "custom-url", "custom-model", "custom-secret-env", "custom-deployment")) {
+    for (const field of ["custom-provider", "custom-adapter", "custom-url", "custom-model", "custom-secret-env", "custom-deployment"]) {
       $(field).addEventListener("input", invalidateTest);
     }
     $("custom-secret-env").addEventListener("change", () => showSecret($("custom-secret-env").value.trim(), "secret-status"));

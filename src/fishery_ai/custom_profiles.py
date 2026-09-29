@@ -103,6 +103,9 @@ class CustomProfileStore:
 
     def create(self, fields: dict) -> ModelProfile:
         values = self.validate(fields)
+        if any(profile.display_name.casefold() == values["display_name"].casefold()
+               for profile in self.load()):
+            raise ProfileFieldError("display_name", "NAME_EXISTS", "Profile 名称已存在，请使用唯一名称。")
         profile_id = "custom-" + uuid.uuid4().hex
         profile, data = self.build(values, profile_id)
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -119,6 +122,9 @@ class CustomProfileStore:
         path = self.directory / f"{profile_id}.json"
         if not path.is_file():
             raise FileNotFoundError(profile_id)
+        original_name = json.loads(path.read_text(encoding="utf-8"))["display_name"]
+        if values["display_name"] != original_name:
+            raise ProfileFieldError("display_name", "IMMUTABLE", "Profile 创建后不能改名；如需改名，请删除后重新创建。")
         profile, data = self.build(values, profile_id)
         temporary = self.directory / f".{profile_id}-{uuid.uuid4().hex}.tmp"
         try:

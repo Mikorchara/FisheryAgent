@@ -66,6 +66,9 @@ def create_app(*, trace_path: Path | None = None,
     store = CustomProfileStore(custom_profiles_dir or Path.cwd() / "outputs/custom_profiles")
     builtins = _builtin_profiles()
     profiles = {profile.profile_id: profile for profile in (*builtins, *store.load())}
+    names = [profile.display_name.casefold() for profile in profiles.values()]
+    if len(names) != len(set(names)):
+        raise ValueError("duplicate Profile display_name")
     sources = {profile.profile_id: "built_in" for profile in builtins}
     sources.update({profile_id: "user_custom" for profile_id in profiles if profile_id not in sources})
     successful_tests: dict[str, tuple[tuple[str, ...], float]] = {}
@@ -85,8 +88,7 @@ def create_app(*, trace_path: Path | None = None,
 
     def submitted_fields(payload: dict) -> dict:
         return {key: value for key, value in payload.items()
-                if key not in ("test_id", "conflict_action", "conflict_profile_id",
-                               "confirm_network", "method")}
+                if key not in ("test_id", "confirm_network", "method")}
 
     def draft(payload: dict, *, model_optional: bool = False) -> tuple[dict, ModelProfile]:
         fields = submitted_fields(payload)
@@ -100,33 +102,10 @@ def create_app(*, trace_path: Path | None = None,
     def secret_missing(profile: ModelProfile) -> bool:
         return bool(profile.secret_env and not os.environ.get(profile.secret_env))
 
-    def conflict(values: dict, *, exclude_id: str | None = None) -> ModelProfile | None:
-        remaining = [profile for profile in profiles.values()
-                     if profile.profile_id != exclude_id]
-        # Built-in identity wins even if a user Profile also matches another field.
-        for source in ("built_in", "user_custom"):
-            candidates = [profile for profile in remaining
-                          if sources[profile.profile_id] == source]
-            for profile in candidates:
-                if (profile.provider_id == values["provider_id"]
-                        and profile.base_url.rstrip("/") == values["base_url"].rstrip("/")
-                        and profile.model == values["model"]):
-                    return profile
-            for profile in candidates:
-                if profile.display_name.casefold() == values["display_name"].casefold():
-                    return profile
-        return None
-
-    def conflict_response(profile: ModelProfile, values: dict):
-        same_endpoint = (profile.provider_id == values["provider_id"]
-                         and profile.base_url.rstrip("/") == values["base_url"].rstrip("/")
-                         and profile.model == values["model"])
-        return jsonify({"status": "conflict", "error_code": "PROFILE_CONFLICT",
-                        "reason": "SAME_ENDPOINT_MODEL" if same_endpoint else "SAME_DISPLAY_NAME",
-                        "allowed_actions": (["update", "copy", "cancel"]
-                                            if sources[profile.profile_id] == "user_custom"
-                                            else ["copy", "cancel"]),
-                        "existing": _profile_public(profile, sources[profile.profile_id])}), 409
+    def name_exists(name: str, *, exclude_id: str | None = None) -> bool:
+        return any(profile.profile_id != exclude_id
+                   and profile.display_name.casefold() == name.casefold()
+                   for profile in profiles.values())
 
     def test_is_current(values: dict, test_id: object) -> bool:
         if values["provider_kind"] != "cloud":
@@ -137,44 +116,23 @@ def create_app(*, trace_path: Path | None = None,
         return time.monotonic() - at <= TEST_TTL_S and fingerprint == _fingerprint(values)
 
     def save_profile(payload: dict, *, update_id: str | None = None):
+        if update_id is not None and sources.get(update_id) != "user_custom":
+            return error("PROFILE_NOT_EDITABLE", 403)
         try:
             values = store.validate(submitted_fields(payload))
         except ProfileFieldError as exc:
             return profile_error(exc)
+        if update_id is not None and values["display_name"] != profiles[update_id].display_name:
+            return error("PROFILE_NAME_IMMUTABLE", 400)
+        if name_exists(values["display_name"], exclude_id=update_id):
+            return error("PROFILE_NAME_EXISTS", 409)
         if not test_is_current(values, payload.get("test_id")):
             return error("CONNECTION_TEST_REQUIRED", 400)
-        if update_id is not None and sources.get(update_id) != "user_custom":
-            return error("PROFILE_NOT_EDITABLE", 403)
-        action = payload.get("conflict_action", "create")
-        if action not in ("create", "copy", "update"):
-            return error("INVALID_PROFILE", 400)
-        if action == "copy" and update_id is None:
-            base_name = values["display_name"][:65]
-            number = 1
-            while any(p.display_name.casefold() == f"{base_name}（副本 {number}）".casefold()
-                      for p in profiles.values()):
-                number += 1
-            values["display_name"] = f"{base_name}（副本 {number}）"
-        matched = conflict(values, exclude_id=update_id)
-        if matched and action != "copy":
-            if action == "update" and sources[matched.profile_id] != "user_custom":
-                return error("PROFILE_NOT_EDITABLE", 403)
-            if (action == "update" and update_id is None
-                    and payload.get("conflict_profile_id") == matched.profile_id
-                    and sources[matched.profile_id] == "user_custom"):
-                update_id = matched.profile_id
-                second = conflict(values, exclude_id=update_id)
-                if second:
-                    return conflict_response(second, values)
-            else:
-                return conflict_response(matched, values)
-        if action == "update" and update_id is None:
-            return error("PROFILE_NOT_EDITABLE", 403)
-        if action == "copy" and update_id is not None:
-            return error("INVALID_PROFILE", 400)
         try:
             profile = store.update(update_id, values) if update_id else store.create(values)
         except ProfileFieldError as exc:
+            if exc.reason == "NAME_EXISTS":
+                return error("PROFILE_NAME_EXISTS", 409)
             return profile_error(exc)
         except FileNotFoundError:
             return error("PROFILE_NOT_FOUND", 404)
@@ -316,10 +274,11 @@ def create_app(*, trace_path: Path | None = None,
 
     @app.get("/api/profiles/<profile_id>")
     def get_profile(profile_id: str):
-        if sources.get(profile_id) != "user_custom":
+        if profile_id not in profiles:
             return error("PROFILE_NOT_FOUND", 404)
         profile = profiles[profile_id]
-        return jsonify({"profile": _profile_public(profile, "user_custom"),
+        return jsonify({"profile": _profile_public(profile, sources[profile_id]),
+                        "editable": sources[profile_id] == "user_custom",
                         "fields": {"display_name": profile.display_name,
                                    "provider_id": profile.provider_id,
                                    "adapter_id": profile.adapter_id,

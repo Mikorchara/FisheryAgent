@@ -134,21 +134,106 @@ test('page rendering failure is not mislabeled as a network failure', async () =
   assert.equal(fetchCalled, false);
 });
 
-test('Built-in collision hides update, user collision shows it', async () => {
-  let sourceType = 'built_in';
-  const page = makePage(async () => ({status: 409, ok: false, json: async () => ({
-    reason: 'SAME_ENDPOINT_MODEL', existing: {profile_id: 'existing',
-      display_name: '已有配置', source: sourceType},
-    allowed_actions: sourceType === 'built_in' ? ['copy', 'cancel'] : ['update', 'copy', 'cancel'],
-  })}));
+test('Runtime selection immediately fills the actual read-only Profile, then edit and new modes', async () => {
+  const profiles = [
+    {profile_id: 'qwen-plus-experimental', display_name: 'Qwen 预置', provider: 'qwen',
+      model: 'qwen-plus', profile_status: 'experimental', runtime_type: 'cloud', source: 'built_in'},
+    {profile_id: 'custom-one', display_name: '学校服务', provider: 'school',
+      model: 'school-model', profile_status: 'custom', runtime_type: 'local', source: 'user_custom'},
+    {profile_id: 'mock-demo', display_name: 'Mock', provider: 'mock',
+      model: 'offline-mock', profile_status: 'custom', runtime_type: 'mock', source: 'built_in'},
+  ];
+  const details = {
+    'qwen-plus-experimental': {editable: false, fields: {display_name: 'Qwen 预置',
+      provider_id: 'qwen', adapter_id: 'openai_chat',
+      base_url: 'https://example.invalid/v1', model: 'qwen-plus',
+      secret_env: 'DASHSCOPE_API_KEY', provider_kind: 'cloud'}},
+    'custom-one': {editable: true, fields: {display_name: '学校服务',
+      provider_id: 'school', adapter_id: 'openai_chat',
+      base_url: 'http://localhost:11434/v1', model: 'school-model',
+      secret_env: '', provider_kind: 'local'}},
+    'mock-demo': {editable: false, fields: {display_name: 'Mock', provider_id: 'custom',
+      adapter_id: 'generic_openai_chat', base_url: 'http://mock.invalid/v1',
+      model: 'offline-mock', secret_env: '', provider_kind: 'mock'}},
+  };
+  const page = makePage(async (url) => ({ok: true, json: async () =>
+    url === '/api/secret-status' ? {status: 'MISSING'} : details[url.split('/').at(-1)]}));
+  vm.runInContext(`profiles = ${JSON.stringify(profiles)}; presets = [{id:'qwen',provider_id:'qwen'}, {id:'custom',provider_id:'custom'}]`, page.context);
+  page.element('profile').value = 'qwen-plus-experimental';
+  vm.runInContext('updateProfile()', page.context);
+  await new Promise(setImmediate);
+  assert.equal(page.element('custom-name').value, 'Qwen 预置');
+  assert.equal(page.element('custom-model').value, 'qwen-plus');
+  assert.equal(page.element('custom-url').value, 'https://example.invalid/v1');
+  assert.equal(page.element('custom-name').disabled, true);
+  assert.equal(page.element('edit-profile').hidden, true);
+  assert.equal(page.element('delete-profile').hidden, true);
+  assert.equal(page.element('save-profile').hidden, true);
+
+  page.element('profile').value = 'custom-one';
+  vm.runInContext('updateProfile()', page.context);
+  await new Promise(setImmediate);
+  assert.equal(page.element('custom-name').value, '学校服务');
+  assert.equal(page.element('custom-model').value, 'school-model');
+  assert.equal(page.element('edit-profile').hidden, false);
+  assert.equal(page.element('delete-profile').hidden, false);
+  await vm.runInContext('editSelected()', page.context);
+  assert.equal(page.element('custom-name').readOnly, true);
+  assert.equal(page.element('custom-name').disabled, false);
+  assert.equal(page.element('custom-model').disabled, false);
+  assert.equal(page.element('save-profile').hidden, false);
+
+  vm.runInContext('newProfile()', page.context);
+  for (const id of ['provider-preset', 'custom-name', 'custom-url', 'custom-model']) {
+    assert.equal(page.element(id).value, '');
+  }
+  assert.equal(page.element('custom-name').readOnly, false);
+  assert.equal(page.element('custom-name').disabled, false);
+});
+
+test('duplicate name shows PROFILE_NAME_EXISTS without any conflict actions', async () => {
+  const page = makePage(async () => ({status: 409, ok: false,
+    json: async () => ({error_code: 'PROFILE_NAME_EXISTS'})}));
+  vm.runInContext('newProfile()', page.context);
   const values = {'provider-preset': 'custom', 'custom-name': '测试配置',
     'custom-provider': 'custom', 'custom-adapter': 'generic_openai_chat',
     'custom-url': 'http://localhost:11434/v1', 'custom-model': 'demo',
     'custom-secret-env': '', 'custom-deployment': 'local'};
   for (const [id, value] of Object.entries(values)) page.element(id).value = value;
   await vm.runInContext('saveCustomProfile()', page.context);
-  assert.equal(page.element('conflict-update').hidden, true);
-  sourceType = 'user_custom';
-  await vm.runInContext('saveCustomProfile()', page.context);
-  assert.equal(page.element('conflict-update').hidden, false);
+  assert.match(page.element('custom-status').textContent, /PROFILE_NAME_EXISTS/);
+  assert.equal(page.element('conflict-panel'), null);
+});
+
+test('late Profile response cannot overwrite a newer selection or clean New form', async () => {
+  let finishQwen;
+  const qwenReply = new Promise((resolve) => { finishQwen = resolve; });
+  const details = {editable: false, fields: {display_name: 'Qwen 预置',
+    provider_id: 'qwen', adapter_id: 'openai_chat', base_url: 'https://example.invalid/v1',
+    model: 'qwen-plus', secret_env: '', provider_kind: 'cloud'}};
+  const page = makePage(async (url) => {
+    if (url.endsWith('/qwen-plus-experimental')) return qwenReply;
+    return {ok: true, json: async () => ({editable: true, fields: {
+      display_name: '学校服务', provider_id: 'school', adapter_id: 'openai_chat',
+      base_url: 'http://localhost:11434/v1', model: 'school-model',
+      secret_env: '', provider_kind: 'local'}})};
+  });
+  vm.runInContext(`profiles = ${JSON.stringify([
+    {profile_id: 'qwen-plus-experimental', display_name: 'Qwen', provider: 'qwen',
+      model: 'qwen-plus', profile_status: 'experimental', runtime_type: 'cloud', source: 'built_in'},
+    {profile_id: 'custom-one', display_name: '学校服务', provider: 'school',
+      model: 'school-model', profile_status: 'custom', runtime_type: 'local', source: 'user_custom'},
+  ])}; presets = [{id:'qwen',provider_id:'qwen'}, {id:'custom',provider_id:'custom'}]`, page.context);
+  page.element('profile').value = 'qwen-plus-experimental';
+  vm.runInContext('updateProfile()', page.context);
+  assert.equal(page.element('custom-name').value, '');
+  assert.equal(page.element('custom-model').value, '');
+  page.element('profile').value = 'custom-one';
+  vm.runInContext('updateProfile()', page.context);
+  await new Promise(setImmediate);
+  finishQwen({ok: true, json: async () => details});
+  await new Promise(setImmediate);
+  assert.equal(page.element('custom-name').value, '学校服务');
+  vm.runInContext('newProfile()', page.context);
+  assert.equal(page.element('custom-name').value, '');
 });

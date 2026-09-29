@@ -38,7 +38,6 @@ button:disabled { opacity: .55; cursor: wait; }
 .advanced-settings summary { cursor: pointer; font-size: 12px; font-weight: 700; color: #246549; }
 #delete-profile { flex: 0 0 auto; width: auto; min-width: 70px; }
 .secret-status { padding: 10px 12px; margin: 12px 0; border-radius: 8px; background: #eaf4ec; font-size: 12px; overflow-wrap: anywhere; }
-.conflict-panel { margin-top: 12px; padding: 10px; border: 1px solid #d9b46a; border-radius: 8px; background: #fff8e9; font-size: 12px; }
 button.danger { background: #a4483c; }
 button.danger:hover { background: #82362d; }
 button.secondary { margin-top: 17px; background: #e1eee4; color: #1a6448; }

@@ -28,7 +28,7 @@
 
         <details id="custom-editor" class="custom-editor">
           <summary>管理模型配置</summary>
-          <p class="helper">选择预设后可修改地址和模型。页面只保存 Secret 环境变量名，不接收真实 Key；高级能力默认 UNKNOWN。</p>
+          <p class="helper">顶部选择后查看当前配置；自定义配置可编辑连接参数，名称创建后不可修改。页面只保存 Secret 环境变量名，不接收真实 Key。</p>
           <div class="manager-actions">
             <button id="new-profile" class="secondary" type="button">新建</button>
             <button id="edit-profile" class="secondary" type="button" hidden>编辑所选</button>
@@ -38,7 +38,7 @@
           <select id="provider-preset"></select>
           <label for="custom-name">Display Name <span class="required">必填</span></label>
           <input id="custom-name" type="text" maxlength="80" required>
-          <p class="helper">选择框中的名称；示例不会自动填写。</p>
+          <p class="helper">新建时填写唯一名称；如需改名，请删除后重新创建。</p>
           <label for="custom-url">Base URL <span class="required">必填</span></label>
           <input id="custom-url" type="url" required>
           <p class="helper">OpenAI-compatible API 根地址，不要在 URL 中放凭据。</p>
@@ -71,14 +71,6 @@
           <p id="test-status" class="status" role="status" aria-live="polite"></p>
           <button id="save-profile" class="secondary" type="button">保存 Profile</button>
           <p id="custom-status" class="status" role="status" aria-live="polite"></p>
-          <div id="conflict-panel" class="conflict-panel" hidden>
-            <p id="conflict-message"></p>
-            <div class="manager-actions">
-              <button id="conflict-update" class="secondary" type="button">更新原配置</button>
-              <button id="conflict-copy" class="secondary" type="button">另存为副本</button>
-              <button id="conflict-cancel" class="secondary" type="button">取消</button>
-            </div>
-          </div>
         </details>
 
         <label for="scenario">水质场景</label>

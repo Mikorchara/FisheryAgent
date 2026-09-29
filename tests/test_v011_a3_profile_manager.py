@@ -10,6 +10,7 @@ import os
 import socket
 import unittest
 
+from fishery_ai.custom_profiles import CustomProfileStore, ProfileFieldError
 from fishery_ai.model_gateway import GatewayError, ModelResponse, ProfileRegistry
 from fishery_ai.openai_compatible_adapter import OpenAICompatibleAdapter
 from fishery_ai.web import _builtin_profiles, create_app
@@ -125,8 +126,11 @@ class ProfileManagerTests(unittest.TestCase):
             self.assertEqual(reused.get_json()["error_code"], "CONNECTION_TEST_REQUIRED")
             profile_id = created.get_json()["profile"]["profile_id"]
             untested_edit = self.client.put(f"/api/profiles/{profile_id}", json=self.fields(
-                display_name="改名"))
+                model="other-model"))
             self.assertEqual(untested_edit.get_json()["error_code"], "CONNECTION_TEST_REQUIRED")
+            rename = self.client.put(f"/api/profiles/{profile_id}", json=self.fields(
+                display_name="改名"))
+            self.assertEqual(rename.get_json()["error_code"], "PROFILE_NAME_IMMUTABLE")
 
     def test_unsupported_models_endpoint_can_use_explicit_chat(self):
         with patch.dict(os.environ, {"SCHOOL_LLM_API_KEY": "offline-fixture"}):
@@ -139,62 +143,70 @@ class ProfileManagerTests(unittest.TestCase):
             self.assertEqual(fallback.status_code, 200)
             self.assertEqual(self.gateway.chat_calls, 1)
 
-    def test_duplicate_update_copy_edit_and_soft_delete(self):
+    def test_unique_name_immutable_edit_and_soft_delete(self):
         first = self.client.post("/api/profiles", json=self.fields(
             provider_kind="local", secret_env="", base_url="http://localhost:11434/v1"))
         self.assertEqual(first.status_code, 201)
         first_id = first.get_json()["profile"]["profile_id"]
         second_fields = self.fields(provider_kind="local", secret_env="",
                                     base_url="http://localhost:11434/v1", model="second-model")
-        collision = self.client.post("/api/profiles", json=second_fields)
-        self.assertEqual(collision.status_code, 409)
-        self.assertEqual(collision.get_json()["reason"], "SAME_DISPLAY_NAME")
-        self.assertEqual(collision.get_json()["allowed_actions"], ["update", "copy", "cancel"])
-        updated = self.client.post("/api/profiles", json={
-            **second_fields, "conflict_action": "update", "conflict_profile_id": first_id})
-        self.assertEqual(updated.status_code, 200)
-        self.assertEqual(updated.get_json()["profile"]["profile_id"], first_id)
         duplicate = self.client.post("/api/profiles", json=second_fields)
-        self.assertEqual(duplicate.get_json()["reason"], "SAME_ENDPOINT_MODEL")
-        copied = self.client.post("/api/profiles", json={
+        self.assertEqual(duplicate.status_code, 409)
+        self.assertEqual(duplicate.get_json()["error_code"], "PROFILE_NAME_EXISTS")
+        legacy_copy = self.client.post("/api/profiles", json={
             **second_fields, "conflict_action": "copy"})
-        self.assertEqual(copied.status_code, 201)
-        copy_id = copied.get_json()["profile"]["profile_id"]
-        self.assertIn("副本", copied.get_json()["profile"]["display_name"])
-        details = self.client.get(f"/api/profiles/{copy_id}").get_json()
+        self.assertEqual(legacy_copy.get_json()["error_code"], "INVALID_PROFILE")
+        self.assertEqual(len(list(self.store_dir.glob("custom-*.json"))), 1)
+
+        renamed = self.client.put(f"/api/profiles/{first_id}", json={
+            **second_fields, "display_name": "新的名称"})
+        self.assertEqual(renamed.get_json()["error_code"], "PROFILE_NAME_IMMUTABLE")
+        with self.assertRaises(ProfileFieldError) as caught:
+            CustomProfileStore(self.store_dir).update(first_id, {
+                **second_fields, "display_name": "新的名称"})
+        self.assertEqual(caught.exception.reason, "IMMUTABLE")
+        edit = self.client.put(f"/api/profiles/{first_id}", json=second_fields)
+        self.assertEqual(edit.status_code, 200)
+        self.assertEqual(edit.get_json()["profile"]["profile_id"], first_id)
+        details = self.client.get(f"/api/profiles/{first_id}").get_json()
+        self.assertTrue(details["editable"])
+        self.assertEqual(details["fields"]["display_name"], "学校服务")
+        self.assertEqual(details["fields"]["model"], "second-model")
         self.assertEqual(details["fields"]["secret_env"], "")
         self.assertNotIn("api_key", str(details))
-        edit = self.client.put(f"/api/profiles/{copy_id}", json={
-            **second_fields, "display_name": "编辑后副本", "model": "third-model"})
-        self.assertEqual(edit.status_code, 200)
-        removed = self.client.delete(f"/api/profiles/{copy_id}")
+
+        same_endpoint = self.client.post("/api/profiles", json={
+            **second_fields, "display_name": "第二个服务"})
+        self.assertEqual(same_endpoint.status_code, 201)
+        self.assertEqual(same_endpoint.get_json()["profile"]["display_name"], "第二个服务")
+        ascii_name = self.client.post("/api/profiles", json={
+            **second_fields, "display_name": "School AI"})
+        self.assertEqual(ascii_name.status_code, 201)
+        folded = self.client.post("/api/profiles", json={
+            **second_fields, "display_name": "school ai"})
+        self.assertEqual(folded.get_json()["error_code"], "PROFILE_NAME_EXISTS")
+        with self.assertRaises(ProfileFieldError) as duplicate_store:
+            CustomProfileStore(self.store_dir).create({
+                **second_fields, "display_name": "school ai"})
+        self.assertEqual(duplicate_store.exception.reason, "NAME_EXISTS")
+        removed = self.client.delete(f"/api/profiles/{first_id}")
         self.assertEqual(removed.status_code, 200)
-        self.assertEqual(self.client.get(f"/api/profiles/{copy_id}").status_code, 404)
-        self.assertFalse((self.store_dir / f"{copy_id}.json").exists())
-        self.assertEqual(len(list((self.store_dir / "archive").glob(f"{copy_id}-*.json"))), 1)
+        self.assertEqual(self.client.get(f"/api/profiles/{first_id}").status_code, 404)
+        self.assertFalse((self.store_dir / f"{first_id}.json").exists())
+        self.assertEqual(len(list((self.store_dir / "archive").glob(f"{first_id}-*.json"))), 1)
         self.assertEqual(self.client.delete("/api/profiles/qwen-plus-experimental").status_code, 403)
 
-    def test_builtin_collision_only_allows_copy_or_cancel(self):
+    def test_builtin_names_are_reserved_and_profiles_are_readonly(self):
         builtin = next(p for p in _builtin_profiles() if p.provider_id == "qwen")
         by_name = self.fields(provider_kind="local", secret_env="",
                               display_name=builtin.display_name,
                               base_url="http://localhost:11434/v1")
         conflict = self.client.post("/api/profiles", json=by_name)
         self.assertEqual(conflict.status_code, 409)
-        self.assertEqual(conflict.get_json()["existing"]["source"], "built_in")
-        self.assertEqual(conflict.get_json()["allowed_actions"], ["copy", "cancel"])
+        self.assertEqual(conflict.get_json()["error_code"], "PROFILE_NAME_EXISTS")
         denied = self.client.post("/api/profiles", json={**by_name,
             "conflict_action": "update", "conflict_profile_id": builtin.profile_id})
-        self.assertEqual(denied.status_code, 403)
-        self.assertEqual(denied.get_json()["error_code"], "PROFILE_NOT_EDITABLE")
-        copy = self.client.post("/api/profiles", json={**by_name, "conflict_action": "copy"})
-        self.assertEqual(copy.status_code, 201)
-        self.assertEqual(copy.get_json()["profile"]["source"], "user_custom")
-        self.assertIn("副本", copy.get_json()["profile"]["display_name"])
-        mixed = self.client.post("/api/profiles", json=by_name)
-        self.assertEqual(mixed.status_code, 409)
-        self.assertEqual(mixed.get_json()["existing"]["source"], "built_in")
-        self.assertEqual(mixed.get_json()["allowed_actions"], ["copy", "cancel"])
+        self.assertEqual(denied.get_json()["error_code"], "INVALID_PROFILE")
 
         by_endpoint = self.fields(display_name="另一个 Qwen", provider_id=builtin.provider_id,
                                   base_url=builtin.base_url, model=builtin.model,
@@ -204,18 +216,22 @@ class ProfileManagerTests(unittest.TestCase):
                 "method": "models", "confirm_network": True}).get_json()
             endpoint_collision = self.client.post("/api/profiles", json={**by_endpoint,
                 "test_id": tested["test_id"]})
-            self.assertEqual(endpoint_collision.status_code, 409)
-            self.assertEqual(endpoint_collision.get_json()["reason"], "SAME_ENDPOINT_MODEL")
-            self.assertEqual(endpoint_collision.get_json()["allowed_actions"], ["copy", "cancel"])
+            self.assertEqual(endpoint_collision.status_code, 201)
         self.assertEqual(self.client.put(f"/api/profiles/{builtin.profile_id}", json=by_name).status_code, 403)
+        builtin_details = self.client.get(f"/api/profiles/{builtin.profile_id}").get_json()
+        self.assertFalse(builtin_details["editable"])
+        self.assertEqual(builtin_details["fields"]["base_url"], builtin.base_url)
+        self.assertEqual(builtin_details["fields"]["model"], builtin.model)
+        self.assertEqual(builtin_details["fields"]["secret_env"], builtin.secret_env)
+        self.assertNotIn("api_key", str(builtin_details))
 
         mock_name = self.fields(provider_kind="local", secret_env="",
                                 base_url="http://localhost:11434/v1",
                                 display_name="Mock 离线演示")
         mock_collision = self.client.post("/api/profiles", json=mock_name)
         self.assertEqual(mock_collision.status_code, 409)
-        self.assertEqual(mock_collision.get_json()["existing"]["profile_id"], "mock-demo")
-        self.assertEqual(mock_collision.get_json()["allowed_actions"], ["copy", "cancel"])
+        self.assertEqual(mock_collision.get_json()["error_code"], "PROFILE_NAME_EXISTS")
+        self.assertFalse(self.client.get("/api/profiles/mock-demo").get_json()["editable"])
 
     def test_adapter_lists_all_models_without_changing_old_default(self):
         class Client:
@@ -240,15 +256,16 @@ class ProfileManagerTests(unittest.TestCase):
         script = self.client.get("/assets/app.js").get_data(as_text=True)
         for marker in ('id="provider-preset"', 'id="secret-status"',
                        'id="query-models"', 'id="test-profile"',
-                       'id="advanced-settings"', 'id="conflict-panel"',
+                       'id="advanced-settings"',
                        'id="edit-profile"', 'id="delete-profile"'):
             self.assertIn(marker, html)
+        self.assertNotIn('id="conflict-panel"', html)
         self.assertIn("selectPreset", script)
-        self.assertIn("PROFILE_CONFLICT", str(self.client.post("/api/profiles", json={
+        self.assertIn("PROFILE_NAME_EXISTS", str(self.client.post("/api/profiles", json={
             **self.fields(provider_kind="local", secret_env="",
                           base_url="http://localhost:11434/v1", model="x",
                           display_name="Qwen Plus（实验）")}).get_json()))
-        self.assertEqual(self.client.get("/api/profiles/qwen-plus-experimental").status_code, 404)
+        self.assertEqual(self.client.get("/api/profiles/qwen-plus-experimental").status_code, 200)
         self.assertEqual(self.client.put("/api/profiles/qwen-plus-experimental", json=self.fields(
             provider_kind="local", secret_env="")).status_code, 403)
 

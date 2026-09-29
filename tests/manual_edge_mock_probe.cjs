@@ -44,6 +44,19 @@ async function main() {
       await delay(100);
     }
     if (!ready) throw Error('PAGE_NOT_READY');
+    await evaluate("(()=>{const select=document.querySelector('#profile');select.value='qwen-plus-experimental';select.dispatchEvent(new Event('change'));return true})()");
+    let synced = false;
+    for (let count = 0; count < 50; count++) {
+      synced = await evaluate("document.querySelector('#custom-model').value==='qwen-plus' && document.querySelector('#custom-name').disabled");
+      if (synced) break;
+      await delay(100);
+    }
+    console.log('PROFILE_SYNC', synced ? 'PASS' : 'FAIL');
+    if (!synced) throw Error('PROFILE_SYNC_FAILED');
+    const clean = await evaluate("(()=>{document.querySelector('#new-profile').click();return ['provider-preset','custom-name','custom-url','custom-model'].every(id=>document.getElementById(id).value==='')})()");
+    console.log('NEW_PROFILE_CLEAN', clean ? 'PASS' : 'FAIL');
+    if (!clean) throw Error('NEW_PROFILE_NOT_CLEAN');
+    await evaluate("(()=>{const select=document.querySelector('#profile');select.value='mock-demo';select.dispatchEvent(new Event('change'));return true})()");
     await evaluate("document.querySelector('#response-mode').value='streaming'; document.querySelector('#analyze').click(); true");
     let status = '';
     for (let count = 0; count < 100; count++) {
