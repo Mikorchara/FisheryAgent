@@ -41,7 +41,7 @@
 
 ## V0.1.1-A2：DeepSeek Cloud 验证进度
 
-上一轮以实验配置 `deepseek-v4-flash` 完成最小 Chat Completion、Reasoning AUTO 和 ON 三项请求，响应实际报告 `deepseek-flash`；OFF 与 effort 探测遇连接/超时错误。当前实验 Profile 已将请求 Model ID 更新为 `deepseek-flash`，仍为 **EXPERIMENTAL**。本轮 A2.1 网络诊断的 `/models` 步骤超时，未继续发送模型生成请求。逐项证据见 [A2 历史报告](docs/deep-dive/V0.1.1_A2_DEEPSEEK_VALIDATION_REPORT.md)和 [A2.1 后续报告](docs/deep-dive/V0.1.1_A2_1_DEEPSEEK_COMPATIBILITY_AND_NETWORK_DIAGNOSTICS.md)。
+先前以实验配置 `deepseek-v4-flash` 完成最小 Chat Completion、Reasoning AUTO 和 ON 三项请求，响应实际报告 `deepseek-flash`；OFF 与 effort 探测遇连接/超时错误。当前实验 Profile 的请求 Model ID 已更新为 `deepseek-flash`，仍为 **EXPERIMENTAL**。A2.1 的 `/models` 网络探针曾超时；随后 Qwen 与 DeepSeek 各一次最小 Chat Completion 均成功，但高级能力和 Fishery 全链路仍未验证。逐项证据见 [A2 历史报告](docs/deep-dive/V0.1.1_A2_DEEPSEEK_VALIDATION_REPORT.md)、[A2.1 网络诊断](docs/deep-dive/V0.1.1_A2_1_DEEPSEEK_COMPATIBILITY_AND_NETWORK_DIAGNOSTICS.md)及 [Cloud 对照测试](docs/deep-dive/V0.1.1_A2_2_QWEN_NETWORK_CONTROL_TEST.md)。
 
 真实入口为 `python -m fishery_ai validate-real --check basic --confirm-network`，只在显式执行时从当前工作目录的被忽略 `.env` 加载 Secret 并可能产生费用。默认 `demo` 和离线测试仍不联网。
 
