@@ -23,8 +23,8 @@ from .domain import DiagnosisService
 from .knowledge import KnowledgeService
 from .model_gateway import (GatewayError, MockGateway, ModelGateway, ModelMessage,
                             ModelProfile, ModelRequest, ProfileRegistry)
-from .model_options import (CapabilitySource, ReasoningMode, ReasoningOptions,
-                            Support)
+from .model_options import (CapabilitySource, GenerationOptions, OptionValidationError,
+                            ReasoningMode, ReasoningOptions, Support, validate_options)
 from .observability import JsonlTraceSink
 from .openai_compatible_adapter import OpenAICompatibleAdapter
 from .repositories import MockRepository
@@ -40,24 +40,46 @@ def _profile_public(profile: ModelProfile, source: str) -> dict:
         profile.capabilities.service_id == profile.service_id
         and profile.capabilities.model_id == profile.model
         and profile.capabilities.base_url == profile.base_url
+        and profile.capabilities.adapter_id == profile.adapter_id
     )
+    capabilities = profile.capabilities
+    def capability(name: str) -> dict:
+        status = getattr(capabilities, name).value if capability_scope_matches else Support.UNKNOWN.value
+        return {"status": (getattr(capabilities, name).value if capability_scope_matches
+                           else Support.UNKNOWN.value),
+                "source": (capabilities.source_for(name).value
+                           if capability_scope_matches and status != Support.UNKNOWN.value
+                           else CapabilitySource.UNKNOWN.value)}
+    reasoning_modes = ["auto"]
+    if capability("reasoning_on")["status"] == "supported":
+        reasoning_modes.append("on")
+    if capability("reasoning_off")["status"] == "supported":
+        reasoning_modes.append("off")
     return {"profile_id": profile.profile_id, "display_name": profile.display_name,
             "provider": "mock" if profile.profile_id == MOCK_PROFILE_ID else profile.service_id,
             "service_id": profile.service_id, "model_family": profile.model_family,
             "provider_id": profile.provider_id,
             "model": profile.model, "profile_status": profile.profile_status.value,
+            "base_url": profile.base_url, "adapter_id": profile.adapter_id,
+            "secret_env": profile.secret_env or "",
             "runtime_type": "mock" if profile.profile_id == MOCK_PROFILE_ID else profile.provider_kind,
             "source": source,
             "capabilities": {
-                "streaming": (profile.capabilities.streaming.value if capability_scope_matches
-                              else "unknown"),
+                "streaming": capability("streaming")["status"],
                 "streaming_scope_matches": capability_scope_matches,
-                "source": (profile.capabilities.source_for("streaming").value
-                           if capability_scope_matches else CapabilitySource.UNKNOWN.value),
+                "source": capability("streaming")["source"],
+                "thinking_on": capability("reasoning_on"),
+                "thinking_off": capability("reasoning_off"),
+                "reasoning_effort": capability("reasoning_effort"),
+                "structured_output": capability("structured_output"),
+                "tool_calling": capability("tool_calling"),
+                "thinking_default": (capabilities.thinking_default if capability_scope_matches
+                                     else None),
+                "effort_values": (list(capabilities.effort_values) if capability_scope_matches
+                                  else []),
             },
-            "reasoning_modes": (["auto", "on", "off"]
-                                if OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(profile)
-                                else ["auto"])}
+            "reasoning_modes": reasoning_modes,
+            "default_reasoning_mode": profile.default_reasoning.mode.value}
 
 
 def _fingerprint(values: dict[str, str]) -> tuple[str, ...]:
@@ -72,7 +94,8 @@ def _builtin_profiles() -> tuple[ModelProfile, ...]:
         adapter_id="generic_openai_chat", provider_id="custom",
     )
     real = []
-    for name in ("qwen_experimental.json", "deepseek_experimental.json"):
+    for name in ("qwen_experimental.json", "deepseek_experimental.json",
+                 "ollama_qwen35_local.json"):
         path = RESOURCE_ROOT.joinpath("profiles", name)
         payload = json.loads(path.read_text(encoding="utf-8"))
         real.extend(ModelProfile.from_dict(item) for item in payload["profiles"])
@@ -118,9 +141,15 @@ def create_app(*, trace_path: Path | None = None,
         mode = payload.get("reasoning_mode")
         if not isinstance(mode, str) or mode not in {item.value for item in ReasoningMode}:
             return None, "INVALID_REQUEST"
-        if not OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(profile):
-            return None, "OPTION_UNSUPPORTED"
-        return ReasoningOptions(ReasoningMode(mode)), None
+        effort = payload.get("reasoning_effort")
+        if effort is not None and not isinstance(effort, str):
+            return None, "INVALID_REQUEST"
+        reasoning = ReasoningOptions(ReasoningMode(mode), effort)
+        try:
+            validate_options(GenerationOptions(), reasoning, profile.capabilities)
+        except OptionValidationError as exc:
+            return None, exc.code
+        return reasoning, None
 
     def submitted_fields(payload: dict) -> dict:
         return {key: value for key, value in payload.items()
@@ -212,7 +241,8 @@ def create_app(*, trace_path: Path | None = None,
                     "model": profile.model, "secret_env": profile.secret_env,
                     "provider_kind": profile.provider_kind, "provider_id": profile.provider_id}
                    for name, label in (("dashscope", "Qwen · DashScope"),
-                                       ("deepseek_api", "DeepSeek API"))
+                                       ("deepseek_api", "DeepSeek API"),
+                                       ("ollama", "Ollama · 本地"))
                    for profile in (known[name],)]
         presets.append({"id": "custom", "label": "Custom OpenAI-compatible",
                         "service_id": "custom", "model_family": "unknown",
@@ -347,7 +377,7 @@ def create_app(*, trace_path: Path | None = None,
         runtime = ProfileRegistry([profile]).snapshot(profile_id)
         probe_capabilities = replace(profile.capabilities, streaming=Support.SUPPORTED,
                                      service_id=profile.service_id, base_url=profile.base_url,
-                                     model_id=profile.model)
+                                     model_id=profile.model, adapter_id=profile.adapter_id)
         runtime = replace(runtime, capabilities=probe_capabilities, max_retries=0)
         started = time.monotonic()
         try:
@@ -380,6 +410,80 @@ def create_app(*, trace_path: Path | None = None,
         if not isinstance(payload, dict):
             return error("INVALID_PROFILE", 400)
         return save_profile(payload, update_id=profile_id)
+
+    @app.post("/api/profiles/<profile_id>/metadata")
+    def fetch_profile_metadata(profile_id: str):
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or payload.get("confirm_network") is not True:
+            return error("NETWORK_CONFIRMATION_REQUIRED", 403)
+        profile = profiles.get(profile_id)
+        if profile is None:
+            return error("PROFILE_NOT_FOUND", 404)
+        if not OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(profile):
+            return error("METADATA_UNSUPPORTED", 400)
+        runtime = ProfileRegistry([profile]).snapshot(profile_id)
+        try:
+            values, default = real_gateway_factory().fetch_ollama_thinking_metadata(runtime)
+            profiles[profile_id] = capability_store.save_thinking_metadata(
+                profile, list(values), default,
+                datetime.now(timezone.utc).isoformat())
+        except GatewayError as exc:
+            code = exc.code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,40}", exc.code) else "GATEWAY_ERROR"
+            return error(code, 502)
+        except (OSError, ValueError, TypeError, KeyError):
+            return error("METADATA_INVALID", 502)
+        except Exception:
+            return error("INTERNAL_ERROR", 500)
+        return jsonify({"status": "success",
+                        "profile": _profile_public(profiles[profile_id], sources[profile_id])})
+
+    @app.post("/api/profiles/<profile_id>/thinking-probe")
+    def probe_thinking(profile_id: str):
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or payload.get("confirm_network") is not True:
+            return error("NETWORK_CONFIRMATION_REQUIRED", 403)
+        profile = profiles.get(profile_id)
+        if profile is None:
+            return error("PROFILE_NOT_FOUND", 404)
+        mode_text = payload.get("mode")
+        if mode_text not in (ReasoningMode.ON.value, ReasoningMode.OFF.value):
+            return error("INVALID_REQUEST", 400)
+        if not OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(profile):
+            return error("CAPABILITY_PROBE_UNSUPPORTED", 400)
+        if secret_missing(profile):
+            return error("SECRET_MISSING", 503)
+        mode = ReasoningMode(mode_text)
+        field_name = "reasoning_on" if mode == ReasoningMode.ON else "reasoning_off"
+        runtime = ProfileRegistry([profile]).snapshot(profile_id)
+        temporary_capabilities = replace(
+            runtime.capabilities, **{field_name: Support.SUPPORTED},
+            service_id=profile.service_id, adapter_id=profile.adapter_id,
+            base_url=profile.base_url, model_id=profile.model)
+        runtime = replace(runtime, capabilities=temporary_capabilities, max_retries=0)
+        started = time.monotonic()
+        try:
+            response = real_gateway_factory().complete(ModelRequest(
+                Mode.CHAT, (ModelMessage("user", "只回复 OK"),),
+                reasoning=ReasoningOptions(mode)), runtime)
+            if not response.text.strip():
+                return jsonify({"status": "failure", "error_code": "PROBE_NO_CONTENT",
+                                "mode": mode.value,
+                                "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
+        except GatewayError as exc:
+            code = exc.code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,40}", exc.code) else "GATEWAY_ERROR"
+            return jsonify({"status": "failure", "error_code": code, "mode": mode.value,
+                            "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
+        except Exception:
+            return jsonify({"status": "failure", "error_code": "INTERNAL_ERROR",
+                            "mode": mode.value,
+                            "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
+        verified_at = datetime.now(timezone.utc).isoformat()
+        profiles[profile_id] = capability_store.save_thinking_probe(
+            profile, mode, Support.SUPPORTED, verified_at)
+        capability = _profile_public(profiles[profile_id], sources[profile_id])["capabilities"]
+        return jsonify({"status": "success", "mode": mode.value,
+                        "capability": capability,
+                        "latency_ms": round((time.monotonic() - started) * 1000, 3)})
 
     @app.delete("/api/profiles/<profile_id>")
     def delete_profile(profile_id: str):

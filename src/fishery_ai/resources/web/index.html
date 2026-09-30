@@ -20,10 +20,11 @@
 
     <div class="layout">
       <aside class="controls panel">
-        <div class="panel-heading"><span class="step">01</span><h2>运行设置</h2></div>
+        <div class="panel-heading"><span class="step">01</span><h2>基础模型配置</h2></div>
         <label for="profile">Runtime / Model</label>
         <select id="profile"></select>
         <p id="profile-meta" class="helper"></p>
+        <dl id="profile-summary" class="profile-summary"></dl>
         <p id="selected-secret-status" class="helper">Secret 状态：待检查</p>
 
         <details id="custom-editor" class="custom-editor">
@@ -49,9 +50,14 @@
           <button id="query-models" class="secondary" type="button">查询可用模型（真实联网）</button>
           <p id="models-status" class="status" role="status" aria-live="polite"></p>
           <p id="secret-status" class="secret-status" role="status" aria-live="polite">Secret 状态：待检查</p>
+          <label for="custom-deployment">Deployment <span class="required">必选</span></label>
+          <select id="custom-deployment"><option value="cloud">Cloud</option><option value="local">Local</option></select>
+          <label for="custom-secret-env">Secret Env <span id="custom-secret-requirement" class="required">Cloud 必填</span></label>
+          <input id="custom-secret-env" type="text" autocomplete="off" required>
+          <p class="helper">只填写环境变量名，例如 DASHSCOPE_API_KEY；绝不填写真实 API Key。</p>
           <details id="advanced-settings" class="advanced-settings">
             <summary>高级连接设置</summary>
-            <p class="helper">仅在需要自定义 Provider 身份、Adapter、Secret 变量名或部署类型时修改。</p>
+            <p class="helper">仅在需要自定义服务身份、模型家族或 Adapter 时修改。</p>
             <label for="custom-provider">service_id <span class="required">必填</span></label>
             <input id="custom-provider" type="text" maxlength="64" required>
             <p class="helper">API 服务平台标识，例如 dashscope、deepseek_api；自定义兼容服务使用 custom。</p>
@@ -61,12 +67,6 @@
             <label for="custom-adapter">adapter_id <span class="required">必选</span></label>
             <select id="custom-adapter"><option value="openai_chat">openai_chat</option><option value="generic_openai_chat">generic_openai_chat</option></select>
             <p class="helper">当前均使用 OpenAI-compatible Chat Completions 传输。</p>
-            <label for="custom-secret-env">secret_env <span id="custom-secret-requirement" class="required">Cloud 必填</span></label>
-            <input id="custom-secret-env" type="text" autocomplete="off" required>
-            <p class="helper">只填写变量名，例如 DASHSCOPE_API_KEY；绝不填写真实 API Key。</p>
-            <label for="custom-deployment">deployment <span class="required">必选</span></label>
-            <select id="custom-deployment"><option value="cloud">cloud</option><option value="local">local</option></select>
-            <p class="helper">cloud 为远程服务；local 为本地服务。</p>
           </details>
           <label for="test-method">连接测试方式</label>
           <select id="test-method"><option value="models">模型列表（优先，非生成）</option><option value="chat">最小 Chat（可能产生费用）</option></select>
@@ -76,28 +76,42 @@
           <p id="custom-status" class="status" role="status" aria-live="polite"></p>
         </details>
 
+        <details id="capability-panel" class="capability-panel" open>
+          <summary>02 · 模型能力 <span class="optional">点击展开</span></summary>
+          <p class="helper">能力仅适用于当前 service、adapter、Base URL 与精确 Model。UNKNOWN 不影响未设置高级选项的 Normal 请求。</p>
+          <dl id="capability-list" class="capability-list"></dl>
+          <p id="streaming-capability" class="helper">Streaming 能力：读取中</p>
+          <button id="refresh-metadata" class="secondary" type="button" hidden>查询 Ollama 模型 metadata（本地请求）</button>
+          <p id="metadata-status" class="status" role="status" aria-live="polite"></p>
+          <div id="thinking-probe-actions" class="probe-actions" hidden>
+            <button id="probe-thinking-on" class="secondary" type="button">实机验证 Thinking ON（本地生成请求）</button>
+            <button id="probe-thinking-off" class="secondary" type="button">实机验证 Thinking OFF（本地生成请求）</button>
+          </div>
+          <p id="thinking-probe-status" class="status" role="status" aria-live="polite"></p>
+          <button id="probe-streaming" class="secondary" type="button" hidden>验证 Streaming（真实联网）</button>
+          <p id="capability-probe-status" class="status" role="status" aria-live="polite"></p>
+          <h3 class="runtime-options-heading">本次运行选择</h3>
+          <p class="helper">这些选项只影响下一次请求，不会修改 Built-in Capability。</p>
+          <label for="reasoning-mode">Thinking Mode</label>
+          <select id="reasoning-mode">
+            <option value="auto">AUTO（不发送思考控制参数）</option>
+            <option value="on">ON（请求开启）</option>
+            <option value="off">OFF（请求关闭）</option>
+          </select>
+          <p id="thinking-hint" class="helper">AUTO 不发送参数；显式 ON / OFF 会按当前能力校验。</p>
+          <div id="effort-control" hidden><label for="reasoning-effort">Reasoning Effort</label><select id="reasoning-effort"></select></div>
+          <label for="response-mode">Streaming / Response Mode</label>
+          <select id="response-mode"><option value="normal">Normal</option><option value="streaming">Streaming</option></select>
+        </details>
+
+        <h3 class="control-section-heading">03 · 本次分析输入</h3>
+
         <label for="scenario">水质场景</label>
         <select id="scenario"></select>
         <p class="helper">场景直接读取项目中已有的固定 Mock 数据。</p>
 
         <label for="question">问题</label>
         <textarea id="question" rows="4" maxlength="500">当前水质情况怎么样？</textarea>
-
-        <div id="reasoning-control" hidden>
-          <label for="reasoning-mode">Thinking 模式</label>
-          <select id="reasoning-mode">
-            <option value="auto">AUTO（使用 Ollama 模型默认行为）</option>
-            <option value="on">ON（请求开启）</option>
-            <option value="off">OFF（请求关闭）</option>
-          </select>
-          <p class="helper">仅对精确的本地 Ollama qwen3.5:4b Profile 显示；OFF 通过请求参数发送，不依赖 CLI 会话状态。</p>
-        </div>
-
-        <label for="response-mode">Response Mode</label>
-        <select id="response-mode"><option value="normal">Normal</option><option value="streaming">Streaming</option></select>
-        <p id="streaming-capability" class="helper">Streaming 能力：读取中</p>
-        <button id="probe-streaming" class="secondary" type="button" hidden>验证当前 Profile 的 Streaming 能力（真实联网）</button>
-        <p id="capability-probe-status" class="status" role="status" aria-live="polite"></p>
 
         <div id="real-warning" class="real-warning" hidden>
           <strong>REAL NETWORK REQUEST</strong>

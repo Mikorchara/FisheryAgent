@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from dataclasses import replace
 import socket
 import ssl
 import time
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
@@ -68,37 +67,53 @@ class OpenAICompatibleAdapter:
 
     @staticmethod
     def supports_ollama_qwen35_reasoning(profile_or_runtime: object) -> bool:
-        """Recognize only the local Ollama qwen3.5:4b endpoint this control targets."""
-        if (getattr(profile_or_runtime, "provider_kind", None) != "local"
-                or getattr(profile_or_runtime, "model", None) != "qwen3.5:4b"
-                or getattr(profile_or_runtime, "adapter_id", None)
-                not in ("openai_chat", "generic_openai_chat")):
-            return False
-        service_id = getattr(profile_or_runtime, "service_id", None)
-        if service_id == "ollama":
-            return True
-        if service_id != "custom":
-            return False
+        """Identity is explicit; a Custom URL or model name never grants a capability."""
+        return (getattr(profile_or_runtime, "provider_kind", None) == "local"
+                and getattr(profile_or_runtime, "service_id", None) == "ollama"
+                and getattr(profile_or_runtime, "model", None) == "qwen3.5:4b"
+                and getattr(profile_or_runtime, "adapter_id", None)
+                in ("openai_chat", "generic_openai_chat"))
+
+    @staticmethod
+    def fetch_ollama_thinking_metadata(runtime: RuntimeSnapshot) -> tuple[tuple[bool, ...], bool]:
+        """Explicit local diagnostic; never called during ordinary analysis."""
+        if not OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(runtime):
+            raise GatewayError("METADATA_UNSUPPORTED")
+        parsed = urlsplit(runtime.base_url)
+        if parsed.path.rstrip("/") != "/v1":
+            raise GatewayError("METADATA_UNSUPPORTED")
+        show_url = urlunsplit((parsed.scheme, parsed.netloc, "/api/show", "", ""))
         try:
-            parsed = urlsplit(getattr(profile_or_runtime, "base_url", ""))
-            return (parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1")
-                    and parsed.port == 11434 and parsed.path.rstrip("/") == "/v1")
-        except ValueError:
-            return False
+            timeout = httpx.Timeout(10.0, connect=min(runtime.connect_timeout_s, 5.0))
+            with httpx.Client(timeout=timeout, trust_env=False) as client:
+                response = client.post(show_url, json={"model": runtime.model})
+                response.raise_for_status()
+                payload = response.json()
+        except httpx.ConnectTimeout as exc:
+            raise GatewayError("CONNECT_TIMEOUT") from exc
+        except httpx.ReadTimeout as exc:
+            raise GatewayError("READ_TIMEOUT") from exc
+        except httpx.HTTPStatusError as exc:
+            raise GatewayError(f"HTTP_{exc.response.status_code}") from exc
+        except httpx.TransportError as exc:
+            raise GatewayError("CONNECTION_ERROR") from exc
+        except ValueError as exc:
+            raise GatewayError("INVALID_RESPONSE") from exc
+        thinking = payload.get("thinking") if isinstance(payload, dict) else None
+        values = thinking.get("values") if isinstance(thinking, dict) else None
+        default = thinking.get("default") if isinstance(thinking, dict) else None
+        if (not isinstance(values, list) or not values
+                or any(type(value) is not bool for value in values)
+                or type(default) is not bool or default not in values):
+            raise GatewayError("METADATA_UNAVAILABLE")
+        return tuple(dict.fromkeys(values)), default
 
     @staticmethod
     def _kwargs(request: ModelRequest, runtime: RuntimeSnapshot, *, stream: bool) -> dict:
         generation, reasoning = effective_options(request, runtime)
         ollama_qwen35 = OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(runtime)
-        capabilities = runtime.capabilities
-        if ollama_qwen35:
-            # Ollama's OpenAI-compatible adapter documents reasoning_effort="none"
-            # as the request-level OFF control. This exact adapter/model scope does
-            # not grant or infer any other capability (especially Streaming).
-            capabilities = replace(capabilities, reasoning_on=Support.SUPPORTED,
-                                   reasoning_off=Support.SUPPORTED)
         try:
-            validate_options(generation, reasoning, capabilities, streaming=stream)
+            validate_options(generation, reasoning, runtime.capabilities, streaming=stream)
         except OptionValidationError as exc:
             raise GatewayError(exc.code, option=exc.option) from exc
         kwargs = {"model": runtime.model,

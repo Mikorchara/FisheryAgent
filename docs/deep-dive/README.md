@@ -18,5 +18,7 @@
 - [V0.1.1-A3.1.1 Streaming 修复与 Profile 冲突保护](V0.1.1_A3_1_1_STREAMING_BUGFIX_PROFILE_COLLISION.md)：记录浏览器根因、Built-in 只读冲突、一次 Qwen 流式验证及测试结果。
 - [V0.1.1-A3.1.2 Profile Manager 简化与同步修复](V0.1.1_A3_1_2_PROFILE_MANAGER_SIMPLIFICATION.md)：记录选择同步、名称唯一与不可改名规则，以及旧冲突流程的移除。
 - [V0.1.1-A3.1.3 Capability 与 Provider Identity 修正](V0.1.1_A3_1_3_CAPABILITY_IDENTITY.md)：记录 service/model/family 身份拆分、证据来源、精确能力绑定和显式离线测试覆盖的 Probe 流程。
+- [V0.1.1-A3.1.4 本地 Profile 与能力界面整理](V0.1.1_A3_1_4_LOCAL_PROFILE_CAPABILITY_UI.md)：记录三层配置、精确能力证据、Ollama 内置方案及离线验证边界。
+- [V0.1.1-A3.1.5 Capability UI 与 Thinking 验证](V0.1.1_A3_1_5_CAPABILITY_UI_THINKING_PROBE.md)：记录 Base URL identity 规范化、同区运行选项和 Thinking ON/OFF 显式验证。
 
 历史报告描述的是编写时的状态。当前环境准备与项目范围请以[文档导航](../README.md)为准。

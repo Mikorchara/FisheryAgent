@@ -9,6 +9,8 @@ const sourcePath = path.join(__dirname, '..', 'src', 'fishery_ai', 'resources', 
 const source = fs.readFileSync(sourcePath, 'utf8').replace(/\binit\(\);\s*$/, '');
 const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'fishery_ai',
   'resources', 'web', 'index.html'), 'utf8');
+const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'fishery_ai',
+  'resources', 'web', 'app.css'), 'utf8');
 const knownIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
 
 function makePage(fetch) {
@@ -175,7 +177,7 @@ test('Runtime selection immediately fills the actual read-only Profile, then edi
   assert.equal(page.element('custom-name').value, 'Qwen 预置');
   assert.equal(page.element('custom-model').value, 'qwen-plus');
   assert.equal(page.element('custom-url').value, 'https://example.invalid/v1');
-  assert.match(page.element('streaming-capability').textContent, /本机已验证.*SUPPORTED.*精确 Model \/ Base URL/);
+  assert.match(page.element('streaming-capability').textContent, /本机已验证.*SUPPORTED.*service \/ adapter \/ Base URL \/ Model/);
   assert.equal(page.element('custom-name').disabled, true);
   assert.equal(page.element('edit-profile').hidden, true);
   assert.equal(page.element('delete-profile').hidden, true);
@@ -190,7 +192,7 @@ test('Runtime selection immediately fills the actual read-only Profile, then edi
   await new Promise(setImmediate);
   assert.equal(page.element('custom-name').value, '学校服务');
   assert.equal(page.element('custom-model').value, 'school-model');
-  assert.match(page.element('streaming-capability').textContent, /UNKNOWN.*未绑定当前 Model \/ Base URL/);
+  assert.match(page.element('streaming-capability').textContent, /UNKNOWN.*未绑定当前精确连接/);
   assert.equal(page.element('probe-streaming').hidden, false);
   assert.equal(page.element('edit-profile').hidden, false);
   assert.equal(page.element('delete-profile').hidden, false);
@@ -279,7 +281,49 @@ test('reasoning mode is sent only for a Profile exposing the exact supported con
   const generic = {...exact, profile_id: 'generic-custom', reasoning_modes: ['auto']};
   vm.runInContext(`profiles = [${JSON.stringify(generic)}]`, page.context);
   page.element('profile').value = generic.profile_id;
+  page.element('reasoning-mode').value = 'auto';
   page.element('confirm-network').checked = true;
   await vm.runInContext('analyze()', page.context);
   assert.equal(Object.hasOwn(sent, 'reasoning_mode'), false);
+});
+
+test('left settings have three layers, desktop independent scroll, and local default Normal OFF', async () => {
+  assert.match(html, /基础模型配置/);
+  assert.match(html, /id="capability-panel"/);
+  assert.match(html, /本次运行选择/);
+  const capStart = html.indexOf('id="capability-panel"');
+  const capEnd = html.indexOf('</details>', capStart);
+  const capabilitySection = html.slice(capStart, capEnd);
+  assert.match(capabilitySection, /id="reasoning-mode"/);
+  assert.match(capabilitySection, /id="response-mode"/);
+  assert.match(capabilitySection, /id="probe-thinking-on"/);
+  assert.match(capabilitySection, /id="probe-thinking-off"/);
+  assert.match(css, /\.controls\s*\{[^}]*max-height:\s*calc\(100vh - 32px\)[^}]*overflow-y:\s*auto/);
+  assert.match(css, /@media \(max-width: 1000px\).*\.controls \{ position: static; max-height: none; overflow: visible;/);
+  const local = {profile_id: 'ollama-qwen35-4b-local', display_name: 'Ollama local',
+    service_id: 'ollama', model_family: 'qwen', model: 'qwen3.5:4b', profile_status: 'experimental',
+    runtime_type: 'local', source: 'built_in', reasoning_modes: ['auto', 'on', 'off'],
+    default_reasoning_mode: 'off', capabilities: {streaming: 'unknown', source: 'UNKNOWN',
+      thinking_on: {status: 'supported', source: 'MODEL_METADATA'},
+      thinking_off: {status: 'supported', source: 'MODEL_METADATA'}, thinking_default: true}};
+  const page = makePage(async () => ({ok: true, json: async () => ({editable: false,
+    fields: {display_name: local.display_name, service_id: 'ollama', model_family: 'qwen',
+      adapter_id: 'generic_openai_chat', base_url: 'http://127.0.0.1:11434/v1',
+      model: local.model, secret_env: '', provider_kind: 'local'}})}));
+  vm.runInContext(`profiles = [${JSON.stringify(local)}]; presets = []`, page.context);
+  page.element('profile').value = local.profile_id;
+  page.element('response-mode').value = 'streaming';
+  vm.runInContext('updateProfile()', page.context);
+  assert.equal(page.element('response-mode').value, 'normal');
+  assert.equal(page.element('reasoning-mode').value, 'off');
+  assert.equal(page.element('refresh-metadata').hidden, false);
+  assert.equal(page.element('edit-profile').hidden, true);
+});
+
+test('editing the basic model identity clears draft capability display before save', () => {
+  const page = makePage(async () => ({ok: true, json: async () => ({})}));
+  vm.runInContext('formMode = "edit"; invalidateTest()', page.context);
+  assert.match(page.element('streaming-capability').textContent, /UNKNOWN/);
+  assert.equal(page.element('probe-streaming').hidden, true);
+  assert.equal(page.element('refresh-metadata').hidden, true);
 });

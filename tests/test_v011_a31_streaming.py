@@ -199,8 +199,10 @@ class StreamingTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         profiles = {item["profile_id"]: item for item in response.get_json()["profiles"]}
         qwen = profiles["qwen-plus-experimental"]["capabilities"]
-        self.assertEqual(qwen, {"streaming": "supported", "streaming_scope_matches": True,
-                                "source": "USER_VERIFIED"})
+        self.assertEqual({key: qwen[key] for key in
+                          ("streaming", "streaming_scope_matches", "source")},
+                         {"streaming": "supported", "streaming_scope_matches": True,
+                          "source": "USER_VERIFIED"})
         deepseek = profiles["deepseek-v4-flash-experimental"]["capabilities"]
         self.assertEqual(deepseek["streaming"], "supported")
         self.assertEqual(deepseek["streaming_scope_matches"], True)

@@ -91,8 +91,8 @@ class CustomProfileStore:
             raise ProfileFieldError("secret_env", "INVALID_FORMAT", "secret_env 只接受大写环境变量名，例如 DASHSCOPE_API_KEY，不能填写 Key 值。")
         if values["adapter_id"] not in ("openai_chat", "generic_openai_chat"):
             raise ProfileFieldError("adapter_id", "UNSUPPORTED", "adapter_id 只能选择页面提供的 OpenAI-compatible 类型。")
-        if values["adapter_id"] == "generic_openai_chat" and values["service_id"] != "custom":
-            raise ProfileFieldError("service_id", "CONFLICT", "generic_openai_chat 需要 service_id 为 custom。")
+        if values["adapter_id"] == "generic_openai_chat" and values["service_id"] not in ("custom", "ollama"):
+            raise ProfileFieldError("service_id", "CONFLICT", "generic_openai_chat 需要 service_id 为 custom 或 ollama。")
         try:
             parsed = urlsplit(values["base_url"])
             valid_url = (parsed.scheme in ("http", "https") and bool(parsed.netloc)

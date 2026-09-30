@@ -14,7 +14,7 @@ from fishery_ai.model_gateway import (GatewayError, ModelEvent, ModelMessage, Mo
                                       ModelRequest, ModelResponse, ProfileRegistry)
 from fishery_ai.model_options import ReasoningMode, ReasoningOptions, Support
 from fishery_ai.openai_compatible_adapter import OpenAICompatibleAdapter
-from fishery_ai.web import create_app
+from fishery_ai.web import _builtin_profiles, create_app
 
 
 OLLAMA_FIELDS = {
@@ -36,7 +36,8 @@ def make_request(mode: ReasoningMode) -> ModelRequest:
 
 class OllamaReasoningAdapterTests(unittest.TestCase):
     def setUp(self):
-        self.profile, _ = CustomProfileStore.build(OLLAMA_FIELDS, "custom-test")
+        self.profile = next(profile for profile in _builtin_profiles()
+                            if profile.profile_id == "ollama-qwen35-4b-local")
         self.runtime = ProfileRegistry([self.profile]).snapshot(self.profile.profile_id, {})
 
     def test_auto_omits_reasoning_control_and_off_sends_explicit_none(self):
@@ -135,7 +136,8 @@ class OllamaReasoningWebTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             profiles_dir = Path(directory) / "profiles"
             store = CustomProfileStore(profiles_dir)
-            profile = store.create(OLLAMA_FIELDS)
+            profile = next(profile for profile in _builtin_profiles()
+                           if profile.profile_id == "ollama-qwen35-4b-local")
             client = create_app(
                 trace_path=Path(directory) / "trace.jsonl",
                 custom_profiles_dir=profiles_dir,
@@ -180,7 +182,7 @@ class OllamaReasoningWebTests(unittest.TestCase):
                 "question": "test", "confirm_network": True, "reasoning_mode": "off",
             })
             self.assertEqual(response.status_code, 400)
-            self.assertEqual(response.get_json()["error_code"], "OPTION_UNSUPPORTED")
+            self.assertEqual(response.get_json()["error_code"], "OPTION_UNKNOWN")
 
 
 if __name__ == "__main__":

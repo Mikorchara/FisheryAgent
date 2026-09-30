@@ -5,6 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import math
+from urllib.parse import urlsplit, urlunsplit
+
+
+def normalize_base_url(value: str) -> str:
+    """Canonicalize URL scheme/host and trailing path slashes for identity matching."""
+    parsed = urlsplit(value)
+    netloc = parsed.netloc.lower()
+    path = parsed.path.rstrip("/")
+    return urlunsplit((parsed.scheme.lower(), netloc, path, parsed.query, parsed.fragment))
 
 
 class Support(str, Enum):
@@ -14,6 +23,7 @@ class Support(str, Enum):
 
 
 class CapabilitySource(str, Enum):
+    MODEL_METADATA = "MODEL_METADATA"
     OFFICIAL_DOCS = "OFFICIAL_DOCS"
     USER_VERIFIED = "USER_VERIFIED"
     UNKNOWN = "UNKNOWN"
@@ -22,7 +32,8 @@ class CapabilitySource(str, Enum):
     def parse(cls, value: str | CapabilitySource) -> CapabilitySource:
         if isinstance(value, cls):
             return value
-        legacy = {"official_docs": cls.OFFICIAL_DOCS, "user_verified": cls.USER_VERIFIED,
+        legacy = {"model_metadata": cls.MODEL_METADATA,
+                  "official_docs": cls.OFFICIAL_DOCS, "user_verified": cls.USER_VERIFIED,
                   "unknown": cls.UNKNOWN, "experimental": cls.UNKNOWN}
         return legacy[value] if value in legacy else cls(value)
 
@@ -70,11 +81,15 @@ class ModelCapabilities:
     source: CapabilitySource = CapabilitySource.UNKNOWN
     model_id: str | None = None
     base_url: str | None = None
+    adapter_id: str | None = None
+    thinking_default: bool | None = None
     verified_at: str | None = None
     service_id: str | None = None
     evidence: tuple[tuple[str, CapabilitySource], ...] = ()
 
     def __post_init__(self) -> None:
+        if self.base_url is not None:
+            object.__setattr__(self, "base_url", normalize_base_url(self.base_url))
         for name in ("streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
                      "reasoning_off", "reasoning_effort", "structured_output", "tool_calling",
                      "streaming_usage"):
@@ -84,6 +99,8 @@ class ModelCapabilities:
             object.__setattr__(self, name, Support(value))
         object.__setattr__(self, "effort_values", tuple(self.effort_values))
         object.__setattr__(self, "source", CapabilitySource.parse(self.source))
+        if self.thinking_default is not None and type(self.thinking_default) is not bool:
+            raise ValueError("thinking_default must be a boolean or None")
         evidence = self.evidence.items() if isinstance(self.evidence, dict) else self.evidence
         normalized = tuple(sorted((name, CapabilitySource.parse(source))
                                   for name, source in evidence))

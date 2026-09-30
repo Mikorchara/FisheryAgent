@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 from .contracts import Mode, RuntimeInfo, Usage
 from .model_options import (CapabilitySource, GenerationOptions, ModelCapabilities,
                             OptionValidationError, ProfileStatus, ReasoningMode, ReasoningOptions,
-                            validate_options)
+                            normalize_base_url, validate_options)
 
 
 Capabilities = ModelCapabilities
@@ -51,11 +51,12 @@ class ModelProfile:
             raise ValueError("profile identity and model are required")
         if self.adapter_id not in ("openai_chat", "generic_openai_chat"):
             raise ValueError("unsupported adapter_id")
-        if self.adapter_id == "generic_openai_chat" and self.provider_id != "custom":
-            raise ValueError("generic adapter requires custom provider identity")
+        if self.adapter_id == "generic_openai_chat" and self.provider_id not in ("custom", "ollama"):
+            raise ValueError("generic adapter requires custom or ollama provider identity")
         if (parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.query
                 or parsed.fragment or parsed.username or parsed.password):
             raise ValueError("base_url must be an HTTP(S) URL without query or fragment")
+        object.__setattr__(self, "base_url", normalize_base_url(self.base_url))
         if self.secret_env is not None and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.secret_env):
             raise ValueError("secret_env must be an environment variable name")
         legacy_services = {"qwen": "dashscope", "deepseek": "deepseek_api"}
@@ -67,10 +68,8 @@ class ModelProfile:
             raise ValueError("service_id must be a lowercase machine identifier")
         object.__setattr__(self, "service_id", service_id)
         object.__setattr__(self, "model_family", family)
-        if self.adapter_id == "generic_openai_chat" and service_id != "custom":
-            raise ValueError("generic adapter requires service_id custom")
-        if self.adapter_id == "generic_openai_chat" and self.provider_id != "custom":
-            raise ValueError("generic adapter requires legacy provider_id custom")
+        if self.adapter_id == "generic_openai_chat" and service_id not in ("custom", "ollama"):
+            raise ValueError("generic adapter requires service_id custom or ollama")
         if min(self.connect_timeout_s, self.read_timeout_s, self.total_timeout_s) <= 0:
             raise ValueError("timeouts must be positive")
         if self.max_retries < 0 or self.max_retries > 3:
@@ -82,19 +81,25 @@ class ModelProfile:
                 "streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
                 "reasoning_off", "reasoning_effort", "structured_output", "tool_calling",
                 "streaming_usage"))
-        if (declared and capabilities.service_id is None
-                and capabilities.model_id == self.model and capabilities.base_url == self.base_url):
-            # Legacy profile migration: bind older model/base_url evidence to its derived service.
-            capabilities = replace(capabilities, service_id=service_id)
+        if (declared and capabilities.model_id == self.model
+                and capabilities.base_url == self.base_url
+                and capabilities.service_id in (None, service_id)):
+            # Bundled legacy declarations live inside this Profile, so its adapter
+            # and derived service provide a safe one-time scope for old fields.
+            capabilities = replace(capabilities,
+                                   service_id=capabilities.service_id or service_id,
+                                   adapter_id=capabilities.adapter_id or self.adapter_id)
             object.__setattr__(self, "capabilities", capabilities)
         if (capabilities.model_id not in (None, self.model)
                 or capabilities.base_url not in (None, self.base_url)
-                or capabilities.service_id not in (None, service_id)):
-            raise ValueError("capabilities belong to a different service, base_url or exact model")
+                or capabilities.service_id not in (None, service_id)
+                or capabilities.adapter_id not in (None, self.adapter_id)):
+            raise ValueError("capabilities belong to a different service, adapter, base_url or model")
         if declared and (self.capabilities.model_id != self.model
                          or self.capabilities.base_url != self.base_url
-                         or self.capabilities.service_id != service_id):
-            raise ValueError("declared capabilities require exact service, model and base_url scope")
+                         or self.capabilities.service_id != service_id
+                         or self.capabilities.adapter_id != self.adapter_id):
+            raise ValueError("declared capabilities require exact service, adapter, model and URL")
         if self.profile_status == ProfileStatus.VERIFIED:
             declared_user_verified = any(
                 getattr(self.capabilities, name).value != "unknown"
@@ -116,7 +121,10 @@ class ModelProfile:
             except OptionValidationError as exc:
                 raise ValueError("verified defaults conflict with capabilities") from exc
         elif self.default_generation != GenerationOptions() or self.default_reasoning != ReasoningOptions():
-            raise ValueError("unverified profiles cannot carry verified advanced defaults")
+            try:
+                validate_options(self.default_generation, self.default_reasoning, self.capabilities)
+            except OptionValidationError as exc:
+                raise ValueError("profile defaults conflict with scoped capabilities") from exc
 
     @classmethod
     def from_dict(cls, data: dict) -> ModelProfile:
@@ -146,6 +154,7 @@ class ModelProfile:
                 capability_data.setdefault("model_id", values["model"])
                 capability_data.setdefault("base_url", values["base_url"])
                 capability_data.setdefault("service_id", values["service_id"])
+                capability_data.setdefault("adapter_id", values["adapter_id"])
         values["capabilities"] = ModelCapabilities(**capability_data)
         values["default_generation"] = GenerationOptions(**values.get("default_generation", {}))
         reasoning_data = dict(values.get("default_reasoning", {}))

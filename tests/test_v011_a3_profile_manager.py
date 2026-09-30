@@ -68,7 +68,7 @@ class ProfileManagerTests(unittest.TestCase):
     def test_presets_and_presence_only_secret_status(self):
         presets = self.client.get("/api/config").get_json()["presets"]
         by_id = {item["id"]: item for item in presets}
-        self.assertEqual(set(by_id), {"dashscope", "deepseek_api", "custom"})
+        self.assertEqual(set(by_id), {"dashscope", "deepseek_api", "ollama", "custom"})
         self.assertEqual(by_id["dashscope"]["base_url"],
                          "https://dashscope.aliyuncs.com/compatible-mode/v1")
         self.assertEqual(by_id["deepseek_api"]["secret_env"], "DEEPSEEK_API_KEY")

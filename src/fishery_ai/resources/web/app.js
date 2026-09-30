@@ -82,8 +82,20 @@ function updateProfile() {
   const profile = selectedProfile();
   if (!profile) return;
   const reasoningModes = profile.reasoning_modes || ["auto"];
-  $("reasoning-control").hidden = !reasoningModes.includes("on") || !reasoningModes.includes("off");
-  $("reasoning-mode").value = "auto";
+  $("reasoning-mode").value = reasoningModes.includes(profile.default_reasoning_mode)
+    ? profile.default_reasoning_mode : "auto";
+  const emptyEffort = document.createElement("option");
+  emptyEffort.value = "";
+  emptyEffort.textContent = "未设置";
+  $("reasoning-effort").replaceChildren(emptyEffort);
+  for (const value of profile.capabilities?.effort_values || []) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    $("reasoning-effort").append(option);
+  }
+  $("effort-control").hidden = profile.capabilities?.reasoning_effort?.status !== "supported";
+  $("response-mode").value = "normal";
   const revision = ++formRevision;
   editingId = null;
   setFormMode("view");
@@ -93,15 +105,26 @@ function updateProfile() {
   $("secret-status").textContent = "";
   invalidateTest();
   $("profile-meta").textContent = `${profile.service_id || profile.provider} · ${profile.model_family || "unknown"} · ${profile.model} · ${profile.profile_status.toUpperCase()} · ${profile.runtime_type} · ${profile.source === "user_custom" ? "用户自定义" : "预置"}`;
+  addPairs("profile-summary", [["Service", profile.service_id || profile.provider],
+    ["Base URL", profile.base_url], ["Model ID", profile.model],
+    ["Deployment", profile.runtime_type]]);
   const streaming = profile.capabilities?.streaming || "unknown";
   const capabilitySource = profile.capabilities?.source || "UNKNOWN";
   const capabilityLabel = streaming === "supported" && capabilitySource === "OFFICIAL_DOCS"
     ? "官方文档支持" : streaming === "supported" && capabilitySource === "USER_VERIFIED"
       ? "本机已验证" : streaming === "unsupported" ? "不支持" : "未验证";
   const scope = profile.capabilities?.streaming_scope_matches === true
-    ? "已绑定当前精确 Model / Base URL" : "未绑定当前 Model / Base URL";
+    ? "已绑定当前 service / adapter / Base URL / Model" : "未绑定当前精确连接";
   $("streaming-capability").textContent = `Streaming 能力：${capabilityLabel}（${streaming.toUpperCase()}）· ${scope}`;
+  renderCapabilities(profile);
   $("probe-streaming").hidden = profile.runtime_type === "mock" || streaming !== "unknown";
+  $("refresh-metadata").hidden = profile.service_id !== "ollama"
+    || profile.runtime_type !== "local" || profile.model !== "qwen3.5:4b";
+  const exactOllamaQwen = profile.service_id === "ollama" && profile.runtime_type === "local"
+    && profile.model === "qwen3.5:4b" && profile.adapter_id === "generic_openai_chat";
+  $("thinking-probe-actions").hidden = !exactOllamaQwen;
+  $("metadata-status").textContent = "";
+  $("thinking-probe-status").textContent = "";
   $("capability-probe-status").textContent = "";
   const real = profile.runtime_type !== "mock";
   $("real-warning").hidden = !real;
@@ -109,7 +132,7 @@ function updateProfile() {
   setStatus(real ? "此 Profile 会发起真实模型请求，请先确认。" : "Mock 模式始终离线。", false);
   $("edit-profile").hidden = profile.source !== "user_custom";
   $("delete-profile").hidden = profile.source !== "user_custom";
-  $("custom-editor").open = true;
+  $("custom-editor").open = false;
   $("custom-status").textContent = "正在读取所选配置…";
   $("selected-secret-status").textContent = real ? "Secret 状态：待检查" : "Mock 无需 Secret";
   fetch(`/api/profiles/${encodeURIComponent(profile.profile_id)}`)
@@ -127,6 +150,40 @@ function updateProfile() {
     .catch(() => {
       if (revision === formRevision) $("custom-status").textContent = "读取所选配置失败：PROFILE_READ_FAILED";
     });
+}
+
+function capabilityText(item) {
+  const status = item?.status || "unknown";
+  const source = item?.source || "UNKNOWN";
+  if (status === "unknown") return "未验证（UNKNOWN）";
+  const label = source === "MODEL_METADATA" ? "模型 metadata"
+    : source === "USER_VERIFIED" ? "本机已验证"
+      : source === "OFFICIAL_DOCS" ? "官方文档" : "来源未知";
+  return `${status === "supported" ? "支持" : "不支持"}（${status.toUpperCase()}）· ${label}`;
+}
+
+function renderCapabilities(profile) {
+  const caps = profile.capabilities || {};
+  const on = caps.thinking_on || {};
+  const off = caps.thinking_off || {};
+  const thinking = `ON: ${capabilityText(on)} / OFF: ${capabilityText(off)}`;
+  const streaming = {status: caps.streaming, source: caps.source};
+  const modes = ["AUTO"];
+  if (on.status === "supported") modes.push("ON");
+  if (off.status === "supported") modes.push("OFF");
+  addPairs("capability-list", [
+    ["Streaming", capabilityText(streaming)],
+    ["Thinking", thinking],
+    ["Thinking 支持值", modes.join(" / ")],
+    ["模型默认 Thinking", caps.thinking_default === null || caps.thinking_default === undefined
+      ? "未知" : caps.thinking_default ? "ON" : "OFF"],
+    ["Reasoning Effort", capabilityText(caps.reasoning_effort)],
+    ["Structured Output", capabilityText(caps.structured_output)],
+    ["Tool Calling", capabilityText(caps.tool_calling)],
+  ]);
+  $("thinking-hint").textContent = profile.default_reasoning_mode === "off"
+    ? `模型 metadata 默认 ${caps.thinking_default === true ? "ON" : "未知"}；当前 Profile 默认请求 OFF。AUTO 不发送控制参数。`
+    : "AUTO 不发送控制参数；显式 ON / OFF 需要对应 Capability。";
 }
 
 const customFields = {
@@ -177,6 +234,12 @@ function invalidateTest() {
   testId = null;
   testedFingerprint = null;
   $("test-status").textContent = "连接字段已改变；Cloud 保存前需重新测试。";
+  if (formMode !== "view") {
+    renderCapabilities({capabilities: {}, default_reasoning_mode: "auto"});
+    $("streaming-capability").textContent = "当前表单的模型身份已改变；高级能力待重新加载（UNKNOWN）。";
+    $("probe-streaming").hidden = true;
+    $("refresh-metadata").hidden = true;
+  }
 }
 
 async function showSecret(name, targetId, isCurrent = () => true) {
@@ -296,9 +359,62 @@ async function probeSelectedCapability() {
       return;
     }
     await refreshProfiles(selected.profile_id);
-    $("capability-probe-status").textContent = "验证成功：本机已验证；结果绑定到当前 service_id、Base URL 和 Model。";
+    $("capability-probe-status").textContent = "验证成功：结果绑定到当前 service、adapter、Base URL 和 Model。";
   } catch (_) {
     $("capability-probe-status").textContent = "验证失败：NETWORK_ERROR";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function refreshMetadata() {
+  const selected = selectedProfile();
+  if (!selected || selected.service_id !== "ollama") return;
+  if (!window.confirm("这会向所选本地 Ollama 服务查询当前模型 metadata。继续吗？")) return;
+  const button = $("refresh-metadata");
+  button.disabled = true;
+  $("metadata-status").textContent = "正在读取模型 metadata…";
+  try {
+    const response = await fetch(`/api/profiles/${encodeURIComponent(selected.profile_id)}/metadata`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({confirm_network: true}),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      $("metadata-status").textContent = `查询失败：${data.error_code || `HTTP_${response.status}`}`;
+      return;
+    }
+    await refreshProfiles(selected.profile_id);
+    $("metadata-status").textContent = "已读取并保存精确模型的 Thinking metadata。";
+  } catch (_) {
+    $("metadata-status").textContent = "查询失败：NETWORK_ERROR";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function probeThinking(mode) {
+  const selected = selectedProfile();
+  if (!selected || $("thinking-probe-actions").hidden || !["on", "off"].includes(mode)) return;
+  const label = mode.toUpperCase();
+  if (!window.confirm(`这会向本地 Ollama 发送一次 Thinking ${label} 的最小生成请求。继续吗？`)) return;
+  const button = $(`probe-thinking-${mode}`);
+  button.disabled = true;
+  $("thinking-probe-status").textContent = `正在实机验证 Thinking ${label}…`;
+  try {
+    const response = await fetch(`/api/profiles/${encodeURIComponent(selected.profile_id)}/thinking-probe`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({mode, confirm_network: true}),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      $("thinking-probe-status").textContent = `Thinking ${label} 验证失败：${data.error_code || `HTTP_${response.status}`}；能力记录未更新。`;
+      return;
+    }
+    await refreshProfiles(selected.profile_id);
+    $("thinking-probe-status").textContent = `Thinking ${label} 已成功实机验证，精确能力来源已记录为 USER_VERIFIED。`;
+  } catch (_) {
+    $("thinking-probe-status").textContent = `Thinking ${label} 验证失败：NETWORK_ERROR；能力记录未更新。`;
   } finally {
     button.disabled = false;
   }
@@ -627,9 +743,10 @@ async function analyze() {
       question: $("question").value,
       confirm_network: real && $("confirm-network").checked,
     };
-    if (profile.reasoning_modes?.includes("on") && profile.reasoning_modes?.includes("off")) {
+    if ($("reasoning-mode").value !== "auto" || (profile.default_reasoning_mode || "auto") !== "auto")
       body.reasoning_mode = $("reasoning-mode").value;
-    }
+    if (!$("effort-control").hidden && $("reasoning-effort").value)
+      body.reasoning_effort = $("reasoning-effort").value;
     if (streaming) {
       await analyzeStreaming(body);
       return;
@@ -691,6 +808,9 @@ async function init() {
     $("edit-profile").addEventListener("click", editSelected);
     $("delete-profile").addEventListener("click", deleteSelected);
     $("probe-streaming").addEventListener("click", probeSelectedCapability);
+    $("refresh-metadata").addEventListener("click", refreshMetadata);
+    $("probe-thinking-on").addEventListener("click", () => probeThinking("on"));
+    $("probe-thinking-off").addEventListener("click", () => probeThinking("off"));
     $("query-models").addEventListener("click", queryModels);
     $("model-options").addEventListener("change", () => { if ($("model-options").value) $("custom-model").value = $("model-options").value; invalidateTest(); });
     $("test-profile").addEventListener("click", testConnection);

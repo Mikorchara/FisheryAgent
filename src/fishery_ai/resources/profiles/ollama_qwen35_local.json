@@ -1,0 +1,32 @@
+{
+  "profiles": [
+    {
+      "profile_id": "ollama-qwen35-4b-local",
+      "display_name": "Ollama Qwen3.5 4B（本地）",
+      "provider_kind": "local",
+      "adapter_id": "generic_openai_chat",
+      "provider_id": "ollama",
+      "service_id": "ollama",
+      "model_family": "qwen",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "model": "qwen3.5:4b",
+      "secret_env": null,
+      "profile_status": "experimental",
+      "connect_timeout_s": 5,
+      "read_timeout_s": 120,
+      "total_timeout_s": 180,
+      "max_retries": 0,
+      "default_reasoning": {"mode": "off"},
+      "capabilities": {
+        "source": "MODEL_METADATA",
+        "service_id": "ollama",
+        "adapter_id": "generic_openai_chat",
+        "base_url": "http://127.0.0.1:11434/v1",
+        "model_id": "qwen3.5:4b",
+        "reasoning_on": "supported",
+        "reasoning_off": "supported",
+        "thinking_default": true
+      }
+    }
+  ]
+}

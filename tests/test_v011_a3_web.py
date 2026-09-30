@@ -54,14 +54,14 @@ class WebUITests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         config = response.get_json()
         self.assertEqual({item["provider"] for item in config["profiles"]},
-                         {"mock", "dashscope", "deepseek_api"})
+                         {"mock", "dashscope", "deepseek_api", "ollama"})
         self.assertEqual({item["model"] for item in config["profiles"]},
-                         {"offline-mock", "qwen-plus", "deepseek-flash"})
+                         {"offline-mock", "qwen-plus", "deepseek-flash", "qwen3.5:4b"})
         self.assertEqual({item["profile_status"] for item in config["profiles"]
                           if item["runtime_type"] == "cloud"}, {"experimental"})
         self.assertIn("partial_stale", config["scenarios"])
         self.assertEqual({item["id"] for item in config["presets"]},
-                         {"dashscope", "deepseek_api", "custom"})
+                         {"dashscope", "deepseek_api", "ollama", "custom"})
         self.assertIn("DASHSCOPE_API_KEY", response.get_data(as_text=True))
         self.assertNotIn("api_key", response.get_data(as_text=True))
 
