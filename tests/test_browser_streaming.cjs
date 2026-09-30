@@ -292,7 +292,7 @@ test('left settings have three layers, desktop independent scroll, and local def
   assert.match(html, /id="capability-panel"/);
   assert.match(html, /本次运行选择/);
   const capStart = html.indexOf('id="capability-panel"');
-  const capEnd = html.indexOf('</details>', capStart);
+  const capEnd = html.indexOf('<h3 class="control-section-heading">03', capStart);
   const capabilitySection = html.slice(capStart, capEnd);
   assert.match(capabilitySection, /id="reasoning-mode"/);
   assert.match(capabilitySection, /id="response-mode"/);
@@ -322,8 +322,62 @@ test('left settings have three layers, desktop independent scroll, and local def
 
 test('editing the basic model identity clears draft capability display before save', () => {
   const page = makePage(async () => ({ok: true, json: async () => ({})}));
+  page.element('reasoning-mode').value = 'off';
+  page.element('response-mode').value = 'streaming';
+  page.element('thinking-probe-actions').hidden = false;
+  page.element('thinking-reverify-actions').hidden = false;
   vm.runInContext('formMode = "edit"; invalidateTest()', page.context);
   assert.match(page.element('streaming-capability').textContent, /UNKNOWN/);
   assert.equal(page.element('probe-streaming').hidden, true);
+  assert.equal(page.element('probe-thinking-on').hidden, true);
+  assert.equal(page.element('reprobe-thinking-on').hidden, true);
+  assert.equal(page.element('reasoning-mode').value, 'auto');
+  assert.equal(page.element('response-mode').value, 'normal');
   assert.equal(page.element('refresh-metadata').hidden, true);
+});
+
+test('Profile switching restores saved runtime defaults and verified probes move to advanced actions', async () => {
+  const first = {profile_id: 'custom-local-a', display_name: 'Local A', provider: 'custom',
+    service_id: 'custom', model: 'a', profile_status: 'custom', runtime_type: 'local',
+    source: 'user_custom', reasoning_modes: ['auto', 'on', 'off'],
+    default_reasoning_mode: 'off', default_response_mode: 'streaming', capabilities: {
+      streaming: 'supported', source: 'USER_VERIFIED',
+      thinking_on: {status: 'supported', source: 'USER_VERIFIED'},
+      thinking_off: {status: 'supported', source: 'USER_VERIFIED'},
+    }},
+    second = {profile_id: 'custom-local-b', display_name: 'Local B', provider: 'custom',
+      service_id: 'custom', model: 'b', profile_status: 'custom', runtime_type: 'local',
+      source: 'user_custom', reasoning_modes: ['auto'], default_reasoning_mode: 'auto',
+      default_response_mode: 'normal', capabilities: {streaming: 'unknown', source: 'UNKNOWN'}};
+  const details = (profile) => ({editable: true, fields: {display_name: profile.display_name,
+    service_id: profile.service_id, model_family: 'unknown', adapter_id: 'generic_openai_chat',
+    base_url: 'http://localhost:11434/v1', model: profile.model, secret_env: '',
+    provider_kind: 'local', default_thinking_mode: profile.default_reasoning_mode,
+    default_response_mode: profile.default_response_mode}});
+  const page = makePage(async (url) => ({ok: true, json: async () =>
+    url === '/api/secret-status' ? {status: 'MISSING'}
+      : details([first, second].find((profile) => url.endsWith(profile.profile_id)))}));
+  vm.runInContext(`profiles = ${JSON.stringify([first, second])}; presets = []`, page.context);
+  page.element('profile').value = first.profile_id;
+  vm.runInContext('updateProfile()', page.context);
+  await new Promise(setImmediate);
+  assert.equal(page.element('reasoning-mode').value, 'off');
+  assert.equal(page.element('response-mode').value, 'streaming');
+  assert.equal(page.element('probe-thinking-on').hidden, true);
+  assert.equal(page.element('probe-thinking-off').hidden, true);
+  assert.equal(page.element('reprobe-thinking-on').hidden, false);
+  assert.equal(page.element('reprobe-thinking-off').hidden, false);
+  assert.equal(page.element('probe-streaming').hidden, true);
+  assert.equal(page.element('reprobe-streaming').hidden, false);
+
+  page.element('profile').value = second.profile_id;
+  vm.runInContext('updateProfile()', page.context);
+  await new Promise(setImmediate);
+  assert.equal(page.element('reasoning-mode').value, 'auto');
+  assert.equal(page.element('response-mode').value, 'normal');
+  assert.equal(page.element('probe-streaming').hidden, false);
+  page.element('profile').value = first.profile_id;
+  vm.runInContext('updateProfile()', page.context);
+  assert.equal(page.element('reasoning-mode').value, 'off');
+  assert.equal(page.element('response-mode').value, 'streaming');
 });

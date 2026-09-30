@@ -35,6 +35,26 @@ MOCK_PROFILE_ID = "mock-demo"
 TEST_TTL_S = 600
 
 
+def _effective_runtime_defaults(profile: ModelProfile
+                                ) -> tuple[ReasoningOptions, str, list[str]]:
+    """Resolve stored preferences without treating UNKNOWN as capability evidence."""
+    reasoning = profile.default_reasoning
+    response_mode = profile.default_response_mode
+    notices = []
+    if (reasoning.mode == ReasoningMode.ON
+            and profile.capabilities.reasoning_on != Support.SUPPORTED):
+        reasoning = ReasoningOptions(ReasoningMode.AUTO)
+        notices.append("THINKING_DEFAULT_FALLBACK")
+    elif (reasoning.mode == ReasoningMode.OFF
+          and profile.capabilities.reasoning_off != Support.SUPPORTED):
+        reasoning = ReasoningOptions(ReasoningMode.AUTO)
+        notices.append("THINKING_DEFAULT_FALLBACK")
+    if response_mode == "streaming" and profile.capabilities.streaming != Support.SUPPORTED:
+        response_mode = "normal"
+        notices.append("RESPONSE_DEFAULT_FALLBACK")
+    return reasoning, response_mode, notices
+
+
 def _profile_public(profile: ModelProfile, source: str) -> dict:
     capability_scope_matches = (
         profile.capabilities.service_id == profile.service_id
@@ -55,6 +75,7 @@ def _profile_public(profile: ModelProfile, source: str) -> dict:
         reasoning_modes.append("on")
     if capability("reasoning_off")["status"] == "supported":
         reasoning_modes.append("off")
+    effective_reasoning, effective_response, runtime_default_warnings = _effective_runtime_defaults(profile)
     return {"profile_id": profile.profile_id, "display_name": profile.display_name,
             "provider": "mock" if profile.profile_id == MOCK_PROFILE_ID else profile.service_id,
             "service_id": profile.service_id, "model_family": profile.model_family,
@@ -79,7 +100,11 @@ def _profile_public(profile: ModelProfile, source: str) -> dict:
                                   else []),
             },
             "reasoning_modes": reasoning_modes,
-            "default_reasoning_mode": profile.default_reasoning.mode.value}
+            "default_reasoning_mode": effective_reasoning.mode.value,
+            "default_response_mode": effective_response,
+            "stored_default_thinking_mode": profile.default_reasoning.mode.value,
+            "stored_default_response_mode": profile.default_response_mode,
+            "runtime_default_warnings": runtime_default_warnings}
 
 
 def _fingerprint(values: dict[str, str]) -> tuple[str, ...]:
@@ -187,6 +212,25 @@ def create_app(*, trace_path: Path | None = None,
             values = store.validate(submitted_fields(payload))
         except ProfileFieldError as exc:
             return profile_error(exc)
+        try:
+            candidate = capability_store.apply(store.build(values, "draft")[0])
+        except (ValueError, TypeError):
+            return error("INVALID_PROFILE", 400)
+        if (values["default_thinking_mode"] == "on"
+                and candidate.capabilities.reasoning_on == Support.UNSUPPORTED):
+            return jsonify({"status": "failed", "error_code": "PROFILE_DEFAULT_CONFLICT",
+                            "field": "default_thinking_mode",
+                            "message": "该精确模型已记录不支持 Thinking ON，不能将其设为默认偏好。"}), 400
+        if (values["default_thinking_mode"] == "off"
+                and candidate.capabilities.reasoning_off == Support.UNSUPPORTED):
+            return jsonify({"status": "failed", "error_code": "PROFILE_DEFAULT_CONFLICT",
+                            "field": "default_thinking_mode",
+                            "message": "该精确模型已记录不支持 Thinking OFF，不能将其设为默认偏好。"}), 400
+        if (values["default_response_mode"] == "streaming"
+                and candidate.capabilities.streaming == Support.UNSUPPORTED):
+            return jsonify({"status": "failed", "error_code": "PROFILE_DEFAULT_CONFLICT",
+                            "field": "default_response_mode",
+                            "message": "该精确模型已记录不支持 Streaming，不能将其设为默认模式。"}), 400
         if update_id is not None and values["display_name"] != profiles[update_id].display_name:
             return error("PROFILE_NAME_IMMUTABLE", 400)
         if name_exists(values["display_name"], exclude_id=update_id):
@@ -356,7 +400,9 @@ def create_app(*, trace_path: Path | None = None,
                                    "base_url": profile.base_url,
                                    "model": profile.model,
                                    "secret_env": profile.secret_env or "",
-                                   "provider_kind": profile.provider_kind}})
+                                   "provider_kind": profile.provider_kind,
+                                   "default_thinking_mode": profile.default_reasoning.mode.value,
+                                   "default_response_mode": profile.default_response_mode}})
 
     @app.post("/api/profiles/<profile_id>/probe")
     def probe_profile_capability(profile_id: str):
@@ -367,8 +413,13 @@ def create_app(*, trace_path: Path | None = None,
         profile = profiles.get(profile_id)
         if profile is None:
             return error("PROFILE_NOT_FOUND", 404)
-        if profile.capabilities.streaming != Support.UNKNOWN:
+        reverify = payload.get("reverify") is True
+        streaming_source = profile.capabilities.source_for("streaming")
+        if profile.capabilities.streaming != Support.UNKNOWN and not (
+                reverify and streaming_source == CapabilitySource.USER_VERIFIED):
             return error("CAPABILITY_ALREADY_KNOWN", 409)
+        if profile.capabilities.streaming == Support.UNKNOWN and reverify:
+            return error("CAPABILITY_NOT_VERIFIED", 409)
         if secret_missing(profile):
             return error("SECRET_MISSING", 503)
 
@@ -521,9 +572,12 @@ def create_app(*, trace_path: Path | None = None,
             return error(reasoning_error, 400)
         if real and profile.secret_env and not os.environ.get(profile.secret_env):
             return error("SECRET_MISSING", 503)
+        safe_reasoning, safe_response_mode, _ = _effective_runtime_defaults(profile)
+        runtime_profile = replace(profile, default_reasoning=safe_reasoning,
+                                  default_response_mode=safe_response_mode)
         gateway = real_gateway_factory() if real else MockGateway()
         orchestrator = Orchestrator(
-            repository, diagnosis, knowledge, ProfileRegistry([profile]), gateway, traces,
+            repository, diagnosis, knowledge, ProfileRegistry([runtime_profile]), gateway, traces,
             resolve_secrets=real,
         )
         started = time.monotonic()
@@ -562,9 +616,12 @@ def create_app(*, trace_path: Path | None = None,
             return error(reasoning_error, 400)
         if real and profile.secret_env and not os.environ.get(profile.secret_env):
             return error("SECRET_MISSING", 503)
+        safe_reasoning, safe_response_mode, _ = _effective_runtime_defaults(profile)
+        runtime_profile = replace(profile, default_reasoning=safe_reasoning,
+                                  default_response_mode=safe_response_mode)
         gateway = real_gateway_factory() if real else MockGateway()
         orchestrator = Orchestrator(
-            repository, diagnosis, knowledge, ProfileRegistry([profile]), gateway, traces,
+            repository, diagnosis, knowledge, ProfileRegistry([runtime_profile]), gateway, traces,
             resolve_secrets=real,
         )
         analysis_request = AnalysisRequest(Mode.CHAT, profile_id, question.strip(),

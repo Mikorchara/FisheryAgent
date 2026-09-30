@@ -20,5 +20,6 @@
 - [V0.1.1-A3.1.3 Capability 与 Provider Identity 修正](V0.1.1_A3_1_3_CAPABILITY_IDENTITY.md)：记录 service/model/family 身份拆分、证据来源、精确能力绑定和显式离线测试覆盖的 Probe 流程。
 - [V0.1.1-A3.1.4 本地 Profile 与能力界面整理](V0.1.1_A3_1_4_LOCAL_PROFILE_CAPABILITY_UI.md)：记录三层配置、精确能力证据、Ollama 内置方案及离线验证边界。
 - [V0.1.1-A3.1.5 Capability UI 与 Thinking 验证](V0.1.1_A3_1_5_CAPABILITY_UI_THINKING_PROBE.md)：记录 Base URL identity 规范化、同区运行选项和 Thinking ON/OFF 显式验证。
+- [V0.1.1-A3.1.6 能力界面整理与运行默认值](V0.1.1_A3_1_6_CAPABILITY_UX_RUNTIME_DEFAULTS.md)：记录 Custom Profile 默认偏好、安全回退、Probe 入口整理和定向测试。
 
 历史报告描述的是编写时的状态。当前环境准备与项目范围请以[文档导航](../README.md)为准。

@@ -95,7 +95,11 @@ function updateProfile() {
     $("reasoning-effort").append(option);
   }
   $("effort-control").hidden = profile.capabilities?.reasoning_effort?.status !== "supported";
-  $("response-mode").value = "normal";
+  $("response-mode").value = profile.default_response_mode === "streaming" ? "streaming" : "normal";
+  const defaultNotices = profile.runtime_default_warnings || [];
+  $("runtime-default-notice").textContent = defaultNotices.length
+    ? `已将未验证或冲突的默认偏好回退为安全值：${defaultNotices.map((item) => item === "THINKING_DEFAULT_FALLBACK" ? "Thinking AUTO" : "Normal 模式").join("、")}`
+    : "当前运行选项已按此 Profile 的默认偏好恢复。";
   const revision = ++formRevision;
   editingId = null;
   setFormMode("view");
@@ -118,11 +122,23 @@ function updateProfile() {
   $("streaming-capability").textContent = `Streaming 能力：${capabilityLabel}（${streaming.toUpperCase()}）· ${scope}`;
   renderCapabilities(profile);
   $("probe-streaming").hidden = profile.runtime_type === "mock" || streaming !== "unknown";
+  const streamingSource = profile.capabilities?.source || "UNKNOWN";
+  $("reprobe-streaming").hidden = profile.runtime_type === "mock" || streamingSource !== "USER_VERIFIED";
   $("refresh-metadata").hidden = profile.service_id !== "ollama"
     || profile.runtime_type !== "local" || profile.model !== "qwen3.5:4b";
   const exactOllamaQwen = profile.service_id === "ollama" && profile.runtime_type === "local"
     && profile.model === "qwen3.5:4b" && profile.adapter_id === "generic_openai_chat";
-  $("thinking-probe-actions").hidden = !exactOllamaQwen;
+  const onVerified = profile.capabilities?.thinking_on?.source === "USER_VERIFIED";
+  const offVerified = profile.capabilities?.thinking_off?.source === "USER_VERIFIED";
+  $("probe-thinking-on").hidden = onVerified;
+  $("probe-thinking-off").hidden = offVerified;
+  $("thinking-probe-actions").hidden = !exactOllamaQwen || (onVerified && offVerified);
+  $("reprobe-thinking-on").hidden = !onVerified;
+  $("reprobe-thinking-off").hidden = !offVerified;
+  $("thinking-reverify-actions").hidden = !exactOllamaQwen || (!onVerified && !offVerified);
+  $("advanced-capability-actions").hidden = !exactOllamaQwen
+    && streamingSource !== "USER_VERIFIED";
+  $("advanced-capability-actions").open = false;
   $("metadata-status").textContent = "";
   $("thinking-probe-status").textContent = "";
   $("capability-probe-status").textContent = "";
@@ -174,7 +190,7 @@ function renderCapabilities(profile) {
   addPairs("capability-list", [
     ["Streaming", capabilityText(streaming)],
     ["Thinking", thinking],
-    ["Thinking 支持值", modes.join(" / ")],
+    ["Thinking Metadata / 支持值", `${modes.join(" / ")} · ON ${on.source || "UNKNOWN"} / OFF ${off.source || "UNKNOWN"}`],
     ["模型默认 Thinking", caps.thinking_default === null || caps.thinking_default === undefined
       ? "未知" : caps.thinking_default ? "ON" : "OFF"],
     ["Reasoning Effort", capabilityText(caps.reasoning_effort)],
@@ -190,6 +206,8 @@ const customFields = {
   display_name: "custom-name", service_id: "custom-provider", model_family: "custom-family",
   adapter_id: "custom-adapter", base_url: "custom-url", model: "custom-model",
   secret_env: "custom-secret-env", provider_kind: "custom-deployment",
+  default_thinking_mode: "custom-default-thinking",
+  default_response_mode: "custom-default-response",
 };
 
 function setFormMode(mode) {
@@ -207,7 +225,11 @@ function setFormMode(mode) {
 function fillProfileForm(fields, profile) {
   $("provider-preset").value = profile.runtime_type === "mock" ? "built_in_mock"
     : presets.some((preset) => preset.id === fields.service_id) ? fields.service_id : "custom";
-  for (const [field, id] of Object.entries(customFields)) $(id).value = fields[field] || "";
+  for (const [field, id] of Object.entries(customFields)) {
+    const fallback = field === "default_thinking_mode" ? "auto"
+      : field === "default_response_mode" ? "normal" : "";
+    $(id).value = fields[field] || fallback;
+  }
   $("model-options").hidden = true;
   $("models-status").textContent = "";
   $("advanced-settings").open = false;
@@ -237,8 +259,19 @@ function invalidateTest() {
   if (formMode !== "view") {
     renderCapabilities({capabilities: {}, default_reasoning_mode: "auto"});
     $("streaming-capability").textContent = "当前表单的模型身份已改变；高级能力待重新加载（UNKNOWN）。";
+    $("reasoning-mode").value = "auto";
+    $("response-mode").value = "normal";
+    $("runtime-default-notice").textContent = "连接身份已改变；本次运行选项已回退为 AUTO + Normal，旧 Capability 不再适用。";
+    $("thinking-probe-actions").hidden = true;
+    $("thinking-reverify-actions").hidden = true;
+    $("probe-thinking-on").hidden = true;
+    $("probe-thinking-off").hidden = true;
+    $("reprobe-thinking-on").hidden = true;
+    $("reprobe-thinking-off").hidden = true;
     $("probe-streaming").hidden = true;
+    $("reprobe-streaming").hidden = true;
     $("refresh-metadata").hidden = true;
+    $("advanced-capability-actions").hidden = true;
   }
 }
 
@@ -290,6 +323,8 @@ function newProfile() {
   $("custom-model").value = "";
   $("custom-secret-env").value = "";
   $("custom-deployment").value = "cloud";
+  $("custom-default-thinking").value = "auto";
+  $("custom-default-response").value = "normal";
   $("model-options").hidden = true;
   $("advanced-settings").open = false;
   $("models-status").textContent = "";
@@ -340,18 +375,19 @@ async function refreshProfiles(selectedId) {
   renderProfiles(selectedId);
 }
 
-async function probeSelectedCapability() {
+async function probeSelectedCapability(reverify = false) {
   const selected = selectedProfile();
+  const source = selected?.capabilities?.source || "UNKNOWN";
   if (!selected || selected.runtime_type === "mock"
-      || selected.capabilities?.streaming !== "unknown") return;
+      || (reverify ? source !== "USER_VERIFIED" : selected.capabilities?.streaming !== "unknown")) return;
   if (!window.confirm("这会向所选服务发送一次最小 Streaming 请求；Cloud 服务可能产生费用。继续吗？")) return;
-  const button = $("probe-streaming");
+  const button = $(reverify ? "reprobe-streaming" : "probe-streaming");
   button.disabled = true;
   $("capability-probe-status").textContent = "正在显式验证 Streaming 能力…";
   try {
     const response = await fetch(`/api/profiles/${encodeURIComponent(selected.profile_id)}/probe`, {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({capability: "streaming", confirm_network: true}),
+      body: JSON.stringify({capability: "streaming", confirm_network: true, reverify}),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -393,12 +429,14 @@ async function refreshMetadata() {
   }
 }
 
-async function probeThinking(mode) {
+async function probeThinking(mode, reverify = false) {
   const selected = selectedProfile();
-  if (!selected || $("thinking-probe-actions").hidden || !["on", "off"].includes(mode)) return;
+  if (!selected || (!reverify && $("thinking-probe-actions").hidden)
+      || (reverify && $("thinking-reverify-actions").hidden)
+      || !["on", "off"].includes(mode)) return;
   const label = mode.toUpperCase();
   if (!window.confirm(`这会向本地 Ollama 发送一次 Thinking ${label} 的最小生成请求。继续吗？`)) return;
-  const button = $(`probe-thinking-${mode}`);
+  const button = $(`${reverify ? "reprobe" : "probe"}-thinking-${mode}`);
   button.disabled = true;
   $("thinking-probe-status").textContent = `正在实机验证 Thinking ${label}…`;
   try {
@@ -808,9 +846,12 @@ async function init() {
     $("edit-profile").addEventListener("click", editSelected);
     $("delete-profile").addEventListener("click", deleteSelected);
     $("probe-streaming").addEventListener("click", probeSelectedCapability);
+    $("reprobe-streaming").addEventListener("click", () => probeSelectedCapability(true));
     $("refresh-metadata").addEventListener("click", refreshMetadata);
     $("probe-thinking-on").addEventListener("click", () => probeThinking("on"));
     $("probe-thinking-off").addEventListener("click", () => probeThinking("off"));
+    $("reprobe-thinking-on").addEventListener("click", () => probeThinking("on", true));
+    $("reprobe-thinking-off").addEventListener("click", () => probeThinking("off", true));
     $("query-models").addEventListener("click", queryModels);
     $("model-options").addEventListener("change", () => { if ($("model-options").value) $("custom-model").value = $("model-options").value; invalidateTest(); });
     $("test-profile").addEventListener("click", testConnection);

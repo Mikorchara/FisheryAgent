@@ -134,6 +134,14 @@ class CapabilityIdentityTests(unittest.TestCase):
                              json={"capability": "streaming", "confirm_network": True})
         self.assertEqual(probed.status_code, 200)
         self.assertEqual(probed.get_json()["capability"]["source"], "USER_VERIFIED")
+        rejected_reverify = client.post(f"/api/profiles/{first.profile_id}/probe",
+            json={"capability": "streaming", "confirm_network": True})
+        self.assertEqual(rejected_reverify.get_json()["error_code"], "CAPABILITY_ALREADY_KNOWN")
+        factory_mode["probe"] = True
+        reprobed = client.post(f"/api/profiles/{first.profile_id}/probe",
+            json={"capability": "streaming", "confirm_network": True, "reverify": True})
+        self.assertEqual(reprobed.status_code, 200)
+        self.assertEqual(reprobed.get_json()["capability"]["source"], "USER_VERIFIED")
 
         reloaded = make_client().get("/api/config").get_json()["profiles"]
         after_by_id = {item["profile_id"]: item for item in reloaded}

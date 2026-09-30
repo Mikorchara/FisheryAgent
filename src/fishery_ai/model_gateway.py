@@ -42,6 +42,7 @@ class ModelProfile:
     profile_status: ProfileStatus = ProfileStatus.CUSTOM
     default_generation: GenerationOptions = field(default_factory=GenerationOptions)
     default_reasoning: ReasoningOptions = field(default_factory=ReasoningOptions)
+    default_response_mode: str = "normal"
     service_id: str | None = None
     model_family: str | None = None
 
@@ -75,6 +76,8 @@ class ModelProfile:
         if self.max_retries < 0 or self.max_retries > 3:
             raise ValueError("max_retries must be between 0 and 3")
         object.__setattr__(self, "profile_status", ProfileStatus(self.profile_status))
+        if self.default_response_mode not in ("normal", "streaming"):
+            raise ValueError("default_response_mode must be normal or streaming")
         capabilities = self.capabilities
         declared = capabilities.source != CapabilitySource.UNKNOWN or any(
             getattr(self.capabilities, name).value != "unknown" for name in (
@@ -124,7 +127,11 @@ class ModelProfile:
             try:
                 validate_options(self.default_generation, self.default_reasoning, self.capabilities)
             except OptionValidationError as exc:
-                raise ValueError("profile defaults conflict with scoped capabilities") from exc
+                # A saved preference is not capability evidence. Keep preferences
+                # when support is UNKNOWN; the request boundary will apply safe
+                # defaults until the exact capability has been verified.
+                if exc.code != "OPTION_UNKNOWN":
+                    raise ValueError("profile defaults conflict with scoped capabilities") from exc
 
     @classmethod
     def from_dict(cls, data: dict) -> ModelProfile:
@@ -158,6 +165,9 @@ class ModelProfile:
         values["capabilities"] = ModelCapabilities(**capability_data)
         values["default_generation"] = GenerationOptions(**values.get("default_generation", {}))
         reasoning_data = dict(values.get("default_reasoning", {}))
+        requested_thinking = values.pop("default_thinking_mode", None)
+        if requested_thinking is not None:
+            reasoning_data["mode"] = requested_thinking
         if "mode" in reasoning_data:
             reasoning_data["mode"] = ReasoningMode(reasoning_data["mode"])
         values["default_reasoning"] = ReasoningOptions(**reasoning_data)
@@ -182,6 +192,7 @@ class RuntimeSnapshot:
     profile_status: ProfileStatus
     default_generation: GenerationOptions
     default_reasoning: ReasoningOptions
+    default_response_mode: str = "normal"
     api_key: str | None = field(default=None, repr=False, compare=False)
     service_id: str = "custom"
     model_family: str = "unknown"
@@ -216,7 +227,8 @@ class ProfileRegistry:
             max_retries=profile.max_retries, capabilities=profile.capabilities,
             adapter_id=profile.adapter_id, provider_id=profile.provider_id,
             profile_status=profile.profile_status, default_generation=profile.default_generation,
-            default_reasoning=profile.default_reasoning, api_key=key,
+            default_reasoning=profile.default_reasoning,
+            default_response_mode=profile.default_response_mode, api_key=key,
             service_id=profile.service_id or profile.provider_id,
             model_family=profile.model_family or "unknown",
         )

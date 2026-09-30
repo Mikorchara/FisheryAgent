@@ -11,11 +11,12 @@ from urllib.parse import urlsplit
 
 from .model_gateway import (DEFAULT_LOCAL_READ_TIMEOUT_S,
                             DEFAULT_LOCAL_TOTAL_TIMEOUT_S, ModelProfile)
-from .model_options import ProfileStatus
+from .model_options import ProfileStatus, ReasoningMode, ReasoningOptions
 
 
 PROFILE_FIELDS = ("display_name", "service_id", "model_family", "adapter_id", "base_url",
                   "model", "secret_env", "provider_kind")
+RUNTIME_DEFAULT_FIELDS = ("default_thinking_mode", "default_response_mode")
 LEGACY_PROFILE_FIELDS = ("display_name", "provider_id", "adapter_id", "base_url",
                          "model", "secret_env", "provider_kind")
 
@@ -41,7 +42,13 @@ class CustomProfileStore:
         for path in sorted(self.directory.glob("custom-*.json")):
             data = json.loads(path.read_text(encoding="utf-8"))
             shared = {"profile_id", "profile_status", "max_retries"}
-            if set(data) not in (set(PROFILE_FIELDS) | shared, set(LEGACY_PROFILE_FIELDS) | shared):
+            allowed_shapes = (
+                set(PROFILE_FIELDS) | shared,
+                set(PROFILE_FIELDS) | set(RUNTIME_DEFAULT_FIELDS) | shared,
+                set(LEGACY_PROFILE_FIELDS) | shared,
+                set(LEGACY_PROFILE_FIELDS) | set(RUNTIME_DEFAULT_FIELDS) | shared,
+            )
+            if set(data) not in allowed_shapes:
                 raise ValueError("invalid stored custom profile fields")
             if data["profile_id"] != path.stem or data["profile_status"] != "custom":
                 raise ValueError("invalid stored custom profile identity")
@@ -65,7 +72,8 @@ class CustomProfileStore:
         for name in PROFILE_FIELDS:
             if name not in fields:
                 raise ProfileFieldError(name, "REQUIRED", f"{name} 字段不可缺少。")
-        if set(fields) != set(PROFILE_FIELDS):
+        allowed_fields = set(PROFILE_FIELDS) | set(RUNTIME_DEFAULT_FIELDS)
+        if not set(PROFILE_FIELDS).issubset(fields) or not set(fields).issubset(allowed_fields):
             raise ProfileFieldError("profile", "UNKNOWN_FIELD", "只允许页面列出的配置字段，不接受 API Key 等额外字段。")
         values = {}
         for name in PROFILE_FIELDS:
@@ -73,6 +81,17 @@ class CustomProfileStore:
             if not isinstance(value, str):
                 raise ProfileFieldError(name, "INVALID_FORMAT", f"{name} 必须是文本。")
             values[name] = value.strip()
+        for name, default in (("default_thinking_mode", "auto"),
+                              ("default_response_mode", "normal")):
+            value = fields.get(name, default)
+            if not isinstance(value, str):
+                raise ProfileFieldError(name, "INVALID_FORMAT", f"{name} 必须是文本。")
+            value = value.strip().lower()
+            allowed = {"auto", "on", "off"} if name == "default_thinking_mode" else {"normal", "streaming"}
+            if value not in allowed:
+                choices = "AUTO、ON、OFF" if name == "default_thinking_mode" else "Normal、Streaming"
+                raise ProfileFieldError(name, "INVALID_VALUE", f"默认偏好只能选择 {choices}。")
+            values[name] = value
         if not 1 <= len(values["display_name"]) <= 80 or any(ord(c) < 32 for c in values["display_name"]):
             raise ProfileFieldError("display_name", "INVALID_FORMAT", "显示名称必填，最多 80 个字符，不能包含换行。")
         if not 1 <= len(values["model"]) <= 128 or any(ord(c) < 32 for c in values["model"]):
@@ -119,6 +138,8 @@ class CustomProfileStore:
                              else 120.0),
             adapter_id=values["adapter_id"], provider_id=legacy_provider,
             service_id=values["service_id"], model_family=values["model_family"],
+            default_reasoning=ReasoningOptions(ReasoningMode(values.get("default_thinking_mode", "auto"))),
+            default_response_mode=values.get("default_response_mode", "normal"),
             profile_status=ProfileStatus.CUSTOM, max_retries=0,
         )
         data = {"profile_id": profile.profile_id, "profile_status": "custom",

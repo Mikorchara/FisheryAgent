@@ -55,6 +55,14 @@
           <label for="custom-secret-env">Secret Env <span id="custom-secret-requirement" class="required">Cloud 必填</span></label>
           <input id="custom-secret-env" type="text" autocomplete="off" required>
           <p class="helper">只填写环境变量名，例如 DASHSCOPE_API_KEY；绝不填写真实 API Key。</p>
+          <fieldset id="runtime-default-fields" class="runtime-default-fields">
+            <legend>默认运行偏好</legend>
+            <label for="custom-default-thinking">Default Thinking</label>
+            <select id="custom-default-thinking"><option value="auto">AUTO</option><option value="on">ON</option><option value="off">OFF</option></select>
+            <label for="custom-default-response">Default Response Mode</label>
+            <select id="custom-default-response"><option value="normal">Normal</option><option value="streaming">Streaming</option></select>
+            <p class="helper">这是该 Custom Profile 的使用偏好，不会把 UNKNOWN 能力标记为已支持。</p>
+          </fieldset>
           <details id="advanced-settings" class="advanced-settings">
             <summary>高级连接设置</summary>
             <p class="helper">仅在需要自定义服务身份、模型家族或 Adapter 时修改。</p>
@@ -81,17 +89,27 @@
           <p class="helper">能力仅适用于当前 service、adapter、Base URL 与精确 Model。UNKNOWN 不影响未设置高级选项的 Normal 请求。</p>
           <dl id="capability-list" class="capability-list"></dl>
           <p id="streaming-capability" class="helper">Streaming 能力：读取中</p>
-          <button id="refresh-metadata" class="secondary" type="button" hidden>查询 Ollama 模型 metadata（本地请求）</button>
-          <p id="metadata-status" class="status" role="status" aria-live="polite"></p>
           <div id="thinking-probe-actions" class="probe-actions" hidden>
-            <button id="probe-thinking-on" class="secondary" type="button">实机验证 Thinking ON（本地生成请求）</button>
-            <button id="probe-thinking-off" class="secondary" type="button">实机验证 Thinking OFF（本地生成请求）</button>
+            <button id="probe-thinking-on" class="secondary compact-action" type="button">验证 Thinking ON</button>
+            <button id="probe-thinking-off" class="secondary compact-action" type="button">验证 Thinking OFF</button>
           </div>
           <p id="thinking-probe-status" class="status" role="status" aria-live="polite"></p>
-          <button id="probe-streaming" class="secondary" type="button" hidden>验证 Streaming（真实联网）</button>
+          <button id="probe-streaming" class="secondary compact-action" type="button" hidden>验证 Streaming</button>
           <p id="capability-probe-status" class="status" role="status" aria-live="polite"></p>
+          <details id="advanced-capability-actions" class="advanced-settings capability-advanced">
+            <summary>高级验证操作</summary>
+            <p class="helper">Metadata 查询只读取模型声明；实机验证会发送一次显式生成请求。</p>
+            <button id="refresh-metadata" class="secondary compact-action" type="button" hidden>刷新 Ollama Thinking metadata</button>
+            <p id="metadata-status" class="status" role="status" aria-live="polite"></p>
+            <div id="thinking-reverify-actions" class="probe-actions" hidden>
+              <button id="reprobe-thinking-on" class="secondary compact-action" type="button">重新验证 Thinking ON</button>
+              <button id="reprobe-thinking-off" class="secondary compact-action" type="button">重新验证 Thinking OFF</button>
+            </div>
+            <button id="reprobe-streaming" class="secondary compact-action" type="button" hidden>重新验证 Streaming</button>
+          </details>
           <h3 class="runtime-options-heading">本次运行选择</h3>
           <p class="helper">这些选项只影响下一次请求，不会修改 Built-in Capability。</p>
+          <p id="runtime-default-notice" class="helper" role="status" aria-live="polite"></p>
           <label for="reasoning-mode">Thinking Mode</label>
           <select id="reasoning-mode">
             <option value="auto">AUTO（不发送思考控制参数）</option>
