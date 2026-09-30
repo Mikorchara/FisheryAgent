@@ -78,28 +78,109 @@ function renderProfiles(selectedId = "mock-demo") {
   updateProfile();
 }
 
+function capabilityStatus(profile, name) {
+  const capabilities = profile?.capabilities || {};
+  const item = name === "reasoning_on" ? capabilities.thinking_on
+    : name === "reasoning_off" ? capabilities.thinking_off
+      : name === "reasoning_effort" ? capabilities.reasoning_effort : null;
+  const status = (name === "streaming" ? capabilities.streaming : item?.status)?.toLowerCase();
+  return ["supported", "unsupported", "unknown"].includes(status) ? status : "unknown";
+}
+
+function statusSuffix(status) {
+  return status === "supported" ? "" : status === "unsupported" ? "（不支持）" : "（未验证）";
+}
+
+function appendChoice(target, value, label, disabled = false) {
+  const item = document.createElement("option");
+  item.value = value;
+  item.textContent = label;
+  item.disabled = disabled;
+  target.append(item);
+}
+
+function resolveRuntimeDefaults(profile) {
+  const notices = [];
+  let thinking = profile.stored_default_thinking_mode || profile.default_reasoning_mode || "auto";
+  let response = profile.stored_default_response_mode || profile.default_response_mode || "normal";
+  if (thinking === "on" || thinking === "off") {
+    const status = capabilityStatus(profile, thinking === "on" ? "reasoning_on" : "reasoning_off");
+    if (status !== "supported") {
+      notices.push(`默认 Thinking ${thinking.toUpperCase()} 当前${status === "unknown" ? "未验证" : "不支持"}，已回退为 AUTO。`);
+      thinking = "auto";
+    }
+  }
+  if (response === "streaming" && capabilityStatus(profile, "streaming") !== "supported") {
+    const status = capabilityStatus(profile, "streaming");
+    notices.push(`默认 Streaming 当前${status === "unknown" ? "未验证" : "不支持"}，已回退为 Normal。`);
+    response = "normal";
+  }
+  return {thinking, response, notices};
+}
+
+function updateRuntimeOptionControls(profile, preferred = {}) {
+  const thinkingSelect = $("reasoning-mode");
+  const responseSelect = $("response-mode");
+  const effortSelect = $("reasoning-effort");
+  const requestedThinking = preferred.reasoning ?? thinkingSelect.value ?? "auto";
+  const requestedResponse = preferred.response ?? responseSelect.value ?? "normal";
+  const requestedEffort = preferred.effort ?? effortSelect.value ?? "";
+  const onStatus = capabilityStatus(profile, "reasoning_on");
+  const offStatus = capabilityStatus(profile, "reasoning_off");
+  const streamingStatus = capabilityStatus(profile, "streaming");
+  const effortStatus = capabilityStatus(profile, "reasoning_effort");
+
+  thinkingSelect.replaceChildren();
+  appendChoice(thinkingSelect, "auto", "AUTO（不发送参数）");
+  appendChoice(thinkingSelect, "on", `ON${statusSuffix(onStatus)}`, onStatus !== "supported");
+  appendChoice(thinkingSelect, "off", `OFF${statusSuffix(offStatus)}`, offStatus !== "supported");
+  thinkingSelect.value = requestedThinking === "on" && onStatus === "supported"
+    || requestedThinking === "off" && offStatus === "supported" ? requestedThinking : "auto";
+
+  responseSelect.replaceChildren();
+  appendChoice(responseSelect, "normal", "Normal（不启用 Streaming）");
+  appendChoice(responseSelect, "streaming", `Streaming${statusSuffix(streamingStatus)}`,
+    streamingStatus !== "supported");
+  responseSelect.value = requestedResponse === "streaming" && streamingStatus === "supported"
+    ? "streaming" : "normal";
+
+  effortSelect.replaceChildren();
+  appendChoice(effortSelect, "", "UNSET（不发送参数）");
+  const effortValues = profile?.capabilities?.effort_values || [];
+  if (effortStatus !== "supported") {
+    appendChoice(effortSelect, `__${effortStatus}__`, `Reasoning Effort${statusSuffix(effortStatus)}`, true);
+  } else if (!effortValues.length) {
+    appendChoice(effortSelect, "__values_unknown__", "Reasoning Effort（未提供可选值）", true);
+  } else {
+    for (const value of effortValues) {
+      const thinkingOn = onStatus === "supported" && thinkingSelect.value === "on";
+      const dependency = onStatus !== "supported"
+        ? `（Thinking ON ${statusSuffix(onStatus).slice(1, -1)}）`
+        : thinkingSelect.value === "on" ? "" : "（选择 Thinking ON 后可选）";
+      appendChoice(effortSelect, value, `${value}${dependency}`, !thinkingOn);
+    }
+  }
+  effortSelect.value = effortStatus === "supported" && onStatus === "supported"
+      && thinkingSelect.value === "on" && effortValues.includes(requestedEffort)
+    ? requestedEffort : "";
+  $("effort-control").hidden = false;
+}
+
+function syncRuntimeOptionsFromCurrentSelections() {
+  const profile = selectedProfile();
+  if (!profile) return;
+  updateRuntimeOptionControls(profile, {reasoning: $("reasoning-mode").value,
+    response: $("response-mode").value, effort: $("reasoning-effort").value});
+}
+
 function updateProfile() {
   const profile = selectedProfile();
   if (!profile) return;
-  const reasoningModes = profile.reasoning_modes || ["auto"];
-  $("reasoning-mode").value = reasoningModes.includes(profile.default_reasoning_mode)
-    ? profile.default_reasoning_mode : "auto";
-  const emptyEffort = document.createElement("option");
-  emptyEffort.value = "";
-  emptyEffort.textContent = "未设置";
-  $("reasoning-effort").replaceChildren(emptyEffort);
-  for (const value of profile.capabilities?.effort_values || []) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = value;
-    $("reasoning-effort").append(option);
-  }
-  $("effort-control").hidden = profile.capabilities?.reasoning_effort?.status !== "supported";
-  $("response-mode").value = profile.default_response_mode === "streaming" ? "streaming" : "normal";
-  const defaultNotices = profile.runtime_default_warnings || [];
-  $("runtime-default-notice").textContent = defaultNotices.length
-    ? `已将未验证或冲突的默认偏好回退为安全值：${defaultNotices.map((item) => item === "THINKING_DEFAULT_FALLBACK" ? "Thinking AUTO" : "Normal 模式").join("、")}`
-    : "当前运行选项已按此 Profile 的默认偏好恢复。";
+  const defaults = resolveRuntimeDefaults(profile);
+  updateRuntimeOptionControls(profile, {reasoning: defaults.thinking, response: defaults.response,
+    effort: ""});
+  $("runtime-default-notice").textContent = defaults.notices.length
+    ? defaults.notices.join(" ") : "当前运行选项已按此 Profile 的默认偏好恢复。";
   const revision = ++formRevision;
   editingId = null;
   setFormMode("view");
@@ -259,8 +340,7 @@ function invalidateTest() {
   if (formMode !== "view") {
     renderCapabilities({capabilities: {}, default_reasoning_mode: "auto"});
     $("streaming-capability").textContent = "当前表单的模型身份已改变；高级能力待重新加载（UNKNOWN）。";
-    $("reasoning-mode").value = "auto";
-    $("response-mode").value = "normal";
+    updateRuntimeOptionControls({capabilities: {}}, {reasoning: "auto", response: "normal", effort: ""});
     $("runtime-default-notice").textContent = "连接身份已改变；本次运行选项已回退为 AUTO + Normal，旧 Capability 不再适用。";
     $("thinking-probe-actions").hidden = true;
     $("thinking-reverify-actions").hidden = true;
@@ -370,36 +450,100 @@ async function deleteSelected() {
 
 async function refreshProfiles(selectedId) {
   const response = await fetch("/api/config");
+  if (!response.ok) throw new Error("PROFILE_REFRESH_FAILED");
   const data = await response.json();
+  if (!data || !Array.isArray(data.profiles)) throw new Error("PROFILE_REFRESH_FAILED");
   profiles = data.profiles;
   renderProfiles(selectedId);
 }
 
 async function probeSelectedCapability(reverify = false) {
-  const selected = selectedProfile();
-  const source = selected?.capabilities?.source || "UNKNOWN";
-  if (!selected || selected.runtime_type === "mock"
-      || (reverify ? source !== "USER_VERIFIED" : selected.capabilities?.streaming !== "unknown")) return;
-  if (!window.confirm("这会向所选服务发送一次最小 Streaming 请求；Cloud 服务可能产生费用。继续吗？")) return;
-  const button = $(reverify ? "reprobe-streaming" : "probe-streaming");
-  button.disabled = true;
-  $("capability-probe-status").textContent = "正在显式验证 Streaming 能力…";
+  let stage = "setup";
+  let status;
+  let button;
   try {
-    const response = await fetch(`/api/profiles/${encodeURIComponent(selected.profile_id)}/probe`, {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({capability: "streaming", confirm_network: true, reverify}),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      $("capability-probe-status").textContent = `验证失败：${data.error_code || `HTTP_${response.status}`}`;
+    const isReverify = reverify === true;
+    const selected = selectedProfile();
+    const source = selected?.capabilities?.source || "UNKNOWN";
+    const streamingStatus = selected?.capabilities?.streaming?.toLowerCase() || "unknown";
+    status = $("capability-probe-status");
+    if (!selected) {
+      status.textContent = "验证失败：PROFILE_NOT_SELECTED";
       return;
     }
-    await refreshProfiles(selected.profile_id);
-    $("capability-probe-status").textContent = "验证成功：结果绑定到当前 service、adapter、Base URL 和 Model。";
-  } catch (_) {
-    $("capability-probe-status").textContent = "验证失败：NETWORK_ERROR";
+    if (selected.runtime_type === "mock") {
+      status.textContent = "Mock Profile 无需验证 Streaming。";
+      return;
+    }
+    if (isReverify ? source !== "USER_VERIFIED" : streamingStatus !== "unknown") {
+      status.textContent = "验证未执行：当前 Capability 状态已变化，请重新读取 Profile。";
+      return;
+    }
+    button = $(isReverify ? "reprobe-streaming" : "probe-streaming");
+    button.disabled = true;
+    status.textContent = "正在验证 Streaming...";
+    stage = "confirmation";
+    if (!window.confirm("这会向所选服务发送一次最小 Streaming 请求；Cloud 服务可能产生费用。继续吗？")) {
+      status.textContent = "验证已取消，未发送请求。";
+      return;
+    }
+    stage = "request";
+    const response = await fetch(`/api/profiles/${encodeURIComponent(selected.profile_id)}/probe`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({capability: "streaming", confirm_network: true, reverify: isReverify}),
+    });
+    stage = "response";
+    const data = await response.json();
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      status.textContent = "验证失败：INVALID_RESPONSE";
+      return;
+    }
+    const errorCode = typeof data.error_code === "string"
+      && /^[A-Z][A-Z0-9_]{0,40}$/.test(data.error_code)
+      ? data.error_code : `HTTP_${response.status}`;
+    const failureMessage = ["CONNECT_TIMEOUT", "READ_TIMEOUT", "TIMEOUT", "TOTAL_TIMEOUT"].includes(errorCode)
+      ? `验证超时：${errorCode}` : `验证失败：${errorCode}`;
+    if (data.status === "unsupported" && data.capability?.streaming === "unsupported"
+        && data.capability?.source === "USER_VERIFIED") {
+      stage = "refresh";
+      try {
+        await refreshProfiles(selected.profile_id);
+      } catch (_) {
+        status.textContent = "验证失败：STREAM_UNSUPPORTED；Capability 已记录，但页面刷新失败。";
+        return;
+      }
+      status.textContent = "验证失败：STREAM_UNSUPPORTED；已记录 UNSUPPORTED · USER_VERIFIED。";
+      return;
+    }
+    if (!response.ok) {
+      status.textContent = failureMessage;
+      return;
+    }
+    if (data.status !== "success" || data.capability?.streaming !== "supported"
+        || data.capability?.source !== "USER_VERIFIED") {
+      status.textContent = "验证失败：INVALID_RESPONSE";
+      return;
+    }
+    stage = "refresh";
+    try {
+      await refreshProfiles(selected.profile_id);
+    } catch (_) {
+      status.textContent = "验证成功：SUPPORTED · USER_VERIFIED；但页面刷新失败，请重新读取 Profile。";
+      return;
+    }
+    status.textContent = `验证成功：SUPPORTED · USER_VERIFIED · ${Number.isFinite(data.latency_ms)
+      ? `${data.latency_ms} ms` : "耗时 unavailable"}。`;
+  } catch (error) {
+    if (status) {
+      const message = stage === "request"
+        ? error?.name === "AbortError" ? "验证超时：TIMEOUT" : "验证失败：NETWORK_ERROR"
+        : stage === "response" ? "验证失败：INVALID_RESPONSE"
+          : stage === "refresh" ? "验证失败：PROFILE_REFRESH_FAILED"
+            : "验证失败：PROBE_UI_ERROR";
+      status.textContent = message;
+    }
   } finally {
-    button.disabled = false;
+    if (button) button.disabled = false;
   }
 }
 
@@ -840,12 +984,13 @@ async function init() {
     }
     $("scenario").value = "low_oxygen";
     $("profile").addEventListener("change", updateProfile);
+    $("reasoning-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
     $("analyze").addEventListener("click", analyze);
     $("provider-preset").addEventListener("change", selectPreset);
     $("new-profile").addEventListener("click", newProfile);
     $("edit-profile").addEventListener("click", editSelected);
     $("delete-profile").addEventListener("click", deleteSelected);
-    $("probe-streaming").addEventListener("click", probeSelectedCapability);
+    $("probe-streaming").addEventListener("click", () => probeSelectedCapability(false));
     $("reprobe-streaming").addEventListener("click", () => probeSelectedCapability(true));
     $("refresh-metadata").addEventListener("click", refreshMetadata);
     $("probe-thinking-on").addEventListener("click", () => probeThinking("on"));

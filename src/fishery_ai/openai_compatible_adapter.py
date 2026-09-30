@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterator
 import socket
 import ssl
 import time
+import re
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
@@ -178,6 +179,37 @@ class OpenAICompatibleAdapter:
                     else GatewayError(code))
         return GatewayError("SDK_ERROR")
 
+    @staticmethod
+    def _is_explicit_streaming_unsupported(exc: APIStatusError) -> bool:
+        """Recognize only clear provider refusals; generic HTTP errors stay inconclusive."""
+        if exc.status_code not in {400, 405, 406, 422, 501}:
+            return False
+        body = getattr(exc, "body", None)
+        if body is None:
+            try:
+                body = exc.response.json()
+            except (AttributeError, ValueError, TypeError):
+                return False
+
+        messages = []
+        if isinstance(body, str):
+            messages.append(body)
+        elif isinstance(body, dict):
+            for container in (body, body.get("error")):
+                if isinstance(container, dict):
+                    for key in ("code", "type", "param", "message", "detail", "reason"):
+                        value = container.get(key)
+                        if isinstance(value, str):
+                            messages.append(value[:2048])
+                elif isinstance(container, str):
+                    messages.append(container[:2048])
+        text = re.sub(r"[_-]+", " ", " ".join(messages).casefold())
+        return bool(re.search(
+            r"\bstream(?:ing)?\b.{0,50}\b(?:is\s+)?(?:not supported|unsupported|not available|unavailable)\b"
+            r"|\b(?:not supported|unsupported|not available|unavailable)\b.{0,50}\bstream(?:ing)?\b"
+            r"|\b(?:does not|doesn't|cannot|can't)\s+support(?:s)?\b.{0,30}\bstream(?:ing)?\b",
+            text))
+
     def list_models(self, runtime: RuntimeSnapshot, *, all_models: bool = False) -> list[dict]:
         """Explicit diagnostic only; return allowlisted public model metadata."""
         self._check_secret(runtime)
@@ -271,6 +303,8 @@ class OpenAICompatibleAdapter:
             except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
                 error = (RetryableGatewayError("TOTAL_TIMEOUT") if time.monotonic() >= deadline
                          else self._map_error(exc))
+                if isinstance(exc, APIStatusError) and self._is_explicit_streaming_unsupported(exc):
+                    error = GatewayError("STREAM_UNSUPPORTED")
                 if emitted or not isinstance(error, RetryableGatewayError) or attempt >= runtime.max_retries:
                     raise error from exc
             except RetryableGatewayError:

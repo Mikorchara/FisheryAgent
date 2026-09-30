@@ -113,13 +113,13 @@
           <label for="reasoning-mode">Thinking Mode</label>
           <select id="reasoning-mode">
             <option value="auto">AUTO（不发送思考控制参数）</option>
-            <option value="on">ON（请求开启）</option>
-            <option value="off">OFF（请求关闭）</option>
+            <option value="on" disabled>ON（未验证）</option>
+            <option value="off" disabled>OFF（未验证）</option>
           </select>
           <p id="thinking-hint" class="helper">AUTO 不发送参数；显式 ON / OFF 会按当前能力校验。</p>
-          <div id="effort-control" hidden><label for="reasoning-effort">Reasoning Effort</label><select id="reasoning-effort"></select></div>
+          <div id="effort-control"><label for="reasoning-effort">Reasoning Effort</label><select id="reasoning-effort"><option value="">UNSET（不发送参数）</option><option value="__unknown__" disabled>Reasoning Effort（未验证）</option></select></div>
           <label for="response-mode">Streaming / Response Mode</label>
-          <select id="response-mode"><option value="normal">Normal</option><option value="streaming">Streaming</option></select>
+          <select id="response-mode"><option value="normal">Normal（不启用 Streaming）</option><option value="streaming" disabled>Streaming（未验证）</option></select>
         </details>
 
         <h3 class="control-section-heading">03 · 本次分析输入</h3>

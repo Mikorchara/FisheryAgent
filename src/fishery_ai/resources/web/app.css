@@ -27,6 +27,7 @@ h1 { margin: 0; font-size: clamp(30px, 3vw, 42px); letter-spacing: -.04em; }
 .step { display: inline-grid; place-items: center; width: 27px; height: 27px; border-radius: 8px; background: #e7f1e8; color: #32795a; font-size: 11px; font-weight: 800; }
 label:not(.confirm) { display: block; margin: 19px 0 8px; font-size: 13px; font-weight: 700; }
 select, textarea, input[type="text"], input[type="url"] { width: 100%; border: 1px solid #cddbd4; border-radius: 9px; background: #fff; color: #173437; padding: 11px 12px; font: inherit; font-size: 14px; }
+select option:disabled { color: #89958e; }
 textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
 select:focus, textarea:focus, button:focus-visible, input:focus-visible { outline: 3px solid #8ccab1; outline-offset: 2px; }
 .helper { color: #718483; font-size: 12px; line-height: 1.5; margin: 7px 0 0; }

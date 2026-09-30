@@ -10,6 +10,7 @@ import unittest
 
 from fishery_ai.capability_store import CapabilityStore
 from fishery_ai.custom_profiles import CustomProfileStore
+from fishery_ai.contracts import Mode
 from fishery_ai.model_gateway import GatewayError, ModelEvent, ModelProfile, ProfileRegistry
 from fishery_ai.model_options import CapabilitySource, Support
 from fishery_ai.openai_compatible_adapter import OpenAICompatibleAdapter
@@ -84,24 +85,32 @@ class CapabilityIdentityTests(unittest.TestCase):
         profile_store = CustomProfileStore(custom_dir)
         first = profile_store.create({"display_name": "学校 Runtime A", "service_id": "school_a",
             "model_family": "qwen", "adapter_id": "openai_chat",
-            "base_url": "http://localhost:8811/v1", "model": "qwen-plus",
+            "base_url": "http://localhost:8811/v1/", "model": "qwen-plus",
             "secret_env": "", "provider_kind": "local"})
         second = profile_store.create({"display_name": "学校 Runtime B", "service_id": "school_b",
             "model_family": "qwen", "adapter_id": "openai_chat",
-            "base_url": "http://localhost:8811/v1", "model": "qwen-plus",
+            "base_url": "http://localhost:8811/v1/", "model": "qwen-plus",
             "secret_env": "", "provider_kind": "local"})
         evidence_dir = self.root / "capability-evidence"
         factory_mode = {"probe": False}
         sdk_client_called = []
+        probe_requests = []
 
         class ProbeGateway:
-            def stream(self, _request, runtime):
+            def stream(self, request, runtime):
                 self_runtime = runtime
                 if self_runtime.capabilities.streaming != Support.SUPPORTED:
                     raise AssertionError("probe must receive only a temporary streaming allowance")
-                if (self_runtime.service_id, self_runtime.base_url, self_runtime.model) != (
-                        "school_a", "http://localhost:8811/v1", "qwen-plus"):
+                if self_runtime.max_retries != 0:
+                    raise AssertionError("explicit probe must not retry")
+                if (self_runtime.service_id, self_runtime.adapter_id,
+                        self_runtime.base_url, self_runtime.model) != (
+                        "school_a", "openai_chat", "http://localhost:8811/v1", "qwen-plus"):
                     raise AssertionError("probe identity must stay exact")
+                if (request.mode != Mode.CHAT or len(request.messages) != 1
+                        or request.messages[0].content != "只回复 OK"):
+                    raise AssertionError("probe must send only the minimal request")
+                probe_requests.append(request)
                 yield ModelEvent(delta="OK")
 
         class Factory:
@@ -133,6 +142,7 @@ class CapabilityIdentityTests(unittest.TestCase):
         probed = client.post(f"/api/profiles/{first.profile_id}/probe",
                              json={"capability": "streaming", "confirm_network": True})
         self.assertEqual(probed.status_code, 200)
+        self.assertEqual(probed.get_json()["capability"]["streaming"], "supported")
         self.assertEqual(probed.get_json()["capability"]["source"], "USER_VERIFIED")
         rejected_reverify = client.post(f"/api/profiles/{first.profile_id}/probe",
             json={"capability": "streaming", "confirm_network": True})
@@ -142,6 +152,7 @@ class CapabilityIdentityTests(unittest.TestCase):
             json={"capability": "streaming", "confirm_network": True, "reverify": True})
         self.assertEqual(reprobed.status_code, 200)
         self.assertEqual(reprobed.get_json()["capability"]["source"], "USER_VERIFIED")
+        self.assertEqual(len(probe_requests), 2)
 
         reloaded = make_client().get("/api/config").get_json()["profiles"]
         after_by_id = {item["profile_id"]: item for item in reloaded}
@@ -151,9 +162,68 @@ class CapabilityIdentityTests(unittest.TestCase):
         saved_records = list(evidence_dir.glob("*.json"))
         self.assertEqual(len(saved_records), 1)
         saved = json.loads(saved_records[0].read_text(encoding="utf-8"))
-        self.assertEqual((saved["service_id"], saved["base_url"], saved["model"]),
-                         ("school_a", "http://localhost:8811/v1", "qwen-plus"))
+        self.assertEqual((saved["service_id"], saved["adapter_id"], saved["base_url"],
+                          saved["model"]),
+                         ("school_a", "openai_chat", "http://localhost:8811/v1", "qwen-plus"))
         self.assertNotIn("secret", saved)
+
+    def test_streaming_probe_network_failure_keeps_unknown(self):
+        custom_dir = self.root / "profiles-network-failure"
+        profile = CustomProfileStore(custom_dir).create({"display_name": "超时服务",
+            "service_id": "school", "model_family": "unknown",
+            "adapter_id": "openai_chat", "base_url": "http://localhost:8822/v1",
+            "model": "school-model", "secret_env": "", "provider_kind": "local"})
+        evidence_dir = self.root / "capability-evidence-network-failure"
+
+        class ReadTimeoutGateway:
+            def stream(self, _request, runtime):
+                self_runtime = runtime
+                if self_runtime.max_retries != 0:
+                    raise AssertionError("explicit probe must not retry")
+                raise GatewayError("READ_TIMEOUT")
+                yield  # pragma: no cover
+
+        client = create_app(trace_path=self.root / "timeout-trace.jsonl",
+            custom_profiles_dir=custom_dir, capability_evidence_dir=evidence_dir,
+            real_gateway_factory=ReadTimeoutGateway).test_client()
+        response = client.post(f"/api/profiles/{profile.profile_id}/probe",
+            json={"capability": "streaming", "confirm_network": True})
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.get_json()["error_code"], "READ_TIMEOUT")
+        self.assertEqual(list(evidence_dir.glob("*.json")) if evidence_dir.exists() else [], [])
+        current = {item["profile_id"]: item for item in client.get("/api/config").get_json()["profiles"]}
+        self.assertEqual(current[profile.profile_id]["capabilities"]["streaming"], "unknown")
+        self.assertEqual(current[profile.profile_id]["capabilities"]["source"], "UNKNOWN")
+
+    def test_explicit_streaming_refusal_is_persisted_as_unsupported(self):
+        custom_dir = self.root / "profiles-unsupported"
+        profile = CustomProfileStore(custom_dir).create({"display_name": "拒绝服务",
+            "service_id": "school", "model_family": "unknown",
+            "adapter_id": "openai_chat", "base_url": "http://localhost:8833/v1",
+            "model": "school-model", "secret_env": "", "provider_kind": "local"})
+        evidence_dir = self.root / "capability-evidence-unsupported"
+
+        class RefusingGateway:
+            def stream(self, _request, _runtime):
+                raise GatewayError("STREAM_UNSUPPORTED")
+                yield  # pragma: no cover
+
+        def make_client():
+            return create_app(trace_path=self.root / "unsupported-trace.jsonl",
+                custom_profiles_dir=custom_dir, capability_evidence_dir=evidence_dir,
+                real_gateway_factory=RefusingGateway).test_client()
+
+        response = make_client().post(f"/api/profiles/{profile.profile_id}/probe",
+            json={"capability": "streaming", "confirm_network": True})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "unsupported")
+        capability = response.get_json()["capability"]
+        self.assertEqual(capability["streaming"], "unsupported")
+        self.assertEqual(capability["source"], "USER_VERIFIED")
+        reloaded = {item["profile_id"]: item for item in make_client().get(
+            "/api/config").get_json()["profiles"]}
+        self.assertEqual(reloaded[profile.profile_id]["capabilities"]["streaming"], "unsupported")
+        self.assertEqual(reloaded[profile.profile_id]["capabilities"]["source"], "USER_VERIFIED")
 
 
 if __name__ == "__main__":

@@ -23,10 +23,20 @@ function makePage(fetch) {
       this.disabled = false;
       this.checked = false;
       this.children = [];
+      this.listeners = new Map();
       this.classList = {toggle() {}, add() {}, remove() {}};
     }
     append(...items) { this.children.push(...items); }
+    prepend(...items) { this.children.unshift(...items); }
     replaceChildren(...items) { this.children = items; }
+    addEventListener(type, handler) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(handler);
+    }
+    async dispatch(type) {
+      const event = {type, target: this};
+      return Promise.all((this.listeners.get(type) || []).map((handler) => handler(event)));
+    }
     removeAttribute() {}
     setAttribute() {}
     focus() {}
@@ -38,7 +48,8 @@ function makePage(fetch) {
     return controls.get(id);
   };
   const document = {getElementById: element, createElement: () => new Element()};
-  const context = vm.createContext({document, fetch, TextDecoder, Uint8Array});
+  const context = vm.createContext({document, fetch, TextDecoder, Uint8Array,
+    window: {confirm: () => true}});
   vm.runInContext(source, context);
   return {element, context};
 }
@@ -299,6 +310,7 @@ test('left settings have three layers, desktop independent scroll, and local def
   assert.match(capabilitySection, /id="probe-thinking-on"/);
   assert.match(capabilitySection, /id="probe-thinking-off"/);
   assert.match(css, /\.controls\s*\{[^}]*max-height:\s*calc\(100vh - 32px\)[^}]*overflow-y:\s*auto/);
+  assert.match(css, /select option:disabled\s*\{\s*color:/);
   assert.match(css, /@media \(max-width: 1000px\).*\.controls \{ position: static; max-height: none; overflow: visible;/);
   const local = {profile_id: 'ollama-qwen35-4b-local', display_name: 'Ollama local',
     service_id: 'ollama', model_family: 'qwen', model: 'qwen3.5:4b', profile_status: 'experimental',
@@ -333,6 +345,9 @@ test('editing the basic model identity clears draft capability display before sa
   assert.equal(page.element('reprobe-thinking-on').hidden, true);
   assert.equal(page.element('reasoning-mode').value, 'auto');
   assert.equal(page.element('response-mode').value, 'normal');
+  assert.equal(page.element('reasoning-mode').children.find((item) => item.value === 'on').disabled, true);
+  assert.equal(page.element('response-mode').children.find((item) => item.value === 'streaming').disabled, true);
+  assert.equal(page.element('reasoning-effort').children.find((item) => item.value === '__unknown__').disabled, true);
   assert.equal(page.element('refresh-metadata').hidden, true);
 });
 
@@ -376,8 +391,259 @@ test('Profile switching restores saved runtime defaults and verified probes move
   assert.equal(page.element('reasoning-mode').value, 'auto');
   assert.equal(page.element('response-mode').value, 'normal');
   assert.equal(page.element('probe-streaming').hidden, false);
+  assert.equal(page.element('response-mode').children.find((item) => item.value === 'streaming').disabled, true);
+  assert.equal(page.element('reasoning-mode').children.find((item) => item.value === 'on').disabled, true);
   page.element('profile').value = first.profile_id;
   vm.runInContext('updateProfile()', page.context);
   assert.equal(page.element('reasoning-mode').value, 'off');
   assert.equal(page.element('response-mode').value, 'streaming');
+  assert.equal(page.element('response-mode').children.find((item) => item.value === 'streaming').disabled, false);
+  assert.equal(page.element('reasoning-mode').children.find((item) => item.value === 'off').disabled, false);
+});
+
+test('runtime option choices follow exact capabilities and unavailable defaults fall back safely', () => {
+  const unknown = {profile_id: 'custom-unknown', display_name: 'Unknown', provider: 'custom',
+    service_id: 'custom', model: 'm1', adapter_id: 'openai_chat', base_url: 'http://localhost/v1',
+    profile_status: 'custom', runtime_type: 'local', source: 'user_custom',
+    stored_default_thinking_mode: 'on', stored_default_response_mode: 'streaming',
+    default_reasoning_mode: 'auto', default_response_mode: 'normal', capabilities: {
+      streaming: 'unknown', source: 'UNKNOWN',
+      thinking_on: {status: 'unknown', source: 'UNKNOWN'},
+      thinking_off: {status: 'unsupported', source: 'OFFICIAL_DOCS'},
+      reasoning_effort: {status: 'unknown', source: 'UNKNOWN'}, effort_values: ['low', 'high'],
+    }};
+  const page = makePage(async (url) => ({ok: true, json: async () => url.endsWith('/custom-unknown')
+    ? {editable: true, fields: {display_name: 'Unknown', service_id: 'custom', model_family: 'unknown',
+      adapter_id: 'openai_chat', base_url: 'http://localhost/v1', model: 'm1', secret_env: '',
+      provider_kind: 'local'}} : {status: 'MISSING'}}));
+  vm.runInContext(`profiles = [${JSON.stringify(unknown)}]`, page.context);
+  page.element('profile').value = unknown.profile_id;
+  vm.runInContext('updateProfile()', page.context);
+  const choice = (id, value) => page.element(id).children.find((item) => item.value === value);
+  assert.equal(page.element('reasoning-mode').value, 'auto');
+  assert.equal(page.element('response-mode').value, 'normal');
+  assert.equal(page.element('reasoning-effort').value, '');
+  assert.equal(choice('reasoning-mode', 'auto').disabled, false);
+  assert.equal(choice('reasoning-mode', 'on').disabled, true);
+  assert.match(choice('reasoning-mode', 'on').textContent, /未验证/);
+  assert.equal(choice('reasoning-mode', 'off').disabled, true);
+  assert.match(choice('reasoning-mode', 'off').textContent, /不支持/);
+  assert.equal(choice('response-mode', 'streaming').disabled, true);
+  assert.match(choice('response-mode', 'streaming').textContent, /未验证/);
+  assert.equal(choice('reasoning-effort', '').disabled, false);
+  assert.equal(choice('reasoning-effort', '__unknown__').disabled, true);
+  assert.match(page.element('runtime-default-notice').textContent, /未验证.*AUTO.*未验证.*Normal/);
+
+  const supported = {...unknown, capabilities: {...unknown.capabilities,
+    streaming: 'supported', source: 'USER_VERIFIED',
+    thinking_on: {status: 'supported', source: 'MODEL_METADATA'},
+    thinking_off: {status: 'supported', source: 'MODEL_METADATA'},
+    reasoning_effort: {status: 'supported', source: 'MODEL_METADATA'}, effort_values: ['low', 'high']}};
+  vm.runInContext(`updateRuntimeOptionControls(${JSON.stringify(supported)}, {reasoning:'on', response:'streaming', effort:'high'})`, page.context);
+  assert.equal(choice('reasoning-mode', 'on').disabled, false);
+  assert.equal(choice('reasoning-mode', 'off').disabled, false);
+  assert.equal(choice('response-mode', 'streaming').disabled, false);
+  assert.equal(choice('reasoning-effort', 'low').disabled, false);
+  assert.equal(page.element('reasoning-effort').value, 'high');
+
+  vm.runInContext(`profiles = [${JSON.stringify(supported)}]`, page.context);
+  page.element('profile').value = supported.profile_id;
+  page.element('reasoning-mode').value = 'auto';
+  vm.runInContext('syncRuntimeOptionsFromCurrentSelections()', page.context);
+  assert.equal(choice('reasoning-effort', 'low').disabled, true);
+  assert.match(choice('reasoning-effort', 'low').textContent, /选择 Thinking ON 后可选/);
+  page.element('reasoning-mode').value = 'on';
+  vm.runInContext('syncRuntimeOptionsFromCurrentSelections()', page.context);
+  assert.equal(choice('reasoning-effort', 'low').disabled, false);
+});
+
+test('successful Streaming Probe unlocks the exact Profile choice without reloading the page', async () => {
+  const unknown = {profile_id: 'custom-stream', display_name: 'Custom Stream', provider: 'custom',
+    service_id: 'custom', model: 'm1', adapter_id: 'openai_chat', base_url: 'https://example.invalid/v1',
+    profile_status: 'custom', runtime_type: 'cloud', source: 'user_custom',
+    capabilities: {streaming: 'unknown', source: 'UNKNOWN', streaming_scope_matches: true}};
+  const verified = {...unknown, capabilities: {streaming: 'supported', source: 'USER_VERIFIED',
+    streaming_scope_matches: true}};
+  const page = makePage(async (url) => {
+    if (url === `/api/profiles/${unknown.profile_id}/probe`) return {ok: true, json: async () => ({
+      status: 'success', capability: verified.capabilities, latency_ms: 5})};
+    if (url === '/api/config') return {ok: true, json: async () => ({profiles: [verified]})};
+    if (url === `/api/profiles/${unknown.profile_id}`) return {ok: true, json: async () => ({editable: true,
+      fields: {display_name: unknown.display_name, service_id: 'custom', model_family: 'unknown',
+        adapter_id: 'openai_chat', base_url: unknown.base_url, model: 'm1', secret_env: '',
+        provider_kind: 'cloud'}})};
+    return {ok: true, json: async () => ({status: 'MISSING'})};
+  });
+  vm.runInContext(`profiles = [${JSON.stringify(unknown)}]`, page.context);
+  page.element('profile').value = unknown.profile_id;
+  vm.runInContext('updateProfile()', page.context);
+  await new Promise(setImmediate);
+  assert.equal(page.element('response-mode').children.find((item) => item.value === 'streaming').disabled, true);
+  await vm.runInContext('probeSelectedCapability()', page.context);
+  assert.equal(page.element('response-mode').children.find((item) => item.value === 'streaming').disabled, false);
+  assert.match(page.element('streaming-capability').textContent, /本机已验证/);
+});
+
+test('successful Thinking Probe independently unlocks the exact ON choice', async () => {
+  const base = {profile_id: 'ollama-qwen35-4b-local', display_name: 'Ollama Qwen', provider: 'ollama',
+    service_id: 'ollama', model_family: 'qwen', model: 'qwen3.5:4b', adapter_id: 'generic_openai_chat',
+    base_url: 'http://127.0.0.1:11434/v1', profile_status: 'experimental', runtime_type: 'local',
+    source: 'built_in', default_reasoning_mode: 'auto', default_response_mode: 'normal',
+    capabilities: {streaming: 'unknown', source: 'UNKNOWN',
+      thinking_on: {status: 'unknown', source: 'UNKNOWN'},
+      thinking_off: {status: 'unknown', source: 'UNKNOWN'}, reasoning_effort: {status: 'unknown', source: 'UNKNOWN'}}};
+  const verified = {...base, capabilities: {...base.capabilities,
+    thinking_on: {status: 'supported', source: 'USER_VERIFIED'}}};
+  const page = makePage(async (url) => {
+    if (url === `/api/profiles/${base.profile_id}/thinking-probe`) return {ok: true, json: async () => ({})};
+    if (url === '/api/config') return {ok: true, json: async () => ({profiles: [verified]})};
+    if (url === `/api/profiles/${base.profile_id}`) return {ok: true, json: async () => ({editable: false,
+      fields: {display_name: base.display_name, service_id: 'ollama', model_family: 'qwen',
+        adapter_id: 'generic_openai_chat', base_url: base.base_url, model: base.model, secret_env: '',
+        provider_kind: 'local'}})};
+    return {ok: true, json: async () => ({status: 'MISSING'})};
+  });
+  vm.runInContext(`profiles = [${JSON.stringify(base)}]`, page.context);
+  page.element('profile').value = base.profile_id;
+  vm.runInContext('updateProfile()', page.context);
+  await new Promise(setImmediate);
+  const onChoice = () => page.element('reasoning-mode').children.find((item) => item.value === 'on');
+  const offChoice = () => page.element('reasoning-mode').children.find((item) => item.value === 'off');
+  assert.equal(onChoice().disabled, true);
+  await vm.runInContext('probeThinking("on")', page.context);
+  assert.equal(onChoice().disabled, false);
+  assert.equal(offChoice().disabled, true);
+});
+
+test('new Custom Profile first Streaming Probe uses the current id and unlocks without page reload', async () => {
+  const mock = {profile_id: 'mock-demo', display_name: 'Mock', provider: 'mock', service_id: 'custom',
+    model: 'offline-mock', profile_status: 'custom', runtime_type: 'mock', source: 'built_in',
+    capabilities: {streaming: 'unknown', source: 'UNKNOWN'}};
+  const existing = {profile_id: 'custom-existing', display_name: 'Existing Custom', provider: 'custom',
+    service_id: 'school', model: 'school-a', adapter_id: 'openai_chat', base_url: 'http://localhost/a/v1',
+    profile_status: 'custom', runtime_type: 'local', source: 'user_custom',
+    capabilities: {streaming: 'unknown', source: 'UNKNOWN', streaming_scope_matches: true}};
+  const created = {profile_id: 'custom-created', display_name: 'New Custom', provider: 'custom',
+    service_id: 'school', model: 'school-b', adapter_id: 'openai_chat', base_url: 'http://localhost/b/v1',
+    profile_status: 'custom', runtime_type: 'local', source: 'user_custom',
+    capabilities: {streaming: 'unknown', source: 'UNKNOWN', streaming_scope_matches: true}};
+  let profileList = [mock, existing];
+  const probeCalls = [];
+  let page;
+  const fieldsFor = (profile) => ({display_name: profile.display_name,
+    service_id: profile.service_id, model_family: 'unknown', adapter_id: profile.adapter_id || 'generic_openai_chat',
+    base_url: profile.base_url || 'http://mock.invalid/v1', model: profile.model, secret_env: '',
+    provider_kind: profile.runtime_type});
+  const reply = (body, status = 200) => ({ok: status >= 200 && status < 300, status,
+    json: async () => body});
+  page = makePage(async (url, options = {}) => {
+    if (url === '/api/config') return reply({profiles: profileList,
+      presets: [{id: 'custom', label: 'Custom OpenAI-compatible', service_id: 'custom',
+        model_family: 'unknown', adapter_id: 'openai_chat', provider_kind: 'local'}], scenarios: ['normal']});
+    if (url === '/api/profiles' && options.method === 'POST') {
+      profileList = [...profileList, created];
+      return reply({profile: {profile_id: created.profile_id}});
+    }
+    if (/^\/api\/profiles\/[^/]+\/probe$/.test(url)) {
+      const profileId = url.split('/')[3];
+      assert.equal(page.element('capability-probe-status').textContent, '正在验证 Streaming...');
+      assert.equal(page.element('probe-streaming').disabled, true);
+      const body = JSON.parse(options.body);
+      probeCalls.push({profileId, body});
+      const capability = {streaming: 'supported', source: 'USER_VERIFIED',
+        streaming_scope_matches: true};
+      profileList = profileList.map((profile) => profile.profile_id === profileId
+        ? {...profile, capabilities: capability} : profile);
+      return reply({status: 'success', capability, latency_ms: 7});
+    }
+    if (url.startsWith('/api/profiles/')) {
+      const profile = profileList.find((item) => url.endsWith(item.profile_id));
+      return reply({editable: profile?.source === 'user_custom', fields: fieldsFor(profile || mock)});
+    }
+    if (url === '/api/secret-status') return reply({status: 'MISSING'});
+    throw new Error(`Unexpected offline test URL: ${url}`);
+  });
+
+  await vm.runInContext('init()', page.context);
+  await page.element('new-profile').dispatch('click');
+  const values = {'provider-preset': 'custom', 'custom-name': 'New Custom',
+    'custom-provider': 'school', 'custom-family': 'unknown', 'custom-adapter': 'openai_chat',
+    'custom-url': created.base_url, 'custom-model': created.model, 'custom-secret-env': '',
+    'custom-deployment': 'local', 'custom-default-thinking': 'auto',
+    'custom-default-response': 'normal'};
+  for (const [id, value] of Object.entries(values)) page.element(id).value = value;
+  await page.element('save-profile').dispatch('click');
+  await new Promise(setImmediate);
+  assert.equal(page.element('profile').value, created.profile_id);
+  assert.equal(page.element('probe-streaming').hidden, false);
+
+  await page.element('probe-streaming').dispatch('click');
+  assert.deepEqual(probeCalls[0], {profileId: created.profile_id,
+    body: {capability: 'streaming', confirm_network: true, reverify: false}});
+  assert.equal(page.element('probe-streaming').hidden, true);
+  assert.equal(page.element('reprobe-streaming').hidden, false);
+  assert.equal(page.element('response-mode').children.find((item) => item.value === 'streaming').disabled, false);
+  assert.match(page.element('streaming-capability').textContent, /本机已验证.*SUPPORTED/);
+
+  page.element('profile').value = existing.profile_id;
+  await page.element('profile').dispatch('change');
+  await new Promise(setImmediate);
+  assert.equal(page.element('probe-streaming').hidden, false);
+  await page.element('probe-streaming').dispatch('click');
+  assert.equal(probeCalls[1].profileId, existing.profile_id);
+});
+
+test('explicit Streaming rejection is shown and refreshes the exact Profile as unsupported', async () => {
+  const unknown = {profile_id: 'custom-stream-refused', display_name: 'Refused', provider: 'custom',
+    service_id: 'custom', model: 'm1', adapter_id: 'openai_chat', base_url: 'http://localhost/v1',
+    profile_status: 'custom', runtime_type: 'local', source: 'user_custom',
+    capabilities: {streaming: 'unknown', source: 'UNKNOWN', streaming_scope_matches: true}};
+  const rejected = {...unknown, capabilities: {streaming: 'unsupported', source: 'USER_VERIFIED',
+    streaming_scope_matches: true}};
+  const page = makePage(async (url) => {
+    if (url.endsWith('/probe')) return {ok: true, status: 200, json: async () => ({status: 'unsupported',
+      error_code: 'STREAM_UNSUPPORTED', capability: rejected.capabilities})};
+    if (url === '/api/config') return {ok: true, json: async () => ({profiles: [rejected]})};
+    return {ok: true, json: async () => ({editable: true, fields: {display_name: rejected.display_name,
+      service_id: 'custom', model_family: 'unknown', adapter_id: 'openai_chat',
+      base_url: rejected.base_url, model: 'm1', secret_env: '', provider_kind: 'local'}})};
+  });
+  vm.runInContext(`profiles = [${JSON.stringify(unknown)}]`, page.context);
+  page.element('profile').value = unknown.profile_id;
+  vm.runInContext('updateProfile()', page.context);
+  await new Promise(setImmediate);
+  await vm.runInContext('probeSelectedCapability(false)', page.context);
+  assert.match(page.element('capability-probe-status').textContent, /STREAM_UNSUPPORTED.*UNSUPPORTED.*USER_VERIFIED/);
+  assert.match(page.element('streaming-capability').textContent, /不支持.*UNSUPPORTED/);
+  assert.equal(page.element('probe-streaming').hidden, true);
+  assert.equal(page.element('reprobe-streaming').hidden, false);
+  assert.equal(page.element('response-mode').children.find((item) => item.value === 'streaming').disabled, true);
+});
+
+test('Streaming Probe surfaces HTTP, malformed JSON, and network errors', async () => {
+  const profile = {profile_id: 'custom-probe-errors', display_name: 'Probe Error', provider: 'custom',
+    service_id: 'custom', model: 'm1', profile_status: 'custom', runtime_type: 'local',
+    source: 'user_custom', capabilities: {streaming: 'unknown', source: 'UNKNOWN'}};
+  const detail = {editable: true, fields: {display_name: profile.display_name, service_id: 'custom',
+    model_family: 'unknown', adapter_id: 'generic_openai_chat', base_url: 'http://localhost/v1',
+    model: 'm1', secret_env: '', provider_kind: 'local'}};
+  async function check(probeReply, expected) {
+    const page = makePage(async (url) => {
+      if (url.endsWith('/probe')) {
+        if (probeReply instanceof Error) throw probeReply;
+        return probeReply;
+      }
+      return {ok: true, json: async () => detail};
+    });
+    vm.runInContext(`profiles = [${JSON.stringify(profile)}]`, page.context);
+    page.element('profile').value = profile.profile_id;
+    vm.runInContext('updateProfile()', page.context);
+    await new Promise(setImmediate);
+    await vm.runInContext('probeSelectedCapability(false)', page.context);
+    assert.match(page.element('capability-probe-status').textContent, new RegExp(expected));
+    assert.equal(page.element('probe-streaming').disabled, false);
+  }
+  await check({ok: false, status: 504, json: async () => ({error_code: 'READ_TIMEOUT'})}, 'READ_TIMEOUT');
+  await check({ok: false, status: 502, json: async () => { throw new Error('bad JSON'); }}, 'INVALID_RESPONSE');
+  await check(new TypeError('offline simulated fetch failure'), 'NETWORK_ERROR');
 });

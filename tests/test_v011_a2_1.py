@@ -11,10 +11,10 @@ import ssl
 import unittest
 
 import httpx
-from openai import APIConnectionError, APITimeoutError
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from fishery_ai.composition import RESOURCE_ROOT
-from fishery_ai.model_gateway import ModelMessage, ModelRequest, ProfileRegistry
+from fishery_ai.model_gateway import GatewayError, ModelMessage, ModelProfile, ModelRequest, ProfileRegistry
 from fishery_ai.model_options import (GenerationOptions, ModelCapabilities, OptionValidationError,
                                       ReasoningMode, ReasoningOptions, Support, validate_options)
 from fishery_ai.contracts import Mode
@@ -92,6 +92,42 @@ class ErrorMappingTests(unittest.TestCase):
             self.assertNotIn("SENTINEL_SECRET", str(mapped))
         mapped = OpenAICompatibleAdapter._map_error(self._sdk_error(None, timeout=True))
         self.assertEqual(mapped.code, "TIMEOUT")
+
+    def test_streaming_refusal_requires_explicit_provider_message(self):
+        profile = ProfileRegistry([ModelProfile(
+            profile_id="probe-profile", display_name="Probe", provider_kind="local",
+            adapter_id="generic_openai_chat", provider_id="custom",
+            base_url="http://localhost:11434/v1", model="probe-model")])
+        runtime = profile.snapshot("probe-profile", {})
+        runtime = replace(runtime, max_retries=0, capabilities=replace(
+            runtime.capabilities, streaming=Support.SUPPORTED, service_id="custom",
+            adapter_id="generic_openai_chat", base_url=runtime.base_url, model_id=runtime.model))
+        request = ModelRequest(Mode.CHAT, (ModelMessage("user", "只回复 OK"),))
+
+        def mapped_stream_error(body):
+            http_request = httpx.Request("POST", "http://localhost:11434/v1/chat/completions")
+            response = httpx.Response(400, request=http_request, json=body)
+            error = APIStatusError("safe test error", response=response, body=body)
+
+            class Completions:
+                def create(self, **_kwargs):
+                    raise error
+
+            class Client:
+                chat = type("Chat", (), {"completions": Completions()})()
+
+                def close(self):
+                    pass
+
+            adapter = OpenAICompatibleAdapter(lambda *_args: Client())
+            with self.assertRaises(GatewayError) as caught:
+                list(adapter.stream(request, runtime))
+            return caught.exception
+
+        refusal = mapped_stream_error({"error": {"message": "This model does not support streaming"}})
+        self.assertEqual(refusal.code, "STREAM_UNSUPPORTED")
+        generic = mapped_stream_error({"error": {"message": "Unknown model"}})
+        self.assertEqual(generic.code, "HTTP_400")
 
     def test_network_probe_failure_is_redacted_and_stops(self):
         runtime = ProfileRegistry.from_json(RESOURCE_ROOT.joinpath(

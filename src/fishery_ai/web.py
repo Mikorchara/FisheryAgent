@@ -442,6 +442,16 @@ def create_app(*, trace_path: Path | None = None,
                                 "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
         except GatewayError as exc:
             code = exc.code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,40}", exc.code) else "GATEWAY_ERROR"
+            if code == "STREAM_UNSUPPORTED":
+                try:
+                    profiles[profile_id] = capability_store.save_streaming(
+                        profile, Support.UNSUPPORTED, datetime.now(timezone.utc).isoformat())
+                except (OSError, ValueError):
+                    return error("CAPABILITY_RECORD_FAILED", 500)
+                capability = _profile_public(profiles[profile_id], sources[profile_id])["capabilities"]
+                return jsonify({"status": "unsupported", "error_code": code,
+                                "capability": capability,
+                                "latency_ms": round((time.monotonic() - started) * 1000, 3)})
             return jsonify({"status": "failure", "error_code": code,
                             "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
         except Exception:
