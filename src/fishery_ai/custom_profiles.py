@@ -9,7 +9,8 @@ import re
 import uuid
 from urllib.parse import urlsplit
 
-from .model_gateway import ModelProfile
+from .model_gateway import (DEFAULT_LOCAL_READ_TIMEOUT_S,
+                            DEFAULT_LOCAL_TOTAL_TIMEOUT_S, ModelProfile)
 from .model_options import ProfileStatus
 
 
@@ -112,6 +113,10 @@ class CustomProfileStore:
             profile_id=profile_id, display_name=values["display_name"],
             provider_kind=values["provider_kind"], base_url=values["base_url"],
             model=values["model"], secret_env=values["secret_env"] or None,
+            read_timeout_s=(DEFAULT_LOCAL_READ_TIMEOUT_S if values["provider_kind"] == "local"
+                            else 30.0),
+            total_timeout_s=(DEFAULT_LOCAL_TOTAL_TIMEOUT_S if values["provider_kind"] == "local"
+                             else 120.0),
             adapter_id=values["adapter_id"], provider_id=legacy_provider,
             service_id=values["service_id"], model_family=values["model_family"],
             profile_status=ProfileStatus.CUSTOM, max_retries=0,

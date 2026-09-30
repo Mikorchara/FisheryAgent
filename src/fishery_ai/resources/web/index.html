@@ -83,6 +83,16 @@
         <label for="question">问题</label>
         <textarea id="question" rows="4" maxlength="500">当前水质情况怎么样？</textarea>
 
+        <div id="reasoning-control" hidden>
+          <label for="reasoning-mode">Thinking 模式</label>
+          <select id="reasoning-mode">
+            <option value="auto">AUTO（使用 Ollama 模型默认行为）</option>
+            <option value="on">ON（请求开启）</option>
+            <option value="off">OFF（请求关闭）</option>
+          </select>
+          <p class="helper">仅对精确的本地 Ollama qwen3.5:4b Profile 显示；OFF 通过请求参数发送，不依赖 CLI 会话状态。</p>
+        </div>
+
         <label for="response-mode">Response Mode</label>
         <select id="response-mode"><option value="normal">Normal</option><option value="streaming">Streaming</option></select>
         <p id="streaming-capability" class="helper">Streaming 能力：读取中</p>

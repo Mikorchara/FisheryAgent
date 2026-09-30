@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 import socket
 import ssl
 import time
+from urllib.parse import urlsplit
 
 import httpx
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
@@ -65,10 +67,38 @@ class OpenAICompatibleAdapter:
         return remaining
 
     @staticmethod
+    def supports_ollama_qwen35_reasoning(profile_or_runtime: object) -> bool:
+        """Recognize only the local Ollama qwen3.5:4b endpoint this control targets."""
+        if (getattr(profile_or_runtime, "provider_kind", None) != "local"
+                or getattr(profile_or_runtime, "model", None) != "qwen3.5:4b"
+                or getattr(profile_or_runtime, "adapter_id", None)
+                not in ("openai_chat", "generic_openai_chat")):
+            return False
+        service_id = getattr(profile_or_runtime, "service_id", None)
+        if service_id == "ollama":
+            return True
+        if service_id != "custom":
+            return False
+        try:
+            parsed = urlsplit(getattr(profile_or_runtime, "base_url", ""))
+            return (parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1")
+                    and parsed.port == 11434 and parsed.path.rstrip("/") == "/v1")
+        except ValueError:
+            return False
+
+    @staticmethod
     def _kwargs(request: ModelRequest, runtime: RuntimeSnapshot, *, stream: bool) -> dict:
         generation, reasoning = effective_options(request, runtime)
+        ollama_qwen35 = OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(runtime)
+        capabilities = runtime.capabilities
+        if ollama_qwen35:
+            # Ollama's OpenAI-compatible adapter documents reasoning_effort="none"
+            # as the request-level OFF control. This exact adapter/model scope does
+            # not grant or infer any other capability (especially Streaming).
+            capabilities = replace(capabilities, reasoning_on=Support.SUPPORTED,
+                                   reasoning_off=Support.SUPPORTED)
         try:
-            validate_options(generation, reasoning, runtime.capabilities, streaming=stream)
+            validate_options(generation, reasoning, capabilities, streaming=stream)
         except OptionValidationError as exc:
             raise GatewayError(exc.code, option=exc.option) from exc
         kwargs = {"model": runtime.model,
@@ -85,7 +115,11 @@ class OpenAICompatibleAdapter:
         if generation.top_p is not None:
             kwargs["top_p"] = generation.top_p
         if reasoning.mode != ReasoningMode.AUTO:
-            if runtime.service_id == "deepseek_api" and runtime.adapter_id == "openai_chat":
+            if ollama_qwen35:
+                # Ollama maps recognized reasoning_effort aliases to its model's
+                # thinking control; "none" explicitly requests no thinking.
+                kwargs["reasoning_effort"] = "high" if reasoning.mode == ReasoningMode.ON else "none"
+            elif runtime.service_id == "deepseek_api" and runtime.adapter_id == "openai_chat":
                 kwargs["extra_body"] = {"thinking": {"type": "enabled" if reasoning.mode == ReasoningMode.ON
                                                      else "disabled"}}
             elif runtime.service_id == "dashscope" and runtime.adapter_id == "openai_chat":

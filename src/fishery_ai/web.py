@@ -23,7 +23,8 @@ from .domain import DiagnosisService
 from .knowledge import KnowledgeService
 from .model_gateway import (GatewayError, MockGateway, ModelGateway, ModelMessage,
                             ModelProfile, ModelRequest, ProfileRegistry)
-from .model_options import CapabilitySource, Support
+from .model_options import (CapabilitySource, ReasoningMode, ReasoningOptions,
+                            Support)
 from .observability import JsonlTraceSink
 from .openai_compatible_adapter import OpenAICompatibleAdapter
 from .repositories import MockRepository
@@ -53,7 +54,10 @@ def _profile_public(profile: ModelProfile, source: str) -> dict:
                 "streaming_scope_matches": capability_scope_matches,
                 "source": (profile.capabilities.source_for("streaming").value
                            if capability_scope_matches else CapabilitySource.UNKNOWN.value),
-            }}
+            },
+            "reasoning_modes": (["auto", "on", "off"]
+                                if OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(profile)
+                                else ["auto"])}
 
 
 def _fingerprint(values: dict[str, str]) -> tuple[str, ...]:
@@ -107,6 +111,16 @@ def create_app(*, trace_path: Path | None = None,
         return jsonify({"status": "failed", "error_code": "INVALID_PROFILE",
                         "field": exc.field, "reason": exc.reason,
                         "message": exc.message}), 400
+
+    def analysis_reasoning(payload: dict, profile: ModelProfile):
+        if "reasoning_mode" not in payload:
+            return None, None
+        mode = payload.get("reasoning_mode")
+        if not isinstance(mode, str) or mode not in {item.value for item in ReasoningMode}:
+            return None, "INVALID_REQUEST"
+        if not OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(profile):
+            return None, "OPTION_UNSUPPORTED"
+        return ReasoningOptions(ReasoningMode(mode)), None
 
     def submitted_fields(payload: dict) -> dict:
         return {key: value for key, value in payload.items()
@@ -398,6 +412,9 @@ def create_app(*, trace_path: Path | None = None,
         if real and payload.get("confirm_network") is not True:
             return error("NETWORK_CONFIRMATION_REQUIRED", 403)
         profile = profiles[profile_id]
+        reasoning, reasoning_error = analysis_reasoning(payload, profile)
+        if reasoning_error:
+            return error(reasoning_error, 400)
         if real and profile.secret_env and not os.environ.get(profile.secret_env):
             return error("SECRET_MISSING", 503)
         gateway = real_gateway_factory() if real else MockGateway()
@@ -408,7 +425,8 @@ def create_app(*, trace_path: Path | None = None,
         started = time.monotonic()
         try:
             result = orchestrator.analyze(
-                AnalysisRequest(Mode.CHAT, profile_id, question.strip()), scenario=scenario)
+                AnalysisRequest(Mode.CHAT, profile_id, question.strip(), reasoning=reasoning),
+                scenario=scenario)
         except Exception:
             # Raw provider or file errors can contain private data. Never send them to the browser.
             return error("INTERNAL_ERROR", 500)
@@ -435,6 +453,9 @@ def create_app(*, trace_path: Path | None = None,
         if real and payload.get("confirm_network") is not True:
             return error("NETWORK_CONFIRMATION_REQUIRED", 403)
         profile = profiles[profile_id]
+        reasoning, reasoning_error = analysis_reasoning(payload, profile)
+        if reasoning_error:
+            return error(reasoning_error, 400)
         if real and profile.secret_env and not os.environ.get(profile.secret_env):
             return error("SECRET_MISSING", 503)
         gateway = real_gateway_factory() if real else MockGateway()
@@ -442,7 +463,8 @@ def create_app(*, trace_path: Path | None = None,
             repository, diagnosis, knowledge, ProfileRegistry([profile]), gateway, traces,
             resolve_secrets=real,
         )
-        analysis_request = AnalysisRequest(Mode.CHAT, profile_id, question.strip())
+        analysis_request = AnalysisRequest(Mode.CHAT, profile_id, question.strip(),
+                                          reasoning=reasoning)
 
         def events():
             for item in orchestrator.analyze_stream(analysis_request, scenario=scenario):

@@ -258,3 +258,28 @@ test('late Profile response cannot overwrite a newer selection or clean New form
   vm.runInContext('newProfile()', page.context);
   assert.equal(page.element('custom-name').value, '');
 });
+
+test('reasoning mode is sent only for a Profile exposing the exact supported controls', async () => {
+  let sent = null;
+  const page = makePage(async (_url, options) => {
+    sent = JSON.parse(options.body);
+    return {ok: false, json: async () => ({error_code: 'SECRET_MISSING'})};
+  });
+  const exact = {profile_id: 'ollama-qwen35', runtime_type: 'local',
+    reasoning_modes: ['auto', 'on', 'off']};
+  vm.runInContext(`profiles = [${JSON.stringify(exact)}]`, page.context);
+  page.element('profile').value = exact.profile_id;
+  page.element('scenario').value = 'low_oxygen';
+  page.element('question').value = 'test';
+  page.element('reasoning-mode').value = 'off';
+  page.element('confirm-network').checked = true;
+  await vm.runInContext('analyze()', page.context);
+  assert.equal(sent.reasoning_mode, 'off');
+
+  const generic = {...exact, profile_id: 'generic-custom', reasoning_modes: ['auto']};
+  vm.runInContext(`profiles = [${JSON.stringify(generic)}]`, page.context);
+  page.element('profile').value = generic.profile_id;
+  page.element('confirm-network').checked = true;
+  await vm.runInContext('analyze()', page.context);
+  assert.equal(Object.hasOwn(sent, 'reasoning_mode'), false);
+});

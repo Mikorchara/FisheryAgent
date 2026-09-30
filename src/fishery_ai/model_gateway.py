@@ -18,6 +18,11 @@ from .model_options import (CapabilitySource, GenerationOptions, ModelCapabiliti
 
 Capabilities = ModelCapabilities
 
+# Local inference can take longer before the first response than a cloud API.
+# These finite defaults apply only when a local Profile does not specify values.
+DEFAULT_LOCAL_READ_TIMEOUT_S = 120.0
+DEFAULT_LOCAL_TOTAL_TIMEOUT_S = 180.0
+
 
 @dataclass(frozen=True)
 class ModelProfile:
@@ -116,6 +121,9 @@ class ModelProfile:
     @classmethod
     def from_dict(cls, data: dict) -> ModelProfile:
         values = dict(data)
+        if values.get("provider_kind") == "local":
+            values.setdefault("read_timeout_s", DEFAULT_LOCAL_READ_TIMEOUT_S)
+            values.setdefault("total_timeout_s", DEFAULT_LOCAL_TOTAL_TIMEOUT_S)
         legacy_provider = values.get("provider_id", "custom")
         services = {"qwen": "dashscope", "deepseek": "deepseek_api"}
         values.setdefault("service_id", services.get(legacy_provider, legacy_provider))

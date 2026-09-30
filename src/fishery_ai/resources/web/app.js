@@ -81,6 +81,9 @@ function renderProfiles(selectedId = "mock-demo") {
 function updateProfile() {
   const profile = selectedProfile();
   if (!profile) return;
+  const reasoningModes = profile.reasoning_modes || ["auto"];
+  $("reasoning-control").hidden = !reasoningModes.includes("on") || !reasoningModes.includes("off");
+  $("reasoning-mode").value = "auto";
   const revision = ++formRevision;
   editingId = null;
   setFormMode("view");
@@ -624,6 +627,9 @@ async function analyze() {
       question: $("question").value,
       confirm_network: real && $("confirm-network").checked,
     };
+    if (profile.reasoning_modes?.includes("on") && profile.reasoning_modes?.includes("off")) {
+      body.reasoning_mode = $("reasoning-mode").value;
+    }
     if (streaming) {
       await analyzeStreaming(body);
       return;
