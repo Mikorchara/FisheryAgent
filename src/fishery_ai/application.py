@@ -143,6 +143,7 @@ class Orchestrator:
                 recommendations=recommendations, uncertainty=uncertainty,
                 generated_text=response.text, structured_parse_ok=parse_ok,
                 usage=response.usage or Usage(),
+                reasoning_content=response.reasoning_content,
             )
         except GatewayError as exc:
             result = AnalysisResult(
@@ -171,6 +172,7 @@ class Orchestrator:
         findings: tuple[RuleFinding, ...] = ()
         evidence: tuple[KnowledgeEvidence, ...] = ()
         chunks: list[str] = []
+        reasoning_chunks: list[str] = []
         usage = Usage()
         usage_emitted = False
         ttft_ms: float | None = None
@@ -188,6 +190,9 @@ class Orchestrator:
             stream = self.gateway.stream(_build_model_request(context, request), runtime)
             try:
                 for event in stream:
+                    if event.reasoning_delta:
+                        reasoning_chunks.append(event.reasoning_delta)
+                        yield AnalysisStreamEvent("reasoning_delta", {"delta": event.reasoning_delta})
                     if event.delta:
                         chunks.append(event.delta)
                         if ttft_ms is None:
@@ -211,6 +216,7 @@ class Orchestrator:
                 rule_results=findings, evidence=evidence, inference=inference,
                 recommendations=recommendations, uncertainty=uncertainty,
                 generated_text=raw_text, structured_parse_ok=parse_ok, usage=usage,
+                reasoning_content="".join(reasoning_chunks) or None,
             )
             total_ms = (time.monotonic() - start_tick) * 1000
             self.traces.record(result, mode=request.mode, started_at=started_at,
@@ -235,6 +241,7 @@ class Orchestrator:
                 recommendations=(), uncertainty=("模型调用失败；规则和证据仍可检查。",),
                 generated_text="".join(chunks), structured_parse_ok=False,
                 usage=usage, error_code=code,
+                reasoning_content="".join(reasoning_chunks) or None,
             )
             self.traces.record(result, mode=request.mode, started_at=started_at,
                                finished_at=self.clock(), total_ms=total_ms)

@@ -10,6 +10,7 @@ import json
 from .model_gateway import ModelProfile
 from .model_options import (CapabilitySource, ModelCapabilities, ReasoningMode, Support,
                             ReasoningOptions, normalize_base_url)
+from .official_capabilities import apply_official_capabilities
 
 
 class CapabilityStore:
@@ -80,71 +81,46 @@ class CapabilityStore:
     @staticmethod
     def _replace_capabilities(profile: ModelProfile,
                               capabilities: ModelCapabilities) -> ModelProfile:
-        default = profile.default_reasoning
-        if ((default.mode == ReasoningMode.ON and capabilities.reasoning_on == Support.UNSUPPORTED)
-                or (default.mode == ReasoningMode.OFF
-                    and capabilities.reasoning_off == Support.UNSUPPORTED)):
-            # A newly verified rejection makes the old default unusable. AUTO leaves
-            # the parameter unset and preserves access to the model's own default.
-            default = ReasoningOptions(ReasoningMode.AUTO)
-        return replace(profile, capabilities=capabilities, default_reasoning=default)
+        # Evidence never rewrites the user's stored runtime preferences.
+        return replace(profile, capabilities=capabilities)
 
     def apply(self, profile: ModelProfile) -> ModelProfile:
-        updated = profile
+        updated = apply_official_capabilities(profile)
         stream = self._read_record(profile, "streaming")
         if stream:
-            evidence = dict(updated.capabilities.evidence)
-            evidence["streaming"] = CapabilitySource.USER_VERIFIED
             updated = self._replace_capabilities(updated, replace(
-                updated.capabilities, streaming=Support(stream["status"]),
-                evidence=tuple(evidence.items()), service_id=profile.service_id,
+                updated.capabilities.with_evidence("streaming", CapabilitySource.USER_VERIFIED),
+                streaming=Support(stream["status"]), service_id=profile.service_id,
                 adapter_id=profile.adapter_id, base_url=profile.base_url,
                 model_id=profile.model, verified_at=stream.get("verified_at")))
         metadata = self._read_record(profile, "thinking")
         if metadata:
             values = metadata["values"]
-            evidence = dict(updated.capabilities.evidence)
             source = CapabilitySource.parse(metadata["source"])
-            evidence.setdefault("reasoning_on", source)
-            evidence.setdefault("reasoning_off", source)
+            capabilities = updated.capabilities
+            for name in ("reasoning_on", "reasoning_off", "thinking_default"):
+                capabilities = capabilities.with_evidence(name, source)
             updated = self._replace_capabilities(updated, replace(
-                updated.capabilities,
+                capabilities,
                 reasoning_on=Support.SUPPORTED if True in values else Support.UNSUPPORTED,
                 reasoning_off=Support.SUPPORTED if False in values else Support.UNSUPPORTED,
-                thinking_default=metadata["default"], evidence=tuple(evidence.items()),
+                thinking_default=metadata["default"],
                 service_id=profile.service_id, adapter_id=profile.adapter_id,
                 base_url=profile.base_url, model_id=profile.model))
         for option, field_name in (("reasoning_on", "reasoning_on"),
-                                   ("reasoning_off", "reasoning_off")):
+                                   ("reasoning_off", "reasoning_off"),
+                                   ("thinking_streaming_combination", "thinking_streaming_combination")):
             record = self._read_record(profile, option)
             if record:
-                evidence = dict(updated.capabilities.evidence)
-                evidence[field_name] = CapabilitySource.USER_VERIFIED
                 updated = self._replace_capabilities(updated, replace(
-                    updated.capabilities, **{field_name: Support(record["status"])},
-                    evidence=tuple(evidence.items()), service_id=profile.service_id,
+                    updated.capabilities.with_evidence(field_name, CapabilitySource.USER_VERIFIED),
+                    **{field_name: Support(record["status"])}, service_id=profile.service_id,
                     adapter_id=profile.adapter_id, base_url=profile.base_url,
                     model_id=profile.model, verified_at=record.get("verified_at")))
         return updated
 
     def save_streaming(self, profile: ModelProfile, status: Support, verified_at: str) -> ModelProfile:
-        if status not in (Support.SUPPORTED, Support.UNSUPPORTED):
-            raise ValueError("only an explicit probe result can be saved")
-        self.directory.mkdir(parents=True, exist_ok=True)
-        record = {**self._identity(profile), "capability": "streaming",
-                  "status": status.value, "source": CapabilitySource.USER_VERIFIED.value,
-                  "verified_at": verified_at}
-        path = self._path(profile)
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n",
-                             encoding="utf-8")
-        temporary.replace(path)
-        capabilities = replace(profile.capabilities, streaming=status,
-                               evidence=self._with_streaming_evidence(profile.capabilities).evidence,
-                               service_id=profile.service_id, adapter_id=profile.adapter_id,
-                               base_url=profile.base_url,
-                               model_id=profile.model, verified_at=verified_at)
-        return replace(profile, capabilities=capabilities)
+        return self.save_probe(profile, "streaming", status, verified_at)
 
     def save_thinking_metadata(self, profile: ModelProfile, values: list[bool],
                                default: bool, observed_at: str) -> ModelProfile:
@@ -168,14 +144,24 @@ class CapabilityStore:
 
     def save_thinking_probe(self, profile: ModelProfile, mode: ReasoningMode,
                             status: Support, verified_at: str) -> ModelProfile:
-        if (profile.service_id != "ollama" or profile.model != "qwen3.5:4b"
-                or mode not in (ReasoningMode.ON, ReasoningMode.OFF)
-                or status not in (Support.SUPPORTED, Support.UNSUPPORTED)):
+        if mode not in (ReasoningMode.ON, ReasoningMode.OFF):
             raise ValueError("invalid exact-model Thinking probe result")
         capability = "reasoning_on" if mode == ReasoningMode.ON else "reasoning_off"
+        return self.save_probe(profile, capability, status, verified_at)
+
+    def save_probe(self, profile: ModelProfile, capability: str, status: Support,
+                   verified_at: str, metrics: dict | None = None) -> ModelProfile:
+        if (capability not in ("streaming", "reasoning_on", "reasoning_off",
+                               "thinking_streaming_combination")
+                or status not in (Support.SUPPORTED, Support.UNSUPPORTED)):
+            raise ValueError("invalid probe result")
         record = {**self._identity(profile), "capability": capability,
                   "status": status.value, "source": CapabilitySource.USER_VERIFIED.value,
                   "verified_at": verified_at}
+        if metrics:
+            record["metrics"] = {key: value for key, value in metrics.items() if key in (
+                "delta_count", "reasoning_delta_count", "ttft_ms", "content_ttft_ms",
+                "latency_ms", "usage", "returned_model", "error_code")}
         self.directory.mkdir(parents=True, exist_ok=True)
         path = self._path(profile, capability)
         temporary = path.with_suffix(".tmp")

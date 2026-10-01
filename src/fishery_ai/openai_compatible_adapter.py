@@ -76,6 +76,17 @@ class OpenAICompatibleAdapter:
                 in ("openai_chat", "generic_openai_chat"))
 
     @staticmethod
+    def supports_thinking_mapping(profile_or_runtime: object) -> bool:
+        if OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(profile_or_runtime):
+            return True
+        if getattr(profile_or_runtime, "adapter_id", None) != "openai_chat":
+            return False
+        models = {"dashscope": {"qwen-plus", "qwen3.8-flash", "qwen3.8-omni-flash"},
+                  "deepseek_api": {"deepseek-flash"}}
+        return getattr(profile_or_runtime, "model", None) in models.get(
+            getattr(profile_or_runtime, "service_id", None), set())
+
+    @staticmethod
     def fetch_ollama_thinking_metadata(runtime: RuntimeSnapshot) -> tuple[tuple[bool, ...], bool]:
         """Explicit local diagnostic; never called during ordinary analysis."""
         if not OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(runtime):
@@ -131,6 +142,8 @@ class OpenAICompatibleAdapter:
         if generation.top_p is not None:
             kwargs["top_p"] = generation.top_p
         if reasoning.mode != ReasoningMode.AUTO:
+            if not OpenAICompatibleAdapter.supports_thinking_mapping(runtime):
+                raise GatewayError("OPTION_UNSUPPORTED", option="reasoning")
             if ollama_qwen35:
                 # Ollama maps recognized reasoning_effort aliases to its model's
                 # thinking control; "none" explicitly requests no thinking.
@@ -139,12 +152,16 @@ class OpenAICompatibleAdapter:
                 kwargs["extra_body"] = {"thinking": {"type": "enabled" if reasoning.mode == ReasoningMode.ON
                                                      else "disabled"}}
             elif runtime.service_id == "dashscope" and runtime.adapter_id == "openai_chat":
-                kwargs["extra_body"] = {"enable_thinking": reasoning.mode == ReasoningMode.ON}
+                if runtime.model == "qwen3.8-omni-flash":
+                    # This exact model uses effort as its protocol-level switch.
+                    kwargs["reasoning_effort"] = "xhigh" if reasoning.mode == ReasoningMode.ON else "none"
+                else:
+                    kwargs["extra_body"] = {"enable_thinking": reasoning.mode == ReasoningMode.ON}
             else:
                 raise GatewayError("OPTION_UNSUPPORTED", option="reasoning")
         if reasoning.effort is not None:
-            if runtime.service_id == "deepseek_api" and runtime.adapter_id == "openai_chat":
-                kwargs["extra_body"]["reasoning_effort"] = reasoning.effort
+            if runtime.service_id in ("deepseek_api", "dashscope") and runtime.adapter_id == "openai_chat":
+                kwargs["reasoning_effort"] = reasoning.effort
             else:
                 raise GatewayError("OPTION_UNSUPPORTED", option="reasoning.effort")
         return kwargs
@@ -242,6 +259,24 @@ class OpenAICompatibleAdapter:
             if client is not None:
                 client.close()
 
+    @staticmethod
+    def _is_explicit_thinking_unsupported(exc: APIStatusError) -> bool:
+        if exc.status_code not in {400, 405, 406, 422, 501}:
+            return False
+        body = getattr(exc, "body", None)
+        if not isinstance(body, dict):
+            return False
+        error = body.get("error", body)
+        if not isinstance(error, dict):
+            return False
+        message = " ".join(value[:2048] for key in ("message", "code", "param")
+                           if isinstance((value := error.get(key)), str)).casefold()
+        return bool(re.search(
+            r"(?:thinking|reasoning|enable_thinking|reasoning_effort).{0,60}"
+            r"(?:not supported|unsupported|unknown parameter|unrecognized)"
+            r"|(?:not supported|unsupported|unknown parameter|unrecognized).{0,60}"
+            r"(?:thinking|reasoning|enable_thinking|reasoning_effort)", message))
+
     def complete(self, request: ModelRequest, runtime: RuntimeSnapshot) -> ModelResponse:
         kwargs = self._kwargs(request, runtime, stream=False)
         self._check_secret(runtime)
@@ -255,15 +290,21 @@ class OpenAICompatibleAdapter:
                 content = response.choices[0].message.content
                 if not isinstance(content, str):
                     raise GatewayError("INVALID_RESPONSE")
+                reasoning_content = getattr(response.choices[0].message, "reasoning_content", None)
+                if reasoning_content is not None and not isinstance(reasoning_content, str):
+                    raise GatewayError("INVALID_RESPONSE")
                 return ModelResponse(
                     content, _usage(getattr(response, "usage", None)),
                     returned_model=getattr(response, "model", None),
-                    reasoning_present=bool(getattr(response.choices[0].message,
-                                                   "reasoning_content", None)),
+                    reasoning_present=bool(reasoning_content),
+                    reasoning_content=reasoning_content,
                 )
             except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
                 error = (RetryableGatewayError("TOTAL_TIMEOUT") if time.monotonic() >= deadline
                          else self._map_error(exc))
+                if (isinstance(exc, APIStatusError) and
+                        self._is_explicit_thinking_unsupported(exc)):
+                    error = GatewayError("THINKING_UNSUPPORTED")
                 if not isinstance(error, RetryableGatewayError) or attempt >= runtime.max_retries:
                     raise error from exc
             except RetryableGatewayError:
@@ -293,6 +334,9 @@ class OpenAICompatibleAdapter:
                     delta = chunk.choices[0].delta.content if chunk.choices else None
                     reasoning_delta = (getattr(chunk.choices[0].delta, "reasoning_content", None)
                                        if chunk.choices else None)
+                    if ((delta is not None and not isinstance(delta, str)) or
+                            (reasoning_delta is not None and not isinstance(reasoning_delta, str))):
+                        raise GatewayError("INVALID_STREAM_EVENT")
                     usage = _usage(getattr(chunk, "usage", None))
                     if delta or reasoning_delta:
                         emitted = True
@@ -305,6 +349,8 @@ class OpenAICompatibleAdapter:
                          else self._map_error(exc))
                 if isinstance(exc, APIStatusError) and self._is_explicit_streaming_unsupported(exc):
                     error = GatewayError("STREAM_UNSUPPORTED")
+                elif isinstance(exc, APIStatusError) and self._is_explicit_thinking_unsupported(exc):
+                    error = GatewayError("THINKING_UNSUPPORTED")
                 if emitted or not isinstance(error, RetryableGatewayError) or attempt >= runtime.max_retries:
                     raise error from exc
             except RetryableGatewayError:

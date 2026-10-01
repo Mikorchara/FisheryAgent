@@ -127,7 +127,7 @@ class LocalProfileCapabilityTests(unittest.TestCase):
             profile, ReasoningMode.OFF, Support.UNSUPPORTED, "2026-09-30T00:01:00Z")
         self.assertEqual(verified_off.capabilities.reasoning_on, Support.SUPPORTED)
         self.assertEqual(verified_off.capabilities.reasoning_off, Support.UNSUPPORTED)
-        self.assertEqual(verified_off.default_reasoning.mode, ReasoningMode.AUTO)
+        self.assertEqual(verified_off.default_reasoning.mode, ReasoningMode.OFF)  # preference is retained
         self.assertEqual(verified_off.capabilities.source_for("reasoning_off"),
                          CapabilitySource.USER_VERIFIED)
 

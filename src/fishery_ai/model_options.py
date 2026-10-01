@@ -75,6 +75,7 @@ class ModelCapabilities:
     structured_output: Support = Support.UNKNOWN
     tool_calling: Support = Support.UNKNOWN
     streaming_usage: Support = Support.UNKNOWN
+    thinking_streaming_combination: Support = Support.UNKNOWN
     max_tokens_field: str | None = None
     effort_values: tuple[str, ...] = ()
     reasoning_temperature_conflict: bool = False
@@ -86,13 +87,14 @@ class ModelCapabilities:
     verified_at: str | None = None
     service_id: str | None = None
     evidence: tuple[tuple[str, CapabilitySource], ...] = ()
+    evidence_sources: tuple[tuple[str, CapabilitySource], ...] = ()
 
     def __post_init__(self) -> None:
         if self.base_url is not None:
             object.__setattr__(self, "base_url", normalize_base_url(self.base_url))
         for name in ("streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
                      "reasoning_off", "reasoning_effort", "structured_output", "tool_calling",
-                     "streaming_usage"):
+                     "streaming_usage", "thinking_streaming_combination"):
             value = getattr(self, name)
             if isinstance(value, bool):  # Existing profile JSON remains readable.
                 value = Support.SUPPORTED if value else Support.UNSUPPORTED
@@ -106,10 +108,15 @@ class ModelCapabilities:
                                   for name, source in evidence))
         allowed = {"streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
                    "reasoning_off", "reasoning_effort", "structured_output", "tool_calling",
-                   "streaming_usage"}
+                   "streaming_usage", "thinking_streaming_combination", "thinking_default"}
         if any(name not in allowed for name, _ in normalized):
             raise ValueError("invalid capability evidence field")
         object.__setattr__(self, "evidence", normalized)
+        history = tuple(sorted(set((name, CapabilitySource.parse(source))
+                                   for name, source in self.evidence_sources)))
+        if any(name not in allowed for name, _ in history):
+            raise ValueError("invalid capability evidence source")
+        object.__setattr__(self, "evidence_sources", history)
         if self.reasoning_effort == Support.SUPPORTED and not self.effort_values:
             raise ValueError("supported reasoning effort requires allowed values")
         if self.reasoning_effort != Support.SUPPORTED and self.effort_values:
@@ -121,6 +128,23 @@ class ModelCapabilities:
 
     def source_for(self, capability: str) -> CapabilitySource:
         return dict(self.evidence).get(capability, self.source)
+
+    def sources_for(self, capability: str) -> tuple[CapabilitySource, ...]:
+        return tuple(sorted({source for name, source in self.evidence_sources
+                             if name == capability} | {self.source_for(capability)}))
+
+    def with_evidence(self, capability: str, source: CapabilitySource) -> ModelCapabilities:
+        from dataclasses import replace
+        history = set(self.evidence_sources)
+        previous = self.source_for(capability)
+        known = (self.thinking_default is not None if capability == "thinking_default"
+                 else getattr(self, capability) != Support.UNKNOWN)
+        if known and previous != CapabilitySource.UNKNOWN:
+            history.add((capability, previous))
+        history.add((capability, source))
+        primary = dict(self.evidence)
+        primary[capability] = source
+        return replace(self, evidence=tuple(primary.items()), evidence_sources=tuple(history))
 
 
 class OptionValidationError(Exception):
@@ -170,8 +194,13 @@ def validate_options(generation: GenerationOptions, reasoning: ReasoningOptions,
         _require("reasoning_effort", capabilities.reasoning_effort)
         if reasoning.effort not in capabilities.effort_values:
             raise OptionValidationError("INVALID_OPTION_VALUE", "reasoning.effort")
-    if (reasoning.mode == ReasoningMode.ON and generation.temperature is not None
+    effective_thinking_on = (reasoning.mode == ReasoningMode.ON or
+                            reasoning.mode == ReasoningMode.AUTO and capabilities.thinking_default is True)
+    if (effective_thinking_on and generation.temperature is not None
             and capabilities.reasoning_temperature_conflict):
         raise OptionValidationError("OPTION_CONFLICT", "reasoning+temperature")
     if streaming:
         _require("streaming", capabilities.streaming)
+        if (reasoning.mode == ReasoningMode.ON or
+                (reasoning.mode == ReasoningMode.AUTO and capabilities.thinking_default is True)):
+            _require("thinking_streaming_combination", capabilities.thinking_streaming_combination)

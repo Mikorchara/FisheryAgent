@@ -38,7 +38,8 @@ class GroundingAndProfileTests(unittest.TestCase):
         self.addCleanup(dns.stop)
 
     def _app(self, gateway_factory=None):
-        kwargs = {"trace_path": self.trace_path, "custom_profiles_dir": self.profiles_dir}
+        kwargs = {"trace_path": self.trace_path, "custom_profiles_dir": self.profiles_dir,
+                  "capability_evidence_dir": self.root / "evidence"}
         if gateway_factory is not None:
             kwargs["real_gateway_factory"] = gateway_factory
         return create_app(**kwargs)
@@ -104,7 +105,7 @@ class GroundingAndProfileTests(unittest.TestCase):
         public = created.get_json()["profile"]
         self.assertEqual(public["source"], "user_custom")
         self.assertEqual(public["profile_status"], "custom")
-        self.assertNotIn("secret_env", public)
+        self.assertEqual(public["secret_env"], "SCHOOL_LLM_API_KEY")  # name only, never a value
         self.assertNotIn("api_key", public)
         files = list(self.profiles_dir.glob("custom-*.json"))
         self.assertEqual(len(files), 1)
@@ -139,9 +140,9 @@ class GroundingAndProfileTests(unittest.TestCase):
         client = self._app().test_client()
         cases = (
             (self._profile(secret_env=""), "secret_env", "REQUIRED"),
-            (self._profile(provider_id="School"), "provider_id", "INVALID_FORMAT"),
+            (self._profile(provider_id="School"), "service_id", "INVALID_FORMAT"),
             (self._profile(base_url="file:///private"), "base_url", "INVALID_URL"),
-            (self._profile(adapter_id="generic_openai_chat"), "provider_id", "CONFLICT"),
+            (self._profile(adapter_id="generic_openai_chat"), "service_id", "CONFLICT"),
             (self._profile(api_key="fixture-only"), "profile", "UNKNOWN_FIELD"),
         )
         for body, field, reason in cases:
@@ -186,7 +187,7 @@ class GroundingAndProfileTests(unittest.TestCase):
         self.assertIn("Built-in Profiles", script)
         self.assertIn("User Custom Profiles", script)
         self.assertIn("Cloud 必填", html)
-        self.assertIn("只填写变量名", html)
+        self.assertIn("只填写环境变量名", html)
         self.assertIn('id="provider-preset"', html)
         self.assertIn('id="advanced-settings"', html)
         self.assertIn("data.field", script)

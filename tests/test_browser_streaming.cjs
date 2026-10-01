@@ -13,6 +13,95 @@ const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'fishery_ai',
   'resources', 'web', 'app.css'), 'utf8');
 const knownIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
 
+test('Streaming plus Thinking needs its own exact capability and preserves safe modes', () => {
+  const page = makePage(async () => { throw new Error('offline'); });
+  const profile = {capabilities: {streaming: 'supported', thinking_default: true,
+    thinking_on: {status: 'supported'}, thinking_off: {status: 'supported'},
+    thinking_streaming_combination: {status: 'unknown'}}};
+  vm.runInContext(`updateRuntimeOptionControls(${JSON.stringify(profile)}, {reasoning:'on', response:'streaming'})`, page.context);
+  assert.equal(page.element('response-mode').value, 'normal');
+  assert.equal(page.element('response-mode').children.find(x => x.value === 'streaming').disabled, true);
+  vm.runInContext(`updateRuntimeOptionControls(${JSON.stringify(profile)}, {reasoning:'off', response:'streaming'})`, page.context);
+  assert.equal(page.element('response-mode').value, 'streaming');
+  vm.runInContext(`updateRuntimeOptionControls(${JSON.stringify(profile)}, {reasoning:'auto', response:'streaming'})`, page.context);
+  assert.equal(page.element('response-mode').value, 'normal');
+});
+
+test('Cloud Thinking Probe retains official evidence and exposes independent revalidation', async () => {
+  const base = {profile_id:'qwen-plus-experimental', profile_status:'experimental', service_id:'dashscope', runtime_type:'cloud',
+    source:'built_in', thinking_probe_available:true, capabilities:{streaming:'supported',source:'OFFICIAL_DOCS',
+    thinking_on:{status:'supported',source:'OFFICIAL_DOCS'}, thinking_off:{status:'supported',source:'OFFICIAL_DOCS'}}};
+  const verified = {...base, capabilities:{...base.capabilities,
+    thinking_on:{status:'supported',source:'USER_VERIFIED',sources:['OFFICIAL_DOCS','USER_VERIFIED']}}};
+  const calls = [];
+  const page = makePage(async (url, options) => {
+    if (url.endsWith('/thinking-probe')) {
+      calls.push(JSON.parse(options.body));
+      return {ok:true,json:async()=>({status:'success',capability:verified.capabilities,latency_ms:3})};
+    }
+    if (url === '/api/config') return {ok:true,json:async()=>({profiles:[verified]})};
+    return {ok:true,json:async()=>({fields:{},editable:false})};
+  });
+  vm.runInContext(`profiles=[${JSON.stringify(base)}]; presets=[]`,page.context);
+  page.element('profile').value=base.profile_id;
+  vm.runInContext('updateProfile()',page.context);
+  await vm.runInContext('probeThinking("on")',page.context);
+  assert.deepEqual(calls,[{mode:'on',confirm_network:true,reverify:false}]);
+  assert.equal(page.element('probe-thinking-on').hidden,true);
+  assert.equal(page.element('reprobe-thinking-on').hidden,false);
+  assert.equal(page.element('probe-thinking-off').hidden,false);
+  const text = page.element('capability-list').children.map(x=>x.textContent).join(' ');
+  assert.match(text,/OFFICIAL_DOCS \+ USER_VERIFIED/);
+});
+
+test('combination Probe refresh unlocks Streaming without changing Thinking OFF evidence', async () => {
+  const base={profile_id:'custom-combination',profile_status:'custom',runtime_type:'local',source:'user_custom',thinking_probe_available:true,
+    capabilities:{streaming:'supported',source:'USER_VERIFIED',thinking_on:{status:'supported',source:'USER_VERIFIED'},
+      thinking_off:{status:'unknown'},thinking_streaming_combination:{status:'unknown'}}};
+  const verified={...base,capabilities:{...base.capabilities,
+    thinking_streaming_combination:{status:'supported',source:'USER_VERIFIED'}}};
+  const page=makePage(async(url,options)=>{
+    if(url.endsWith('/probe')){
+      assert.equal(JSON.parse(options.body).capability,'thinking_streaming_combination');
+      return {ok:true,json:async()=>({status:'success',capability:verified.capabilities})};
+    }
+    if(url==='/api/config')return {ok:true,json:async()=>({profiles:[verified]})};
+    return {ok:true,json:async()=>({fields:{},editable:true})};
+  });
+  vm.runInContext(`profiles=[${JSON.stringify(base)}]; presets=[]`,page.context);
+  page.element('profile').value=base.profile_id;
+  await vm.runInContext('runExplicitProbe("thinking_streaming_combination")',page.context);
+  vm.runInContext('updateRuntimeOptionControls(selectedProfile(),{reasoning:"on",response:"streaming"})',page.context);
+  assert.equal(page.element('response-mode').value,'streaming');
+  assert.equal(page.element('probe-combination').hidden,true);
+  assert.equal(page.element('reprobe-combination').hidden,false);
+  assert.equal(page.element('reasoning-mode').children.find(x=>x.value==='off').disabled,true);
+});
+
+test('Thinking Probe malformed response has a visible safe error',async()=>{
+  const page=makePage(async()=>({ok:true,json:async()=>{throw new Error('private');}}));
+  vm.runInContext('profiles=[{profile_id:"unknown-cloud",runtime_type:"cloud",thinking_probe_available:true}]',page.context);
+  page.element('profile').value='unknown-cloud';
+  await vm.runInContext('probeThinking("off")',page.context);
+  assert.match(page.element('thinking-probe-status').textContent,/INVALID_RESPONSE/);
+  assert.doesNotMatch(page.element('thinking-probe-status').textContent,/private/);
+  assert.equal(page.element('probe-thinking-off').disabled,false);
+});
+
+test('reasoning deltas remain in folded debug area and never in final inference',async()=>{
+  const result={runtime:{},inference:'final inference',generated_text:'final content',reasoning_content:'debug trace',
+    structured_parse_ok:true,usage:{},observed_facts:{},rule_results:[],evidence:[],recommendations:[],uncertainty:[]};
+  const page=makePage(async()=>sseResponse([
+    ['reasoning_delta',{delta:'debug trace'}],['content_delta',{delta:'final content'}],
+    ['completed',{result}],
+  ]));
+  await vm.runInContext('analyzeStreaming({})',page.context);
+  assert.equal(page.element('model-inference').textContent,'final inference');
+  assert.equal(page.element('model-output').textContent,'final content');
+  assert.equal(page.element('reasoning-output').textContent,'debug trace');
+  assert.equal(page.element('reasoning-debug').open,false);
+});
+
 function makePage(fetch) {
   const controls = new Map();
   class Element {
@@ -438,7 +527,8 @@ test('runtime option choices follow exact capabilities and unavailable defaults 
     streaming: 'supported', source: 'USER_VERIFIED',
     thinking_on: {status: 'supported', source: 'MODEL_METADATA'},
     thinking_off: {status: 'supported', source: 'MODEL_METADATA'},
-    reasoning_effort: {status: 'supported', source: 'MODEL_METADATA'}, effort_values: ['low', 'high']}};
+    reasoning_effort: {status: 'supported', source: 'MODEL_METADATA'},
+    thinking_streaming_combination: {status: 'supported', source: 'USER_VERIFIED'}, effort_values: ['low', 'high']}};
   vm.runInContext(`updateRuntimeOptionControls(${JSON.stringify(supported)}, {reasoning:'on', response:'streaming', effort:'high'})`, page.context);
   assert.equal(choice('reasoning-mode', 'on').disabled, false);
   assert.equal(choice('reasoning-mode', 'off').disabled, false);
@@ -488,14 +578,14 @@ test('successful Thinking Probe independently unlocks the exact ON choice', asyn
   const base = {profile_id: 'ollama-qwen35-4b-local', display_name: 'Ollama Qwen', provider: 'ollama',
     service_id: 'ollama', model_family: 'qwen', model: 'qwen3.5:4b', adapter_id: 'generic_openai_chat',
     base_url: 'http://127.0.0.1:11434/v1', profile_status: 'experimental', runtime_type: 'local',
-    source: 'built_in', default_reasoning_mode: 'auto', default_response_mode: 'normal',
+    source: 'built_in', thinking_probe_available: true, default_reasoning_mode: 'auto', default_response_mode: 'normal',
     capabilities: {streaming: 'unknown', source: 'UNKNOWN',
       thinking_on: {status: 'unknown', source: 'UNKNOWN'},
       thinking_off: {status: 'unknown', source: 'UNKNOWN'}, reasoning_effort: {status: 'unknown', source: 'UNKNOWN'}}};
   const verified = {...base, capabilities: {...base.capabilities,
     thinking_on: {status: 'supported', source: 'USER_VERIFIED'}}};
   const page = makePage(async (url) => {
-    if (url === `/api/profiles/${base.profile_id}/thinking-probe`) return {ok: true, json: async () => ({})};
+    if (url === `/api/profiles/${base.profile_id}/thinking-probe`) return {ok: true, json: async () => ({status: 'success', capability: verified.capabilities})};
     if (url === '/api/config') return {ok: true, json: async () => ({profiles: [verified]})};
     if (url === `/api/profiles/${base.profile_id}`) return {ok: true, json: async () => ({editable: false,
       fields: {display_name: base.display_name, service_id: 'ollama', model_family: 'qwen',

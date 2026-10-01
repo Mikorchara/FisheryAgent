@@ -54,14 +54,11 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(runtime.model, "deepseek-flash")
         self.assertEqual(runtime.profile_status.value, "experimental")
         self.assertEqual(runtime.capabilities.reasoning_on, Support.SUPPORTED)
-        self.assertEqual(runtime.capabilities.reasoning_off, Support.UNKNOWN)
+        self.assertEqual(runtime.capabilities.reasoning_off, Support.SUPPORTED)  # reviewed official switch
         request = ModelRequest(Mode.CHAT, (ModelMessage("user", "test"),))
         on = replace(request, reasoning=ReasoningOptions(ReasoningMode.ON))
         self.assertEqual(OpenAICompatibleAdapter._kwargs(on, runtime, stream=False)["extra_body"],
                          {"thinking": {"type": "enabled"}})
-        with self.assertRaises(Exception):
-            OpenAICompatibleAdapter._kwargs(replace(
-                request, reasoning=ReasoningOptions(ReasoningMode.OFF)), runtime, stream=False)
         probe = replace(runtime, capabilities=replace(runtime.capabilities,
                                                        reasoning_off=Support.SUPPORTED))
         off = OpenAICompatibleAdapter._kwargs(

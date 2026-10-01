@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 from .contracts import Mode, RuntimeInfo, Usage
 from .model_options import (CapabilitySource, GenerationOptions, ModelCapabilities,
                             OptionValidationError, ProfileStatus, ReasoningMode, ReasoningOptions,
-                            normalize_base_url, validate_options)
+                            normalize_base_url, validate_options, Support)
 
 
 Capabilities = ModelCapabilities
@@ -83,7 +83,7 @@ class ModelProfile:
             getattr(self.capabilities, name).value != "unknown" for name in (
                 "streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
                 "reasoning_off", "reasoning_effort", "structured_output", "tool_calling",
-                "streaming_usage"))
+                "streaming_usage", "thinking_streaming_combination"))
         if (declared and capabilities.model_id == self.model
                 and capabilities.base_url == self.base_url
                 and capabilities.service_id in (None, service_id)):
@@ -130,7 +130,8 @@ class ModelProfile:
                 # A saved preference is not capability evidence. Keep preferences
                 # when support is UNKNOWN; the request boundary will apply safe
                 # defaults until the exact capability has been verified.
-                if exc.code != "OPTION_UNKNOWN":
+                if (exc.code not in ("OPTION_UNKNOWN", "OPTION_UNSUPPORTED") or
+                        exc.option in ("temperature", "top_p", "max_output_tokens")):
                     raise ValueError("profile defaults conflict with scoped capabilities") from exc
 
     @classmethod
@@ -174,6 +175,32 @@ class ModelProfile:
         return cls(**values)
 
 
+def effective_runtime_defaults(profile: ModelProfile
+                                ) -> tuple[ReasoningOptions, str, list[str]]:
+    """Resolve stored preferences without treating UNKNOWN as capability evidence."""
+    reasoning = profile.default_reasoning
+    response_mode = profile.default_response_mode
+    notices = []
+    if (reasoning.mode == ReasoningMode.ON
+            and profile.capabilities.reasoning_on != Support.SUPPORTED):
+        reasoning = ReasoningOptions(ReasoningMode.AUTO)
+        notices.append("THINKING_DEFAULT_FALLBACK")
+    elif (reasoning.mode == ReasoningMode.OFF
+          and profile.capabilities.reasoning_off != Support.SUPPORTED):
+        reasoning = ReasoningOptions(ReasoningMode.AUTO)
+        notices.append("THINKING_DEFAULT_FALLBACK")
+    if response_mode == "streaming" and profile.capabilities.streaming != Support.SUPPORTED:
+        response_mode = "normal"
+        notices.append("RESPONSE_DEFAULT_FALLBACK")
+    effective_on = reasoning.mode == ReasoningMode.ON or (
+        reasoning.mode == ReasoningMode.AUTO and profile.capabilities.thinking_default is True)
+    if (response_mode == "streaming" and effective_on
+            and profile.capabilities.thinking_streaming_combination != Support.SUPPORTED):
+        response_mode = "normal"
+        notices.append("COMBINATION_DEFAULT_FALLBACK")
+    return reasoning, response_mode, notices
+
+
 @dataclass(frozen=True)
 class RuntimeSnapshot:
     profile_id: str
@@ -213,12 +240,14 @@ class ProfileRegistry:
     @classmethod
     def from_json(cls, path: Path) -> ProfileRegistry:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return cls([ModelProfile.from_dict(item) for item in data["profiles"]])
+        from .official_capabilities import apply_official_capabilities
+        return cls([apply_official_capabilities(ModelProfile.from_dict(item)) for item in data["profiles"]])
 
     def snapshot(self, profile_id: str, environ: Mapping[str, str] | None = None) -> RuntimeSnapshot:
         profile = self._profiles[profile_id]
         variables = os.environ if environ is None else environ
         key = variables.get(profile.secret_env) if profile.secret_env else None
+        safe_reasoning, safe_response, _ = effective_runtime_defaults(profile)
         return RuntimeSnapshot(
             profile_id=profile.profile_id, display_name=profile.display_name,
             provider_kind=profile.provider_kind, base_url=profile.base_url, model=profile.model,
@@ -227,8 +256,8 @@ class ProfileRegistry:
             max_retries=profile.max_retries, capabilities=profile.capabilities,
             adapter_id=profile.adapter_id, provider_id=profile.provider_id,
             profile_status=profile.profile_status, default_generation=profile.default_generation,
-            default_reasoning=profile.default_reasoning,
-            default_response_mode=profile.default_response_mode, api_key=key,
+            default_reasoning=safe_reasoning,
+            default_response_mode=safe_response, api_key=key,
             service_id=profile.service_id or profile.provider_id,
             model_family=profile.model_family or "unknown",
         )
@@ -268,6 +297,7 @@ class ModelResponse:
     usage: Usage = field(default_factory=Usage)
     returned_model: str | None = None
     reasoning_present: bool = False
+    reasoning_content: str | None = None
 
 
 @dataclass(frozen=True)

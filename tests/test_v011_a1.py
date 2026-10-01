@@ -223,14 +223,14 @@ class AdapterTests(unittest.TestCase):
         cloud = self.registry.snapshot("cloud-demo", {})
         caps = replace(cloud.capabilities, reasoning_on=Support.SUPPORTED,
                        reasoning_off=Support.SUPPORTED)
-        cloud = replace(cloud, capabilities=caps)
+        cloud = replace(cloud, capabilities=caps, model="deepseek-flash")
         on = replace(self.request, reasoning=ReasoningOptions(ReasoningMode.ON))
         off = replace(self.request, reasoning=ReasoningOptions(ReasoningMode.OFF))
         self.assertEqual(OpenAICompatibleAdapter._kwargs(on, cloud, stream=False)["extra_body"],
                          {"thinking": {"type": "enabled"}})
         self.assertEqual(OpenAICompatibleAdapter._kwargs(off, cloud, stream=False)["extra_body"],
                          {"thinking": {"type": "disabled"}})
-        qwen = replace(cloud, provider_id="qwen", service_id="dashscope", model_family="qwen")
+        qwen = replace(cloud, provider_id="qwen", service_id="dashscope", model_family="qwen", model="qwen-plus")
         self.assertEqual(OpenAICompatibleAdapter._kwargs(on, qwen, stream=False)["extra_body"],
                          {"enable_thinking": True})
         generic = replace(cloud, provider_id="custom", service_id="custom",

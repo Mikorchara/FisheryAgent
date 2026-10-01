@@ -45,7 +45,8 @@ class StreamingTests(unittest.TestCase):
 
     def client(self, gateway_factory=None):
         kwargs = {"trace_path": self.trace_path,
-                  "custom_profiles_dir": self.root / "profiles"}
+                  "custom_profiles_dir": self.root / "profiles",
+                  "capability_evidence_dir": self.root / "evidence"}
         if gateway_factory is not None:
             kwargs["real_gateway_factory"] = gateway_factory
         return create_app(**kwargs).test_client()

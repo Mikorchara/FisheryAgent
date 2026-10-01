@@ -17,14 +17,16 @@ from flask import Flask, Response, jsonify, request, stream_with_context
 
 from .application import Orchestrator, result_to_dict
 from .capability_store import CapabilityStore
+from .capability_probe import run_capability_probe
+from .official_capabilities import apply_official_capabilities
 from .contracts import AnalysisRequest, Mode, Status
 from .custom_profiles import CustomProfileStore, ProfileFieldError
 from .domain import DiagnosisService
 from .knowledge import KnowledgeService
 from .model_gateway import (GatewayError, MockGateway, ModelGateway, ModelMessage,
-                            ModelProfile, ModelRequest, ProfileRegistry)
+                            ModelProfile, ModelRequest, ProfileRegistry, effective_runtime_defaults)
 from .model_options import (CapabilitySource, GenerationOptions, OptionValidationError,
-                            ReasoningMode, ReasoningOptions, Support, validate_options)
+                            ReasoningMode, ReasoningOptions, Support, ModelCapabilities, validate_options)
 from .observability import JsonlTraceSink
 from .openai_compatible_adapter import OpenAICompatibleAdapter
 from .repositories import MockRepository
@@ -35,25 +37,8 @@ MOCK_PROFILE_ID = "mock-demo"
 TEST_TTL_S = 600
 
 
-def _effective_runtime_defaults(profile: ModelProfile
-                                ) -> tuple[ReasoningOptions, str, list[str]]:
-    """Resolve stored preferences without treating UNKNOWN as capability evidence."""
-    reasoning = profile.default_reasoning
-    response_mode = profile.default_response_mode
-    notices = []
-    if (reasoning.mode == ReasoningMode.ON
-            and profile.capabilities.reasoning_on != Support.SUPPORTED):
-        reasoning = ReasoningOptions(ReasoningMode.AUTO)
-        notices.append("THINKING_DEFAULT_FALLBACK")
-    elif (reasoning.mode == ReasoningMode.OFF
-          and profile.capabilities.reasoning_off != Support.SUPPORTED):
-        reasoning = ReasoningOptions(ReasoningMode.AUTO)
-        notices.append("THINKING_DEFAULT_FALLBACK")
-    if response_mode == "streaming" and profile.capabilities.streaming != Support.SUPPORTED:
-        response_mode = "normal"
-        notices.append("RESPONSE_DEFAULT_FALLBACK")
-    return reasoning, response_mode, notices
-
+# Public import retained for existing callers/tests.
+_effective_runtime_defaults = effective_runtime_defaults
 
 def _profile_public(profile: ModelProfile, source: str) -> dict:
     capability_scope_matches = (
@@ -69,7 +54,10 @@ def _profile_public(profile: ModelProfile, source: str) -> dict:
                            else Support.UNKNOWN.value),
                 "source": (capabilities.source_for(name).value
                            if capability_scope_matches and status != Support.UNKNOWN.value
-                           else CapabilitySource.UNKNOWN.value)}
+                           else CapabilitySource.UNKNOWN.value),
+                "sources": ([source.value for source in capabilities.sources_for(name)
+                             if source != CapabilitySource.UNKNOWN]
+                            if capability_scope_matches and status != Support.UNKNOWN.value else [])}
     reasoning_modes = ["auto"]
     if capability("reasoning_on")["status"] == "supported":
         reasoning_modes.append("on")
@@ -89,6 +77,10 @@ def _profile_public(profile: ModelProfile, source: str) -> dict:
                 "streaming": capability("streaming")["status"],
                 "streaming_scope_matches": capability_scope_matches,
                 "source": capability("streaming")["source"],
+                "streaming_evidence": capability("streaming"),
+                "thinking_streaming_combination": capability("thinking_streaming_combination"),
+                "thinking_default_sources": ([item.value for item in capabilities.sources_for("thinking_default")]
+                                             if capability_scope_matches and capabilities.thinking_default is not None else []),
                 "thinking_on": capability("reasoning_on"),
                 "thinking_off": capability("reasoning_off"),
                 "reasoning_effort": capability("reasoning_effort"),
@@ -99,6 +91,7 @@ def _profile_public(profile: ModelProfile, source: str) -> dict:
                 "effort_values": (list(capabilities.effort_values) if capability_scope_matches
                                   else []),
             },
+            "thinking_probe_available": OpenAICompatibleAdapter.supports_thinking_mapping(profile),
             "reasoning_modes": reasoning_modes,
             "default_reasoning_mode": effective_reasoning.mode.value,
             "default_response_mode": effective_response,
@@ -117,6 +110,8 @@ def _builtin_profiles() -> tuple[ModelProfile, ...]:
         profile_id=MOCK_PROFILE_ID, display_name="Mock 离线演示",
         provider_kind="mock", base_url="http://mock.invalid/v1", model="offline-mock",
         adapter_id="generic_openai_chat", provider_id="custom",
+        capabilities=ModelCapabilities(streaming=Support.SUPPORTED, service_id="custom",
+            adapter_id="generic_openai_chat", model_id="offline-mock", base_url="http://mock.invalid/v1"),
     )
     real = []
     for name in ("qwen_experimental.json", "deepseek_experimental.json",
@@ -124,7 +119,7 @@ def _builtin_profiles() -> tuple[ModelProfile, ...]:
         path = RESOURCE_ROOT.joinpath("profiles", name)
         payload = json.loads(path.read_text(encoding="utf-8"))
         real.extend(ModelProfile.from_dict(item) for item in payload["profiles"])
-    return (mock, *real)
+    return (mock, *(apply_official_capabilities(profile) for profile in real))
 
 
 def create_app(*, trace_path: Path | None = None,
@@ -404,66 +399,53 @@ def create_app(*, trace_path: Path | None = None,
                                    "default_thinking_mode": profile.default_reasoning.mode.value,
                                    "default_response_mode": profile.default_response_mode}})
 
-    @app.post("/api/profiles/<profile_id>/probe")
-    def probe_profile_capability(profile_id: str):
-        payload = request.get_json(silent=True)
-        if (not isinstance(payload, dict) or payload.get("confirm_network") is not True
-                or payload.get("capability") != "streaming"):
-            return error("NETWORK_CONFIRMATION_REQUIRED", 403)
+    def execute_capability_probe(profile_id: str, payload: dict, capability: str):
         profile = profiles.get(profile_id)
         if profile is None:
             return error("PROFILE_NOT_FOUND", 404)
+        if profile_id == MOCK_PROFILE_ID:
+            return error("CAPABILITY_PROBE_UNSUPPORTED", 400)
+        if capability != "streaming" and not OpenAICompatibleAdapter.supports_thinking_mapping(profile):
+            return error("CAPABILITY_PROBE_UNSUPPORTED", 400)
+        if capability == "thinking_streaming_combination" and (
+                profile.capabilities.streaming != Support.SUPPORTED or
+                profile.capabilities.reasoning_on != Support.SUPPORTED):
+            return error("OPTION_CONFLICT", 400)
+        user_verified = profile.capabilities.source_for(capability) == CapabilitySource.USER_VERIFIED
         reverify = payload.get("reverify") is True
-        streaming_source = profile.capabilities.source_for("streaming")
-        if profile.capabilities.streaming != Support.UNKNOWN and not (
-                reverify and streaming_source == CapabilitySource.USER_VERIFIED):
+        if user_verified and not reverify:
             return error("CAPABILITY_ALREADY_KNOWN", 409)
-        if profile.capabilities.streaming == Support.UNKNOWN and reverify:
+        if reverify and not user_verified:
             return error("CAPABILITY_NOT_VERIFIED", 409)
         if secret_missing(profile):
             return error("SECRET_MISSING", 503)
-
-        # Only this explicit probe gets a temporary capability allowance. Analysis uses
-        # the stored Profile unchanged and remains subject to the normal capability gate.
-        runtime = ProfileRegistry([profile]).snapshot(profile_id)
-        probe_capabilities = replace(profile.capabilities, streaming=Support.SUPPORTED,
-                                     service_id=profile.service_id, base_url=profile.base_url,
-                                     model_id=profile.model, adapter_id=profile.adapter_id)
-        runtime = replace(runtime, capabilities=probe_capabilities, max_retries=0)
-        started = time.monotonic()
         try:
-            gateway = real_gateway_factory()
-            output_chars = 0
-            for event in gateway.stream(ModelRequest(
-                    Mode.CHAT, (ModelMessage("user", "只回复 OK"),)), runtime):
-                output_chars += len(event.delta or "")
-            if output_chars == 0:
-                return jsonify({"status": "failure", "error_code": "PROBE_NO_CONTENT",
-                                "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
-        except GatewayError as exc:
-            code = exc.code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,40}", exc.code) else "GATEWAY_ERROR"
-            if code == "STREAM_UNSUPPORTED":
-                try:
-                    profiles[profile_id] = capability_store.save_streaming(
-                        profile, Support.UNSUPPORTED, datetime.now(timezone.utc).isoformat())
-                except (OSError, ValueError):
-                    return error("CAPABILITY_RECORD_FAILED", 500)
-                capability = _profile_public(profiles[profile_id], sources[profile_id])["capabilities"]
-                return jsonify({"status": "unsupported", "error_code": code,
-                                "capability": capability,
-                                "latency_ms": round((time.monotonic() - started) * 1000, 3)})
-            return jsonify({"status": "failure", "error_code": code,
-                            "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
+            result = run_capability_probe(real_gateway_factory(), profile, capability)
         except Exception:
-            return jsonify({"status": "failure", "error_code": "INTERNAL_ERROR",
-                            "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
+            return error("CAPABILITY_PROBE_FAILED", 502)
+        if result["status"] in ("success", "unsupported"):
+            try:
+                # Merge against the latest profile: independent probes cannot overwrite each other.
+                current = profiles[profile_id]
+                if CapabilityStore._identity(current) != CapabilityStore._identity(profile):
+                    return error("PROFILE_IDENTITY_CHANGED", 409)
+                status = Support.SUPPORTED if result["status"] == "success" else Support.UNSUPPORTED
+                profiles[profile_id] = capability_store.save_probe(current, capability, status,
+                    datetime.now(timezone.utc).isoformat(), result)
+            except (KeyError, OSError, ValueError):
+                return error("CAPABILITY_RECORD_FAILED", 500)
+            result["capability"] = _profile_public(profiles[profile_id], sources[profile_id])["capabilities"]
+        return jsonify(result), 200 if result["status"] != "failure" else 502
 
-        verified_at = datetime.now(timezone.utc).isoformat()
-        profiles[profile_id] = capability_store.save_streaming(
-            profile, Support.SUPPORTED, verified_at)
-        capability = _profile_public(profiles[profile_id], sources[profile_id])["capabilities"]
-        return jsonify({"status": "success", "capability": capability,
-                        "latency_ms": round((time.monotonic() - started) * 1000, 3)})
+    @app.post("/api/profiles/<profile_id>/probe")
+    def probe_profile_capability(profile_id: str):
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or payload.get("confirm_network") is not True:
+            return error("NETWORK_CONFIRMATION_REQUIRED", 403)
+        capability = payload.get("capability")
+        if capability not in ("streaming", "thinking_streaming_combination"):
+            return error("INVALID_REQUEST", 400)
+        return execute_capability_probe(profile_id, payload, capability)
 
     @app.put("/api/profiles/<profile_id>")
     def update_profile(profile_id: str):
@@ -503,48 +485,10 @@ def create_app(*, trace_path: Path | None = None,
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict) or payload.get("confirm_network") is not True:
             return error("NETWORK_CONFIRMATION_REQUIRED", 403)
-        profile = profiles.get(profile_id)
-        if profile is None:
-            return error("PROFILE_NOT_FOUND", 404)
-        mode_text = payload.get("mode")
-        if mode_text not in (ReasoningMode.ON.value, ReasoningMode.OFF.value):
+        mode = payload.get("mode")
+        if mode not in ("on", "off"):
             return error("INVALID_REQUEST", 400)
-        if not OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(profile):
-            return error("CAPABILITY_PROBE_UNSUPPORTED", 400)
-        if secret_missing(profile):
-            return error("SECRET_MISSING", 503)
-        mode = ReasoningMode(mode_text)
-        field_name = "reasoning_on" if mode == ReasoningMode.ON else "reasoning_off"
-        runtime = ProfileRegistry([profile]).snapshot(profile_id)
-        temporary_capabilities = replace(
-            runtime.capabilities, **{field_name: Support.SUPPORTED},
-            service_id=profile.service_id, adapter_id=profile.adapter_id,
-            base_url=profile.base_url, model_id=profile.model)
-        runtime = replace(runtime, capabilities=temporary_capabilities, max_retries=0)
-        started = time.monotonic()
-        try:
-            response = real_gateway_factory().complete(ModelRequest(
-                Mode.CHAT, (ModelMessage("user", "只回复 OK"),),
-                reasoning=ReasoningOptions(mode)), runtime)
-            if not response.text.strip():
-                return jsonify({"status": "failure", "error_code": "PROBE_NO_CONTENT",
-                                "mode": mode.value,
-                                "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
-        except GatewayError as exc:
-            code = exc.code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,40}", exc.code) else "GATEWAY_ERROR"
-            return jsonify({"status": "failure", "error_code": code, "mode": mode.value,
-                            "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
-        except Exception:
-            return jsonify({"status": "failure", "error_code": "INTERNAL_ERROR",
-                            "mode": mode.value,
-                            "latency_ms": round((time.monotonic() - started) * 1000, 3)}), 502
-        verified_at = datetime.now(timezone.utc).isoformat()
-        profiles[profile_id] = capability_store.save_thinking_probe(
-            profile, mode, Support.SUPPORTED, verified_at)
-        capability = _profile_public(profiles[profile_id], sources[profile_id])["capabilities"]
-        return jsonify({"status": "success", "mode": mode.value,
-                        "capability": capability,
-                        "latency_ms": round((time.monotonic() - started) * 1000, 3)})
+        return execute_capability_probe(profile_id, payload, "reasoning_" + mode)
 
     @app.delete("/api/profiles/<profile_id>")
     def delete_profile(profile_id: str):

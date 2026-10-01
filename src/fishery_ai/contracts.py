@@ -319,3 +319,4 @@ class AnalysisResult:
     usage: Usage = field(default_factory=Usage)
     error_code: str | None = None
     error_option: str | None = None
+    reasoning_content: str | None = None

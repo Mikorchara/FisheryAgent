@@ -22,4 +22,6 @@
 - [V0.1.1-A3.1.5 Capability UI 与 Thinking 验证](V0.1.1_A3_1_5_CAPABILITY_UI_THINKING_PROBE.md)：记录 Base URL identity 规范化、同区运行选项和 Thinking ON/OFF 显式验证。
 - [V0.1.1-A3.1.6 能力界面整理与运行默认值](V0.1.1_A3_1_6_CAPABILITY_UX_RUNTIME_DEFAULTS.md)：记录 Custom Profile 默认偏好、安全回退、Probe 入口整理和定向测试。
 
+- [V0.1.1-A3.2 Cloud Capability、Streaming 与 Thinking](V0.1.1_A3_2_CLOUD_CAPABILITY_STREAMING_THINKING.md)：记录全流程审计、官方参数依据、统一单次 Probe、组合门禁和独立 Reasoning 输出。
+
 历史报告描述的是编写时的状态。当前环境准备与项目范围请以[文档导航](../README.md)为准。

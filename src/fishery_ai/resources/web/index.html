@@ -93,6 +93,8 @@
             <button id="probe-thinking-on" class="secondary compact-action" type="button">验证 Thinking ON</button>
             <button id="probe-thinking-off" class="secondary compact-action" type="button">验证 Thinking OFF</button>
           </div>
+          <p id="thinking-probe-help" class="helper"></p>
+          <button id="probe-combination" class="secondary compact-action" type="button" hidden>验证 Streaming + Thinking ON</button>
           <p id="thinking-probe-status" class="status" role="status" aria-live="polite"></p>
           <button id="probe-streaming" class="secondary compact-action" type="button" hidden>验证 Streaming</button>
           <p id="capability-probe-status" class="status" role="status" aria-live="polite"></p>
@@ -105,6 +107,7 @@
               <button id="reprobe-thinking-on" class="secondary compact-action" type="button">重新验证 Thinking ON</button>
               <button id="reprobe-thinking-off" class="secondary compact-action" type="button">重新验证 Thinking OFF</button>
             </div>
+            <button id="reprobe-combination" class="secondary compact-action" type="button" hidden>重新验证 Streaming + Thinking ON</button>
             <button id="reprobe-streaming" class="secondary compact-action" type="button" hidden>重新验证 Streaming</button>
           </details>
           <h3 class="runtime-options-heading">本次运行选择</h3>
@@ -148,6 +151,12 @@
           <p id="model-inference" class="model-output"></p>
           <pre id="streaming-output" class="model-output" hidden></pre>
         </section>
+
+        <details id="reasoning-debug" class="panel">
+          <summary>Reasoning Content · 开发者调试（非最终回答）</summary>
+          <p class="helper">可选 Provider 推理文本，不参与 Inference 或结构化 JSON 解析，也不写入 Trace。</p>
+          <pre id="reasoning-output" class="model-output"></pre>
+        </details>
 
         <div class="result-grid">
           <section class="panel">
