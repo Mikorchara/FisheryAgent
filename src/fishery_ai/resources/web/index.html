@@ -52,9 +52,11 @@
           <p id="secret-status" class="secret-status" role="status" aria-live="polite">Secret 状态：待检查</p>
           <label for="custom-deployment">Deployment <span class="required">必选</span></label>
           <select id="custom-deployment"><option value="cloud">Cloud</option><option value="local">Local</option></select>
-          <label for="custom-secret-env">Secret Env <span id="custom-secret-requirement" class="required">Cloud 必填</span></label>
-          <input id="custom-secret-env" type="text" autocomplete="off" required>
-          <p class="helper">只填写环境变量名，例如 DASHSCOPE_API_KEY；绝不填写真实 API Key。</p>
+          <div id="secret-env-fields">
+            <label for="custom-secret-env">Secret Env <span id="custom-secret-requirement" class="required">认证必填</span></label>
+            <input id="custom-secret-env" type="text" autocomplete="off" required>
+            <p class="helper">只填写环境变量名，例如 DASHSCOPE_API_KEY；绝不填写真实 API Key。</p>
+          </div>
           <fieldset id="runtime-default-fields" class="runtime-default-fields">
             <legend>默认运行偏好</legend>
             <label for="custom-default-thinking">Default Thinking</label>
@@ -66,6 +68,9 @@
           <details id="advanced-settings" class="advanced-settings">
             <summary>高级连接设置</summary>
             <p class="helper">仅在需要自定义服务身份、模型家族或 Adapter 时修改。</p>
+            <label for="custom-auth">AuthSpec <span class="required">必选</span></label>
+            <select id="custom-auth"><option value="REQUIRED_BEARER">REQUIRED_BEARER（必须认证）</option><option value="OPTIONAL_BEARER">OPTIONAL_BEARER（可选认证）</option><option value="NONE">NONE（无需凭据）</option></select>
+            <p class="helper">认证要求与 Cloud / Local 分开配置。Built-in Ollama 使用只读 NONE；本轮仅显示凭据状态，不提供 Key 编辑。</p>
             <label for="custom-provider">service_id <span class="required">必填</span></label>
             <input id="custom-provider" type="text" maxlength="64" required>
             <p class="helper">API 服务平台标识，例如 dashscope、deepseek_api；自定义兼容服务使用 custom。</p>

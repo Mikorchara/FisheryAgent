@@ -8,7 +8,6 @@ from typing import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
 import json
-import os
 import re
 import time
 import uuid
@@ -21,6 +20,8 @@ from .capability_probe import run_capability_probe
 from .official_capabilities import apply_official_capabilities
 from .contracts import AnalysisRequest, Mode, Status
 from .custom_profiles import CustomProfileStore, ProfileFieldError
+from .credentials import CredentialFileError, CredentialStore
+from .providers import AuthSpec, PROVIDERS
 from .domain import DiagnosisService
 from .knowledge import KnowledgeService
 from .model_gateway import (GatewayError, MockGateway, ModelGateway, ModelMessage,
@@ -71,6 +72,7 @@ def _profile_public(profile: ModelProfile, source: str) -> dict:
             "model": profile.model, "profile_status": profile.profile_status.value,
             "base_url": profile.base_url, "adapter_id": profile.adapter_id,
             "secret_env": profile.secret_env or "",
+            "credential_ref": profile.credential_ref or "", "auth_spec": profile.auth_spec.value,
             "runtime_type": "mock" if profile.profile_id == MOCK_PROFILE_ID else profile.provider_kind,
             "source": source,
             "capabilities": {
@@ -102,7 +104,7 @@ def _profile_public(profile: ModelProfile, source: str) -> dict:
 
 def _fingerprint(values: dict[str, str]) -> tuple[str, ...]:
     return tuple(values[key] for key in ("service_id", "model_family", "adapter_id", "base_url",
-                                         "model", "secret_env", "provider_kind"))
+                                         "model", "secret_env", "provider_kind", "auth_spec"))
 
 
 def _builtin_profiles() -> tuple[ModelProfile, ...]:
@@ -110,6 +112,7 @@ def _builtin_profiles() -> tuple[ModelProfile, ...]:
         profile_id=MOCK_PROFILE_ID, display_name="Mock 离线演示",
         provider_kind="mock", base_url="http://mock.invalid/v1", model="offline-mock",
         adapter_id="generic_openai_chat", provider_id="custom",
+        auth_spec=AuthSpec.NONE,
         capabilities=ModelCapabilities(streaming=Support.SUPPORTED, service_id="custom",
             adapter_id="generic_openai_chat", model_id="offline-mock", base_url="http://mock.invalid/v1"),
     )
@@ -125,10 +128,12 @@ def _builtin_profiles() -> tuple[ModelProfile, ...]:
 def create_app(*, trace_path: Path | None = None,
                custom_profiles_dir: Path | None = None,
                capability_evidence_dir: Path | None = None,
+               credential_store: CredentialStore | None = None,
                real_gateway_factory: Callable[[], ModelGateway] = OpenAICompatibleAdapter) -> Flask:
     """Construct without loading .env or making a network request."""
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
+    credentials = credential_store if credential_store is not None else CredentialStore()
     store = CustomProfileStore(custom_profiles_dir or Path.cwd() / "outputs/custom_profiles")
     capability_store = CapabilityStore(capability_evidence_dir or
                                         Path.cwd() / "outputs/capability-evidence")
@@ -184,8 +189,15 @@ def create_app(*, trace_path: Path | None = None,
         values = store.validate(fields)
         return values, store.build(values, "draft")[0]
 
-    def secret_missing(profile: ModelProfile) -> bool:
-        return bool(profile.secret_env and not os.environ.get(profile.secret_env))
+    def request_runtime(profile: ModelProfile):
+        try:
+            runtime = ProfileRegistry([profile], credentials).snapshot(profile.profile_id)
+        except CredentialFileError:
+            return None, error("CREDENTIAL_FILE_ERROR", 503)
+        if (runtime.auth_spec == AuthSpec.REQUIRED_BEARER
+                and runtime.credential.status.availability != "PRESENT"):
+            return None, error("SECRET_MISSING", 503)
+        return runtime, None
 
     def name_exists(name: str, *, exclude_id: str | None = None) -> bool:
         return any(profile.profile_id != exclude_id
@@ -274,10 +286,12 @@ def create_app(*, trace_path: Path | None = None,
     def config():
         known = {profile.service_id: profile for profile in builtins
                  if profile.profile_id != MOCK_PROFILE_ID}
-        presets = [{"id": name, "label": label, "service_id": profile.service_id,
+        presets = [{"id": name, "label": PROVIDERS.get(name).display_name, "service_id": profile.service_id,
                     "model_family": profile.model_family,
                     "adapter_id": profile.adapter_id, "base_url": profile.base_url,
                     "model": profile.model, "secret_env": profile.secret_env,
+                    "auth_spec": (AuthSpec.OPTIONAL_BEARER.value if name == "ollama"
+                                  else PROVIDERS.get(name).auth_spec.value),
                     "provider_kind": profile.provider_kind, "provider_id": profile.provider_id}
                    for name, label in (("dashscope", "Qwen · DashScope"),
                                        ("deepseek_api", "DeepSeek API"),
@@ -288,21 +302,46 @@ def create_app(*, trace_path: Path | None = None,
                         "provider_id": "custom", "adapter_id": "generic_openai_chat",
                         "base_url": "http://localhost:11434/v1", "model": "",
                         "secret_env": "", "provider_kind": "local"})
+        presets[-1]["auth_spec"] = AuthSpec.OPTIONAL_BEARER.value
         return jsonify({
             "profiles": [_profile_public(profile, sources[profile.profile_id])
                          for profile in profiles.values()],
             "presets": presets,
+            "providers": [{"service_id": spec.service_id, "display_name": spec.display_name,
+                "adapter_id": spec.adapter_id, "protocol_spec_id": spec.protocol_spec_id,
+                "default_base_url": spec.default_base_url, "auth_spec": spec.auth_spec.value,
+                "expected_credential_name": spec.expected_credential_name,
+                "metadata_method": spec.metadata_method, "default_deployment": spec.default_deployment}
+                for spec in PROVIDERS.all()],
             "scenarios": scenarios,
         })
 
     @app.post("/api/secret-status")
     def secret_status():
         payload = request.get_json(silent=True) or {}
-        name = payload.get("secret_env") if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            return error("INVALID_REQUEST", 400)
+        if isinstance(payload, dict) and "profile_id" in payload:
+            profile = profiles.get(payload["profile_id"]) if isinstance(payload["profile_id"], str) else None
+            if profile is None:
+                return error("PROFILE_NOT_FOUND", 404)
+            name, auth = profile.credential_ref, profile.auth_spec
+        else:
+            name = payload.get("credential_ref", payload.get("secret_env")) if isinstance(payload, dict) else None
+            try:
+                auth = AuthSpec(payload.get("auth_spec", "REQUIRED_BEARER")) if isinstance(payload, dict) else None
+            except ValueError:
+                return error("INVALID_AUTH_SPEC", 400)
+        if name is None:
+            name = ""
         if not isinstance(name, str) or (name and not re.fullmatch(r"[A-Z_][A-Z0-9_]{0,127}", name)):
             return error("INVALID_SECRET_ENV", 400)
-        return jsonify({"secret_env": name,
-                        "status": "PRESENT" if name and os.environ.get(name) else "MISSING"})
+        try:
+            status = credentials.status(name or None, auth).public_info()
+        except CredentialFileError:
+            return error("CREDENTIAL_FILE_ERROR", 503)
+        return jsonify({"secret_env": "" if auth == AuthSpec.NONE else name,
+                        "status": status["availability"], **status})
 
     @app.post("/api/profiles/models")
     def query_models():
@@ -313,9 +352,9 @@ def create_app(*, trace_path: Path | None = None,
             _, profile = draft(payload, model_optional=True)
         except ProfileFieldError as exc:
             return profile_error(exc)
-        if secret_missing(profile):
-            return error("SECRET_MISSING", 503)
-        runtime = ProfileRegistry([profile]).snapshot(profile.profile_id)
+        runtime, failure = request_runtime(profile)
+        if failure is not None:
+            return failure
         started = time.monotonic()
         try:
             models = real_gateway_factory().list_models(runtime, all_models=True)
@@ -341,9 +380,9 @@ def create_app(*, trace_path: Path | None = None,
             values, profile = draft(payload)
         except ProfileFieldError as exc:
             return profile_error(exc)
-        if secret_missing(profile):
-            return error("SECRET_MISSING", 503)
-        runtime = ProfileRegistry([profile]).snapshot(profile.profile_id)
+        runtime, failure = request_runtime(profile)
+        if failure is not None:
+            return failure
         gateway = real_gateway_factory()
         started = time.monotonic()
 
@@ -395,6 +434,7 @@ def create_app(*, trace_path: Path | None = None,
                                    "base_url": profile.base_url,
                                    "model": profile.model,
                                    "secret_env": profile.secret_env or "",
+                                   "auth_spec": profile.auth_spec.value,
                                    "provider_kind": profile.provider_kind,
                                    "default_thinking_mode": profile.default_reasoning.mode.value,
                                    "default_response_mode": profile.default_response_mode}})
@@ -417,10 +457,11 @@ def create_app(*, trace_path: Path | None = None,
             return error("CAPABILITY_ALREADY_KNOWN", 409)
         if reverify and not user_verified:
             return error("CAPABILITY_NOT_VERIFIED", 409)
-        if secret_missing(profile):
-            return error("SECRET_MISSING", 503)
+        runtime, failure = request_runtime(profile)
+        if failure is not None:
+            return failure
         try:
-            result = run_capability_probe(real_gateway_factory(), profile, capability)
+            result = run_capability_probe(real_gateway_factory(), profile, capability, runtime=runtime)
         except Exception:
             return error("CAPABILITY_PROBE_FAILED", 502)
         if result["status"] in ("success", "unsupported"):
@@ -464,7 +505,9 @@ def create_app(*, trace_path: Path | None = None,
             return error("PROFILE_NOT_FOUND", 404)
         if not OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(profile):
             return error("METADATA_UNSUPPORTED", 400)
-        runtime = ProfileRegistry([profile]).snapshot(profile_id)
+        runtime, failure = request_runtime(profile)
+        if failure is not None:
+            return failure
         try:
             values, default = real_gateway_factory().fetch_ollama_thinking_metadata(runtime)
             profiles[profile_id] = capability_store.save_thinking_metadata(
@@ -524,14 +567,16 @@ def create_app(*, trace_path: Path | None = None,
         reasoning, reasoning_error = analysis_reasoning(payload, profile)
         if reasoning_error:
             return error(reasoning_error, 400)
-        if real and profile.secret_env and not os.environ.get(profile.secret_env):
-            return error("SECRET_MISSING", 503)
         safe_reasoning, safe_response_mode, _ = _effective_runtime_defaults(profile)
         runtime_profile = replace(profile, default_reasoning=safe_reasoning,
                                   default_response_mode=safe_response_mode)
+        runtime, failure = request_runtime(runtime_profile)
+        if failure is not None:
+            return failure
         gateway = real_gateway_factory() if real else MockGateway()
         orchestrator = Orchestrator(
-            repository, diagnosis, knowledge, ProfileRegistry([runtime_profile]), gateway, traces,
+            repository, diagnosis, knowledge, ProfileRegistry([runtime_profile], credentials,
+                request_runtime=runtime), gateway, traces,
             resolve_secrets=real,
         )
         started = time.monotonic()
@@ -568,14 +613,16 @@ def create_app(*, trace_path: Path | None = None,
         reasoning, reasoning_error = analysis_reasoning(payload, profile)
         if reasoning_error:
             return error(reasoning_error, 400)
-        if real and profile.secret_env and not os.environ.get(profile.secret_env):
-            return error("SECRET_MISSING", 503)
         safe_reasoning, safe_response_mode, _ = _effective_runtime_defaults(profile)
         runtime_profile = replace(profile, default_reasoning=safe_reasoning,
                                   default_response_mode=safe_response_mode)
+        runtime, failure = request_runtime(runtime_profile)
+        if failure is not None:
+            return failure
         gateway = real_gateway_factory() if real else MockGateway()
         orchestrator = Orchestrator(
-            repository, diagnosis, knowledge, ProfileRegistry([runtime_profile]), gateway, traces,
+            repository, diagnosis, knowledge, ProfileRegistry([runtime_profile], credentials,
+                request_runtime=runtime), gateway, traces,
             resolve_secrets=real,
         )
         analysis_request = AnalysisRequest(Mode.CHAT, profile_id, question.strip(),
@@ -594,10 +641,7 @@ def create_app(*, trace_path: Path | None = None,
 
 
 def run_web(*, port: int = 8765) -> None:
-    """Load local environment at the explicit Web startup boundary."""
-    from dotenv import load_dotenv
-
-    load_dotenv(Path.cwd() / ".env", override=False)
-    app = create_app()
+    """Fix the credential path at startup; each request resolves a fresh snapshot."""
+    app = create_app(credential_store=CredentialStore(Path.cwd() / ".env"))
     print(f"Developer Validation Web UI: http://127.0.0.1:{port}", flush=True)
     app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)

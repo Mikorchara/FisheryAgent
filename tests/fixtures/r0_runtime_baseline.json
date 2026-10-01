@@ -1,0 +1,652 @@
+{
+  "schema_version": 1,
+  "checkpoint": "0d55cbc",
+  "builtin_profiles": [
+    {
+      "public": {
+        "profile_id": "mock-demo",
+        "display_name": "Mock 离线演示",
+        "provider": "mock",
+        "service_id": "custom",
+        "model_family": "unknown",
+        "provider_id": "custom",
+        "model": "offline-mock",
+        "profile_status": "custom",
+        "base_url": "http://mock.invalid/v1",
+        "adapter_id": "generic_openai_chat",
+        "secret_env": "",
+        "runtime_type": "mock",
+        "source": "built_in",
+        "capabilities": {
+          "streaming": "supported",
+          "streaming_scope_matches": true,
+          "source": "UNKNOWN",
+          "streaming_evidence": {
+            "status": "supported",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "thinking_streaming_combination": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "thinking_default_sources": [],
+          "thinking_on": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "thinking_off": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "reasoning_effort": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "structured_output": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "tool_calling": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "thinking_default": null,
+          "effort_values": []
+        },
+        "thinking_probe_available": false,
+        "reasoning_modes": [
+          "auto"
+        ],
+        "default_reasoning_mode": "auto",
+        "default_response_mode": "normal",
+        "stored_default_thinking_mode": "auto",
+        "stored_default_response_mode": "normal",
+        "runtime_default_warnings": []
+      },
+      "runtime_public": {
+        "profile_id": "mock-demo",
+        "provider_kind": "mock",
+        "model": "offline-mock",
+        "adapter_id": "generic_openai_chat",
+        "provider_id": "custom",
+        "profile_status": "custom",
+        "service_id": "custom",
+        "model_family": "unknown"
+      }
+    },
+    {
+      "public": {
+        "profile_id": "qwen-plus-experimental",
+        "display_name": "Qwen Plus（实验）",
+        "provider": "dashscope",
+        "service_id": "dashscope",
+        "model_family": "qwen",
+        "provider_id": "qwen",
+        "model": "qwen-plus",
+        "profile_status": "experimental",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "adapter_id": "openai_chat",
+        "secret_env": "DASHSCOPE_API_KEY",
+        "runtime_type": "cloud",
+        "source": "built_in",
+        "capabilities": {
+          "streaming": "supported",
+          "streaming_scope_matches": true,
+          "source": "USER_VERIFIED",
+          "streaming_evidence": {
+            "status": "supported",
+            "source": "USER_VERIFIED",
+            "sources": [
+              "OFFICIAL_DOCS",
+              "USER_VERIFIED"
+            ]
+          },
+          "thinking_streaming_combination": {
+            "status": "supported",
+            "source": "OFFICIAL_DOCS",
+            "sources": [
+              "OFFICIAL_DOCS"
+            ]
+          },
+          "thinking_default_sources": [
+            "OFFICIAL_DOCS"
+          ],
+          "thinking_on": {
+            "status": "supported",
+            "source": "OFFICIAL_DOCS",
+            "sources": [
+              "OFFICIAL_DOCS"
+            ]
+          },
+          "thinking_off": {
+            "status": "supported",
+            "source": "OFFICIAL_DOCS",
+            "sources": [
+              "OFFICIAL_DOCS"
+            ]
+          },
+          "reasoning_effort": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "structured_output": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "tool_calling": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "thinking_default": false,
+          "effort_values": []
+        },
+        "thinking_probe_available": true,
+        "reasoning_modes": [
+          "auto",
+          "on",
+          "off"
+        ],
+        "default_reasoning_mode": "auto",
+        "default_response_mode": "normal",
+        "stored_default_thinking_mode": "auto",
+        "stored_default_response_mode": "normal",
+        "runtime_default_warnings": []
+      },
+      "runtime_public": {
+        "profile_id": "qwen-plus-experimental",
+        "provider_kind": "cloud",
+        "model": "qwen-plus",
+        "adapter_id": "openai_chat",
+        "provider_id": "qwen",
+        "profile_status": "experimental",
+        "service_id": "dashscope",
+        "model_family": "qwen"
+      }
+    },
+    {
+      "public": {
+        "profile_id": "deepseek-v4-flash-experimental",
+        "display_name": "DeepSeek Flash experimental validation",
+        "provider": "deepseek_api",
+        "service_id": "deepseek_api",
+        "model_family": "deepseek",
+        "provider_id": "deepseek",
+        "model": "deepseek-flash",
+        "profile_status": "experimental",
+        "base_url": "https://api.deepseek.com",
+        "adapter_id": "openai_chat",
+        "secret_env": "DEEPSEEK_API_KEY",
+        "runtime_type": "cloud",
+        "source": "built_in",
+        "capabilities": {
+          "streaming": "supported",
+          "streaming_scope_matches": true,
+          "source": "OFFICIAL_DOCS",
+          "streaming_evidence": {
+            "status": "supported",
+            "source": "OFFICIAL_DOCS",
+            "sources": [
+              "OFFICIAL_DOCS"
+            ]
+          },
+          "thinking_streaming_combination": {
+            "status": "supported",
+            "source": "OFFICIAL_DOCS",
+            "sources": [
+              "OFFICIAL_DOCS"
+            ]
+          },
+          "thinking_default_sources": [
+            "OFFICIAL_DOCS"
+          ],
+          "thinking_on": {
+            "status": "supported",
+            "source": "OFFICIAL_DOCS",
+            "sources": [
+              "OFFICIAL_DOCS"
+            ]
+          },
+          "thinking_off": {
+            "status": "supported",
+            "source": "OFFICIAL_DOCS",
+            "sources": [
+              "OFFICIAL_DOCS"
+            ]
+          },
+          "reasoning_effort": {
+            "status": "supported",
+            "source": "OFFICIAL_DOCS",
+            "sources": [
+              "OFFICIAL_DOCS"
+            ]
+          },
+          "structured_output": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "tool_calling": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "thinking_default": true,
+          "effort_values": [
+            "low",
+            "high",
+            "max"
+          ]
+        },
+        "thinking_probe_available": true,
+        "reasoning_modes": [
+          "auto",
+          "on",
+          "off"
+        ],
+        "default_reasoning_mode": "auto",
+        "default_response_mode": "normal",
+        "stored_default_thinking_mode": "auto",
+        "stored_default_response_mode": "normal",
+        "runtime_default_warnings": []
+      },
+      "runtime_public": {
+        "profile_id": "deepseek-v4-flash-experimental",
+        "provider_kind": "cloud",
+        "model": "deepseek-flash",
+        "adapter_id": "openai_chat",
+        "provider_id": "deepseek",
+        "profile_status": "experimental",
+        "service_id": "deepseek_api",
+        "model_family": "deepseek"
+      }
+    },
+    {
+      "public": {
+        "profile_id": "ollama-qwen35-4b-local",
+        "display_name": "Ollama Qwen3.5 4B（本地）",
+        "provider": "ollama",
+        "service_id": "ollama",
+        "model_family": "qwen",
+        "provider_id": "ollama",
+        "model": "qwen3.5:4b",
+        "profile_status": "experimental",
+        "base_url": "http://127.0.0.1:11434/v1",
+        "adapter_id": "generic_openai_chat",
+        "secret_env": "",
+        "runtime_type": "local",
+        "source": "built_in",
+        "capabilities": {
+          "streaming": "unknown",
+          "streaming_scope_matches": true,
+          "source": "UNKNOWN",
+          "streaming_evidence": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "thinking_streaming_combination": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "thinking_default_sources": [
+            "MODEL_METADATA"
+          ],
+          "thinking_on": {
+            "status": "supported",
+            "source": "MODEL_METADATA",
+            "sources": [
+              "MODEL_METADATA"
+            ]
+          },
+          "thinking_off": {
+            "status": "supported",
+            "source": "MODEL_METADATA",
+            "sources": [
+              "MODEL_METADATA"
+            ]
+          },
+          "reasoning_effort": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "structured_output": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "tool_calling": {
+            "status": "unknown",
+            "source": "UNKNOWN",
+            "sources": []
+          },
+          "thinking_default": true,
+          "effort_values": []
+        },
+        "thinking_probe_available": true,
+        "reasoning_modes": [
+          "auto",
+          "on",
+          "off"
+        ],
+        "default_reasoning_mode": "off",
+        "default_response_mode": "normal",
+        "stored_default_thinking_mode": "off",
+        "stored_default_response_mode": "normal",
+        "runtime_default_warnings": []
+      },
+      "runtime_public": {
+        "profile_id": "ollama-qwen35-4b-local",
+        "provider_kind": "local",
+        "model": "qwen3.5:4b",
+        "adapter_id": "generic_openai_chat",
+        "provider_id": "ollama",
+        "profile_status": "experimental",
+        "service_id": "ollama",
+        "model_family": "qwen"
+      }
+    }
+  ],
+  "request_payloads": [
+    {
+      "profile_id": "qwen-plus-experimental",
+      "thinking_mode": "auto",
+      "streaming": false,
+      "body": {
+        "model": "qwen-plus",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ]
+      }
+    },
+    {
+      "profile_id": "qwen-plus-experimental",
+      "thinking_mode": "auto",
+      "streaming": true,
+      "body": {
+        "model": "qwen-plus",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    },
+    {
+      "profile_id": "qwen-plus-experimental",
+      "thinking_mode": "on",
+      "streaming": false,
+      "body": {
+        "model": "qwen-plus",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ],
+        "extra_body": {
+          "enable_thinking": true
+        }
+      }
+    },
+    {
+      "profile_id": "qwen-plus-experimental",
+      "thinking_mode": "on",
+      "streaming": true,
+      "body": {
+        "model": "qwen-plus",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "extra_body": {
+          "enable_thinking": true
+        }
+      }
+    },
+    {
+      "profile_id": "qwen-plus-experimental",
+      "thinking_mode": "off",
+      "streaming": false,
+      "body": {
+        "model": "qwen-plus",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ],
+        "extra_body": {
+          "enable_thinking": false
+        }
+      }
+    },
+    {
+      "profile_id": "qwen-plus-experimental",
+      "thinking_mode": "off",
+      "streaming": true,
+      "body": {
+        "model": "qwen-plus",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "extra_body": {
+          "enable_thinking": false
+        }
+      }
+    },
+    {
+      "profile_id": "deepseek-v4-flash-experimental",
+      "thinking_mode": "auto",
+      "streaming": false,
+      "body": {
+        "model": "deepseek-flash",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ]
+      }
+    },
+    {
+      "profile_id": "deepseek-v4-flash-experimental",
+      "thinking_mode": "auto",
+      "streaming": true,
+      "body": {
+        "model": "deepseek-flash",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    },
+    {
+      "profile_id": "deepseek-v4-flash-experimental",
+      "thinking_mode": "on",
+      "streaming": false,
+      "body": {
+        "model": "deepseek-flash",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ],
+        "extra_body": {
+          "thinking": {
+            "type": "enabled"
+          }
+        }
+      }
+    },
+    {
+      "profile_id": "deepseek-v4-flash-experimental",
+      "thinking_mode": "on",
+      "streaming": true,
+      "body": {
+        "model": "deepseek-flash",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "extra_body": {
+          "thinking": {
+            "type": "enabled"
+          }
+        }
+      }
+    },
+    {
+      "profile_id": "deepseek-v4-flash-experimental",
+      "thinking_mode": "off",
+      "streaming": false,
+      "body": {
+        "model": "deepseek-flash",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ],
+        "extra_body": {
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      }
+    },
+    {
+      "profile_id": "deepseek-v4-flash-experimental",
+      "thinking_mode": "off",
+      "streaming": true,
+      "body": {
+        "model": "deepseek-flash",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "extra_body": {
+          "thinking": {
+            "type": "disabled"
+          }
+        }
+      }
+    },
+    {
+      "profile_id": "deepseek-v4-flash-experimental",
+      "thinking_mode": "on",
+      "effort": "low",
+      "streaming": false,
+      "body": {
+        "model": "deepseek-flash",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ],
+        "extra_body": {
+          "thinking": {
+            "type": "enabled"
+          }
+        },
+        "reasoning_effort": "low"
+      }
+    },
+    {
+      "profile_id": "ollama-qwen35-4b-local",
+      "thinking_mode": "auto",
+      "streaming": false,
+      "body": {
+        "model": "qwen3.5:4b",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ]
+      }
+    },
+    {
+      "profile_id": "ollama-qwen35-4b-local",
+      "thinking_mode": "on",
+      "streaming": false,
+      "body": {
+        "model": "qwen3.5:4b",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ],
+        "reasoning_effort": "high"
+      }
+    },
+    {
+      "profile_id": "ollama-qwen35-4b-local",
+      "thinking_mode": "off",
+      "streaming": false,
+      "body": {
+        "model": "qwen3.5:4b",
+        "messages": [
+          {
+            "role": "user",
+            "content": "只回复 OK"
+          }
+        ],
+        "reasoning_effort": "none"
+      }
+    }
+  ]
+}

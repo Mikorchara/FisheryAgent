@@ -198,12 +198,16 @@ function updateProfile() {
   // Clear the previous selection while the new profile details are loading.
   $("provider-preset").value = "";
   for (const id of Object.values(customFields)) $(id).value = "";
+  $("custom-auth").value = profile.auth_spec || (profile.credential_ref || profile.runtime_type === "cloud"
+    ? "REQUIRED_BEARER" : "OPTIONAL_BEARER");
+  updateSecretRequirement();
   $("secret-status").textContent = "";
   invalidateTest();
   $("profile-meta").textContent = `${profile.service_id || profile.provider} · ${profile.model_family || "unknown"} · ${profile.model} · ${profile.profile_status.toUpperCase()} · ${profile.runtime_type} · ${profile.source === "user_custom" ? "用户自定义" : "预置"}`;
   addPairs("profile-summary", [["Service", profile.service_id || profile.provider],
     ["Base URL", profile.base_url], ["Model ID", profile.model],
-    ["Deployment", profile.runtime_type]]);
+    ["Deployment", profile.runtime_type], ["Auth", profile.auth_spec || "OPTIONAL_BEARER"]]);
+  $("selected-secret-status").hidden = profile.auth_spec === "NONE" || profile.runtime_type === "mock";
   const streaming = profile.capabilities?.streaming || "unknown";
   const capabilitySource = profile.capabilities?.source || "UNKNOWN";
   const capabilityLabel = streaming === "supported" && capabilitySource === "OFFICIAL_DOCS"
@@ -261,8 +265,8 @@ function updateProfile() {
         ? "正在查看自定义配置；点击“编辑所选”可修改连接参数，名称不可修改。"
         : "预置配置只读；如需新配置，请点击“新建”。";
       const current = () => revision === formRevision && $("profile").value === profile.profile_id;
-      showSecret(data.fields.secret_env, "secret-status", current);
-      if (real) showSecret(data.fields.secret_env, "selected-secret-status", current);
+      showSecret(data.fields.secret_env, "secret-status", current, profile);
+      if (real) showSecret(data.fields.secret_env, "selected-secret-status", current, profile);
     })
     .catch(() => {
       if (revision === formRevision) $("custom-status").textContent = "读取所选配置失败：PROFILE_READ_FAILED";
@@ -320,7 +324,7 @@ function renderCapabilities(profile) {
 const customFields = {
   display_name: "custom-name", service_id: "custom-provider", model_family: "custom-family",
   adapter_id: "custom-adapter", base_url: "custom-url", model: "custom-model",
-  secret_env: "custom-secret-env", provider_kind: "custom-deployment",
+  secret_env: "custom-secret-env", provider_kind: "custom-deployment", auth_spec: "custom-auth",
   default_thinking_mode: "custom-default-thinking",
   default_response_mode: "custom-default-response",
 };
@@ -342,7 +346,9 @@ function fillProfileForm(fields, profile) {
     : presets.some((preset) => preset.id === fields.service_id) ? fields.service_id : "custom";
   for (const [field, id] of Object.entries(customFields)) {
     const fallback = field === "default_thinking_mode" ? "auto"
-      : field === "default_response_mode" ? "normal" : "";
+      : field === "default_response_mode" ? "normal"
+        : field === "auth_spec" ? (profile.auth_spec || (fields.secret_env || fields.provider_kind === "cloud"
+          ? "REQUIRED_BEARER" : "OPTIONAL_BEARER")) : "";
     $(id).value = fields[field] || fallback;
   }
   $("model-options").hidden = true;
@@ -352,9 +358,12 @@ function fillProfileForm(fields, profile) {
 }
 
 function updateSecretRequirement() {
-  const cloud = $("custom-deployment").value === "cloud";
-  $("custom-secret-env").required = cloud;
-  $("custom-secret-requirement").textContent = cloud ? "Cloud 必填" : "Local 可选";
+  const auth = $("custom-auth").value || "REQUIRED_BEARER";
+  const none = auth === "NONE";
+  $("secret-env-fields").hidden = none;
+  $("secret-status").hidden = none;
+  $("custom-secret-env").required = auth === "REQUIRED_BEARER";
+  $("custom-secret-requirement").textContent = auth === "REQUIRED_BEARER" ? "认证必填" : "认证可选";
 }
 
 function collectFields() {
@@ -364,7 +373,7 @@ function collectFields() {
 
 function connectionFingerprint(fields) {
   return JSON.stringify([fields.service_id, fields.model_family, fields.adapter_id, fields.base_url, fields.model,
-    fields.secret_env, fields.provider_kind]);
+    fields.secret_env, fields.provider_kind, fields.auth_spec]);
 }
 
 function invalidateTest() {
@@ -391,19 +400,35 @@ function invalidateTest() {
   }
 }
 
-async function showSecret(name, targetId, isCurrent = () => true) {
+async function showSecret(name, targetId, isCurrent = () => true, connection = null) {
   const target = $(targetId);
+  const auth = connection?.auth_spec || $("custom-auth").value || "REQUIRED_BEARER";
+  if (auth === "NONE") {
+    if (isCurrent()) { target.hidden = true; target.textContent = ""; }
+    return;
+  }
+  if (isCurrent()) target.hidden = false;
   if (!name) {
-    if (isCurrent()) target.textContent = "Secret：未配置（Local 可不需要）";
+    if (isCurrent()) target.textContent = auth === "OPTIONAL_BEARER"
+      ? "未配置变量（可选认证）" : "Secret: MISSING；请填写环境变量名";
     return;
   }
   try {
     const response = await fetch("/api/secret-status", {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({secret_env: name}),
+      body: JSON.stringify(connection?.profile_id ? {profile_id: connection.profile_id}
+        : {secret_env: name, auth_spec: auth}),
     });
     const data = await response.json();
-    if (isCurrent()) target.textContent = `${name}: ${response.ok ? data.status : "MISSING"}`;
+    if (isCurrent()) {
+      if (!response.ok) target.textContent = `${name}: ${data.error_code || "CREDENTIAL_STATUS_ERROR"}`;
+      else {
+        const source = data.source || "UNKNOWN";
+        const access = source === "PROCESS_ENV" ? "外部只读"
+          : data.editable === true ? "未来可编辑（本轮只读）" : "只读";
+        target.textContent = `${name}: ${data.availability || data.status} · ${source} · ${access}`;
+      }
+    }
   } catch (_) {
     if (isCurrent()) target.textContent = `${name}: 状态不可用`;
   }
@@ -419,6 +444,7 @@ function selectPreset() {
   $("custom-url").value = preset.id === "custom" ? "" : preset.base_url;
   $("custom-model").value = "";
   $("custom-secret-env").value = preset.secret_env || "";
+  $("custom-auth").value = preset.auth_spec || (preset.secret_env ? "REQUIRED_BEARER" : "OPTIONAL_BEARER");
   $("custom-deployment").value = preset.provider_kind;
   $("model-options").hidden = true;
   updateSecretRequirement();
@@ -439,6 +465,7 @@ function newProfile() {
   $("custom-model").value = "";
   $("custom-secret-env").value = "";
   $("custom-deployment").value = "cloud";
+  $("custom-auth").value = "REQUIRED_BEARER";
   $("custom-default-thinking").value = "auto";
   $("custom-default-response").value = "normal";
   $("model-options").hidden = true;
@@ -614,8 +641,8 @@ function validateForm({modelOptional = false} = {}) {
     if (modelOptional && (field === "model" || field === "display_name")) continue;
     const control = $(id);
     if (!control.checkValidity()) {
-      const message = field === "secret_env" && values.provider_kind === "cloud"
-        ? "Cloud Profile 必须填写 Secret 环境变量名，不能填写真实 Key。"
+      const message = field === "secret_env" && values.auth_spec === "REQUIRED_BEARER"
+        ? "必须认证的 Profile 需要 Secret 环境变量名，不能填写真实 Key。"
         : `${field} 为必填项，或当前格式不正确。`;
       profileError(field, message);
       return null;
@@ -730,7 +757,7 @@ async function saveCustomProfile() {
     testId = null;
     testedFingerprint = null;
     await refreshProfiles(data.profile.profile_id);
-    $("custom-status").textContent = "已保存。若 Secret 仅写在 .env，请重启 Web 服务后使用。";
+    $("custom-status").textContent = "已保存。凭据在每次新请求开始时重新读取；外部环境变量优先，页面仅显示状态。";
   } catch (_) {
     profileError("profile", "页面与本地服务通信失败。");
   } finally {
@@ -1006,7 +1033,12 @@ async function init() {
     $("test-profile").addEventListener("click", testConnection);
     $("save-profile").addEventListener("click", saveCustomProfile);
     $("custom-deployment").addEventListener("change", updateSecretRequirement);
-    for (const field of ["custom-provider", "custom-adapter", "custom-url", "custom-model", "custom-secret-env", "custom-deployment"]) {
+    $("custom-auth").addEventListener("change", () => {
+      updateSecretRequirement();
+      showSecret($("custom-secret-env").value.trim(), "secret-status");
+      invalidateTest();
+    });
+    for (const field of ["custom-provider", "custom-adapter", "custom-url", "custom-model", "custom-secret-env", "custom-deployment", "custom-auth"]) {
       $(field).addEventListener("input", invalidateTest);
     }
     $("custom-secret-env").addEventListener("change", () => showSecret($("custom-secret-env").value.trim(), "secret-status"));

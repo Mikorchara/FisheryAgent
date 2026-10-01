@@ -6,10 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 import argparse
 import json
-import os
 import uuid
 
-from dotenv import load_dotenv
+from fishery_ai.credentials import CredentialFileError, CredentialStore
 
 from fishery_ai.web import _builtin_profiles, create_app
 
@@ -42,9 +41,12 @@ def main() -> int:
         print("RETRY_POLICY_MUST_BE_ZERO")
         return 2
 
-    # Secret loading happens only at this explicit command boundary.
-    load_dotenv(workspace / ".env", override=False)
-    present = bool(os.environ.get("DASHSCOPE_API_KEY"))
+    credentials = CredentialStore(workspace / ".env")
+    try:
+        present = credentials.status(profile.credential_ref, profile.auth_spec).availability == "PRESENT"
+    except CredentialFileError:
+        print("CREDENTIAL_FILE_ERROR")
+        return 2
     print("QWEN_SECRET PRESENT" if present else "QWEN_SECRET MISSING")
     if not present:
         return 2
@@ -54,7 +56,7 @@ def main() -> int:
     record_path = output_dir / (
         "qwen-grounding-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         + "-" + uuid.uuid4().hex[:8] + ".json")
-    client = create_app(trace_path=output_dir / "web-traces.jsonl").test_client()
+    client = create_app(trace_path=output_dir / "web-traces.jsonl", credential_store=credentials).test_client()
     response = client.post("/api/analyze", json={
         "profile_id": PROFILE_ID, "scenario": "low_oxygen",
         "question": QUESTION, "confirm_network": True,

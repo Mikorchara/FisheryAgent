@@ -36,6 +36,7 @@ def tearDownModule():
 
 
 from fishery_ai.contracts import Usage, UsageSource
+from fishery_ai.credentials import CredentialStore
 from fishery_ai.model_gateway import ModelResponse
 from fishery_ai.real_validation import run_real_validation
 
@@ -43,7 +44,7 @@ from fishery_ai.real_validation import run_real_validation
 class RealValidationEntryTests(unittest.TestCase):
     def test_explicit_confirmation_is_required_before_env_load(self):
         output = StringIO()
-        with patch("fishery_ai.real_validation.load_dotenv") as loader, redirect_stdout(output):
+        with patch("fishery_ai.real_validation.CredentialStore") as loader, redirect_stdout(output):
             result = run_real_validation(check="basic", scenario="normal", confirm_network=False)
         self.assertEqual(result, 2)
         loader.assert_not_called()
@@ -51,11 +52,11 @@ class RealValidationEntryTests(unittest.TestCase):
 
     def test_missing_secret_stops_before_gateway_creation(self):
         output = StringIO()
-        with patch("fishery_ai.real_validation.load_dotenv"), patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {}, clear=True):
             with patch("fishery_ai.real_validation.OpenAICompatibleAdapter") as factory:
                 with redirect_stdout(output):
                     result = run_real_validation(check="basic", scenario="normal",
-                                                 confirm_network=True)
+                                                 confirm_network=True, credential_store=CredentialStore())
         self.assertEqual(result, 2)
         factory.assert_not_called()
         self.assertIn("Secret: MISSING", output.getvalue())
@@ -71,12 +72,12 @@ class RealValidationEntryTests(unittest.TestCase):
                 return ModelResponse("收到。", Usage(3, 2, 5, source=UsageSource.PROVIDER),
                                      returned_model="deepseek-v4-flash")
 
-        with patch("fishery_ai.real_validation.load_dotenv"), patch.dict(
+        with patch.dict(
                 os.environ, {"DEEPSEEK_API_KEY": "SENTINEL_SECRET"}, clear=True):
             with patch("fishery_ai.real_validation.OpenAICompatibleAdapter",
                        return_value=FakeGateway()), redirect_stdout(output):
                 result = run_real_validation(check="basic", scenario="normal",
-                                             confirm_network=True)
+                                             confirm_network=True, credential_store=CredentialStore())
         self.assertEqual(result, 0)
         text = output.getvalue()
         self.assertIn("REAL NETWORK VALIDATION", text)
@@ -94,12 +95,12 @@ class RealValidationEntryTests(unittest.TestCase):
             def complete(self, _request, _runtime):
                 raise RuntimeError("SENTINEL_SECRET")
 
-        with patch("fishery_ai.real_validation.load_dotenv"), patch.dict(
+        with patch.dict(
                 os.environ, {"DEEPSEEK_API_KEY": "SENTINEL_SECRET"}, clear=True):
             with patch("fishery_ai.real_validation.OpenAICompatibleAdapter",
                        return_value=FakeGateway()), redirect_stdout(output):
                 result = run_real_validation(check="basic", scenario="normal",
-                                             confirm_network=True)
+                                             confirm_network=True, credential_store=CredentialStore())
         self.assertEqual(result, 1)
         self.assertIn("UNEXPECTED_ERROR", output.getvalue())
         self.assertNotIn("SENTINEL_SECRET", output.getvalue())

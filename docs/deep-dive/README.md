@@ -24,6 +24,7 @@
 
 - [V0.1.1-A3.2 Cloud Capability、Streaming 与 Thinking](V0.1.1_A3_2_CLOUD_CAPABILITY_STREAMING_THINKING.md)：记录全流程审计、官方参数依据、统一单次 Probe、组合门禁和独立 Reasoning 输出。
 - [V0.1.1-A3.2.1 最终输出一致性与 Capability UI](V0.1.1_A3_2_1_OUTPUT_PARITY_AND_CAPABILITY_UI.md)：记录 Normal/Streaming 统一展示、能力证据折叠、四次 Qwen 对照及离线回归。
-- [Provider、Credential 与 Capability 重构研究](PROVIDER_CREDENTIAL_CAPABILITY_REFACTOR_RESEARCH.md)：核对当前凭据和能力链路，提出安全 `.env` 管理、协议分离、Evidence 冲突、取消与 Manual Mode 的渐进迁移方案；尚未实施。
+- [Provider、Credential 与 Capability 重构研究](PROVIDER_CREDENTIAL_CAPABILITY_REFACTOR_RESEARCH.md)：核对原凭据和能力链路，提出渐进迁移方案；R0/R1 已实施，凭据写入、协议分离、Evidence 冲突、取消与 Manual Mode 仍待后续阶段。
+- [Provider/Credential 重构 R0–R1 实施报告](PROVIDER_CREDENTIAL_REFACTOR_R0_R1.md)：记录兼容请求体基线、静态 ProviderRegistry、只读 CredentialStore、凭据热读取、AuthSpec 与安全验证；R2–R7 尚未实施。
 
 历史报告描述的是编写时的状态。当前环境准备与项目范围请以[文档导航](../README.md)为准。

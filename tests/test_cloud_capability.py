@@ -271,7 +271,9 @@ class CloudCapabilityTests(unittest.TestCase):
     def test_sdk_thinking_refusal_is_narrow_and_never_exposes_provider_body(self):
         import httpx
         from openai import APIStatusError
-        runtime = ProfileRegistry([apply_official_capabilities(self.profile())]).snapshot("test-profile", {})
+        profile = replace(self.profile(), secret_env="TEST_FAKE_KEY")
+        runtime = ProfileRegistry([apply_official_capabilities(profile)]).snapshot(
+            "test-profile", {"TEST_FAKE_KEY": "fake-secret-123"})
         request = ModelRequest(Mode.CHAT, (ModelMessage("user", "OK"),), reasoning=ReasoningOptions(ReasoningMode.OFF))
         for message, expected in (("enable_thinking is unsupported for this model", "THINKING_UNSUPPORTED"),
                                   ("unknown model", "HTTP_400")):

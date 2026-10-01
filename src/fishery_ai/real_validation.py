@@ -6,12 +6,11 @@ from dataclasses import replace
 from importlib.resources import files
 from pathlib import Path
 import json
-import os
 import socket
 import ssl
 import time
 
-from dotenv import load_dotenv
+from .credentials import CredentialFileError, CredentialStore
 
 from .application import Orchestrator
 from .contracts import AnalysisRequest, Mode, Usage, UsageAccumulator
@@ -145,18 +144,24 @@ def _request(check: str) -> ModelRequest:
     return ModelRequest(Mode.CHAT, (message,), generation, reasoning)
 
 
-def run_real_validation(*, check: str, scenario: str, confirm_network: bool) -> int:
+def run_real_validation(*, check: str, scenario: str, confirm_network: bool,
+                        credential_store: CredentialStore | None = None) -> int:
     if not confirm_network:
         print("Real validation requires --confirm-network; no network request was made.")
         return 2
     if check not in CHECKS:
         print("UNKNOWN_CHECK")
         return 2
-    load_dotenv(dotenv_path=Path.cwd() / ".env", override=False)
+    credentials = credential_store if credential_store is not None else CredentialStore(Path.cwd() / ".env")
     registry = ProfileRegistry.from_json(RESOURCE_ROOT.joinpath(
-        "profiles/deepseek_experimental.json"))
+        "profiles/deepseek_experimental.json"), credentials)
     profile = registry._profiles[PROFILE_ID]
-    present = bool(os.environ.get(profile.secret_env))
+    try:
+        runtime = _probe_runtime(registry.snapshot(PROFILE_ID), check)
+    except CredentialFileError:
+        print("CREDENTIAL_FILE_ERROR")
+        return 2
+    present = runtime.credential.status.availability == "PRESENT"
     print("REAL NETWORK VALIDATION")
     print(f"Service: {profile.service_id}")
     print(f"Model family: {profile.model_family}")
@@ -170,7 +175,6 @@ def run_real_validation(*, check: str, scenario: str, confirm_network: bool) -> 
         return 2
 
     gateway = OpenAICompatibleAdapter()
-    runtime = _probe_runtime(registry.snapshot(PROFILE_ID), check)
     if check == "network":
         diagnostic = _network_diagnostics(runtime, gateway)
         print(json.dumps(diagnostic, ensure_ascii=False))
@@ -185,7 +189,8 @@ def run_real_validation(*, check: str, scenario: str, confirm_network: bool) -> 
             repository = MockRepository(RESOURCE_ROOT.joinpath("mock/scenarios.json"))
             knowledge = KnowledgeService(RESOURCE_ROOT.joinpath("knowledge/eel_knowledge.json"))
             trace_path = Path.cwd() / "outputs/real-validation-traces.jsonl"
-            app = Orchestrator(repository, DiagnosisService(), knowledge, registry, gateway,
+            app = Orchestrator(repository, DiagnosisService(), knowledge,
+                               ProfileRegistry([profile], credentials, request_runtime=runtime), gateway,
                                JsonlTraceSink(trace_path))
             result = app.analyze(AnalysisRequest(Mode.ADVICE, PROFILE_ID), scenario=scenario)
             usage = result.usage

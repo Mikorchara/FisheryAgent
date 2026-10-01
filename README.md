@@ -43,7 +43,7 @@
 
 先前以实验配置 `deepseek-v4-flash` 完成最小 Chat Completion、Reasoning AUTO 和 ON 三项请求，响应实际报告 `deepseek-flash`；OFF 与 effort 探测遇连接/超时错误。当前实验 Profile 的请求 Model ID 已更新为 `deepseek-flash`，仍为 **EXPERIMENTAL**。A2.1 的 `/models` 网络探针曾超时；随后 Qwen 与 DeepSeek 各一次最小 Chat Completion 均成功，但高级能力和 Fishery 全链路仍未验证。逐项证据见 [A2 历史报告](docs/deep-dive/V0.1.1_A2_DEEPSEEK_VALIDATION_REPORT.md)、[A2.1 网络诊断](docs/deep-dive/V0.1.1_A2_1_DEEPSEEK_COMPATIBILITY_AND_NETWORK_DIAGNOSTICS.md)及 [Cloud 对照测试](docs/deep-dive/V0.1.1_A2_2_QWEN_NETWORK_CONTROL_TEST.md)。
 
-真实入口为 `python -m fishery_ai validate-real --check basic --confirm-network`，只在显式执行时从当前工作目录的被忽略 `.env` 加载 Secret 并可能产生费用。默认 `demo` 和离线测试仍不联网。
+真实入口为 `python -m fishery_ai validate-real --check basic --confirm-network`，只在显式执行时通过只读 CredentialStore 从进程环境或当前工作目录的被忽略 `.env` 解析 Secret，并可能产生费用。默认 `demo` 和离线测试仍不联网。
 
 ## V0.1.1-A3.0：开发验证页面
 
@@ -60,6 +60,10 @@ A3.1 在同一固定编排上增加应用级 Streaming，页面可选择 Normal 
 A3.1.2 让顶部 Profile 选择与配置查看区保持同步，并将自定义配置名称改为创建时唯一、创建后不可修改。Built-in 只读，User Custom 可编辑连接参数及删除；旧冲突面板和自动副本命名已移除。见 [A3.1.2 记录](docs/deep-dive/V0.1.1_A3_1_2_PROFILE_MANAGER_SIMPLIFICATION.md)。
 
 ## Profile 与 Secret
+
+ProviderRegistry 静态注册 DashScope、DeepSeek API、Ollama 和 Generic OpenAI-compatible，注册不依赖 Secret。Profile 只保存 `credential_ref` / 兼容名称 `secret_env`。CredentialStore 按 Process Environment > Project .env 解析，明确存在的空外部变量不会回退文件；不做插值，不写 `.env` 或 `os.environ`。
+
+首次升级时重启旧 Web 进程一次；之后修改 `.env`，新请求立即读取，进行中的请求使用不可变凭据快照。Built-in loopback Ollama 明确为 `AuthSpec.NONE`，不读取或显示 Secret。其他 Local 配置按自身认证要求处理。页面仅显示状态与来源；凭据编辑功能尚未实施。详见 [R0/R1 实施报告](docs/deep-dive/PROVIDER_CREDENTIAL_REFACTOR_R0_R1.md)。
 
 离线示例位于 `src/fishery_ai/resources/mock/profiles.json`。`cloud-demo` 使用远程 OpenAI 兼容 URL，仅保存 `secret_env: DEEPSEEK_API_KEY` 引用；`local-demo` 使用 `http://localhost:11434/v1`，Key 可为空，模型名是待替换占位符。这个文件是 Mock 演示输入，不是 VERIFIED 预设列表。默认超时为 connect 5 秒、read/stream idle 30 秒、total 120 秒，最多重试一次。仅在尚未输出正文且错误可重试时重试。
 

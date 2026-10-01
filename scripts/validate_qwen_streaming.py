@@ -7,10 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 import argparse
 import json
-import os
 import uuid
 
-from dotenv import load_dotenv
+from fishery_ai.credentials import CredentialFileError, CredentialStore
 
 from fishery_ai.application import Orchestrator
 from fishery_ai.composition import RESOURCE_ROOT
@@ -45,9 +44,12 @@ def main() -> int:
         print("RETRY_POLICY_MUST_BE_ZERO")
         return 2
 
-    # Only this explicit command boundary loads the local Secret; its value is never printed.
-    load_dotenv(workspace / ".env", override=False)
-    present = bool(os.environ.get(original.secret_env or ""))
+    credentials = CredentialStore(workspace / ".env")
+    try:
+        present = credentials.status(original.credential_ref, original.auth_spec).availability == "PRESENT"
+    except CredentialFileError:
+        print("CREDENTIAL_FILE_ERROR")
+        return 2
     print("QWEN_SECRET PRESENT" if present else "QWEN_SECRET MISSING")
     if not present:
         return 2
@@ -62,7 +64,7 @@ def main() -> int:
     orchestrator = Orchestrator(
         MockRepository(RESOURCE_ROOT.joinpath("mock/scenarios.json")),
         DiagnosisService(), KnowledgeService(RESOURCE_ROOT.joinpath("knowledge/eel_knowledge.json")),
-        ProfileRegistry([probe]), gateway, JsonlTraceSink(output_dir / "web-traces.jsonl"),
+        ProfileRegistry([probe], credentials), gateway, JsonlTraceSink(output_dir / "web-traces.jsonl"),
     )
     delta_count = 0
     terminal = None

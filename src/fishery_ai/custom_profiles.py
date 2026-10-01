@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from .model_gateway import (DEFAULT_LOCAL_READ_TIMEOUT_S,
                             DEFAULT_LOCAL_TOTAL_TIMEOUT_S, ModelProfile)
 from .model_options import ProfileStatus, ReasoningMode, ReasoningOptions
+from .providers import AuthSpec
 
 
 PROFILE_FIELDS = ("display_name", "service_id", "model_family", "adapter_id", "base_url",
@@ -41,6 +42,9 @@ class CustomProfileStore:
         profiles = []
         for path in sorted(self.directory.glob("custom-*.json")):
             data = json.loads(path.read_text(encoding="utf-8"))
+            shape = set(data) - {"auth_spec", "credential_ref"}
+            if "credential_ref" in data and "secret_env" not in data:
+                shape.add("secret_env")
             shared = {"profile_id", "profile_status", "max_retries"}
             allowed_shapes = (
                 set(PROFILE_FIELDS) | shared,
@@ -48,7 +52,7 @@ class CustomProfileStore:
                 set(LEGACY_PROFILE_FIELDS) | shared,
                 set(LEGACY_PROFILE_FIELDS) | set(RUNTIME_DEFAULT_FIELDS) | shared,
             )
-            if set(data) not in allowed_shapes:
+            if shape not in allowed_shapes:
                 raise ValueError("invalid stored custom profile fields")
             if data["profile_id"] != path.stem or data["profile_status"] != "custom":
                 raise ValueError("invalid stored custom profile identity")
@@ -72,7 +76,7 @@ class CustomProfileStore:
         for name in PROFILE_FIELDS:
             if name not in fields:
                 raise ProfileFieldError(name, "REQUIRED", f"{name} 字段不可缺少。")
-        allowed_fields = set(PROFILE_FIELDS) | set(RUNTIME_DEFAULT_FIELDS)
+        allowed_fields = set(PROFILE_FIELDS) | set(RUNTIME_DEFAULT_FIELDS) | {"auth_spec"}
         if not set(PROFILE_FIELDS).issubset(fields) or not set(fields).issubset(allowed_fields):
             raise ProfileFieldError("profile", "UNKNOWN_FIELD", "只允许页面列出的配置字段，不接受 API Key 等额外字段。")
         values = {}
@@ -104,14 +108,22 @@ class CustomProfileStore:
             raise ProfileFieldError("model_family", "UNSUPPORTED", "model_family 只能是 qwen、deepseek 或 unknown。")
         if values["provider_kind"] not in ("cloud", "local"):
             raise ProfileFieldError("provider_kind", "UNSUPPORTED", "deployment 只能选择 cloud 或 local。")
-        if values["provider_kind"] == "cloud" and not values["secret_env"]:
-            raise ProfileFieldError("secret_env", "REQUIRED", "Cloud Profile 必须填写 Secret 环境变量名，不是 API Key 值。")
+        explicit_auth = fields.get("auth_spec")
+        try:
+            auth = AuthSpec(explicit_auth) if explicit_auth else (
+                AuthSpec.REQUIRED_BEARER if values["secret_env"] or values["provider_kind"] == "cloud"
+                else AuthSpec.OPTIONAL_BEARER)
+        except (ValueError, TypeError):
+            raise ProfileFieldError("auth_spec", "UNSUPPORTED", "认证只支持 NONE、REQUIRED_BEARER、OPTIONAL_BEARER。") from None
+        values["auth_spec"] = auth.value
+        if auth == AuthSpec.REQUIRED_BEARER and not values["secret_env"]:
+            raise ProfileFieldError("secret_env", "REQUIRED", "必须认证的 Profile 需要 Secret 环境变量名，不是 API Key 值。")
         if values["secret_env"] and not re.fullmatch(r"[A-Z_][A-Z0-9_]{0,127}", values["secret_env"]):
             raise ProfileFieldError("secret_env", "INVALID_FORMAT", "secret_env 只接受大写环境变量名，例如 DASHSCOPE_API_KEY，不能填写 Key 值。")
         if values["adapter_id"] not in ("openai_chat", "generic_openai_chat"):
             raise ProfileFieldError("adapter_id", "UNSUPPORTED", "adapter_id 只能选择页面提供的 OpenAI-compatible 类型。")
-        if values["adapter_id"] == "generic_openai_chat" and values["service_id"] not in ("custom", "ollama"):
-            raise ProfileFieldError("service_id", "CONFLICT", "generic_openai_chat 需要 service_id 为 custom 或 ollama。")
+        if values["adapter_id"] == "generic_openai_chat" and values["service_id"] not in ("custom", "ollama", "generic_openai"):
+            raise ProfileFieldError("service_id", "CONFLICT", "generic_openai_chat 需要 service_id 为 custom、generic_openai 或 ollama。")
         try:
             parsed = urlsplit(values["base_url"])
             valid_url = (parsed.scheme in ("http", "https") and bool(parsed.netloc)
@@ -138,6 +150,7 @@ class CustomProfileStore:
                              else 120.0),
             adapter_id=values["adapter_id"], provider_id=legacy_provider,
             service_id=values["service_id"], model_family=values["model_family"],
+            auth_spec=AuthSpec(values["auth_spec"]) if values.get("auth_spec") else None,
             default_reasoning=ReasoningOptions(ReasoningMode(values.get("default_thinking_mode", "auto"))),
             default_response_mode=values.get("default_response_mode", "normal"),
             profile_status=ProfileStatus.CUSTOM, max_retries=0,

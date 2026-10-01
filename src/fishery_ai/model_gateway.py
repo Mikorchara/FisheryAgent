@@ -6,11 +6,12 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterator, Mapping, Protocol
 import json
-import os
 import re
 from urllib.parse import urlsplit
 
 from .contracts import Mode, RuntimeInfo, Usage
+from .credentials import CredentialSnapshot, CredentialStore
+from .providers import AuthSpec
 from .model_options import (CapabilitySource, GenerationOptions, ModelCapabilities,
                             OptionValidationError, ProfileStatus, ReasoningMode, ReasoningOptions,
                             normalize_base_url, validate_options, Support)
@@ -45,6 +46,8 @@ class ModelProfile:
     default_response_mode: str = "normal"
     service_id: str | None = None
     model_family: str | None = None
+    auth_spec: AuthSpec | None = None
+    credential_ref: str | None = None
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.base_url)
@@ -52,14 +55,22 @@ class ModelProfile:
             raise ValueError("profile identity and model are required")
         if self.adapter_id not in ("openai_chat", "generic_openai_chat"):
             raise ValueError("unsupported adapter_id")
-        if self.adapter_id == "generic_openai_chat" and self.provider_id not in ("custom", "ollama"):
-            raise ValueError("generic adapter requires custom or ollama provider identity")
+        if self.adapter_id == "generic_openai_chat" and self.provider_id not in ("custom", "ollama", "generic_openai"):
+            raise ValueError("generic adapter requires custom, generic_openai or ollama provider identity")
         if (parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.query
                 or parsed.fragment or parsed.username or parsed.password):
             raise ValueError("base_url must be an HTTP(S) URL without query or fragment")
         object.__setattr__(self, "base_url", normalize_base_url(self.base_url))
-        if self.secret_env is not None and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.secret_env):
+        if self.secret_env and self.credential_ref and self.secret_env != self.credential_ref:
+            raise ValueError("secret_env and credential_ref must refer to the same variable")
+        reference = self.credential_ref or self.secret_env
+        object.__setattr__(self, "secret_env", reference)
+        object.__setattr__(self, "credential_ref", reference)
+        if reference is not None and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", reference):
             raise ValueError("secret_env must be an environment variable name")
+        auth = self.auth_spec or (AuthSpec.REQUIRED_BEARER if reference or self.provider_kind == "cloud"
+                                  else AuthSpec.OPTIONAL_BEARER)
+        object.__setattr__(self, "auth_spec", AuthSpec(auth))
         legacy_services = {"qwen": "dashscope", "deepseek": "deepseek_api"}
         service_id = self.service_id or legacy_services.get(self.provider_id, self.provider_id)
         family = self.model_family or self.provider_id
@@ -69,8 +80,8 @@ class ModelProfile:
             raise ValueError("service_id must be a lowercase machine identifier")
         object.__setattr__(self, "service_id", service_id)
         object.__setattr__(self, "model_family", family)
-        if self.adapter_id == "generic_openai_chat" and service_id not in ("custom", "ollama"):
-            raise ValueError("generic adapter requires service_id custom or ollama")
+        if self.adapter_id == "generic_openai_chat" and service_id not in ("custom", "ollama", "generic_openai"):
+            raise ValueError("generic adapter requires service_id custom, generic_openai or ollama")
         if min(self.connect_timeout_s, self.read_timeout_s, self.total_timeout_s) <= 0:
             raise ValueError("timeouts must be positive")
         if self.max_retries < 0 or self.max_retries > 3:
@@ -220,9 +231,16 @@ class RuntimeSnapshot:
     default_generation: GenerationOptions
     default_reasoning: ReasoningOptions
     default_response_mode: str = "normal"
-    api_key: str | None = field(default=None, repr=False, compare=False)
+    credential: CredentialSnapshot = field(default_factory=CredentialSnapshot.none_required,
+                                            repr=False, compare=False)
     service_id: str = "custom"
     model_family: str = "unknown"
+    auth_spec: AuthSpec = AuthSpec.OPTIONAL_BEARER
+
+    @property
+    def api_key(self) -> str | None:
+        """Legacy internal bridge; never include this accessor in public serializers."""
+        return self.credential._for_adapter()
 
     def public_info(self) -> RuntimeInfo:
         return RuntimeInfo(self.profile_id, self.provider_kind, self.model,
@@ -231,22 +249,30 @@ class RuntimeSnapshot:
 
 
 class ProfileRegistry:
-    def __init__(self, profiles: list[ModelProfile]):
+    def __init__(self, profiles: list[ModelProfile], credential_store: CredentialStore | None = None,
+                 *, request_runtime: RuntimeSnapshot | None = None):
         ids = [profile.profile_id for profile in profiles]
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate profile_id")
         self._profiles = {profile.profile_id: profile for profile in profiles}
+        self.credential_store = credential_store if credential_store is not None else CredentialStore()
+        self._request_runtime = request_runtime
 
     @classmethod
-    def from_json(cls, path: Path) -> ProfileRegistry:
+    def from_json(cls, path: Path, credential_store: CredentialStore | None = None) -> ProfileRegistry:
         data = json.loads(path.read_text(encoding="utf-8"))
         from .official_capabilities import apply_official_capabilities
-        return cls([apply_official_capabilities(ModelProfile.from_dict(item)) for item in data["profiles"]])
+        return cls([apply_official_capabilities(ModelProfile.from_dict(item)) for item in data["profiles"]],
+                   credential_store)
 
     def snapshot(self, profile_id: str, environ: Mapping[str, str] | None = None) -> RuntimeSnapshot:
         profile = self._profiles[profile_id]
-        variables = os.environ if environ is None else environ
-        key = variables.get(profile.secret_env) if profile.secret_env else None
+        if self._request_runtime is not None and environ is None:
+            if self._request_runtime.profile_id != profile_id:
+                raise ValueError("request runtime belongs to another Profile")
+            return self._request_runtime
+        store = self.credential_store if environ is None else CredentialStore(process_env=environ)
+        credential = store.resolve(profile.credential_ref, profile.auth_spec)
         safe_reasoning, safe_response, _ = effective_runtime_defaults(profile)
         return RuntimeSnapshot(
             profile_id=profile.profile_id, display_name=profile.display_name,
@@ -257,7 +283,7 @@ class ProfileRegistry:
             adapter_id=profile.adapter_id, provider_id=profile.provider_id,
             profile_status=profile.profile_status, default_generation=profile.default_generation,
             default_reasoning=safe_reasoning,
-            default_response_mode=safe_response, api_key=key,
+            default_response_mode=safe_response, credential=credential, auth_spec=profile.auth_spec,
             service_id=profile.service_id or profile.provider_id,
             model_family=profile.model_family or "unknown",
         )

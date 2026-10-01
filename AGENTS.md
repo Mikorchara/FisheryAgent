@@ -18,7 +18,7 @@
 - Windows 路径中的 `_` 是普通字符；文件操作优先使用 PowerShell `-LiteralPath`。
 - 不得修改 `D:\Fishery_Project`；它仅是只读参考。
 - 不得提交密钥或本地模型文件。
-- 根目录 `.env` 含本地 Secret，必须保持被 Git 忽略，不得提交；代码只可在应用启动边界加载。
+- 根目录 `.env` 含本地 Secret，必须保持被 Git 忽略，不得提交；项目凭据路径只在应用启动边界确定，运行期只允许只读 CredentialStore 解析，不得用 load_dotenv 污染全局 os.environ。离线测试只使用临时文件和虚构值。
 - 不得打印、检查或记录 Secret 值及其片段；仅可报告必需环境变量是否存在。Secret 不得写入日志、Trace、文档、错误或测试输出。
 - 不得增加未使用的抽象或不必要的空模块。
 

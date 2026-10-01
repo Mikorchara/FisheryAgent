@@ -17,6 +17,7 @@ from .model_gateway import (GatewayError, ModelEvent, ModelRequest, ModelRespons
                             RetryableGatewayError, RuntimeSnapshot, effective_options)
 from .model_options import (OptionValidationError, ReasoningMode,
                             Support, validate_options)
+from .providers import AuthSpec
 
 
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
@@ -51,13 +52,14 @@ class OpenAICompatibleAdapter:
             write=min(runtime.read_timeout_s, remaining),
             pool=min(runtime.connect_timeout_s, remaining),
         )
-        return OpenAI(base_url=runtime.base_url, api_key=runtime.api_key or "local-no-key",
+        key = None if runtime.auth_spec == AuthSpec.NONE else runtime.credential._for_adapter()
+        return OpenAI(base_url=runtime.base_url, api_key=key or "local-no-key",
                       timeout=timeout, max_retries=0)
 
     @staticmethod
     def _check_secret(runtime: RuntimeSnapshot) -> None:
-        if runtime.secret_env and not runtime.api_key:
-            raise GatewayError("SECRET_UNAVAILABLE")
+        if runtime.auth_spec == AuthSpec.REQUIRED_BEARER and not runtime.credential._for_adapter():
+            raise GatewayError("SECRET_MISSING")
 
     @staticmethod
     def _remaining(deadline: float) -> float:

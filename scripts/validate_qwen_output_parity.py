@@ -6,11 +6,10 @@ from pathlib import Path
 import argparse
 import hashlib
 import json
-import os
 import time
 import uuid
 
-from dotenv import load_dotenv
+from fishery_ai.credentials import CredentialFileError, CredentialStore
 
 from fishery_ai.application import Orchestrator, result_to_dict
 from fishery_ai.composition import RESOURCE_ROOT
@@ -75,9 +74,13 @@ def main():
     if original.max_retries != 0:
         print("RETRY_POLICY_MUST_BE_ZERO")
         return 2
-    # Application startup boundary only. Never inspect, print, or persist Secret values.
-    load_dotenv(workspace / ".env", override=False)
-    if not os.environ.get(original.secret_env):
+    credentials = CredentialStore(workspace / ".env")
+    try:
+        present = credentials.status(original.credential_ref, original.auth_spec).availability == "PRESENT"
+    except CredentialFileError:
+        print("CREDENTIAL_FILE_ERROR")
+        return 2
+    if not present:
         print("QWEN_SECRET MISSING")
         return 2
     print("QWEN_SECRET PRESENT", flush=True)
@@ -96,7 +99,7 @@ def main():
     for mode, thinking in CASES:
         gateway = RecordingAdapter()
         profile = replace(original, max_retries=0)
-        app = Orchestrator(repository, DiagnosisService(), knowledge, ProfileRegistry([profile]),
+        app = Orchestrator(repository, DiagnosisService(), knowledge, ProfileRegistry([profile], credentials),
             gateway, JsonlTraceSink(trace_path), clock=lambda: fixed_time)
         request = AnalysisRequest(Mode.CHAT, PROFILE_ID, QUESTION,
                                   reasoning=ReasoningOptions(ReasoningMode(thinking)))

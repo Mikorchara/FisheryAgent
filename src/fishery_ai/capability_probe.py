@@ -12,13 +12,13 @@ from .model_options import GenerationOptions, ReasoningMode, ReasoningOptions, S
 PROBE_FIELDS = {"streaming", "reasoning_on", "reasoning_off", "thinking_streaming_combination"}
 
 
-def run_capability_probe(gateway, profile, capability: str) -> dict:
+def run_capability_probe(gateway, profile, capability: str, *, runtime=None) -> dict:
     if capability not in PROBE_FIELDS:
         raise ValueError("invalid probe capability")
     streaming = capability in ("streaming", "thinking_streaming_combination")
     mode = (ReasoningMode.ON if capability in ("reasoning_on", "thinking_streaming_combination")
             else ReasoningMode.OFF if capability == "reasoning_off" else ReasoningMode.AUTO)
-    runtime = ProfileRegistry([profile]).snapshot(profile.profile_id)
+    runtime = runtime if runtime is not None else ProfileRegistry([profile]).snapshot(profile.profile_id)
     overrides = {capability: Support.SUPPORTED}
     if capability == "streaming" and runtime.capabilities.thinking_default is True:
         # AUTO uses the model default, but this diagnostic records streaming only.

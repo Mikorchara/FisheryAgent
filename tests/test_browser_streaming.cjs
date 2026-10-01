@@ -261,6 +261,96 @@ function sseResponse(events, chunkSize = 17) {
   })}};
 }
 
+test('Built-in Ollama auth NONE hides Secret controls and never queries credentials', async () => {
+  const profile = {profile_id:'ollama-qwen35-4b-local',display_name:'Ollama',service_id:'ollama',
+    model:'qwen3.5:4b',base_url:'http://127.0.0.1:11434/v1',adapter_id:'generic_openai_chat',
+    runtime_type:'local',profile_status:'experimental',source:'built_in',auth_spec:'NONE',capabilities:{}};
+  const calls=[];
+  const page=makePage(async (url) => {
+    calls.push(url);
+    assert.notEqual(url,'/api/secret-status');
+    return {ok:true,json:async()=>({editable:false,fields:{display_name:'Ollama',service_id:'ollama',
+      adapter_id:'generic_openai_chat',base_url:profile.base_url,model:profile.model,
+      provider_kind:'local',secret_env:'',auth_spec:'NONE'}})};
+  });
+  vm.runInContext(`profiles=[${JSON.stringify(profile)}];presets=[]`,page.context);
+  page.element('profile').value=profile.profile_id;
+  vm.runInContext('updateProfile()',page.context);
+  assert.equal(page.element('secret-env-fields').hidden,true);
+  await new Promise(setImmediate);
+  for(const id of ['secret-env-fields','secret-status','selected-secret-status']) {
+    assert.equal(page.element(id).hidden,true);
+  }
+  assert.equal(page.element('custom-auth').value,'NONE');
+  assert.equal(page.element('custom-auth').disabled,true);
+  assert.equal(page.element('custom-secret-env').required,false);
+  assert.deepEqual(calls,[`/api/profiles/${profile.profile_id}`]);
+  assert.doesNotMatch(page.element('secret-status').textContent,/Local 可选|local-no-key/);
+});
+
+test('Credential status shows source and readonly scope without values or fingerprints',async()=>{
+  const replies=[{availability:'PRESENT',source:'PROCESS_ENV',editable:false},
+    {availability:'PRESENT',source:'PROJECT_ENV',editable:true},
+    {availability:'MISSING',source:'PROCESS_ENV',editable:false}];
+  const requests=[];
+  const page=makePage(async(_url,options)=>{
+    requests.push(JSON.parse(options.body));
+    return {ok:true,json:async()=>replies.shift()};
+  });
+  const connection={profile_id:'exact-cloud',auth_spec:'REQUIRED_BEARER'};
+  await vm.runInContext(`showSecret('TEST_FAKE_KEY','secret-status',()=>true,${JSON.stringify(connection)})`,page.context);
+  assert.match(page.element('secret-status').textContent,/TEST_FAKE_KEY: PRESENT.*PROCESS_ENV.*外部只读/);
+  await vm.runInContext(`showSecret('TEST_FAKE_KEY','secret-status',()=>true,${JSON.stringify(connection)})`,page.context);
+  assert.match(page.element('secret-status').textContent,/PRESENT.*PROJECT_ENV.*未来可编辑.*本轮只读/);
+  await vm.runInContext(`showSecret('TEST_FAKE_KEY','secret-status',()=>true,${JSON.stringify(connection)})`,page.context);
+  assert.match(page.element('secret-status').textContent,/MISSING.*PROCESS_ENV.*外部只读/);
+  assert.deepEqual(requests,Array(3).fill({profile_id:'exact-cloud'}));
+  assert.doesNotMatch(html,/Set Key|Replace Key|Delete Key|type="password"/);
+});
+
+test('Auth requirements are independent of deployment and changes invalidate connection test',async()=>{
+  const page=makePage(async()=>{throw Error('offline only');});
+  vm.runInContext('newProfile()',page.context);
+  page.element('custom-deployment').value='local';
+  vm.runInContext('updateSecretRequirement()',page.context);
+  assert.equal(page.element('custom-secret-env').required,true);
+  page.element('custom-auth').value='OPTIONAL_BEARER';
+  vm.runInContext('updateSecretRequirement()',page.context);
+  assert.equal(page.element('custom-secret-env').required,false);
+  page.element('custom-deployment').value='cloud';
+  vm.runInContext('updateSecretRequirement()',page.context);
+  assert.equal(page.element('custom-secret-env').required,false);
+  const base={service_id:'custom',model_family:'unknown',adapter_id:'generic_openai_chat',
+    base_url:'https://example.invalid/v1',model:'m',secret_env:'',provider_kind:'cloud'};
+  const optional=vm.runInContext(`connectionFingerprint(${JSON.stringify({...base,auth_spec:'OPTIONAL_BEARER'})})`,page.context);
+  const required=vm.runInContext(`connectionFingerprint(${JSON.stringify({...base,auth_spec:'REQUIRED_BEARER'})})`,page.context);
+  assert.notEqual(optional,required);
+});
+
+test('late Credential status cannot overwrite the current Profile status',async()=>{
+  let finish;
+  const page=makePage(async()=>({ok:true,json:()=>new Promise(resolve=>{finish=resolve;})}));
+  vm.runInContext('let currentCredentialProfile="old"',page.context);
+  const pending=vm.runInContext(`showSecret('OLD_FAKE_KEY','selected-secret-status',
+    ()=>currentCredentialProfile==='old',{profile_id:'old',auth_spec:'REQUIRED_BEARER'})`,page.context);
+  await new Promise(setImmediate);
+  vm.runInContext('currentCredentialProfile="new"',page.context);
+  await vm.runInContext(`showSecret('','selected-secret-status',()=>true,
+    {profile_id:'new',auth_spec:'NONE'})`,page.context);
+  finish({availability:'PRESENT',source:'PROJECT_ENV',editable:true});
+  await pending;
+  assert.equal(page.element('selected-secret-status').hidden,true);
+  assert.equal(page.element('selected-secret-status').textContent,'');
+});
+
+test('Credential status file error stays a safe code rather than a false MISSING',async()=>{
+  const page=makePage(async()=>({ok:false,json:async()=>({error_code:'CREDENTIAL_FILE_ERROR'})}));
+  await vm.runInContext(`showSecret('TEST_FAKE_KEY','secret-status',()=>true,
+    {profile_id:'exact-cloud',auth_spec:'REQUIRED_BEARER'})`,page.context);
+  assert.match(page.element('secret-status').textContent,/CREDENTIAL_FILE_ERROR/);
+  assert.doesNotMatch(page.element('secret-status').textContent,/MISSING/);
+});
+
 function setProfile(page, real = false) {
   const profile = real
     ? {profile_id: 'qwen-plus-experimental', runtime_type: 'cloud'}
@@ -423,7 +513,7 @@ test('duplicate name shows PROFILE_NAME_EXISTS without any conflict actions', as
   const values = {'provider-preset': 'custom', 'custom-name': '测试配置',
     'custom-provider': 'custom', 'custom-adapter': 'generic_openai_chat',
     'custom-url': 'http://localhost:11434/v1', 'custom-model': 'demo',
-    'custom-secret-env': '', 'custom-deployment': 'local'};
+    'custom-secret-env': '', 'custom-deployment': 'local', 'custom-auth': 'OPTIONAL_BEARER'};
   for (const [id, value] of Object.entries(values)) page.element(id).value = value;
   await vm.runInContext('saveCustomProfile()', page.context);
   assert.match(page.element('custom-status').textContent, /PROFILE_NAME_EXISTS/);
@@ -765,7 +855,7 @@ test('new Custom Profile first Streaming Probe uses the current id and unlocks w
   const values = {'provider-preset': 'custom', 'custom-name': 'New Custom',
     'custom-provider': 'school', 'custom-family': 'unknown', 'custom-adapter': 'openai_chat',
     'custom-url': created.base_url, 'custom-model': created.model, 'custom-secret-env': '',
-    'custom-deployment': 'local', 'custom-default-thinking': 'auto',
+    'custom-deployment': 'local', 'custom-auth': 'OPTIONAL_BEARER', 'custom-default-thinking': 'auto',
     'custom-default-response': 'normal'};
   for (const [id, value] of Object.entries(values)) page.element(id).value = value;
   await page.element('save-profile').dispatch('click');

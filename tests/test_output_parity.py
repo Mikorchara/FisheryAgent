@@ -136,7 +136,7 @@ class OutputParityTests(unittest.TestCase):
         root = Path(self.temp.name)
         (root / "pyproject.toml").write_text("", encoding="utf-8")
         console = io.StringIO()
-        with patch.object(module.Path, "cwd", return_value=root), patch.object(module, "load_dotenv"), \
+        with patch.object(module.Path, "cwd", return_value=root), \
                 patch.object(module.RecordingAdapter, "_make_client", return_value=Client()), \
                 patch.dict("os.environ", {"DASHSCOPE_API_KEY": "offline-fixture"}), \
                 patch("sys.argv", ["validate", "--confirm-four-network-requests"]), redirect_stdout(console):

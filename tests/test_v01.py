@@ -326,7 +326,7 @@ class ProfileAndGatewayTests(unittest.TestCase):
         runtime = self.registry.snapshot("cloud-demo", {})
         with self.assertRaises(GatewayError) as caught:
             OpenAICompatibleAdapter().complete(request, runtime)
-        self.assertEqual(caught.exception.code, "SECRET_UNAVAILABLE")
+        self.assertEqual(caught.exception.code, "SECRET_MISSING")
 
 
 class OrchestratorAndTraceTests(unittest.TestCase):
