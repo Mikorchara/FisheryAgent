@@ -13,6 +13,110 @@ const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'fishery_ai',
   'resources', 'web', 'app.css'), 'utf8');
 const knownIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
 
+function businessView(page) {
+  return ['model-inference', 'recommendations', 'uncertainty', 'structured']
+    .map(id => ({text: page.element(id).textContent,
+      children: page.element(id).children.map(child => child.textContent)}));
+}
+
+test('Normal and completed Streaming share final rendering without raw JSON residue', async () => {
+  const raw = JSON.stringify({inference:'当前低氧',recommendations:['增氧'],uncertainty:['缺少症状']});
+  const result = {runtime:{},inference:'当前低氧',recommendations:['增氧'],uncertainty:['缺少症状'],
+    generated_text:raw,structured_parse_ok:true,status:'completed'};
+  const normal = makePage(async () => { throw new Error('offline only'); });
+  vm.runInContext(`render(${JSON.stringify(result)}, 30)`, normal.context);
+  const streaming = makePage(async () => sseResponse([
+    ['content_delta',{delta:raw.slice(0,15)}], ['content_delta',{delta:raw.slice(15)}],
+    ['completed',{result,total_latency_ms:30,ttft_ms:5}],
+  ], 1));
+  await vm.runInContext('analyzeStreaming({})', streaming.context);
+  assert.deepEqual(businessView(streaming),businessView(normal));
+  assert.equal(streaming.element('model-inference').textContent,'当前低氧');
+  assert.equal(streaming.element('streaming-preview').hidden,true);
+  assert.equal(streaming.element('streaming-output').textContent,'');
+  assert.equal(streaming.element('model-output').textContent,raw);
+  assert.equal(streaming.element('raw-model-debug').open,false);
+  assert.doesNotMatch(streaming.element('model-inference').textContent,/"inference"|[{}]/);
+});
+
+test('parse failure retains raw output only in debug for either transport',async()=>{
+  const raw='{"inference": broken';
+  const result={runtime:{},inference:raw,generated_text:raw,structured_parse_ok:false,
+    status:'completed',recommendations:[],uncertainty:['解析失败']};
+  const page=makePage(async()=>sseResponse([['content_delta',{delta:raw}],['completed',{result}]]));
+  await vm.runInContext('analyzeStreaming({})',page.context);
+  assert.match(page.element('model-inference').textContent,/未能解析/);
+  assert.doesNotMatch(page.element('model-inference').textContent,/broken/);
+  assert.doesNotMatch(page.element('structured').children.map(x=>x.textContent).join(' '),/broken/);
+  assert.equal(page.element('model-output').textContent,raw);
+  const view=businessView(page);
+  vm.runInContext(`render(${JSON.stringify(result)}, 20)`,page.context);
+  assert.deepEqual(businessView(page),view);
+});
+
+test('live preview is separate from inference and clears previous parsed results',()=>{
+  const page=makePage(async()=>{throw new Error('offline only');});
+  page.element('model-inference').textContent='旧推断';
+  page.element('recommendations').append({textContent:'旧建议'});
+  vm.runInContext('prepareStreamView()',page.context);
+  assert.match(page.element('model-inference').textContent,/正在生成/);
+  assert.equal(page.element('streaming-preview').hidden,false);
+  assert.equal(page.element('streaming-preview').open,true);
+  assert.equal(page.element('recommendations').children.length,0);
+  const businessPanel=html.split('class="panel output-panel"')[1].split('</section>')[0];
+  assert.doesNotMatch(businessPanel,/streaming-output/);
+});
+
+test('capabilities use concise colored status and default folded evidence',()=>{
+  const page=makePage(async()=>{throw new Error('offline only');});
+  const profile={service_id:'dashscope',adapter_id:'openai_chat',base_url:'https://example.invalid/v1',model:'exact-model',
+    capabilities:{streaming:'supported',source:'USER_VERIFIED',
+      thinking_on:{status:'supported',source:'OFFICIAL_DOCS'},thinking_off:{status:'unsupported',source:'USER_VERIFIED'},
+      reasoning_effort:{status:'unknown'},thinking_default:false}};
+  vm.runInContext(`renderCapabilities(${JSON.stringify(profile)})`,page.context);
+  const status=page.element('capability-list').children.filter(x=>x.className);
+  assert.equal(status.length,7);
+  assert.equal(status[0].className,'capability-status capability-supported');
+  assert.equal(status[2].className,'capability-status capability-unsupported');
+  assert.equal(status[4].className,'capability-status capability-unknown');
+  assert.deepEqual(status.slice(0,3).map(x=>x.textContent),['支持','支持','不支持']);
+  assert.doesNotMatch(page.element('capability-list').children.map(x=>x.textContent).join(' '),/OFFICIAL_DOCS|USER_VERIFIED/);
+  assert.match(page.element('capability-evidence').children.map(x=>x.textContent).join(' '),/OFFICIAL_DOCS.*USER_VERIFIED.*exact-model/);
+  const evidenceTag=html.match(/<details id="capability-evidence-details"[^>]*>/)[0];
+  assert.doesNotMatch(evidenceTag,/\bopen\b/);
+  assert.match(html,/查看能力证据详情/);
+  for(const state of ['supported','unknown','unsupported']) assert.match(css,new RegExp(`\\.capability-${state} \\{ color:`));
+});
+
+test('Thinking and combination Probe buttons fit a single sidebar column',()=>{
+  assert.match(css,/\.probe-actions \{[^}]*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(css,/\.capability-panel button\.compact-action \{[^}]*width: 100%;[^}]*max-width: 100%;[^}]*min-width: 0;[^}]*white-space: normal;[^}]*overflow-wrap: anywhere/);
+});
+
+// Explicit replay only: no default dependency on previous online validation files.
+if(process.env.FISHERY_PARITY_RECORD) {
+  test('recorded Qwen results converge through the real UI renderer without another API call',async()=>{
+    const record=JSON.parse(fs.readFileSync(process.env.FISHERY_PARITY_RECORD,'utf8'));
+    assert.equal(record.cases.length,4);
+    for(const item of record.cases) {
+      const result=item.result;
+      assert.equal(result.status,'completed');
+      assert.equal(result.structured_parse_ok,true);
+      const normal=makePage(async()=>{throw new Error('offline replay');});
+      vm.runInContext(`render(${JSON.stringify(result)}, 10)`,normal.context);
+      const streaming=makePage(async()=>sseResponse([
+        ...item.deltas.map(delta=>['content_delta',{delta}]),['completed',{result}],
+      ]));
+      await vm.runInContext('analyzeStreaming({})',streaming.context);
+      assert.deepEqual(businessView(normal),businessView(streaming));
+      assert.equal(streaming.element('model-inference').textContent,result.inference);
+      assert.equal(streaming.element('streaming-preview').hidden,true);
+      assert.equal(streaming.element('model-output').textContent,result.generated_text);
+      assert.equal(streaming.element('reasoning-output').textContent,result.reasoning_content||'unavailable');
+    }
+  });
+}
+
 test('Streaming plus Thinking needs its own exact capability and preserves safe modes', () => {
   const page = makePage(async () => { throw new Error('offline'); });
   const profile = {capabilities: {streaming: 'supported', thinking_default: true,
@@ -50,7 +154,7 @@ test('Cloud Thinking Probe retains official evidence and exposes independent rev
   assert.equal(page.element('probe-thinking-on').hidden,true);
   assert.equal(page.element('reprobe-thinking-on').hidden,false);
   assert.equal(page.element('probe-thinking-off').hidden,false);
-  const text = page.element('capability-list').children.map(x=>x.textContent).join(' ');
+  const text = page.element('capability-evidence').children.map(x=>x.textContent).join(' ');
   assert.match(text,/OFFICIAL_DOCS \+ USER_VERIFIED/);
 });
 
@@ -186,7 +290,9 @@ test('Mock SSE completes through the browser handler with split UTF-8 chunks', a
   setProfile(page);
   await vm.runInContext('analyze()', page.context);
   assert.equal(page.element('status').textContent, '流式分析完成。');
-  assert.equal(page.element('streaming-output').textContent, '你好');
+  assert.equal(page.element('streaming-output').textContent, '');
+  assert.equal(page.element('streaming-preview').hidden, true);
+  assert.equal(page.element('model-output').textContent, '你好');
   assert.equal(page.element('model-inference').textContent, '低氧');
   assert.equal(page.element('analyze').disabled, false);
 });

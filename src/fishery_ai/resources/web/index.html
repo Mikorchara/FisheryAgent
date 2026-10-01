@@ -88,7 +88,11 @@
           <summary>02 · 模型能力 <span class="optional">点击展开</span></summary>
           <p class="helper">能力仅适用于当前 service、adapter、Base URL 与精确 Model。UNKNOWN 不影响未设置高级选项的 Normal 请求。</p>
           <dl id="capability-list" class="capability-list"></dl>
-          <p id="streaming-capability" class="helper">Streaming 能力：读取中</p>
+          <details id="capability-evidence-details" class="capability-evidence-details">
+            <summary>查看能力证据详情</summary>
+            <p id="streaming-capability" class="helper">Streaming 能力：读取中</p>
+            <dl id="capability-evidence" class="capability-list"></dl>
+          </details>
           <div id="thinking-probe-actions" class="probe-actions" hidden>
             <button id="probe-thinking-on" class="secondary compact-action" type="button">验证 Thinking ON</button>
             <button id="probe-thinking-off" class="secondary compact-action" type="button">验证 Thinking OFF</button>
@@ -149,8 +153,13 @@
           <div class="panel-heading"><span class="step">02</span><h2>Model Inference · 模型推断</h2></div>
           <p class="helper">以下内容由模型生成，需结合上方事实和规则核查。</p>
           <p id="model-inference" class="model-output"></p>
-          <pre id="streaming-output" class="model-output" hidden></pre>
         </section>
+
+        <details id="streaming-preview" class="panel raw-output" hidden>
+          <summary>Live Raw Stream Preview · 生成中的调试预览</summary>
+          <p class="helper">这里是尚未解析的实时原文；完成后收敛为统一业务结果，原文保留在 Raw Model Output。</p>
+          <pre id="streaming-output" class="model-output"></pre>
+        </details>
 
         <details id="reasoning-debug" class="panel">
           <summary>Reasoning Content · 开发者调试（非最终回答）</summary>
@@ -188,7 +197,7 @@
           </section>
         </div>
 
-        <details class="panel raw-output">
+        <details id="raw-model-debug" class="panel raw-output">
           <summary>Raw Model Output · 调试原文</summary>
           <pre id="model-output" class="model-output"></pre>
         </details>

@@ -284,22 +284,34 @@ function renderCapabilities(profile) {
   const caps = profile.capabilities || {};
   const on = caps.thinking_on || {};
   const off = caps.thinking_off || {};
-  const thinking = `ON: ${capabilityText(on)} / OFF: ${capabilityText(off)}`;
   const streaming = caps.streaming_evidence || {status: caps.streaming, source: caps.source};
   const modes = ["AUTO"];
   if (on.status === "supported") modes.push("ON");
   if (off.status === "supported") modes.push("OFF");
-  addPairs("capability-list", [
-    ["Streaming", capabilityText(streaming)],
-    ["Thinking ON", capabilityText(on)],
-    ["Thinking OFF", capabilityText(off)],
-    ["Streaming + Thinking ON", capabilityText(caps.thinking_streaming_combination)],
+  const items = [
+    ["Streaming", streaming], ["Thinking ON", on], ["Thinking OFF", off],
+    ["Streaming + Thinking ON", caps.thinking_streaming_combination],
+    ["Reasoning Effort", caps.reasoning_effort],
+    ["Structured Output", caps.structured_output], ["Tool Calling", caps.tool_calling],
+  ];
+  const summary = $("capability-list");
+  summary.replaceChildren();
+  for (const [label, item] of items) {
+    const status = ["supported", "unsupported"].includes(item?.status) ? item.status : "unknown";
+    const dt = document.createElement("dt");
+    const dd = document.createElement("dd");
+    dt.textContent = label;
+    dd.textContent = status === "supported" ? "支持" : status === "unsupported" ? "不支持" : "未验证";
+    dd.className = `capability-status capability-${status}`;
+    summary.append(dt, dd);
+  }
+  addPairs("capability-evidence", [
+    ...items.map(([label, item]) => [label, capabilityText(item)]),
+    ["Identity", [profile.service_id, profile.adapter_id, profile.base_url, profile.model].map(show).join(" / ")],
     ["Thinking Metadata / 支持值", `${modes.join(" / ")} · ON ${on.source || "UNKNOWN"} / OFF ${off.source || "UNKNOWN"}`],
     ["模型默认 Thinking", caps.thinking_default === null || caps.thinking_default === undefined
       ? "未知" : `${caps.thinking_default ? "ON" : "OFF"} · ${(caps.thinking_default_sources || []).join(" + ") || "UNKNOWN"}`],
-    ["Reasoning Effort", capabilityText(caps.reasoning_effort)],
-    ["Structured Output", capabilityText(caps.structured_output)],
-    ["Tool Calling", capabilityText(caps.tool_calling)],
+    ["Effort 支持值", caps.effort_values?.join(" / ")],
   ]);
   const modelDefault = caps.thinking_default === true ? "ON" : caps.thinking_default === false ? "OFF" : "未知";
   $("thinking-hint").textContent = `模型默认 ${modelDefault}；AUTO 不发送控制参数。显式 ON / OFF 独立校验，Effort 不等于 ON。`;
@@ -755,22 +767,27 @@ function renderEvidence(evidence) {
   });
 }
 
-function render(data, latency, ttft = null, streaming = false) {
+function render(data, latency, ttft = null) {
   const runtime = data.runtime || {};
   const usage = data.usage || {};
   const displayedProvider = profiles.find((item) => item.profile_id === runtime.profile_id)?.provider || runtime.provider_id;
   $("model-inference").hidden = false;
-  $("streaming-output").hidden = !streaming;
-  if (streaming) $("streaming-output").textContent = data.generated_text || $("streaming-output").textContent;
-  $("model-inference").textContent = data.inference || (data.error_code ? `模型调用失败：${data.error_code}` : "无模型推断");
+  // Final rendering is independent of transport. Raw content belongs to debug only.
+  $("streaming-preview").hidden = true;
+  $("streaming-output").textContent = "";
+  const inference = data.error_code ? `模型调用失败：${data.error_code}`
+    : data.structured_parse_ok ? (data.inference || "无模型推断")
+      : "模型输出未能解析为结构化结果；请展开调试原文检查。";
+  $("model-inference").textContent = inference;
   $("reasoning-output").textContent = data.reasoning_content || "unavailable";
   $("reasoning-debug").open = false;
   $("model-output").textContent = data.generated_text || (data.error_code ? `模型调用失败：${data.error_code}` : "无模型正文");
+  $("raw-model-debug").open = false;
   renderFacts(data.observed_facts);
   renderRules(data.rule_results);
   renderEvidence(data.evidence);
   addPairs("structured", [
-    ["Inference", data.inference], ["解析成功", data.structured_parse_ok ? "是" : "否"],
+    ["Inference", inference], ["解析成功", data.structured_parse_ok ? "是" : "否"],
     ["状态", data.status], ["错误码", data.error_code], ["Trace ID", data.trace_id],
   ]);
   addList("recommendations", data.recommendations, (li, item) => { li.textContent = item; });
@@ -792,10 +809,13 @@ function render(data, latency, ttft = null, streaming = false) {
 function prepareStreamView() {
   $("empty-state").hidden = true;
   $("results").hidden = false;
-  $("model-inference").hidden = true;
-  $("streaming-output").hidden = false;
+  $("model-inference").hidden = false;
+  $("model-inference").textContent = "正在生成；完成后将在这里显示解析后的模型推断。";
+  $("streaming-preview").hidden = false;
+  $("streaming-preview").open = true;
   $("streaming-output").textContent = "";
   $("model-output").textContent = "";
+  $("raw-model-debug").open = false;
   $("reasoning-output").textContent = "";
   $("reasoning-debug").open = false;
   for (const id of ["facts", "rules", "evidence", "structured", "recommendations", "uncertainty", "runtime"]) {
@@ -875,7 +895,7 @@ async function analyzeStreaming(body) {
       }
       if (kind === "completed" || kind === "failed") {
         terminal = true;
-        if (data.result) render(data.result, data.total_latency_ms, data.ttft_ms, true);
+        if (data.result) render(data.result, data.total_latency_ms, data.ttft_ms);
         setStatus(kind === "completed" ? "流式分析完成。" : `流式分析失败：${show(data.error_code)}`, kind === "failed");
       }
       } catch (_) {

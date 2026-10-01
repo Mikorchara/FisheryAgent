@@ -14,11 +14,18 @@ h1 { margin: 0; font-size: clamp(30px, 3vw, 42px); letter-spacing: -.04em; }
 .capability-panel { margin-top: 20px; padding: 14px; border: 1px solid #d8e5dc; border-radius: 10px; background: #f8fbf8; }
 .capability-panel summary { cursor: pointer; font-size: 13px; font-weight: 700; color: #246549; }
 .runtime-options-heading { margin: 24px 0 8px; padding-top: 17px; border-top: 1px solid #dce7df; color: #246549; font-size: 13px; }
-.probe-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.probe-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .probe-actions button { margin-top: 14px; }
 .capability-list { display: grid; grid-template-columns: minmax(90px, 35%) minmax(0, 1fr); gap: 8px; margin: 15px 0 0; font-size: 12px; }
-.capability-list dt { color: #718483; }
+.capability-list dt { color: #718483; overflow-wrap: anywhere; }
 .capability-list dd { margin: 0; overflow-wrap: anywhere; }
+.capability-status { font-weight: 700; }
+.capability-supported { color: #246549; }
+.capability-unknown { color: #718483; }
+.capability-unsupported { color: #a3332c; }
+.capability-evidence-details { margin-top: 13px; padding-top: 10px; border-top: 1px solid #dce7df; }
+.capability-evidence-details summary { font-size: 12px; font-weight: 400; color: #718483; }
+.capability-evidence-details dd { color: #718483; font-size: 11px; }
 .profile-summary { display: grid; grid-template-columns: 85px minmax(0, 1fr); gap: 5px 8px; margin: 12px 0 0; font-size: 11px; }
 .profile-summary dt { color: #718483; }
 .profile-summary dd { margin: 0; overflow-wrap: anywhere; }
@@ -54,6 +61,7 @@ button:disabled { opacity: .55; cursor: wait; }
 .capability-advanced { margin-top: 12px; }
 button.compact-action { width: auto; min-width: 150px; margin-top: 9px; padding: 8px 11px; justify-content: center; font-size: 12px; }
 .probe-actions .compact-action { width: 100%; }
+.capability-panel button.compact-action { width: 100%; max-width: 100%; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 #delete-profile { flex: 0 0 auto; width: auto; min-width: 70px; }
 .secret-status { padding: 10px 12px; margin: 12px 0; border-radius: 8px; background: #eaf4ec; font-size: 12px; overflow-wrap: anywhere; }
 button.danger { background: #a4483c; }
