@@ -359,7 +359,8 @@ class WebCredentialTests(OfflineCredentialTest):
             self.assertNotIn(FAKE_A, response.get_data(as_text=True))
         config = client.get("/api/config").get_json()
         self.assertEqual(len(config["providers"]), 4)
-        self.assertEqual(len(config["profiles"]), 4)
+        self.assertEqual(len([p for p in config["profiles"] if p["source"] == "built_in"]), 4)
+        self.assertEqual(len([p for p in config["profiles"] if p["source"] == "preset"]), 4)
         self.write("", name="DASHSCOPE_API_KEY")
         self.assertEqual(client.get("/api/config").get_json(), config)
         self.assertEqual(client.get("/api/profiles/qwen-plus-experimental").get_json()[

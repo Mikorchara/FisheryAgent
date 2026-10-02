@@ -1,8 +1,42 @@
 # 模型接入三模式设计说明
 
-日期：2026-10-02。基线：当前包含 R0/R1/R2 的工作树。本文仅为设计，不修改代码或 Profile，不实施 R3。
+初稿日期：2026-10-02，历史基线为 R0/R1/R2。下方第 1–8 节保留初稿设计过程，不将其中的“尚未实现”视为当前状态。
 
-## 1. 当前代码事实
+本次产品定义校正与实际源码审计：2026-10-02；当前 Preset / Cancellation / Manual V1 / 三模式 UI 已实现且用户反馈人工验收基本正常。详细代码依据与 checkpoint 回归见[实施报告第 10 节](PRESET_CANCELLATION_MANUAL_IMPLEMENTATION.md#10-manual-expert-产品定义校正与架构兼容性审计)。
+
+## 0. 当前产品定位与冻结结论
+
+| 模式 | 产品定位 | 资产及正式流程边界 |
+|---|---|---|
+| Preset | 项目维护、验证过并发布的固定模型方案 | 项目定义连接及 Variant，按版本化固定合同进入 Fishery Analysis；不承担实验配置。只承诺已发布行为，不扩大高级能力范围 |
+| Managed Custom | 用户配置但遵循 Fishery 连接合同的正式 Connection | 使用正式 CredentialStore、Connection / Capability / Adapter 合同，可进入 Normal / Streaming Analysis；CRUD 属于该模式，不是任意 API 调试器 |
+| Manual Expert | LLM / Provider API 实验台 | 当前 V1 借用 Saved Connection 发 Raw Request；长期支持独立 Manual Experiment，实验资产不混入正式模型列表 |
+
+当前 V1 保留：
+
+```text
+Saved Connection → 独立 ManualRequest → Provider → Raw Response
+```
+
+长期方向（DEFERRED，并非近期实施承诺）：
+
+```text
+Manual Experiment
+→ 独立实验配置（Provider/Protocol、Base URL、Model、Credential reference、Raw Request、必要元数据）
+→ 同一安全凭据 / 传输 / Stop 边界
+→ Provider
+→ best-effort 常见字段展示 + 始终保留安全 Raw Response
+```
+
+**Manual Experiment != Managed Custom Connection。实验成功 != Fishery compatibility verified。** 不自动“Save as Managed Connection”，也不强迫实验使用 Managed Custom Profile schema。未来是否提供任一方向的转换机制：**NOT DECIDED**；如提供需独立的兼容性、Adapter 和 Capability 确认，本轮不设计转换。
+
+实验可保存 credential reference / identity，不保存 Key、认证 Headers 或凭据文件路径；继续只用 PROCESS_ENV > user-private PROJECT_ENV > MISSING。不建立第二套 Secret 存储，不恢复源码根 .env。实验名和 ID 不得变成正式 Profile 或 Capability identity。
+
+Response 的长期方向是可选展示 HTTP Status、latency、content、reasoning_content、finish_reason、usage、tool_calls，字段缺失就不显示、不伪造；未知结构保留 Raw。不建 Parser framework 或 canonical response schema，不进入 AnalysisResult，不执行 tool_calls。Raw 保留服从 Secret 脱敏和输出大小限制，不表示自动持久化所有原始响应。
+
+**审计结论：未发现必须现在解除的结构 blocker；当前 V1 可保留，不修改核心实现。** 已保存 Profile 的目标解析、RuntimeSnapshot 的附带 Managed 字段、Chat Completions 专用 SDK cast 和共享前端选择器属于局部的 V1 范围限制，不是实验持久化模型。未来在目标准备边界新增独立来源即可，不需要改 CredentialStore、取消生命周期或 Fishery Analysis。本轮不增加空抽象，不实施 V2、Experiment CRUD、新 Adapter / Provider、R3/R4/R5 或转换机制。
+
+## 1. 历史代码事实（R0/R1/R2 初稿基线）
 
 **CODE-CONFIRMED**：
 

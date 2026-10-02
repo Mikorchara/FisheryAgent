@@ -2,6 +2,12 @@
 
 此目录保存详细架构分析、技术决策和设计讨论，不是主要使用指南。新开发者请先阅读[构建与运行](../BUILD_RUN.md)及[项目结构](../STRUCTURE.md)。
 
+- [模型接入三模式设计与产品校正](MODEL_ACCESS_THREE_MODE_PLAN.md)：当前 V1 与长期独立 Manual Experiment 的区别、正式连接边界、转换 NOT DECIDED / V2 DEFERRED；兼容性审计收尾见现有 Preset/R6/R7 实施报告第 10 节。
+
+- [模型选择三模式 UI 整理](MODEL_SELECTION_UI_THREE_MODE_CLEANUP.md)：Preset 按模型收敛、精确 Variant 映射、旧 Built-in 隐藏、Managed Custom CRUD 边界与 Manual 独立页面。
+
+- [Preset、Cancellation 与 Manual Expert 实施](PRESET_CANCELLATION_MANUAL_IMPLEMENTATION.md)：记录固定模板/Variant、真正后端 I/O 取消、独立原始请求边界和受控联网阻塞；R2 保持冻结，R3/R4/R5 未实施。
+
 - [V0.1 实现报告](V0.1_IMPLEMENTATION_REPORT.md)：记录初始实现与当时的测试结果。
 - [V0.1 工程加固报告](V0.1_HARDENING_REPORT.md)：记录 SDK、打包和数据合同的改进。
 - [V0.1.1 本地运行时验证计划](V0.1.1_LOCAL_RUNTIME_VALIDATION.md)：规定真实 Cloud/Local 接口、全链路、流式、质量与性能的验证方法及验收标准。
@@ -27,7 +33,7 @@
 - [Provider、Credential 与 Capability 重构研究](PROVIDER_CREDENTIAL_CAPABILITY_REFACTOR_RESEARCH.md)：核对原凭据和能力链路，提出渐进迁移方案；R0/R1/R2 已实施，协议分离、Evidence 冲突、取消与 Manual Mode 留待后续阶段。
 - [Provider/Credential 重构 R0–R1 实施报告](PROVIDER_CREDENTIAL_REFACTOR_R0_R1.md)：记录兼容请求体基线、静态 ProviderRegistry、只读 CredentialStore、凭据热读取、AuthSpec 与安全验证；范围为 R0/R1，R2 见下一篇。
 
-- [Provider/Credential 重构 R2 实施报告](PROVIDER_CREDENTIAL_REFACTOR_R2.md)：记录 Credential Web Manager、Windows ACL、revision/回滚、CSRF、热更新与缓存失效，以及用户私有存储迁移；R3–R7 仍未实施。
+- [Provider/Credential 重构 R2 实施报告](PROVIDER_CREDENTIAL_REFACTOR_R2.md)：记录已冻结的 Credential Web Manager、Windows ACL、revision/回滚、CSRF、热更新与用户私有存储；之后的 R6/R7 见本页新增阶段报告，R3–R5 未实施。
 - [R2 用户私有凭据存储迁移说明](R2_PRIVATE_CREDENTIAL_STORAGE_MIGRATION.md)：固定路径规则、单文件来源、首次设置与人工验收。
 - [Post-R2 结构审计（RESOLVED）](POST_R2_STRUCTURAL_AUDIT.md)：记录人工验收收尾、旧验证入口迁移遗漏修复、统一凭据边界与最终离线回归。
 

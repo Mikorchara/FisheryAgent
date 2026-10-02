@@ -7,10 +7,15 @@ import socket
 import ssl
 import time
 import re
+import asyncio
+import json
+import queue
+import threading
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
-from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
+from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI, AsyncOpenAI, AsyncStream
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from .contracts import Usage, UsageSource
 from .model_gateway import (GatewayError, ModelEvent, ModelRequest, ModelResponse,
@@ -18,6 +23,8 @@ from .model_gateway import (GatewayError, ModelEvent, ModelRequest, ModelRespons
 from .model_options import (OptionValidationError, ReasoningMode,
                             Support, validate_options)
 from .providers import AuthSpec
+from .execution import current_handle, RequestHandle
+from .manual import ManualRequest, ManualResponse
 
 
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
@@ -40,9 +47,206 @@ def _usage(value: object) -> Usage:
 class OpenAICompatibleAdapter:
     """The gateway owns retries; the SDK performs one attempt at a time."""
 
-    def __init__(self, client_factory: Callable[[RuntimeSnapshot, float], object] | None = None):
+    def __init__(self, client_factory: Callable[[RuntimeSnapshot, float], object] | None = None,
+                 *, async_client_factory=None):
         self._client_factory = client_factory or self._make_client
+        self._async_client_factory = async_client_factory or self._make_async_client
         self.request_attempts = 0
+
+    @staticmethod
+    def _make_async_client(runtime, remaining):
+        timeout = httpx.Timeout(connect=min(runtime.connect_timeout_s, remaining),
+            read=min(runtime.read_timeout_s, remaining), write=min(runtime.read_timeout_s, remaining),
+            pool=min(runtime.connect_timeout_s, remaining))
+        key = None if runtime.auth_spec == AuthSpec.NONE else runtime.credential._for_adapter()
+        return AsyncOpenAI(base_url=runtime.base_url, api_key=key or "local-no-key",
+                           timeout=timeout, max_retries=0)
+
+    @staticmethod
+    def _response(response):
+        message = response.choices[0].message
+        if not isinstance(message.content, str):
+            raise GatewayError("INVALID_RESPONSE")
+        reasoning = getattr(message, "reasoning_content", None)
+        if reasoning is not None and not isinstance(reasoning, str):
+            raise GatewayError("INVALID_RESPONSE")
+        return ModelResponse(message.content, _usage(getattr(response, "usage", None)),
+            getattr(response, "model", None), bool(reasoning), reasoning)
+
+    @staticmethod
+    def _event(chunk):
+        delta = chunk.choices[0].delta.content if chunk.choices else None
+        reasoning = getattr(chunk.choices[0].delta, "reasoning_content", None) if chunk.choices else None
+        if any(value is not None and not isinstance(value, str) for value in (delta, reasoning)):
+            raise GatewayError("INVALID_STREAM_EVENT")
+        usage = _usage(getattr(chunk, "usage", None))
+        return ModelEvent(delta or "", usage if usage.source != UsageSource.UNAVAILABLE else None, reasoning)
+
+    @staticmethod
+    def _manual_response(response, runtime):
+        raw = response.model_dump(mode="json")
+        encoded = json.dumps(raw, ensure_ascii=False)
+        if len(encoded.encode("utf-8")) > 4 * 1024 * 1024:
+            raise GatewayError("RESPONSE_TOO_LARGE")
+        key = runtime.credential._for_adapter()
+        if key:
+            def redact(value):
+                if isinstance(value, str):
+                    return value.replace(key, "[REDACTED]")
+                if isinstance(value, dict):
+                    return {redact(name): redact(item) for name, item in value.items()}
+                if isinstance(value, list):
+                    return [redact(item) for item in value]
+                return value
+            raw = redact(raw)
+        return ManualResponse(raw, _usage(getattr(response, "usage", None)))
+
+    def _bridge(self, kwargs, runtime, *, stream, manual=False):
+        """A request-owned loop/thread, bounded queue and actual cancellable SDK Task."""
+        self._check_secret(runtime)
+        handle = current_handle() or RequestHandle()
+        handle.check()
+        if not handle._claimed:
+            handle.start()
+        handle.io_closed = True
+        inbox = queue.Queue(maxsize=32)
+        stopped = threading.Event()
+
+        async def put(item):
+            while not stopped.is_set():
+                try:
+                    inbox.put_nowait(item)
+                    return
+                except queue.Full:
+                    await asyncio.sleep(0.01)
+            raise asyncio.CancelledError()
+
+        async def operation():
+            emitted = False
+            deadline = time.monotonic() + runtime.total_timeout_s
+            attempts = 0 if manual else runtime.max_retries
+            async with asyncio.timeout(runtime.total_timeout_s):
+                for attempt in range(attempts + 1):
+                    handle.check()
+                    client = self._async_client_factory(runtime, self._remaining(deadline))
+                    handle.io_closed = False
+                    sdk_stream = None
+                    try:
+                        self.request_attempts += 1
+                        if manual:
+                            response = await client.post("/chat/completions", body=kwargs,
+                                cast_to=ChatCompletionChunk if stream else ChatCompletion,
+                                stream=stream, **({"stream_cls": AsyncStream[ChatCompletionChunk]} if stream else {}))
+                        else:
+                            response = await client.chat.completions.create(**kwargs)
+                        if stream:
+                            sdk_stream = response
+                            async for chunk in sdk_stream:
+                                handle.check()
+                                event = self._manual_response(chunk, runtime) if manual else self._event(chunk)
+                                emitted = emitted or manual or bool(event.delta or event.reasoning_delta)
+                                await put(("item", event))
+                        else:
+                            handle.check()
+                            await put(("item", self._manual_response(response, runtime) if manual else self._response(response)))
+                        return
+                    except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
+                        handle.check()
+                        error = self._map_error(exc)
+                        if isinstance(exc, APIStatusError) and stream and self._is_explicit_streaming_unsupported(exc):
+                            error = GatewayError("STREAM_UNSUPPORTED")
+                        elif isinstance(exc, APIStatusError) and self._is_explicit_thinking_unsupported(exc):
+                            error = GatewayError("THINKING_UNSUPPORTED")
+                        if emitted or not isinstance(error, RetryableGatewayError) or attempt >= attempts:
+                            raise error from None
+                    finally:
+                        try:
+                            if sdk_stream is not None:
+                                await sdk_stream.close()
+                        finally:
+                            await client.close()
+                            handle.io_closed = True
+
+        async def run():
+            loop = asyncio.get_running_loop()
+            task = asyncio.create_task(operation())
+            def cancel_task():
+                if not task.done() and not loop.is_closed():
+                    loop.call_soon_threadsafe(task.cancel)
+            handle.bind(cancel_task)
+            try:
+                await task
+                await put(("done", None))
+            except asyncio.CancelledError:
+                await put(("error", GatewayError("USER_CANCELLED")))
+            except TimeoutError:
+                await put(("error", GatewayError("TOTAL_TIMEOUT")))
+            except GatewayError as exc:
+                await put(("error", exc))
+            except Exception:
+                await put(("error", GatewayError("SDK_ERROR")))
+            finally:
+                handle.unbind()
+
+        def worker():
+            try:
+                with asyncio.Runner() as runner:
+                    runner.run(run())
+            except asyncio.CancelledError:
+                pass  # Consumer closed; operation finally still closes owned SDK resources.
+            except Exception:
+                # Loop startup/cleanup failures must never strand the Flask consumer.
+                try:
+                    inbox.put_nowait(("error", GatewayError("SDK_ERROR")))
+                except queue.Full:
+                    pass
+
+        thread = threading.Thread(target=worker, name="fishery-sdk-request", daemon=True)
+        thread.start()
+        consumer_deadline = time.monotonic() + runtime.total_timeout_s + 5
+        ended = False
+        try:
+            while True:
+                try:
+                    kind, item = inbox.get(timeout=0.2)
+                except queue.Empty:
+                    if not thread.is_alive():
+                        raise GatewayError("SDK_ERROR") from None
+                    if time.monotonic() > consumer_deadline:
+                        raise GatewayError("TOTAL_TIMEOUT")
+                    continue
+                if kind == "done":
+                    ended = True
+                    return
+                if kind == "error":
+                    ended = True
+                    raise item
+                handle.check()
+                yield item
+        finally:
+            if not ended:
+                handle.cancel()
+            stopped.set()
+            thread.join(timeout=5)
+            if thread.is_alive():
+                handle.io_closed = False
+
+    def manual_complete(self, request: ManualRequest, runtime):
+        if request.streaming:
+            raise GatewayError("INVALID_REQUEST")
+        events = self._bridge(json.loads(request.body_json), runtime, stream=False, manual=True)
+        try:
+            response = next(events)
+            for _ in events:
+                pass
+            return response
+        finally:
+            events.close()
+
+    def manual_stream(self, request: ManualRequest, runtime):
+        if not request.streaming:
+            raise GatewayError("INVALID_REQUEST")
+        yield from self._bridge(json.loads(request.body_json), runtime, stream=True, manual=True)
 
     @staticmethod
     def _make_client(runtime: RuntimeSnapshot, remaining: float) -> OpenAI:
@@ -281,6 +485,16 @@ class OpenAICompatibleAdapter:
 
     def complete(self, request: ModelRequest, runtime: RuntimeSnapshot) -> ModelResponse:
         kwargs = self._kwargs(request, runtime, stream=False)
+        if current_handle() is not None:
+            events = self._bridge(kwargs, runtime, stream=False)
+            try:
+                response = next(events)
+                # Exhaust the bridge before parsing success: cleanup is part of completion.
+                for _ in events:
+                    pass
+                return response
+            finally:
+                events.close()
         self._check_secret(runtime)
         deadline = time.monotonic() + runtime.total_timeout_s
         for attempt in range(runtime.max_retries + 1):
@@ -321,6 +535,9 @@ class OpenAICompatibleAdapter:
 
     def stream(self, request: ModelRequest, runtime: RuntimeSnapshot) -> Iterator[ModelEvent]:
         kwargs = self._kwargs(request, runtime, stream=True)
+        if current_handle() is not None:
+            yield from self._bridge(kwargs, runtime, stream=True)
+            return
         self._check_secret(runtime)
         deadline = time.monotonic() + runtime.total_timeout_s
         for attempt in range(runtime.max_retries + 1):

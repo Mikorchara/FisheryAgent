@@ -2,6 +2,23 @@
 
 本文件登记主要文件与目录的作用。行数随 V0.1.1-A1 持续变化，不作为架构合同。
 
+## 三种模型访问入口
+
+包内 `resources/web/index.html`、`app.js`、`app.css` 将 Preset 模型与 Variant 分开，Managed Custom 独占 CRUD，Manual Expert 使用独立 Raw JSON 面板。旧 Cloud Built-in 仅从界面隐藏，后端和 CLI 定义保留；Mock / 未发布 Ollama 放在 Development / Test。详见[界面整理报告](deep-dive/MODEL_SELECTION_UI_THREE_MODE_CLEANUP.md)。
+
+## Preset / R6 / R7 新增模块
+
+| 文件 | 作用 |
+|---|---|
+| `presets.py` / `resources/profiles/presets.json` | 项目维护的固定 Template / Variant 与版本化合同，发布入口不加载本地 Evidence；Ollama 尚为未发布候选 |
+| `execution.py` | 本地单进程 RequestHandle、控制令牌、状态与取消上下文 |
+| `manual.py` | 独立 Raw JSON 请求及原始结果合同，无水质业务或 Capability 判断 |
+| `openai_compatible_adapter.py` | 保留原编码；新增 AsyncOpenAI bridge，实际取消 SDK await、关闭流和 client，Manual passthrough 共用安全传输 |
+| `scripts/validate_access_modes.py` | 显式授权的有界 smoke，复用 R2 私有凭据 composition；默认不读凭据、不联网 |
+| `tests/test_preset.py` / `test_execution.py` / `test_access_web.py` / `test_access_validation.py` | 固定合同、取消、Manual 隔离和真实入口离线保护 |
+
+范围、实测阻塞与使用限制见 [阶段报告](deep-dive/PRESET_CANCELLATION_MANUAL_IMPLEMENTATION.md)。下方保留既有文件登记，不将历史说明作为当前能力合同。
+
 ## 1. 目录树（每项末尾为该条目作用）
 
 ```text

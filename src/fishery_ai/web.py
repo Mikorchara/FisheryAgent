@@ -11,6 +11,7 @@ import json
 import re
 import time
 import uuid
+from contextlib import nullcontext
 
 from flask import Flask, Response, jsonify, request, stream_with_context
 
@@ -34,6 +35,9 @@ from .model_options import (CapabilitySource, GenerationOptions, OptionValidatio
 from .observability import JsonlTraceSink
 from .openai_compatible_adapter import OpenAICompatibleAdapter
 from .repositories import MockRepository
+from .presets import preset_profiles
+from .execution import RequestRegistry, request_scope
+from .manual import ManualRequest
 
 
 RESOURCE_ROOT = files("fishery_ai").joinpath("resources")
@@ -69,6 +73,9 @@ def _profile_public(profile: ModelProfile, source: str) -> dict:
         reasoning_modes.append("off")
     effective_reasoning, effective_response, runtime_default_warnings = _effective_runtime_defaults(profile)
     return {"profile_id": profile.profile_id, "display_name": profile.display_name,
+            "access_mode": profile.access_mode, "preset_id": profile.preset_id,
+            "preset_variant": profile.preset_variant,
+            "preset_contract_version": profile.preset_contract_version,
             "provider": "mock" if profile.profile_id == MOCK_PROFILE_ID else profile.service_id,
             "service_id": profile.service_id, "model_family": profile.model_family,
             "provider_id": profile.provider_id,
@@ -142,16 +149,20 @@ def create_app(*, trace_path: Path | None = None,
     if credential_writer is not None and credential_writer.credentials is not credentials:
         raise ValueError("Credential writer must share the app CredentialStore")
     credential_gate, credential_origin_gate = install_local_security(app, allowed_hosts)
+    executions = RequestRegistry()
     store = CustomProfileStore(custom_profiles_dir or Path.cwd() / "outputs/custom_profiles")
     capability_store = CapabilityStore(capability_evidence_dir or
                                         Path.cwd() / "outputs/capability-evidence")
     builtins = _builtin_profiles()
-    loaded_profiles = (*builtins, *store.load())
-    profiles = {profile.profile_id: capability_store.apply(profile) for profile in loaded_profiles}
+    maintained = preset_profiles()
+    loaded_profiles = (*builtins, *maintained, *store.load())
+    profiles = {profile.profile_id: (profile if profile.access_mode == "preset"
+                                     else capability_store.apply(profile)) for profile in loaded_profiles}
     names = [profile.display_name.casefold() for profile in profiles.values()]
     if len(names) != len(set(names)):
         raise ValueError("duplicate Profile display_name")
     sources = {profile.profile_id: "built_in" for profile in builtins}
+    sources.update({profile.profile_id: "preset" for profile in maintained})
     sources.update({profile_id: "user_custom" for profile_id in profiles if profile_id not in sources})
     successful_tests: dict[str, tuple[tuple[str, ...], float, str | None]] = {}
     credential_revisions: dict[tuple[str, str], tuple[str, str]] = {}
@@ -163,6 +174,65 @@ def create_app(*, trace_path: Path | None = None,
 
     def error(code: str, status: int):
         return jsonify({"status": "failed", "error_code": code}), status
+
+    @app.after_request
+    def close_rejected_execution(response):
+        # Prepared handles that fail preflight must not consume active slots until TTL.
+        if request.path in ("/api/analyze", "/api/analyze/stream", "/api/manual") and response.status_code >= 400:
+            payload = request.get_json(silent=True)
+            if isinstance(payload, dict) and "request_id" in payload:
+                try:
+                    handle = executions.get(payload.get("request_id"), payload.get("control_token"))
+                    if not handle._claimed:
+                        code = (response.get_json(silent=True) or {}).get("error_code", "INVALID_REQUEST")
+                        handle.finish(code)
+                        handle.io_closed = True
+                except GatewayError:
+                    pass
+        return response
+
+    @app.post("/api/requests")
+    def prepare_execution():
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        try:
+            handle = executions.create()
+            return jsonify({**handle.public_info(), "control_token": handle.control_token})
+        except GatewayError as exc:
+            return error(exc.code, 429)
+
+    @app.post("/api/requests/<request_id>/<action>")
+    def control_execution(request_id, action):
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            return error("INVALID_REQUEST", 400)
+        try:
+            handle = executions.get(request_id, payload.get("control_token"))
+            if action == "cancel":
+                handle.cancel()
+            elif action != "status":
+                return error("INVALID_REQUEST", 400)
+            return jsonify(handle.public_info())
+        except GatewayError as exc:
+            return error(exc.code, 404)
+
+    def claim_execution(payload, *, required=False):
+        if "request_id" not in payload and not required:
+            return None, None  # Compatibility for existing non-cancellable callers.
+        failure = credential_gate()
+        if failure is not None:
+            return None, failure
+        try:
+            handle = executions.get(payload.get("request_id"), payload.get("control_token"))
+            handle.start()
+            handle.io_closed = True  # Until the adapter opens its request-owned client.
+            return handle, None
+        except GatewayError as exc:
+            return None, error(exc.code, 409)
 
     def profile_error(exc: ProfileFieldError):
         return jsonify({"status": "failed", "error_code": "INVALID_PROFILE",
@@ -179,6 +249,8 @@ def create_app(*, trace_path: Path | None = None,
         if effort is not None and not isinstance(effort, str):
             return None, "INVALID_REQUEST"
         reasoning = ReasoningOptions(ReasoningMode(mode), effort)
+        if profile.access_mode == "preset" and reasoning != profile.default_reasoning:
+            return None, "PRESET_OPTION_LOCKED"
         try:
             validate_options(GenerationOptions(), reasoning, profile.capabilities)
         except OptionValidationError as exc:
@@ -198,9 +270,10 @@ def create_app(*, trace_path: Path | None = None,
         values = store.validate(fields)
         return values, store.build(values, "draft")[0]
 
-    def request_runtime(profile: ModelProfile):
+    def request_runtime(profile: ModelProfile, *, manual=False):
         try:
-            runtime = ProfileRegistry([profile], credentials).snapshot(profile.profile_id)
+            runtime = ProfileRegistry([profile], credentials).snapshot(profile.profile_id,
+                apply_runtime_defaults=not manual)
         except CredentialFileError:
             return None, error("CREDENTIAL_FILE_ERROR", 503)
         if (runtime.auth_spec == AuthSpec.REQUIRED_BEARER
@@ -574,6 +647,8 @@ def create_app(*, trace_path: Path | None = None,
         profile = profiles.get(profile_id)
         if profile is None:
             return error("PROFILE_NOT_FOUND", 404)
+        if profile.access_mode == "preset":
+            return error("PRESET_READ_ONLY", 403)
         if profile_id == MOCK_PROFILE_ID:
             return error("CAPABILITY_PROBE_UNSUPPORTED", 400)
         if capability != "streaming" and not OpenAICompatibleAdapter.supports_thinking_mapping(profile):
@@ -634,6 +709,8 @@ def create_app(*, trace_path: Path | None = None,
         profile = profiles.get(profile_id)
         if profile is None:
             return error("PROFILE_NOT_FOUND", 404)
+        if profile.access_mode == "preset":
+            return error("PRESET_READ_ONLY", 403)
         if not OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(profile):
             return error("METADATA_UNSUPPORTED", 400)
         runtime, failure = request_runtime(profile)
@@ -711,11 +788,23 @@ def create_app(*, trace_path: Path | None = None,
             resolve_secrets=real,
         )
         started = time.monotonic()
+        handle, failure = claim_execution(payload)
+        if failure is not None:
+            return failure
         try:
-            result = orchestrator.analyze(
-                AnalysisRequest(Mode.CHAT, profile_id, question.strip(), reasoning=reasoning),
-                scenario=scenario)
+            with request_scope(handle) if handle else nullcontext():
+                result = orchestrator.analyze(
+                    AnalysisRequest(Mode.CHAT, profile_id, question.strip(), reasoning=reasoning),
+                    scenario=scenario)
+            if handle:
+                handle.finish(result.error_code)
+        except GatewayError as exc:
+            if handle:
+                handle.finish(exc.code)
+            return error(exc.code, 409)
         except Exception:
+            if handle:
+                handle.finish("INTERNAL_ERROR")
             # Raw provider or file errors can contain private data. Never send them to the browser.
             return error("INTERNAL_ERROR", 500)
         public = result_to_dict(result)
@@ -758,12 +847,107 @@ def create_app(*, trace_path: Path | None = None,
         )
         analysis_request = AnalysisRequest(Mode.CHAT, profile_id, question.strip(),
                                           reasoning=reasoning)
+        handle, failure = claim_execution(payload)
+        if failure is not None:
+            return failure
 
         def events():
-            for item in orchestrator.analyze_stream(analysis_request, scenario=scenario):
-                yield (f"event: {item.kind}\n"
-                       f"data: {json.dumps(item.data, ensure_ascii=False, separators=(',', ':'))}\n\n")
+            iterator = orchestrator.analyze_stream(analysis_request, scenario=scenario)
+            try:
+                with request_scope(handle) if handle else nullcontext():
+                    for item in iterator:
+                        if handle and item.kind in ("completed", "failed"):
+                            handle.finish(item.data.get("error_code"))
+                        yield sse(item.kind, item.data)
+            except GeneratorExit:
+                if handle:
+                    handle.cancel()
+                raise
+            except Exception as exc:
+                code = exc.code if isinstance(exc, GatewayError) else "INTERNAL_ERROR"
+                if handle:
+                    handle.finish(code)
+                yield sse("failed", {"error_code": code})
+            finally:
+                iterator.close()
+                if handle and handle.state not in ("CANCELLED", "COMPLETED", "FAILED"):
+                    handle.finish("USER_CANCELLED" if handle.state == "CANCEL_REQUESTED" else "STREAM_INTERRUPTED")
 
+        response = Response(stream_with_context(events()), mimetype="text/event-stream")
+        response.headers["X-Accel-Buffering"] = "no"
+        return response
+
+    def sse(kind, data):
+        return f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False, separators=(',', ':'))}\n\n"
+
+    @app.post("/api/manual")
+    def manual_execution():
+        # Independent expert path: fixed saved connection, no analysis/capability/defaults.
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        payload = request.get_json(silent=True)
+        if (not isinstance(payload, dict) or not isinstance(payload.get("profile_id"), str)
+                or payload.get("profile_id") not in profiles):
+            return error("INVALID_REQUEST", 400)
+        if payload.get("confirm_network") is not True:
+            return error("NETWORK_CONFIRMATION_REQUIRED", 403)
+        profile = profiles[payload["profile_id"]]
+        if profile.provider_kind == "mock":
+            return error("MANUAL_CONNECTION_REQUIRED", 400)
+        runtime, failure = request_runtime(profile, manual=True)
+        if failure is not None:
+            return failure
+        runtime = replace(runtime, max_retries=0, access_mode="manual_expert",
+                          preset_id=None, preset_variant=None, preset_contract_version=None)
+        try:
+            manual = ManualRequest.from_dict(payload.get("body"), model=runtime.model)
+        except GatewayError as exc:
+            return error(exc.code, 400)
+        handle, failure = claim_execution(payload, required=True)
+        if failure is not None:
+            return failure
+        gateway = real_gateway_factory()
+        started = time.monotonic()
+        def public_response(item):
+            from .application import _public_data
+            return {"raw_response": item.raw, "usage": _public_data(item.usage),
+                    "runtime": _public_data(runtime.public_info()),
+                    "request_id": handle.request_id,
+                    "total_latency_ms": round((time.monotonic() - started) * 1000, 3)}
+        if not manual.streaming:
+            try:
+                with request_scope(handle):
+                    result = gateway.manual_complete(manual, runtime)
+                    handle.check()
+                handle.finish()
+                return jsonify(public_response(result))
+            except Exception as exc:
+                code = exc.code if isinstance(exc, GatewayError) else "INTERNAL_ERROR"
+                handle.finish(code)
+                return error(code, 502)
+        def events():
+            iterator = gateway.manual_stream(manual, runtime)
+            try:
+                with request_scope(handle):
+                    for item in iterator:
+                        handle.check()
+                        yield sse("raw_delta", public_response(item))
+                    handle.check()
+                handle.finish()
+                yield sse("completed", {"request_id": handle.request_id,
+                    "total_latency_ms": round((time.monotonic() - started) * 1000, 3)})
+            except GeneratorExit:
+                handle.cancel()
+                raise
+            except Exception as exc:
+                code = exc.code if isinstance(exc, GatewayError) else "INTERNAL_ERROR"
+                handle.finish(code)
+                yield sse("failed", {"error_code": code})
+            finally:
+                iterator.close()
+                if handle.state not in ("COMPLETED", "FAILED", "CANCELLED"):
+                    handle.finish("USER_CANCELLED")
         response = Response(stream_with_context(events()), mimetype="text/event-stream")
         response.headers["X-Accel-Buffering"] = "no"
         return response

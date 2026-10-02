@@ -12,6 +12,191 @@ let credentialRevision = 0;
 let credentialBusy = false;
 let credentialEpoch = 0;
 let credentialCsrf = null;
+let activeExecution = null;
+let accessMode = "";
+let manualTargetId = null;
+
+function setAccessMode(mode, selectedId) {
+  if (activeExecution) return;
+  accessMode = mode;
+  $("access-mode").value = mode;
+  renderProfiles(selectedId ?? (mode === "manual_expert" ? manualTargetId : undefined));
+}
+
+function developmentProfiles() {
+  return profiles.filter(item => item.runtime_type === "mock"
+    || (item.source === "built_in" && item.runtime_type === "local"));
+}
+
+function modelLabel(profile) {
+  return profile.display_name.split(" · ")[0].replace(/^Preset\s+/, "");
+}
+
+function visibleProfiles() {
+  if (accessMode === "managed_custom") return profiles.filter(item => item.source === "user_custom");
+  if (accessMode === "development") return developmentProfiles();
+  const seen = new Set();
+  return profiles.filter(item => {
+    if (accessMode === "preset") {
+      if (item.source !== "preset" || seen.has(item.preset_id)) return false;
+      seen.add(item.preset_id);
+      return true;
+    }
+    // Manual selects saved targets, not a Manual Profile; do not repeat Variant connections.
+    if (item.runtime_type === "mock" || (item.source === "built_in" && item.runtime_type !== "local")) return false;
+    // Only coalesce Variants of one Preset. Custom connections may use different
+    // credentials / timeouts even when their endpoint and model are identical.
+    if (item.source === "preset") {
+      if (seen.has(item.preset_id)) return false;
+      seen.add(item.preset_id);
+    }
+    return true;
+  });
+}
+
+function renderPresetVariants(selectedId) {
+  const model = profiles.find(item => item.profile_id === $("profile").value);
+  const variants = model?.source === "preset"
+    ? profiles.filter(item => item.source === "preset" && item.preset_id === model.preset_id) : [];
+  $("preset-variant").replaceChildren();
+  for (const variant of variants) appendChoice($("preset-variant"), variant.profile_id,
+    variant.preset_variant === "auto" ? "Provider Default (AUTO)" : `Thinking ${variant.preset_variant.toUpperCase()}`);
+  $("preset-variant").value = variants.some(item => item.profile_id === selectedId) ? selectedId
+    : (variants.find(item => item.preset_variant === "auto") || variants[0])?.profile_id || "";
+  $("preset-variant").disabled = variants.length <= 1;
+}
+
+function updateModeView() {
+  const manual = accessMode === "manual_expert";
+  const custom = accessMode === "managed_custom";
+  const fixed = accessMode === "preset";
+  $("preset-variant-field").hidden = !fixed;
+  $("custom-editor").hidden = !custom;
+  $("development-entry").hidden = manual;
+  $("new-profile").hidden = !custom;
+  $("credential-manager").hidden = manual;
+  $("capability-panel").hidden = manual;
+  $("managed-thinking-field").hidden = fixed;
+  $("analysis-inputs").hidden = manual;
+  $("analyze").hidden = manual;
+  $("manual-expert").hidden = !manual;
+  $("profile-meta").hidden = manual;
+  $("profile-summary").hidden = manual;
+  $("selected-secret-status").hidden = manual;
+  $("results").hidden = true;
+  $("empty-state").hidden = manual;
+  $("profile-label").textContent = manual ? "Connection / Target（已保存连接）" : fixed ? "Model" : "模型连接";
+  $("mode-note").textContent = manual ? "独立 Raw JSON 请求；不参与水质分析或 Capability 管理。"
+    : fixed ? "项目维护的固定模型与版本化合同。Thinking Variant 与 Response Mode 独立。"
+      : custom ? "管理自定义连接；高级能力由当前精确 Identity 的证据决定。"
+        : "Development / Test：Mock 完全离线；Local Experimental 尚未发布为 Preset。";
+  if (manual) {
+    ++credentialRevision;
+    credentialState = null;
+    $("credential-value").value = "";
+    $("credential-manager").open = false;
+  }
+}
+
+function updateManualTarget(profile) {
+  ++formRevision; // Ignore pending Managed profile form responses.
+  editingId = null;
+  setFormMode("view");
+  addPairs("manual-connection", [["Service", profile.service_id], ["Base URL", profile.base_url],
+    ["Model", profile.model], ["Credential", profile.auth_spec === "NONE" ? "NONE_REQUIRED" : profile.credential_ref]]);
+  if (manualTargetId !== profile.profile_id) {
+    manualTargetId = profile.profile_id;
+    $("manual-body").value = JSON.stringify({model: profile.model,
+      messages: [{role: "user", content: "只回复 OK"}], max_tokens: 32}, null, 2);
+    $("manual-output").textContent = "";
+  }
+  $("manual-status").textContent = "独立实验路径；切换目标会重置请求模板，切换运行模式保留当前草稿。";
+  setStatus("Manual Expert：Send 时确认真实网络请求；Stop 复用后端取消机制。");
+}
+
+function bindAccessModeControls() {
+  $("access-mode").addEventListener("change", () => setAccessMode($("access-mode").value));
+  $("profile").addEventListener("change", () => {
+    if (accessMode === "preset") renderPresetVariants();
+    updateProfile();
+  });
+  $("preset-variant").addEventListener("change", () => {
+    const response = $("response-mode").value;
+    updateProfile();
+    const profile = selectedProfile();
+    if (profile) updateRuntimeOptionControls(profile, {reasoning: profile.default_reasoning_mode,
+      response, effort: ""});
+  });
+  $("use-development").addEventListener("click", () => setAccessMode("development", $("development-target").value));
+}
+
+async function executionHeaders() {
+  if (!credentialCsrf) {
+    const response = await fetch("/api/credential-session", {credentials: "same-origin"});
+    const data = await response.json();
+    if (!response.ok || !data.csrf_token) throw new Error(safeCredentialCode(data, "CSRF_INVALID"));
+    credentialCsrf = data.csrf_token;
+  }
+  return {"Content-Type": "application/json", "X-CSRF-Token": credentialCsrf};
+}
+
+async function beginExecution() {
+  const headers = await executionHeaders();
+  const response = await fetch("/api/requests", {method: "POST", headers, body: "{}"});
+  const data = await response.json();
+  if (!response.ok || !data.control_token || !data.request_id) throw new Error(safeCredentialCode(data, "REQUEST_PREPARE_FAILED"));
+  activeExecution = {...data, headers, controller: new AbortController(), cancelled: false};
+  $("stop-generation").disabled = false;
+  $("manual-send").disabled = true;
+  $("profile").disabled = true;
+  for (const id of ["access-mode", "preset-variant", "use-development", "development-target"]) $(id).disabled = true;
+  return activeExecution;
+}
+
+function finishExecution() {
+  activeExecution = null;
+  $("stop-generation").disabled = true;
+  $("manual-send").disabled = false;
+  $("profile").disabled = false;
+  for (const id of ["access-mode", "use-development", "development-target"]) $(id).disabled = false;
+  $("preset-variant").disabled = $("preset-variant").children.length <= 1;
+}
+
+async function stopGeneration() {
+  const running = activeExecution;
+  if (!running || running.cancelled) return;
+  running.cancelled = true;
+  $("stop-generation").disabled = true;
+  setStatus("正在请求后端停止生成…");
+  try {
+    const post = async (action) => {
+      const response = await fetch(`/api/requests/${running.request_id}/${action}`, {
+        method: "POST", headers: running.headers,
+        body: JSON.stringify({control_token: running.control_token}),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(safeCredentialCode(data, "CANCEL_FAILED"));
+      return data;
+    };
+    let state = await post("cancel"); // Independent request reaches server before browser abort.
+    running.controller.abort();
+    for (let attempt = 0; state.state === "CANCEL_REQUESTED" && attempt < 20; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      state = await post("status");
+    }
+    const closed = state.backend_io_closed === true ? "后端 I/O 已关闭" : "后端 I/O 关闭尚未确认";
+    const outcome = state.state === "COMPLETED" ? "请求已经完成" : state.state === "CANCELLED" ? "USER_CANCELLED" : state.state;
+    setStatus(`${outcome}；${closed}；远端计算 / 计费是否停止：UNKNOWN。`);
+    $("manual-status").textContent = $("status").textContent;
+  } catch (exc) {
+    running.controller.abort();
+    setStatus(`取消未确认：${/^[A-Z][A-Z0-9_]{0,40}$/.test(exc.message) ? exc.message : "NETWORK_ERROR"}；仅停止浏览器显示，后端状态未知。`, true);
+  } finally {
+    // Keep the run locked until the stop acknowledgement is resolved.
+    if (activeExecution === running) finishExecution();
+    $("analyze").disabled = false;
+  }
+}
 
 function credentialContext() {
   if (formMode === "view") {
@@ -206,23 +391,40 @@ function block(li, title, body, detail = "") {
 }
 
 function selectedProfile() {
-  return profiles.find((item) => item.profile_id === $("profile").value);
+  const model = profiles.find(item => item.profile_id === $("profile").value);
+  const variant = profiles.find(item => item.profile_id === $("preset-variant").value);
+  return accessMode === "preset" && model?.source === "preset" && variant?.preset_id === model.preset_id
+    ? variant : model;
 }
 
-function renderProfiles(selectedId = "mock-demo") {
+function renderProfiles(selectedId) {
+  const selected = profiles.find(item => item.profile_id === selectedId);
+  if (!accessMode) accessMode = selected?.source === "preset" ? "preset"
+    : selected?.source === "user_custom" ? "managed_custom" : "development";
+  $("access-mode").value = accessMode;
   $("profile").replaceChildren();
-  const builtIn = document.createElement("optgroup");
-  builtIn.label = "Built-in Profiles";
-  const custom = document.createElement("optgroup");
-  custom.label = "User Custom Profiles";
-  for (const item of profiles) {
+  const visible = visibleProfiles();
+  for (const item of visible) {
     const option = document.createElement("option");
     option.value = item.profile_id;
-    option.textContent = item.display_name;
-    (item.source === "user_custom" ? custom : builtIn).append(option);
+    option.textContent = item.source === "preset" ? modelLabel(item)
+      : item.runtime_type === "mock" ? "Mock · Development / Test"
+        : item.source === "built_in" ? `${item.display_name} · Local Experimental` : item.display_name;
+    $("profile").append(option);
   }
-  $("profile").append(builtIn, custom);
-  $("profile").value = selectedId;
+  const representative = visible.find(item => item.profile_id === selectedId
+    || (accessMode === "preset" && selected?.preset_id && item.preset_id === selected.preset_id));
+  $("profile").value = (representative || visible[0])?.profile_id || "";
+  if (!visible.length) appendChoice($("profile"), "", "尚无自定义连接，请点击新建", true);
+  renderPresetVariants(selectedId);
+  $("development-target").replaceChildren();
+  for (const item of developmentProfiles()) appendChoice($("development-target"), item.profile_id,
+    item.runtime_type === "mock" ? "Mock · 完全离线" : `${item.display_name} · Local Experimental`);
+  $("development-target").value = developmentProfiles()[0]?.profile_id || "";
+  $("use-development").disabled = !developmentProfiles().length;
+  updateModeView();
+  $("manual-send").disabled = !visible.length;
+  $("analyze").disabled = !visible.length;
   updateProfile();
 }
 
@@ -322,6 +524,12 @@ function updateRuntimeOptionControls(profile, preferred = {}) {
       && thinkingSelect.value === "on" && effortValues.includes(requestedEffort)
     ? requestedEffort : "";
   $("effort-control").hidden = false;
+  thinkingSelect.disabled = profile?.access_mode === "preset";
+  effortSelect.disabled = profile?.access_mode === "preset";
+  if (profile?.access_mode === "preset") {
+    thinkingSelect.value = profile.default_reasoning_mode || "auto";
+    effortSelect.value = "";
+  }
 }
 
 function syncRuntimeOptionsFromCurrentSelections() {
@@ -333,7 +541,18 @@ function syncRuntimeOptionsFromCurrentSelections() {
 
 function updateProfile() {
   const profile = selectedProfile();
-  if (!profile) return;
+  if (!profile) {
+    ++formRevision;
+    resetCredentialManager();
+    for (const id of ["profile-meta", "selected-secret-status"]) $(id).textContent = "";
+    $("profile-summary").replaceChildren();
+    $("capability-panel").hidden = true;
+    $("edit-profile").hidden = true;
+    $("delete-profile").hidden = true;
+    setStatus("尚无自定义连接，请新建并保存后运行。", false);
+    return;
+  }
+  if (accessMode === "manual_expert") { updateManualTarget(profile); return; }
   const defaults = resolveRuntimeDefaults(profile);
   updateRuntimeOptionControls(profile, {reasoning: defaults.thinking, response: defaults.response,
     effort: ""});
@@ -364,11 +583,11 @@ function updateProfile() {
     ? "已绑定当前 service / adapter / Base URL / Model" : "未绑定当前精确连接";
   $("streaming-capability").textContent = `Streaming 能力：${capabilityLabel}（${streaming.toUpperCase()}）· ${scope}`;
   renderCapabilities(profile);
-  const live = profile.runtime_type !== "mock";
+  const live = profile.runtime_type !== "mock" && profile.access_mode !== "preset";
   const streamingSource = profile.capabilities?.source || "UNKNOWN";
   $("probe-streaming").hidden = !live || streamingSource === "USER_VERIFIED";
   $("reprobe-streaming").hidden = !live || streamingSource !== "USER_VERIFIED";
-  $("refresh-metadata").hidden = profile.service_id !== "ollama"
+  $("refresh-metadata").hidden = !live || profile.service_id !== "ollama"
     || profile.runtime_type !== "local" || profile.model !== "qwen3.5:4b";
   const thinkingAvailable = profile.thinking_probe_available === true;
   const onVerified = profile.capabilities?.thinking_on?.source === "USER_VERIFIED";
@@ -401,17 +620,21 @@ function updateProfile() {
   $("edit-profile").hidden = profile.source !== "user_custom";
   $("delete-profile").hidden = profile.source !== "user_custom";
   $("custom-editor").open = false;
+  if (profile.access_mode === "preset") {
+    $("profile-meta").textContent += ` · Preset ${profile.preset_id} / ${profile.preset_variant} · 合同 v${profile.preset_contract_version}`;
+    $("thinking-probe-help").textContent = "Preset 使用版本化固定合同；切换 Thinking 请选其他 Variant，本地 Probe 不会修改合同。";
+  }
   $("custom-status").textContent = "正在读取所选配置…";
   $("selected-secret-status").textContent = real ? "Secret 状态：待检查" : "Mock 无需 Secret";
   fetch(`/api/profiles/${encodeURIComponent(profile.profile_id)}`)
     .then((response) => { if (!response.ok) throw new Error("PROFILE_READ_FAILED"); return response.json(); })
     .then((data) => {
-      if (revision !== formRevision || $("profile").value !== profile.profile_id) return;
+      if (revision !== formRevision || selectedProfile()?.profile_id !== profile.profile_id) return;
       fillProfileForm(data.fields, profile);
       $("custom-status").textContent = data.editable
         ? "正在查看自定义配置；点击“编辑所选”可修改连接参数，名称不可修改。"
         : "预置配置只读；如需新配置，请点击“新建”。";
-      const current = () => revision === formRevision && $("profile").value === profile.profile_id;
+      const current = () => revision === formRevision && selectedProfile()?.profile_id === profile.profile_id;
       showSecret(data.fields.secret_env, "secret-status", current, profile);
       if (real) showSecret(data.fields.secret_env, "selected-secret-status", current, profile);
     })
@@ -602,6 +825,8 @@ function selectPreset() {
 }
 
 function newProfile() {
+  if (activeExecution || accessMode === "preset" || accessMode === "manual_expert") return;
+  if (accessMode !== "managed_custom") setAccessMode("managed_custom");
   ++formRevision;
   editingId = null;
   setFormMode("new");
@@ -1007,7 +1232,7 @@ function prepareStreamView() {
   }
 }
 
-async function analyzeStreaming(body) {
+async function analyzeStreaming(body, execution = null) {
   try {
     prepareStreamView();
   } catch (_) {
@@ -1015,7 +1240,8 @@ async function analyzeStreaming(body) {
     return;
   }
   const response = await fetch("/api/analyze/stream", {
-    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
+    method: "POST", headers: execution?.headers || {"Content-Type": "application/json"}, body: JSON.stringify(body),
+    ...(execution ? {signal: execution.controller.signal} : {}),
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
@@ -1037,6 +1263,7 @@ async function analyzeStreaming(body) {
     try {
       ({done, value} = await reader.read());
     } catch (_) {
+      if (execution?.cancelled) return;
       setStatus("流式连接中断：STREAM_INTERRUPTED", true);
       return;
     }
@@ -1051,6 +1278,7 @@ async function analyzeStreaming(body) {
       if (!kind || !dataLine) continue;
       let data;
       try {
+      if (execution?.cancelled) return;
         data = JSON.parse(dataLine);
       } catch (_) {
         setStatus("流式事件格式错误：STREAM_PROTOCOL_ERROR", true);
@@ -1093,6 +1321,7 @@ async function analyzeStreaming(body) {
 }
 
 async function analyze() {
+  if (activeExecution) return;
   const profile = selectedProfile();
   if (!profile) return;
   const real = profile.runtime_type !== "mock";
@@ -1103,8 +1332,11 @@ async function analyze() {
   $("analyze").disabled = true;
   const streaming = $("response-mode").value === "streaming";
   setStatus(real ? "正在等待真实模型…" : "正在执行离线 Mock 分析…");
+  let execution = null;
   try {
+    execution = await beginExecution();
     const body = {
+      request_id: execution.request_id, control_token: execution.control_token,
       profile_id: profile.profile_id,
       scenario: $("scenario").value,
       question: $("question").value,
@@ -1115,26 +1347,90 @@ async function analyze() {
     if (!$("effort-control").hidden && $("reasoning-effort").value)
       body.reasoning_effort = $("reasoning-effort").value;
     if (streaming) {
-      await analyzeStreaming(body);
+      await analyzeStreaming(body, execution);
       return;
     }
     const response = await fetch("/api/analyze", {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
+      headers: execution.headers,
+      signal: execution.controller.signal,
       body: JSON.stringify(body),
     });
     const payload = await response.json();
+    if (execution.cancelled) return;
     if (payload.result) {
       render(payload.result, payload.total_latency_ms);
       setStatus(payload.result.status === "completed" ? "分析完成。" : `分析失败：${show(payload.result.error_code)}`, payload.result.status !== "completed");
     } else {
       setStatus(`请求未执行：${show(payload.error_code)}`, true);
     }
-  } catch (_) {
-    setStatus("页面请求失败：NETWORK_ERROR", true);
+  } catch (exc) {
+    if (!execution?.cancelled) setStatus(`页面请求失败：${/^[A-Z][A-Z0-9_]{0,40}$/.test(exc.message) ? exc.message : "NETWORK_ERROR"}`, true);
   } finally {
-    $("analyze").disabled = false;
-    if (real) $("confirm-network").checked = false;
+    if (activeExecution === execution && !execution?.cancelled) {
+      finishExecution();
+      $("analyze").disabled = false;
+    }
+    if (real && !activeExecution) $("confirm-network").checked = false;
+  }
+}
+
+async function sendManual() {
+  if (activeExecution) return;
+  const profile = selectedProfile();
+  if (!profile || profile.runtime_type === "mock") {
+    $("manual-status").textContent = "请先选择已保存的 Cloud / Local 连接。";
+    return;
+  }
+  let body;
+  try { body = JSON.parse($("manual-body").value); }
+  catch (_) { $("manual-status").textContent = "INVALID_REQUEST：请求体必须是 JSON。"; return; }
+  if (!window.confirm("REAL NETWORK REQUEST：发送专家请求，可能产生费用。系统不会判断高级参数能力，不会执行返回的 tool_calls。继续？")) return;
+  $("analyze").disabled = true;
+  $("manual-output").textContent = "";
+  $("manual-status").textContent = "正在发送 Manual 请求…";
+  let execution = null;
+  try {
+    execution = await beginExecution();
+    const response = await fetch("/api/manual", {method: "POST", headers: execution.headers,
+      signal: execution.controller.signal,
+      body: JSON.stringify({profile_id: profile.profile_id, confirm_network: true, body,
+        request_id: execution.request_id, control_token: execution.control_token})});
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(safeCredentialCode(data));
+    }
+    if (body.stream === true) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "", terminal = false;
+      while (!execution.cancelled) {
+        const {done, value} = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), {stream: !done});
+        buffer = buffer.replace(/\r\n/g, "\n");
+        let boundary;
+        while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+          const frame = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
+          const kind = frame.split("\n").find(line => line.startsWith("event: "))?.slice(7);
+          const data = JSON.parse(frame.split("\n").find(line => line.startsWith("data: "))?.slice(6) || "{}");
+          if (execution.cancelled) return;
+          if (kind === "failed") throw new Error(safeCredentialCode(data));
+          if (kind === "raw_delta") $("manual-output").textContent += JSON.stringify(data, null, 2) + "\n";
+          if (kind === "completed") { terminal = true; $("manual-status").textContent = `Manual 完成 · ${show(data.total_latency_ms)} ms`; }
+        }
+        if (done) break;
+      }
+      if (!terminal && !execution.cancelled) throw new Error("STREAM_INTERRUPTED");
+    } else {
+      const data = await response.json();
+      if (execution.cancelled) return;
+      $("manual-output").textContent = JSON.stringify(data, null, 2);
+      $("manual-status").textContent = `Manual 完成 · ${show(data.total_latency_ms)} ms · Usage 在原始响应下方；没有执行 tool_calls。`;
+    }
+  } catch (exc) {
+    if (!execution?.cancelled) $("manual-status").textContent = `Manual 失败：${/^[A-Z][A-Z0-9_]{0,40}$/.test(exc.message) ? exc.message : "NETWORK_ERROR"}`;
+  } finally {
+    if (activeExecution === execution && !execution?.cancelled) { finishExecution(); $("analyze").disabled = false; }
   }
 }
 
@@ -1155,11 +1451,7 @@ async function init() {
     placeholder.value = "";
     placeholder.textContent = "请选择 Provider";
     $("provider-preset").prepend(placeholder);
-    const mock = document.createElement("option");
-    mock.value = "built_in_mock";
-    mock.textContent = "Mock（预置，只读）";
-    mock.disabled = true;
-    $("provider-preset").append(mock);
+    accessMode = "preset";
     renderProfiles();
     for (const scenario of config.scenarios) {
       const option = document.createElement("option");
@@ -1168,10 +1460,12 @@ async function init() {
       $("scenario").append(option);
     }
     $("scenario").value = "low_oxygen";
-    $("profile").addEventListener("change", updateProfile);
+    bindAccessModeControls();
     $("reasoning-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
     $("response-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
     $("analyze").addEventListener("click", analyze);
+    $("stop-generation").addEventListener("click", stopGeneration);
+    $("manual-send").addEventListener("click", sendManual);
     $("provider-preset").addEventListener("change", selectPreset);
     $("new-profile").addEventListener("click", newProfile);
     $("edit-profile").addEventListener("click", editSelected);

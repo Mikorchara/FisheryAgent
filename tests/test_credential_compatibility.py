@@ -48,7 +48,11 @@ class CredentialCompatibilityTests(unittest.TestCase):
                 actual = _profile_public(profile, "built_in")
                 self.assertEqual({key: actual[key] for key in item["public"]}, item["public"])
                 runtime = ProfileRegistry([profile]).snapshot(profile.profile_id, {})
-                self.assertEqual(asdict(runtime.public_info()), item["runtime_public"])
+                public_runtime = asdict(runtime.public_info())
+                # Preserve all frozen R0/R2 fields; access-mode metadata is additive.
+                self.assertEqual({key: public_runtime[key] for key in item["runtime_public"]}, item["runtime_public"])
+                self.assertEqual(public_runtime["access_mode"], "managed_custom")
+                self.assertIsNone(public_runtime["preset_contract_version"])
 
     def test_adapter_body_matches_all_checkpoint_payloads(self):
         profiles = {p.profile_id: p for p in _builtin_profiles()}

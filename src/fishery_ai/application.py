@@ -17,6 +17,7 @@ from .knowledge import KnowledgeService
 from .model_gateway import (GatewayError, ModelGateway, ModelMessage, ModelRequest,
                             ModelResponse, ProfileRegistry)
 from .observability import JsonlTraceSink
+from .execution import check_cancelled, current_handle
 
 
 class WaterQualityRepository(Protocol):
@@ -126,6 +127,8 @@ class Orchestrator:
         started_at = self.clock()
         start_tick = time.monotonic()
         request_id, trace_id = self.id_factory(), self.id_factory()
+        if current_handle():
+            request_id = current_handle().request_id
         runtime = self.profiles.snapshot(request.profile_id,
                                          environ=None if self.resolve_secrets else {})
         reading = self.repository.water_quality(scenario)
@@ -134,7 +137,9 @@ class Orchestrator:
         context = AnalysisContext(request.mode, request.question, reading, findings, evidence)
         model_request = _build_model_request(context, request)
         try:
+            check_cancelled()
             response: ModelResponse = self.gateway.complete(model_request, runtime)
+            check_cancelled()
             inference, recommendations, uncertainty, parse_ok = _parse_model_text(response.text)
             result = AnalysisResult(
                 request_id=request_id, trace_id=trace_id, status=Status.COMPLETED,
@@ -147,7 +152,8 @@ class Orchestrator:
             )
         except GatewayError as exc:
             result = AnalysisResult(
-                request_id=request_id, trace_id=trace_id, status=Status.FAILED,
+                request_id=request_id, trace_id=trace_id,
+                status=Status.CANCELLED if exc.code == "USER_CANCELLED" else Status.FAILED,
                 runtime=runtime.public_info(), observed_facts=ObservedFacts(reading),
                 rule_results=findings, evidence=evidence, inference="",
                 recommendations=(), uncertainty=("模型调用失败；规则和证据仍可检查。",),
@@ -165,6 +171,8 @@ class Orchestrator:
         started_at = self.clock()
         start_tick = time.monotonic()
         request_id, trace_id = self.id_factory(), self.id_factory()
+        if current_handle():
+            request_id = current_handle().request_id
         yield AnalysisStreamEvent("analysis_started", {"request_id": request_id,
                                                        "trace_id": trace_id})
         runtime = None
@@ -177,6 +185,7 @@ class Orchestrator:
         usage_emitted = False
         ttft_ms: float | None = None
         try:
+            check_cancelled()
             runtime = self.profiles.snapshot(request.profile_id,
                                              environ=None if self.resolve_secrets else {})
             reading = self.repository.water_quality(scenario)
@@ -190,6 +199,7 @@ class Orchestrator:
             stream = self.gateway.stream(_build_model_request(context, request), runtime)
             try:
                 for event in stream:
+                    check_cancelled()
                     if event.reasoning_delta:
                         reasoning_chunks.append(event.reasoning_delta)
                         yield AnalysisStreamEvent("reasoning_delta", {"delta": event.reasoning_delta})
@@ -209,6 +219,7 @@ class Orchestrator:
             if not usage_emitted:
                 yield AnalysisStreamEvent("usage", {"usage": _public_data(usage)})
             raw_text = "".join(chunks)
+            check_cancelled()
             inference, recommendations, uncertainty, parse_ok = _parse_model_text(raw_text)
             result = AnalysisResult(
                 request_id=request_id, trace_id=trace_id, status=Status.COMPLETED,
@@ -235,7 +246,8 @@ class Orchestrator:
                                                      "total_latency_ms": round(total_ms, 3)})
                 return
             result = AnalysisResult(
-                request_id=request_id, trace_id=trace_id, status=Status.FAILED,
+                request_id=request_id, trace_id=trace_id,
+                status=Status.CANCELLED if code == "USER_CANCELLED" else Status.FAILED,
                 runtime=runtime.public_info(), observed_facts=ObservedFacts(reading),
                 rule_results=findings, evidence=evidence, inference="",
                 recommendations=(), uncertainty=("模型调用失败；规则和证据仍可检查。",),

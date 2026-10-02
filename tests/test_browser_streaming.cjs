@@ -265,6 +265,106 @@ test('Thinking and combination Probe buttons fit a single sidebar column',()=>{
 });
 
 // Explicit replay only: no default dependency on previous online validation files.
+test('Preset fixed thinking variant is readonly while response remains independently selectable',()=>{
+  const page=makePage(async()=>r2Reply({fields:{},editable:false}));
+  const profile={profile_id:'preset-test-off',display_name:'Preset',service_id:'dashscope',
+    model:'qwen-plus',base_url:'https://example.invalid/v1',adapter_id:'openai_chat',
+    access_mode:'preset',preset_id:'qwen-plus',preset_variant:'off',preset_contract_version:'1',
+    default_reasoning_mode:'off',default_response_mode:'normal',runtime_type:'cloud',profile_status:'experimental',source:'preset',
+    capabilities:{streaming:'supported',source:'USER_VERIFIED',thinking_default:false,
+      thinking_on:{status:'supported'},thinking_off:{status:'supported'}}};
+  vm.runInContext(`profiles=[${JSON.stringify(profile)}];presets=[];renderProfiles('${profile.profile_id}');updateProfile()`,page.context);
+  assert.equal(page.element('reasoning-mode').value,'off');
+  assert.equal(page.element('reasoning-mode').disabled,true);
+  assert.equal(page.element('response-mode').children.find(x=>x.value==='streaming').disabled,false);
+  assert.equal(page.element('probe-streaming').hidden,true);
+  assert.equal(page.element('advanced-capability-actions').hidden,true);
+  assert.match(page.element('profile-meta').textContent,/合同 v1/);
+});
+
+test('R6 Stop sends independent authenticated cancel before browser abort and reports I/O separately',async()=>{
+  const calls=[];
+  let page;
+  page=makePage(async(url,options)=>{
+    calls.push(url);
+    if(url==='/api/requests') return r2Reply({request_id:'r6',control_token:'fictional-control'});
+    assert.equal(options.headers['X-CSRF-Token'],'offline-csrf');
+    assert.equal(JSON.parse(options.body).control_token,'fictional-control');
+    assert.equal(vm.runInContext('activeExecution.controller.signal.aborted',page.context),false);
+    return r2Reply({state:'CANCELLED',backend_io_closed:true,remote_compute_stopped:'unknown'});
+  },{ownExecutionRoutes:true});
+  setProfile(page);
+  await vm.runInContext('beginExecution()',page.context);
+  assert.equal(page.element('profile').disabled,true);
+  await vm.runInContext('stopGeneration()',page.context);
+  assert.deepEqual(calls,['/api/requests','/api/requests/r6/cancel']);
+  assert.match(page.element('status').textContent,/USER_CANCELLED.*I\/O 已关闭.*UNKNOWN/);
+  assert.equal(page.element('profile').disabled,false);
+  assert.equal(page.element('stop-generation').disabled,true);
+});
+
+test('R6 stop failure never claims backend cancellation',async()=>{
+  const page=makePage(async(url)=>{
+    if(url==='/api/requests') return r2Reply({request_id:'r6',control_token:'fictional-control'});
+    throw new Error('fictional private exception');
+  },{ownExecutionRoutes:true});
+  setProfile(page);
+  await vm.runInContext('beginExecution()',page.context);
+  await vm.runInContext('stopGeneration()',page.context);
+  assert.match(page.element('status').textContent,/取消未确认.*NETWORK_ERROR.*后端状态未知/);
+  assert.doesNotMatch(page.element('status').textContent,/fictional private exception/);
+});
+
+test('R6 late browser abort cannot overwrite cancellation acknowledgement or clear a newer request',async()=>{
+  let rejectOld;
+  const page=makePage(async(url)=>{
+    if(url.includes('/cancel')) return r2Reply({state:'CANCELLED',backend_io_closed:true});
+    if(url==='/api/analyze') return new Promise((_,reject)=>{rejectOld=reject;});
+    throw new Error('unexpected offline route');
+  });
+  setProfile(page);
+  page.element('response-mode').value='normal';
+  const old=vm.runInContext('analyze()',page.context);
+  await new Promise(setImmediate);
+  await vm.runInContext('stopGeneration()',page.context);
+  const acknowledged=page.element('status').textContent;
+  await vm.runInContext('beginExecution()',page.context);
+  const next=vm.runInContext('activeExecution',page.context);
+  rejectOld(new Error('AbortError'));
+  await old;
+  assert.equal(page.element('status').textContent,acknowledged);
+  assert.equal(vm.runInContext('activeExecution',page.context),next);
+  assert.equal(page.element('stop-generation').disabled,false);
+});
+
+test('Manual UI sends raw JSON without managed parameters and renders raw tool_calls without execution',async()=>{
+  const calls=[];
+  const body={model:'qwen-plus',messages:[{role:'user',content:'OK'}],thinking:{type:'disabled'},max_tokens:8};
+  const page=makePage(async(url,options)=>{
+    calls.push(url);
+    const sent=JSON.parse(options.body);
+    assert.deepEqual(sent.body,body);
+    assert.equal(Object.hasOwn(sent,'reasoning_mode'),false);
+    assert.equal(Object.hasOwn(sent,'scenario'),false);
+    return r2Reply({raw_response:{tool_calls:[{name:'never_execute'}]},usage:{total_tokens:5},total_latency_ms:7});
+  });
+  setProfile(page,true);
+  page.element('manual-body').value=JSON.stringify(body);
+  await vm.runInContext('sendManual()',page.context);
+  assert.deepEqual(calls,['/api/manual']);
+  assert.match(page.element('manual-output').textContent,/never_execute.*|total_tokens/);
+  assert.match(page.element('manual-status').textContent,/Manual 完成/);
+  assert.equal(page.element('analyze').disabled,false);
+});
+
+test('Manual malformed JSON is rejected locally without network',async()=>{
+  const page=makePage(async()=>{throw new Error('network forbidden');});
+  setProfile(page,true);
+  page.element('manual-body').value='{bad';
+  await vm.runInContext('sendManual()',page.context);
+  assert.match(page.element('manual-status').textContent,/INVALID_REQUEST/);
+});
+
 if(process.env.FISHERY_PARITY_RECORD) {
   test('recorded Qwen results converge through the real UI renderer without another API call',async()=>{
     const record=JSON.parse(fs.readFileSync(process.env.FISHERY_PARITY_RECORD,'utf8'));
@@ -303,8 +403,8 @@ test('Streaming plus Thinking needs its own exact capability and preserves safe 
 });
 
 test('Cloud Thinking Probe retains official evidence and exposes independent revalidation', async () => {
-  const base = {profile_id:'qwen-plus-experimental', profile_status:'experimental', service_id:'dashscope', runtime_type:'cloud',
-    source:'built_in', thinking_probe_available:true, capabilities:{streaming:'supported',source:'OFFICIAL_DOCS',
+  const base = {profile_id:'custom-qwen-thinking', profile_status:'custom', service_id:'dashscope', runtime_type:'cloud',
+    source:'user_custom', thinking_probe_available:true, capabilities:{streaming:'supported',source:'OFFICIAL_DOCS',
     thinking_on:{status:'supported',source:'OFFICIAL_DOCS'}, thinking_off:{status:'supported',source:'OFFICIAL_DOCS'}}};
   const verified = {...base, capabilities:{...base.capabilities,
     thinking_on:{status:'supported',source:'USER_VERIFIED',sources:['OFFICIAL_DOCS','USER_VERIFIED']}}};
@@ -377,7 +477,7 @@ test('reasoning deltas remain in folded debug area and never in final inference'
   assert.equal(page.element('reasoning-debug').open,false);
 });
 
-function makePage(fetch) {
+function makePage(fetch, {ownExecutionRoutes = false} = {}) {
   const controls = new Map();
   class Element {
     constructor() {
@@ -412,7 +512,11 @@ function makePage(fetch) {
     return controls.get(id);
   };
   const document = {getElementById: element, createElement: () => new Element()};
-  const context = vm.createContext({document, fetch, TextDecoder, Uint8Array,
+  const guardedFetch = async (url, options) => {
+    if (!ownExecutionRoutes && url === '/api/requests') return r2Reply({request_id:'offline-request',control_token:'offline-control'});
+    return fetch(url, options);
+  };
+  const context = vm.createContext({document, fetch:guardedFetch, TextDecoder, Uint8Array, AbortController, setTimeout,
     window: {confirm: () => true}});
   vm.runInContext(source, context);
   return {element, context};
@@ -526,7 +630,7 @@ function setProfile(page, real = false) {
   const profile = real
     ? {profile_id: 'qwen-plus-experimental', runtime_type: 'cloud'}
     : {profile_id: 'mock-demo', runtime_type: 'mock'};
-  vm.runInContext(`profiles = [${JSON.stringify(profile)}]`, page.context);
+  vm.runInContext(`profiles = [${JSON.stringify(profile)}];credentialCsrf='offline-csrf'`, page.context);
   page.element('profile').value = profile.profile_id;
   page.element('response-mode').value = 'streaming';
   page.element('scenario').value = 'low_oxygen';
@@ -736,7 +840,7 @@ test('reasoning mode is sent only for a Profile exposing the exact supported con
   });
   const exact = {profile_id: 'ollama-qwen35', runtime_type: 'local',
     reasoning_modes: ['auto', 'on', 'off']};
-  vm.runInContext(`profiles = [${JSON.stringify(exact)}]`, page.context);
+  vm.runInContext(`profiles = [${JSON.stringify(exact)}];credentialCsrf='offline-csrf'`, page.context);
   page.element('profile').value = exact.profile_id;
   page.element('scenario').value = 'low_oxygen';
   page.element('question').value = 'test';
@@ -1022,6 +1126,8 @@ test('new Custom Profile first Streaming Probe uses the current id and unlocks w
   });
 
   await vm.runInContext('init()', page.context);
+  page.element('access-mode').value = 'managed_custom';
+  await page.element('access-mode').dispatch('change');
   await page.element('new-profile').dispatch('click');
   const values = {'provider-preset': 'custom', 'custom-name': 'New Custom',
     'custom-provider': 'school', 'custom-family': 'unknown', 'custom-adapter': 'openai_chat',
@@ -1103,4 +1209,226 @@ test('Streaming Probe surfaces HTTP, malformed JSON, and network errors', async 
   await check({ok: false, status: 504, json: async () => ({error_code: 'READ_TIMEOUT'})}, 'READ_TIMEOUT');
   await check({ok: false, status: 502, json: async () => { throw new Error('bad JSON'); }}, 'INVALID_RESPONSE');
   await check(new TypeError('offline simulated fetch failure'), 'NETWORK_ERROR');
+});
+
+
+// Three-mode UI uses the unchanged exact backend Profiles / contracts.
+function threeModeFixtures() {
+  const base={display_name:'Preset Qwen Plus',service_id:'dashscope',model:'qwen-plus',
+    adapter_id:'openai_chat',base_url:'https://example.invalid/v1',credential_ref:'TEST_FAKE_KEY',
+    auth_spec:'REQUIRED_BEARER',profile_status:'experimental',runtime_type:'cloud',source:'preset',
+    access_mode:'preset',preset_id:'qwen-plus',preset_contract_version:'1',default_response_mode:'normal',
+    capabilities:{streaming:'supported',source:'USER_VERIFIED',thinking_default:false,
+      thinking_on:{status:'supported'},thinking_off:{status:'supported'},
+      thinking_streaming_combination:{status:'supported'}}};
+  const fixed=['off','on','auto'].map(variant=>({...base,profile_id:`preset-qwen-plus-${variant}`,
+    preset_variant:variant,default_reasoning_mode:variant,display_name:`Preset Qwen Plus · ${variant}`}));
+  return [...fixed,{...base,profile_id:'preset-deepseek-flash-auto',display_name:'Preset DeepSeek Flash · AUTO',
+    service_id:'deepseek_api',preset_id:'deepseek-flash',model:'deepseek-flash',preset_variant:'auto',
+    default_reasoning_mode:'auto',capabilities:{streaming:'unknown'}},
+    {...base,profile_id:'qwen-plus-experimental',display_name:'Legacy Qwen',source:'built_in',access_mode:'managed'},
+    {...base,profile_id:'deepseek-v4-flash-experimental',display_name:'Legacy DeepSeek',source:'built_in',access_mode:'managed'},
+    {...base,profile_id:'mock-demo',display_name:'Mock',source:'built_in',access_mode:'managed',
+      runtime_type:'mock',auth_spec:'NONE',default_reasoning_mode:'auto'},
+    {...base,profile_id:'ollama-qwen35-4b-local',display_name:'Ollama Qwen3.5 4B',source:'built_in',access_mode:'managed',
+      service_id:'ollama',runtime_type:'local',model:'qwen3.5:4b',auth_spec:'NONE',
+      base_url:'http://127.0.0.1:11434/v1',default_reasoning_mode:'off'},
+    {...base,profile_id:'user-local',display_name:'My Local',source:'user_custom',access_mode:'managed',
+      service_id:'school',model:'local-model',runtime_type:'local',auth_spec:'NONE'}];
+}
+function threeModePage(extraFetch=null,items=threeModeFixtures()) {
+  const calls=[];
+  const page=makePage(async(url,options)=>{
+    calls.push({url,body:options?.body ? JSON.parse(options.body):null});
+    if(extraFetch) {const response=await extraFetch(url,options);if(response)return response;}
+    if(url==='/api/config')return r2Reply({profiles:items,presets:[],scenarios:['low_oxygen','normal']});
+    if(url.startsWith('/api/profiles/'))return r2Reply({fields:{},editable:url.endsWith('user-local')});
+    if(url==='/api/secret-status')return r2Reply({availability:'MISSING',source:'MISSING'});
+    if(url==='/api/analyze')return r2Reply({error_code:'OFFLINE_FIXTURE'});
+    throw new Error(`Unexpected offline URL: ${url}`);
+  });
+  return {...page,calls,items};
+}
+
+test('three-mode initial UI shows Qwen once, DeepSeek once, and hides legacy Built-in choices',async()=>{
+  const page=threeModePage();
+  await vm.runInContext('init()',page.context);
+  const choices=page.element('profile').children;
+  assert.deepEqual(choices.map(x=>x.textContent),['Qwen Plus','DeepSeek Flash']);
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'preset-qwen-plus-auto');
+  for(const id of ['qwen-plus-experimental','deepseek-v4-flash-experimental','mock-demo','ollama-qwen35-4b-local'])
+    assert.equal(choices.some(x=>x.value===id),false);
+  assert.doesNotMatch(source,/label = "Built-in Profiles"/);
+  assert.equal(vm.runInContext('profiles.length',page.context),9); // Internal compatibility definitions stay intact.
+});
+
+test('three-mode Qwen Variant sends the exact existing id and fixed thinking while response is independent',async()=>{
+  const page=threeModePage();await vm.runInContext('(async()=>{await init();credentialCsrf="fictional-csrf";})()',page.context);
+  assert.deepEqual(page.element('preset-variant').children.map(x=>x.value),[
+    'preset-qwen-plus-off','preset-qwen-plus-on','preset-qwen-plus-auto']);
+  for(const variant of ['off','on','auto']) {
+    page.element('preset-variant').value=`preset-qwen-plus-${variant}`;
+    await page.element('preset-variant').dispatch('change');
+    page.element('confirm-network').checked=true;
+    page.element('response-mode').value='normal';
+    await page.element('analyze').dispatch('click');
+    const body=page.calls.filter(x=>x.url==='/api/analyze').at(-1).body;
+    assert.equal(body.profile_id,`preset-qwen-plus-${variant}`);
+    assert.equal(body.reasoning_mode,variant==='auto'?undefined:variant);
+    assert.equal(vm.runInContext('selectedProfile().preset_variant',page.context),variant);
+    assert.equal(page.element('reasoning-mode').disabled,true);
+    assert.equal(page.element('response-mode').children.find(x=>x.value==='streaming').disabled,false);
+  }
+});
+
+test('three-mode DeepSeek exposes only AUTO readonly variant and Normal',async()=>{
+  const page=threeModePage();await vm.runInContext('init()',page.context);
+  page.element('profile').value='preset-deepseek-flash-auto';await page.element('profile').dispatch('change');
+  assert.deepEqual(page.element('preset-variant').children.map(x=>x.value),['preset-deepseek-flash-auto']);
+  assert.equal(page.element('preset-variant').disabled,true);
+  assert.equal(page.element('response-mode').value,'normal');
+  assert.equal(page.element('response-mode').children.find(x=>x.value==='streaming').disabled,true);
+});
+
+test('three-mode Preset has no CRUD entry and New cannot create a Preset',async()=>{
+  const page=threeModePage();await vm.runInContext('init()',page.context);
+  for(const id of ['custom-editor','new-profile','edit-profile','delete-profile','managed-thinking-field'])
+    assert.equal(page.element(id).hidden,true,id);
+  await page.element('new-profile').dispatch('click');
+  assert.equal(vm.runInContext('formMode',page.context),'view');
+  assert.equal(page.element('preset-variant-field').hidden,false);
+});
+
+test('three-mode Managed Custom owns CRUD and New remains a clean editable form',async()=>{
+  const page=threeModePage();await vm.runInContext('init()',page.context);
+  page.element('access-mode').value='managed_custom';await page.element('access-mode').dispatch('change');
+  await new Promise(setImmediate);
+  assert.deepEqual(page.element('profile').children.map(x=>x.value),['user-local']);
+  for(const id of ['custom-editor','new-profile','edit-profile','delete-profile'])assert.equal(page.element(id).hidden,false,id);
+  await page.element('edit-profile').dispatch('click');assert.equal(vm.runInContext('formMode',page.context),'edit');
+  assert.equal(page.element('custom-name').readOnly,true);
+  await page.element('new-profile').dispatch('click');assert.equal(vm.runInContext('formMode',page.context),'new');
+  for(const id of ['custom-name','custom-model','custom-url','custom-provider','provider-preset'])assert.equal(page.element(id).value,'');
+});
+
+test('three-mode empty Custom list cannot accidentally analyze a legacy or Preset connection',async()=>{
+  const page=threeModePage(null,threeModeFixtures().filter(x=>x.source!=='user_custom'));
+  await vm.runInContext('(async()=>{await init();setAccessMode("managed_custom");})()',page.context);
+  assert.equal(vm.runInContext('selectedProfile()',page.context),undefined);
+  assert.equal(page.element('analyze').disabled,true);
+  assert.equal(page.element('new-profile').hidden,false);
+  await page.element('new-profile').dispatch('click');assert.equal(vm.runInContext('formMode',page.context),'new');
+});
+
+test('three-mode Mock and unpublished Ollama live only in explicit development selection',async()=>{
+  const page=threeModePage();await vm.runInContext('init()',page.context);
+  assert.deepEqual(page.element('development-target').children.map(x=>x.value),['mock-demo','ollama-qwen35-4b-local']);
+  page.element('development-target').value='mock-demo';await page.element('use-development').dispatch('click');
+  assert.equal(vm.runInContext('accessMode',page.context),'development');
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'mock-demo');
+  assert.match(page.element('mode-note').textContent,/Development.*未发布/);
+  assert.equal(page.element('custom-editor').hidden,true);
+  assert.equal(page.element('real-warning').hidden,true);
+  assert.equal(page.element('profile').children.some(x=>/Legacy/.test(x.textContent)),false);
+});
+
+test('three-mode Manual is an independent panel and hides every managed / business control',async()=>{
+  const page=threeModePage();await vm.runInContext('(async()=>{await init();setAccessMode("manual_expert");})()',page.context);
+  assert.equal(page.element('manual-expert').hidden,false);
+  for(const id of ['custom-editor','credential-manager','capability-panel','analysis-inputs',
+    'analyze','results','empty-state','preset-variant-field','development-entry'])assert.equal(page.element(id).hidden,true,id);
+  const choices=page.element('profile').children;
+  assert.equal(choices.filter(x=>x.textContent==='Qwen Plus').length,1);
+  assert.equal(choices.some(x=>/Legacy|Mock|Manual Expert/.test(x.textContent)),false);
+  assert.equal(page.calls.some(x=>/probe|metadata|credential/.test(x.url)),false);
+  assert.match(html,/<section id="manual-expert"/);
+});
+
+test('three-mode Manual raw draft survives mode changes and changes only when target changes',async()=>{
+  const page=threeModePage();await vm.runInContext('(async()=>{await init();setAccessMode("manual_expert");})()',page.context);
+  const draft='{"model":"qwen-plus","messages":[],"stream":true,"custom_field":17}';
+  page.element('manual-body').value=draft;
+  await vm.runInContext('setAccessMode("preset");setAccessMode("manual_expert")',page.context);
+  assert.equal(page.element('manual-body').value,draft);
+  page.element('profile').value='user-local';await page.element('profile').dispatch('change');
+  assert.equal(JSON.parse(page.element('manual-body').value).model,'local-model');
+  assert.equal(page.element('results').hidden,true);
+});
+
+test('three-mode Manual Send preserves raw JSON and tool_calls are displayed without managed API calls',async()=>{
+  const page=threeModePage(async(url)=>url==='/api/manual'?r2Reply({response:{choices:[{message:{tool_calls:[{id:'offline-tool'}]}}]},
+    usage:{total_tokens:3},total_latency_ms:4}):null);
+  await vm.runInContext('(async()=>{await init();setAccessMode("manual_expert");credentialCsrf="fictional-csrf";})()',page.context);
+  const raw={model:'qwen-plus',messages:[{role:'user',content:'offline'}],stream:false,custom_field:17};
+  page.element('manual-body').value=JSON.stringify(raw);await page.element('manual-send').dispatch('click');
+  const submission=page.calls.find(x=>x.url==='/api/manual').body;
+  assert.deepEqual(submission.body,raw);
+  for(const key of ['reasoning_mode','reasoning_effort','scenario','question'])assert.equal(Object.hasOwn(submission,key),false);
+  assert.match(page.element('manual-output').textContent,/offline-tool/);
+  assert.equal(page.calls.some(x=>/analyze|probe|tools/.test(x.url)),false);
+  assert.equal(page.element('results').hidden,true);
+});
+
+test('three-mode Manual Streaming renders raw deltas and final raw usage without managed injection',async()=>{
+  const page=threeModePage(async(url)=>url==='/api/manual'?sseResponse([
+    ['raw_delta',{choices:[{delta:{content:'offline'}}],usage:{total_tokens:2}}],
+    ['completed',{total_latency_ms:5}]]):null);
+  await vm.runInContext('(async()=>{await init();setAccessMode("manual_expert");credentialCsrf="fictional-csrf";})()',page.context);
+  const raw={model:'qwen-plus',messages:[],stream:true};page.element('manual-body').value=JSON.stringify(raw);
+  await page.element('manual-send').dispatch('click');
+  assert.deepEqual(page.calls.find(x=>x.url==='/api/manual').body.body,raw);
+  assert.match(page.element('manual-output').textContent,/offline.*[\s\S]*total_tokens/);
+  assert.match(page.element('manual-status').textContent,/Manual 完成/);
+  assert.equal(page.element('response-mode').value,'normal'); // Hidden managed preference has no effect.
+});
+
+test('three-mode Stop locks mode, model, variant and target then uses the existing cancellation route',async()=>{
+  const page=threeModePage(async(url)=>url.endsWith('/cancel')?r2Reply({state:'CANCELLED',backend_io_closed:true}):null);
+  await vm.runInContext('(async()=>{await init();setAccessMode("manual_expert");credentialCsrf="fictional-csrf";await beginExecution();})()',page.context);
+  for(const id of ['profile','access-mode','preset-variant','use-development','development-target'])assert.equal(page.element(id).disabled,true,id);
+  await vm.runInContext('setAccessMode("preset")',page.context);
+  assert.equal(vm.runInContext('accessMode',page.context),'manual_expert');
+  await page.element('stop-generation').dispatch('click');
+  assert.match(page.element('manual-status').textContent,/USER_CANCELLED.*后端 I\/O 已关闭.*UNKNOWN/);
+  assert.equal(page.element('access-mode').disabled,false);
+  assert.equal(page.calls.some(x=>x.url.endsWith('/cancel')),true);
+});
+
+
+test('three-mode Preset Thinking switch retains a separately chosen supported response mode',async()=>{
+  const page=threeModePage();await vm.runInContext('init()',page.context);
+  page.element('response-mode').value='streaming';
+  page.element('preset-variant').value='preset-qwen-plus-on';await page.element('preset-variant').dispatch('change');
+  assert.equal(page.element('reasoning-mode').value,'on');
+  assert.equal(page.element('response-mode').value,'streaming');
+  page.element('preset-variant').value='preset-qwen-plus-off';await page.element('preset-variant').dispatch('change');
+  assert.equal(page.element('reasoning-mode').value,'off');
+  assert.equal(page.element('response-mode').value,'streaming');
+});
+
+test('three-mode Manual preserves saved Custom targets even when they share a Preset endpoint and model',async()=>{
+  const items=threeModeFixtures();items.push({...items[0],profile_id:'custom-same-endpoint',
+    display_name:'My timeout choice',source:'user_custom',access_mode:'managed'});
+  const page=threeModePage(null,items);await vm.runInContext('(async()=>{await init();setAccessMode("manual_expert");})()',page.context);
+  assert.equal(page.element('profile').children.some(x=>x.value==='custom-same-endpoint'),true);
+  page.element('profile').value='user-local';await page.element('profile').dispatch('change');
+  const draft='{"model":"local-model","messages":[]}';page.element('manual-body').value=draft;
+  await vm.runInContext('setAccessMode("preset");setAccessMode("manual_expert")',page.context);
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'user-local');
+  assert.equal(page.element('manual-body').value,draft);
+});
+
+test('three-mode Managed Custom Normal and Streaming use the unchanged shared analysis endpoints',async()=>{
+  const page=threeModePage(async(url)=>url==='/api/analyze/stream'?sseResponse([
+    ['failed',{error_code:'OFFLINE_FIXTURE'}]]):null);
+  await vm.runInContext('(async()=>{await init();setAccessMode("managed_custom");credentialCsrf="fictional-csrf";})()',page.context);
+  for(const mode of ['normal','streaming']) {
+    page.element('response-mode').value=mode;page.element('confirm-network').checked=true;
+    await page.element('analyze').dispatch('click');
+    const call=page.calls.filter(x=>x.url.startsWith('/api/analyze')).at(-1);
+    assert.equal(call.url,mode==='normal'?'/api/analyze':'/api/analyze/stream');
+    assert.equal(call.body.profile_id,'user-local');
+    assert.equal(call.body.scenario,'low_oxygen');
+    assert.equal(call.body.reasoning_mode,undefined);
+  }
 });

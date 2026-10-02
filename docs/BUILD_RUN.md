@@ -1,5 +1,19 @@
 # 构建与运行
 
+## Preset / Stop / Manual Expert
+
+继续使用 `python -m fishery_ai web` 启动本机验证台。一级入口为 **Preset / Managed Custom / Manual Expert**，默认显示 Preset，但启动和选择模型不会发送生成请求。Preset 的 Model 中 Qwen Plus 只显示一次，通过独立 Variant 选择 AUTO / OFF / ON；Response Mode 独立选择。DeepSeek Flash 暂只有 AUTO + Normal。旧 Built-in Cloud 不再显示，底层 ID 保留用于兼容。Mock 与未发布的 Ollama 位于折叠的 **Development / Test** 附加入口。
+
+点击“停止生成”会先向后端请求取消 SDK I/O，再停止浏览器读取；页面分别显示后端关闭状态与远端计算 UNKNOWN，不能据此保证停止云端计费。
+
+在一级运行方式中选择 **Manual Expert**，使用最小的 Connection / Target 选择器，进入独立 Raw Request / Raw Response 页面。Capability、Probe、水质场景、Thinking、Response Mode 和 CRUD 均隐藏。直接编辑 Raw JSON body；model 必须一致，禁止自定义 Header / URL / Credential / transport 配置。点击 Send 后显式确认 REAL NETWORK REQUEST。Normal 与 `stream:true` 都支持 Stop。该路径不执行水质分析、RAG、Capability / 默认值注入或 tool_calls；Raw response、Usage 与耗时只在调试区显示，不存模板。
+
+**Manual 产品定位**：当前 V1 仅借用 Saved Connection 发送 Raw Request；长期方向是独立 LLM / Provider API 实验台，可保存独立 Manual Experiment。实验资产不等于 Managed Custom Connection，成功不等于 Fishery compatibility verified；不自动“保存为正式连接”。转换机制 NOT DECIDED，V2 DEFERRED。本阶段只校正文档，不开放任意目标或新增实验 CRUD。见[三模式设计校正](deep-dive/MODEL_ACCESS_THREE_MODE_PLAN.md)。
+
+凭据仍统一来自 **PROCESS_ENV > user-private PROJECT_ENV > MISSING**。上一实施阶段的受控联网阻塞记录保留在[阶段实施报告](deep-dive/PRESET_CANCELLATION_MANUAL_IMPLEMENTATION.md)；用户随后已反馈主要功能人工验证正常。该 UI 整理轮次未发真实请求；用户已反馈当前界面人工验收基本正常，历史待验收记录保留在[三模式 UI 整理报告](deep-dive/MODEL_SELECTION_UI_THREE_MODE_CLEANUP.md)。
+
+需要另行受控复测时使用 `python -X utf8 scripts/validate_access_modes.py --confirm-real-network`，每次最多四次生成尝试、retry=0、小输出上限；无确认参数禁止网络。默认离线测试不会执行它。不要将 `outputs/` 记录加入 Git。
+
 ## 环境要求
 
 - Python 3.11 或更新版本。
@@ -70,9 +84,9 @@ python -m fishery_ai validate-real --check basic --confirm-network
 .\.venv\Scripts\python.exe -m fishery_ai web
 ```
 
-启动后浏览器访问 `http://127.0.0.1:8765`；可用 `--port 8766` 更换端口。默认只绑定 `127.0.0.1`，只接受当前端口的 loopback Host，默认选中 Mock，完全离线。页面可选已有水质 Mock 场景，也可选 Qwen Plus 与 DeepSeek Flash 的 **EXPERIMENTAL** Cloud Profile。真实分析需勾选 **REAL NETWORK REQUEST**，Cloud 可能产生费用；请求使用固定用户私有文件或进程环境中的 Secret。凭据管理接收用户新输入的 Key，不返回已有 Key。启动终端输出固定凭据文件位置（不输出值）。关闭终端即可停止本地服务。
+启动后浏览器访问 `http://127.0.0.1:8765`；可用 `--port 8766` 更换端口。默认只绑定 `127.0.0.1`，只接受当前端口的 loopback Host，默认展示 Preset，不自动生成；Mock 需从 Development / Test 入口显式选择。页面分析仍使用已有水质 Mock 场景。Qwen Plus / DeepSeek Flash 使用已发布的固定 Variant，保留原 **EXPERIMENTAL** Profile 状态，不因此宣称所有能力已稳定。真实分析需勾选 **REAL NETWORK REQUEST**，Cloud 可能产生费用；请求使用固定用户私有文件或进程环境中的 Secret。凭据管理接收用户新输入的 Key，不返回已有 Key。启动终端输出固定凭据文件位置（不输出值）。关闭终端即可停止本地服务。
 
-页面的“管理模型配置”区域可选择 Qwen、DeepSeek、Ollama 或 Custom OpenAI-compatible 预设。高级设置包含 `service_id`、Adapter、Secret 环境变量名与 `AuthSpec`；认证要求与 Cloud/Local 类型独立。Provider 注册和 Profile、Capability、Evidence 不依赖凭据是否存在。
+仅 Managed Custom 显示“管理模型配置”，可选择 Qwen、DeepSeek、Ollama 或 Custom OpenAI-compatible 的连接预设。这些 Provider 连接预设不是项目维护的模型 Preset Contract。高级设置包含 `service_id`、Adapter、Secret 环境变量名与 `AuthSpec`；认证要求与 Cloud/Local 类型独立。Provider 注册和 Profile、Capability、Evidence 不依赖凭据是否存在。
 
 凭据优先级为 **Process Environment > 私有项目凭据文件 > Missing**。外部环境明确存在变量，即使值为空也不会回退文件。状态接口只返回变量名、PRESENT/MISSING/NONE_REQUIRED、来源、位置类型及编辑权限，不返回 Key、长度、片段或 Hash。`PROCESS_ENV` 外部只读；`PROJECT_ENV / 用户私有存储` 可通过本地凭据管理设置、替换或删除。首次设置也可先填写未保存的 Custom Profile，再打开凭据管理。
 
@@ -82,9 +96,9 @@ Writer 固定目标为 `%LOCALAPPDATA%\Fishery_AI_Prototype\project-<项目路�
 
 **首次升级需重启旧 Web 进程一次**，并在页面手动重新设置凭据。旧项目 `.env` 不读取、不迁移、不删除，不合并其他文件来源。之后修改私有凭据文件，新请求立即读取，无需重启，进行中的请求仍使用旧快照。外部进程变量仍优先。必需凭据缺失返回 `SECRET_MISSING`；私有路径/ACL 不安全、文件不可读或格式错误返回脱敏的 `CREDENTIAL_FILE_ERROR`；LOCALAPPDATA 缺失或路径无效时启动停止并显示 `CREDENTIAL_STORAGE_UNAVAILABLE`。
 
-Built-in loopback Ollama 显式为 `AuthSpec.NONE`，显示“不需要凭据”，不显示 Key 编辑，不读取任何凭据来源。旧 Local Custom Profile 的 `secret_env` 引用仍保留；不会根据 Local 类型自动改成 NONE。详情见 [R0/R1 实施报告](deep-dive/PROVIDER_CREDENTIAL_REFACTOR_R0_R1.md)。
+Development / Local Experimental 入口使用的旧 loopback Ollama 定义显式为 `AuthSpec.NONE`，显示“不需要凭据”，不显示 Key 编辑，不读取任何凭据来源。旧 Local Custom Profile 的 `secret_env` 引用仍保留；不会根据 Local 类型自动改成 NONE。详情见 [R0/R1 实施报告](deep-dive/PROVIDER_CREDENTIAL_REFACTOR_R0_R1.md)。
 
-“查询可用模型”仅在点击后访问所选服务的模型列表接口；若不支持，可手动填写 Model ID。“测试连接”默认检查模型列表；必要时手动切换到可能收费的最小 Chat。Cloud Profile 保存前必须完成当前连接字段的一次成功测试；Local 可直接保存。顶部 Runtime / Model 切换会同步显示所选配置；Built-in 只能查看，User Custom 可编辑连接参数或删除。新建需填写唯一 Display Name，创建后不可改名；重名返回 `PROFILE_NAME_EXISTS`，如需改名须删除后重建。不再自动生成副本名称或显示冲突操作面板。删除移入 `outputs/custom_profiles/archive/`。用户配置文件位于被 Git 忽略的 `outputs/custom_profiles/`，不含 Key；高级 Capability 仍为 UNKNOWN。历史流程见 [A3.0.4 实施记录](deep-dive/V0.1.1_A3_0_4_CUSTOM_PROFILE_MANAGER.md)，当前规则见 [A3.1.2 实施记录](deep-dive/V0.1.1_A3_1_2_PROFILE_MANAGER_SIMPLIFICATION.md)。
+“查询可用模型”仅在点击后访问所选服务的模型列表接口；若不支持，可手动填写 Model ID。“测试连接”默认检查模型列表；必要时手动切换到可能收费的最小 Chat。Cloud Profile 保存前必须完成当前连接字段的一次成功测试；Local 可直接保存。Managed Custom 的模型连接选择会同步显示所选配置；User Custom 可编辑连接参数或删除，Preset 不显示 CRUD。新建需填写唯一 Display Name，创建后不可改名；重名返回 `PROFILE_NAME_EXISTS`，如需改名须删除后重建。不再自动生成副本名称或显示冲突操作面板。删除移入 `outputs/custom_profiles/archive/`。用户配置文件位于被 Git 忽略的 `outputs/custom_profiles/`，不含 Key；高级 Capability 仍为 UNKNOWN。历史流程见 [A3.0.4 实施记录](deep-dive/V0.1.1_A3_0_4_CUSTOM_PROFILE_MANAGER.md)，当前规则见 [A3.1.2 实施记录](deep-dive/V0.1.1_A3_1_2_PROFILE_MANAGER_SIMPLIFICATION.md)。
 
 页面复用固定 Orchestrator，可选择 **Normal** 或 **Streaming** Chat 分析。Streaming 先显示事实、规则和 RAG 证据，再逐段显示模型正文；完成后显示结构化结果、TTFT、总耗时和 Usage。运行选项由当前精确 Profile 的 Capability 驱动，证据可来自官方文档、模型 Metadata 或独立用户验证；UNKNOWN 的显式高级选项会在传输前返回 `OPTION_UNKNOWN`，基础 Normal + AUTO/UNSET 仍可使用。RAG 证据是背景知识，模型推断与建议单独标注；证据和原始模型正文默认折叠。运行时 Trace 写入被 Git 忽略的 `outputs/web-traces.jsonl`，不写 Prompt、模型正文或 Secret。离线测试使用 Flask 进程内测试客户端与假 Gateway，绝不请求 Cloud。详情见 [A3.2 Capability 报告](deep-dive/V0.1.1_A3_2_CLOUD_CAPABILITY_STREAMING_THINKING.md)与 [R0/R1 实施报告](deep-dive/PROVIDER_CREDENTIAL_REFACTOR_R0_R1.md)。
 

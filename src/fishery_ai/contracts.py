@@ -44,6 +44,7 @@ class Mode(str, Enum):
 class Status(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class UsageSource(str, Enum):
@@ -279,6 +280,10 @@ class RuntimeInfo:
     profile_status: str = "custom"
     service_id: str = "custom"
     model_family: str = "unknown"
+    access_mode: str = "managed_custom"
+    preset_id: str | None = None
+    preset_variant: str | None = None
+    preset_contract_version: str | None = None
 
 
 @dataclass(frozen=True)

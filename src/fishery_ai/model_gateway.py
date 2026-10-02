@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Iterator, Mapping, Protocol
+from typing import TYPE_CHECKING, Iterator, Mapping, Protocol
 import json
 import re
 from urllib.parse import urlsplit
@@ -15,6 +15,9 @@ from .providers import AuthSpec
 from .model_options import (CapabilitySource, GenerationOptions, ModelCapabilities,
                             OptionValidationError, ProfileStatus, ReasoningMode, ReasoningOptions,
                             normalize_base_url, validate_options, Support)
+
+if TYPE_CHECKING:
+    from .manual import ManualRequest, ManualResponse
 
 
 Capabilities = ModelCapabilities
@@ -48,8 +51,16 @@ class ModelProfile:
     model_family: str | None = None
     auth_spec: AuthSpec | None = None
     credential_ref: str | None = None
+    access_mode: str = "managed_custom"
+    preset_id: str | None = None
+    preset_variant: str | None = None
+    preset_contract_version: str | None = None
 
     def __post_init__(self) -> None:
+        if self.access_mode not in ("managed_custom", "preset"):
+            raise ValueError("invalid access_mode")
+        if self.access_mode == "preset" and not all((self.preset_id, self.preset_variant, self.preset_contract_version)):
+            raise ValueError("preset requires a versioned template and variant")
         parsed = urlsplit(self.base_url)
         if not all((self.profile_id, self.display_name, self.provider_kind, self.model, self.provider_id)):
             raise ValueError("profile identity and model are required")
@@ -236,6 +247,10 @@ class RuntimeSnapshot:
     service_id: str = "custom"
     model_family: str = "unknown"
     auth_spec: AuthSpec = AuthSpec.OPTIONAL_BEARER
+    access_mode: str = "managed_custom"
+    preset_id: str | None = None
+    preset_variant: str | None = None
+    preset_contract_version: str | None = None
 
     @property
     def api_key(self) -> str | None:
@@ -245,7 +260,8 @@ class RuntimeSnapshot:
     def public_info(self) -> RuntimeInfo:
         return RuntimeInfo(self.profile_id, self.provider_kind, self.model,
                            self.adapter_id, self.provider_id, self.profile_status.value,
-                           self.service_id, self.model_family)
+                           self.service_id, self.model_family, self.access_mode,
+                           self.preset_id, self.preset_variant, self.preset_contract_version)
 
 
 class ProfileRegistry:
@@ -265,7 +281,8 @@ class ProfileRegistry:
         return cls([apply_official_capabilities(ModelProfile.from_dict(item)) for item in data["profiles"]],
                    credential_store)
 
-    def snapshot(self, profile_id: str, environ: Mapping[str, str] | None = None) -> RuntimeSnapshot:
+    def snapshot(self, profile_id: str, environ: Mapping[str, str] | None = None,
+                 *, apply_runtime_defaults: bool = True) -> RuntimeSnapshot:
         profile = self._profiles[profile_id]
         if self._request_runtime is not None and environ is None:
             if self._request_runtime.profile_id != profile_id:
@@ -273,7 +290,10 @@ class ProfileRegistry:
             return self._request_runtime
         store = self.credential_store if environ is None else CredentialStore(process_env=environ)
         credential = store.resolve(profile.credential_ref, profile.auth_spec)
-        safe_reasoning, safe_response, _ = effective_runtime_defaults(profile)
+        if apply_runtime_defaults:
+            safe_reasoning, safe_response, _ = effective_runtime_defaults(profile)
+        else:
+            safe_reasoning, safe_response = ReasoningOptions(), "normal"
         return RuntimeSnapshot(
             profile_id=profile.profile_id, display_name=profile.display_name,
             provider_kind=profile.provider_kind, base_url=profile.base_url, model=profile.model,
@@ -281,11 +301,14 @@ class ProfileRegistry:
             read_timeout_s=profile.read_timeout_s, total_timeout_s=profile.total_timeout_s,
             max_retries=profile.max_retries, capabilities=profile.capabilities,
             adapter_id=profile.adapter_id, provider_id=profile.provider_id,
-            profile_status=profile.profile_status, default_generation=profile.default_generation,
+            profile_status=profile.profile_status,
+            default_generation=profile.default_generation if apply_runtime_defaults else GenerationOptions(),
             default_reasoning=safe_reasoning,
             default_response_mode=safe_response, credential=credential, auth_spec=profile.auth_spec,
             service_id=profile.service_id or profile.provider_id,
             model_family=profile.model_family or "unknown",
+            access_mode=profile.access_mode, preset_id=profile.preset_id,
+            preset_variant=profile.preset_variant, preset_contract_version=profile.preset_contract_version,
         )
 
 
@@ -314,6 +337,8 @@ def effective_options(request: ModelRequest, runtime: RuntimeSnapshot
         top_p=(explicit.top_p if explicit.top_p is not None else defaults.top_p),
     )
     reasoning = request.reasoning if request.reasoning is not None else runtime.default_reasoning
+    if runtime.access_mode == "preset" and reasoning != runtime.default_reasoning:
+        raise GatewayError("PRESET_OPTION_LOCKED", option="reasoning")
     return generation, reasoning
 
 
@@ -336,6 +361,8 @@ class ModelEvent:
 class ModelGateway(Protocol):
     def complete(self, request: ModelRequest, runtime: RuntimeSnapshot) -> ModelResponse: ...
     def stream(self, request: ModelRequest, runtime: RuntimeSnapshot) -> Iterator[ModelEvent]: ...
+    def manual_complete(self, request: ManualRequest, runtime: RuntimeSnapshot) -> ManualResponse: ...
+    def manual_stream(self, request: ManualRequest, runtime: RuntimeSnapshot) -> Iterator[ManualResponse]: ...
 
 
 class GatewayError(Exception):
@@ -354,6 +381,12 @@ class MockGateway:
 
     def __init__(self):
         self.calls: list[tuple[str, RuntimeSnapshot]] = []
+
+    def manual_complete(self, request: ManualRequest, runtime: RuntimeSnapshot) -> ManualResponse:
+        raise GatewayError("MANUAL_CONNECTION_REQUIRED")
+
+    def manual_stream(self, request: ManualRequest, runtime: RuntimeSnapshot) -> Iterator[ManualResponse]:
+        raise GatewayError("MANUAL_CONNECTION_REQUIRED")
 
     def complete(self, request: ModelRequest, runtime: RuntimeSnapshot) -> ModelResponse:
         generation, reasoning = effective_options(request, runtime)

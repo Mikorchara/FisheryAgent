@@ -13,7 +13,7 @@
       <div>
         <p class="eyebrow">FISHERY AI PROTOTYPE · V0.1.1-A3.0</p>
         <h1>开发验证台</h1>
-        <p class="lede">用同一条分析流程查看 Mock 水质、规则、知识证据和模型结果。</p>
+        <p class="lede">Preset 固定方案、Managed Custom 连接管理、Manual Expert 原始请求实验。</p>
       </div>
       <span class="header-tag">LOCAL · DEVELOPER ONLY</span>
     </header>
@@ -21,8 +21,21 @@
     <div class="layout">
       <aside class="controls panel">
         <div class="panel-heading"><span class="step">01</span><h2>基础模型配置</h2></div>
-        <label for="profile">Runtime / Model</label>
+        <label for="access-mode">运行方式</label>
+        <select id="access-mode">
+          <option value="preset">Preset · 固定模型</option>
+          <option value="managed_custom">Managed Custom · 自定义连接</option>
+          <option value="manual_expert">Manual Expert · 原始请求</option>
+          <option value="development" hidden disabled>Development / Test（附加入口）</option>
+        </select>
+        <p id="mode-note" class="helper"></p>
+        <label id="profile-label" for="profile">Model</label>
         <select id="profile"></select>
+        <div id="preset-variant-field" hidden>
+          <label for="preset-variant">Variant / Thinking</label>
+          <select id="preset-variant"></select>
+          <p class="helper">切换到该模型已发布的精确 Variant；AUTO 使用服务默认行为，不等于 OFF。</p>
+        </div>
         <p id="profile-meta" class="helper"></p>
         <dl id="profile-summary" class="profile-summary"></dl>
         <p id="selected-secret-status" class="helper">Secret 状态：待检查</p>
@@ -70,7 +83,7 @@
             <p class="helper">仅在需要自定义服务身份、模型家族或 Adapter 时修改。</p>
             <label for="custom-auth">AuthSpec <span class="required">必选</span></label>
             <select id="custom-auth"><option value="REQUIRED_BEARER">REQUIRED_BEARER（必须认证）</option><option value="OPTIONAL_BEARER">OPTIONAL_BEARER（可选认证）</option><option value="NONE">NONE（无需凭据）</option></select>
-            <p class="helper">认证要求与 Cloud / Local 分开配置。Built-in Ollama 使用只读 NONE，不需要凭据。</p>
+            <p class="helper">认证要求与 Cloud / Local 分开配置。开发验证入口的 Ollama 使用只读 NONE，不需要凭据。</p>
             <label for="custom-provider">service_id <span class="required">必填</span></label>
             <input id="custom-provider" type="text" maxlength="64" required>
             <p class="helper">API 服务平台标识，例如 dashscope、deepseek_api；自定义兼容服务使用 custom。</p>
@@ -91,7 +104,7 @@
 
         <details id="credential-manager" class="custom-editor">
           <summary>本地凭据管理</summary>
-          <p class="helper">PROJECT_ENV / 用户私有存储：只写入启动时固定的每项目凭据文件，不编辑或自动迁移源码根目录 .env，不访问模型服务。外部环境变量只读；后端不会返回已有 Key。升级后请手动在这里重新设置凭据。</p>
+          <p class="helper">PROJECT_ENV / 用户私有存储：只写入启动时固定的每项目凭据文件，不编辑或自动迁移源码根目录 .env，不访问模型服务。外部环境变量只读；后端不会返回已有 Key。旧存储不会自动迁移；如需迁移请手动设置凭据。</p>
           <dl id="credential-summary" class="profile-summary"></dl>
           <button id="credential-refresh" class="secondary" type="button">刷新凭据状态</button>
           <div id="credential-edit-fields" hidden>
@@ -138,8 +151,9 @@
             <button id="reprobe-streaming" class="secondary compact-action" type="button" hidden>重新验证 Streaming</button>
           </details>
           <h3 class="runtime-options-heading">本次运行选择</h3>
-          <p class="helper">这些选项只影响下一次请求，不会修改 Built-in Capability。</p>
+          <p class="helper">这些选项只影响下一次请求，不会修改 Preset 固定合同或已记录的 Capability。</p>
           <p id="runtime-default-notice" class="helper" role="status" aria-live="polite"></p>
+          <div id="managed-thinking-field">
           <label for="reasoning-mode">Thinking Mode</label>
           <select id="reasoning-mode">
             <option value="auto">AUTO（不发送思考控制参数）</option>
@@ -148,10 +162,12 @@
           </select>
           <p id="thinking-hint" class="helper">AUTO 不发送参数；显式 ON / OFF 会按当前能力校验。</p>
           <div id="effort-control"><label for="reasoning-effort">Reasoning Effort</label><select id="reasoning-effort"><option value="">UNSET（不发送参数）</option><option value="__unknown__" disabled>Reasoning Effort（未验证）</option></select></div>
+          </div>
           <label for="response-mode">Streaming / Response Mode</label>
           <select id="response-mode"><option value="normal">Normal（不启用 Streaming）</option><option value="streaming" disabled>Streaming（未验证）</option></select>
         </details>
 
+        <div id="analysis-inputs">
         <h3 class="control-section-heading">03 · 本次分析输入</h3>
 
         <label for="scenario">水质场景</label>
@@ -167,9 +183,30 @@
           <label class="confirm"><input id="confirm-network" type="checkbox"> 我确认发送真实网络请求</label>
         </div>
 
+        </div>
         <button id="analyze" type="button">开始分析 <span aria-hidden="true">→</span></button>
+        <button id="stop-generation" class="danger" type="button" disabled>停止生成</button>
+        <details id="development-entry" class="advanced-settings">
+          <summary>Development / Test · 开发测试入口</summary>
+          <p class="helper">Mock 仅用于离线测试。Local Experimental 尚未发布为稳定 Preset。</p>
+          <label for="development-target">开发目标</label>
+          <select id="development-target"></select>
+          <button id="use-development" class="secondary" type="button">进入开发验证</button>
+        </details>
         <p id="status" class="status" role="status" aria-live="polite">选择配置后开始。Mock 模式始终离线。</p>
       </aside>
+
+        <section id="manual-expert" class="panel manual-panel" hidden>
+          <h2>Manual Expert · 原始请求实验</h2>
+          <p class="helper">仅使用左侧已保存目标的连接、Timeout 和凭据引用。新增连接请先进入 Managed Custom。请求体不经过 Capability、Runtime Defaults 或 Fishery 分析；不自动加入 Thinking、Effort、include_usage。不执行 tool_calls。</p>
+          <dl id="manual-connection" class="profile-summary"></dl>
+          <label for="manual-body">Raw request body（JSON，最多 12 KiB）</label>
+          <textarea id="manual-body" rows="16" spellcheck="false"></textarea>
+          <p class="helper">model 必须与当前连接一致；不允许自定义 Headers、Authorization、URL 或传输配置。Secret 仍由用户私有凭据管理提供；不要在请求正文填写 Key。retry=0；Stop 与分析共用。</p>
+          <button id="manual-send" class="secondary" type="button">Send · REAL NETWORK REQUEST</button>
+          <p id="manual-status" class="status" role="status" aria-live="polite"></p>
+          <h3>Raw Response / Usage / Latency</h3><pre id="manual-output" class="model-output"></pre>
+        </section>
 
       <main class="results" id="results" hidden>
         <section class="panel output-panel">
@@ -228,7 +265,7 @@
       <div class="empty-state panel" id="empty-state">
         <span class="empty-symbol" aria-hidden="true">◎</span>
         <h2>分析结果将在这里展开</h2>
-        <p>先选择 Profile 与场景，再查看确定性事实、检索证据和模型解释。</p>
+        <p>先选择运行方式、模型与场景，再查看确定性事实、检索证据和模型解释。</p>
       </div>
     </div>
     <footer>本页面仅用于开发验证。传感器事实和规则结果由程序提供；Cloud 结果需人工核查。</footer>
