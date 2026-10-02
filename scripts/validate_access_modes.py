@@ -30,7 +30,11 @@ def run_validation():
         ("local_thinking_cancel", "ollama-qwen35-4b-local", False, True),
         ("local_manual_off", "ollama-qwen35-4b-local", True, False),
     ):
-        profile = profiles[profile_id]
+        profile = profiles.get(profile_id)
+        if profile is None:
+            records.append({"case":name,"profile_id":profile_id,"status":"blocked",
+                            "error_code":"INACTIVE_VALIDATION_PROFILE","sdk_attempts":0})
+            continue
         try:
             runtime = ProfileRegistry([profile], credentials).snapshot(profile_id, apply_runtime_defaults=not manual)
         except CredentialFileError:

@@ -164,7 +164,10 @@ def run_real_validation(*, check: str, scenario: str, confirm_network: bool,
         credentials = credential_store
     registry = ProfileRegistry.from_json(RESOURCE_ROOT.joinpath(
         "profiles/deepseek_experimental.json"), credentials)
-    profile = registry._profiles[PROFILE_ID]
+    profile = registry._profiles.get(PROFILE_ID)
+    if profile is None:
+        print("INACTIVE_VALIDATION_PROFILE")
+        return 2
     try:
         runtime = _probe_runtime(registry.snapshot(PROFILE_ID), check)
     except CredentialFileError:

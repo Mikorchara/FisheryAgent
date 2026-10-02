@@ -1004,23 +1004,17 @@ test('left settings have three layers, desktop independent scroll, and local def
   assert.equal(page.element('edit-profile').hidden, true);
 });
 
-test('editing the basic model identity clears draft capability display before save', () => {
+test('editing draft invalidation does not alter selected runtime controls or capability display', () => {
   const page = makePage(async () => ({ok: true, json: async () => ({})}));
   page.element('reasoning-mode').value = 'off';
   page.element('response-mode').value = 'streaming';
-  page.element('thinking-probe-actions').hidden = false;
-  page.element('thinking-reverify-actions').hidden = false;
+  page.element('streaming-capability').textContent = 'SUPPORTED';
+  page.element('probe-streaming').hidden = false;
   vm.runInContext('formMode = "edit"; invalidateTest()', page.context);
-  assert.match(page.element('streaming-capability').textContent, /UNKNOWN/);
-  assert.equal(page.element('probe-streaming').hidden, true);
-  assert.equal(page.element('probe-thinking-on').hidden, true);
-  assert.equal(page.element('reprobe-thinking-on').hidden, true);
-  assert.equal(page.element('reasoning-mode').value, 'auto');
-  assert.equal(page.element('response-mode').value, 'normal');
-  assert.equal(page.element('reasoning-mode').children.find((item) => item.value === 'on').disabled, true);
-  assert.equal(page.element('response-mode').children.find((item) => item.value === 'streaming').disabled, true);
-  assert.equal(page.element('reasoning-effort').children.find((item) => item.value === '__unknown__').disabled, true);
-  assert.equal(page.element('refresh-metadata').hidden, true);
+  assert.equal(page.element('streaming-capability').textContent, 'SUPPORTED');
+  assert.equal(page.element('probe-streaming').hidden, false);
+  assert.equal(page.element('reasoning-mode').value, 'off');
+  assert.equal(page.element('response-mode').value, 'streaming');
 });
 
 test('Profile switching restores saved runtime defaults and verified probes move to advanced actions', async () => {
@@ -1543,4 +1537,207 @@ test('three-mode Managed Custom Normal and Streaming use the unchanged shared an
     assert.equal(call.body.scenario,'low_oxygen');
     assert.equal(call.body.reasoning_mode,undefined);
   }
+});
+
+
+test('clean-room empty Preset, Managed and Manual views stay safe and allow a clean new draft',async()=>{
+  const mock={profile_id:'mock-demo',display_name:'Mock',runtime_type:'mock',source:'built_in',
+    auth_spec:'NONE',model:'offline-mock',capabilities:{streaming:'supported'}};
+  const page=threeModePage(null,[mock]);await vm.runInContext('init()',page.context);
+  assert.equal(page.element('analyze').disabled,true);
+  assert.match(page.element('status').textContent,/暂无已发布 Preset/);
+  await vm.runInContext('setAccessMode("managed_custom")',page.context);
+  assert.match(page.element('status').textContent,/尚无自定义连接/);
+  assert.equal(page.element('new-profile').disabled,false);
+  await page.element('new-profile').dispatch('click');
+  assert.equal(page.element('custom-editor').open,true);
+  for(const id of ['custom-name','custom-url','custom-model','custom-secret-env'])
+    assert.equal(page.element(id).value,'');
+  assert.equal(page.element('custom-default-thinking').children.find(x=>x.value==='on').disabled,true);
+  await vm.runInContext('setAccessMode("manual_expert")',page.context);
+  assert.equal(page.element('manual-send').disabled,true);
+  assert.match(page.element('manual-status').textContent,/暂无可用连接/);
+  assert.equal(page.calls.some(x=>/credential|analyze|probe|manual\//.test(x.url)),false);
+});
+
+test('clean-room empty model catalogs retain the offline Mock development path',async()=>{
+  const mock={profile_id:'mock-demo',display_name:'Mock',runtime_type:'mock',source:'built_in',
+    auth_spec:'NONE',model:'offline-mock',profile_status:'custom',capabilities:{streaming:'supported'}};
+  const page=threeModePage(null,[mock]);await vm.runInContext('init()',page.context);
+  await page.element('use-development').dispatch('click');
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'mock-demo');
+  assert.equal(page.element('analyze').disabled,false);
+  assert.equal(page.calls.some(x=>/analyze|probe|manual\//.test(x.url)),false);
+});
+
+
+function preferenceEditPage(initialSupported=true, extraFetch=null) {
+  const caps=initialSupported ? {streaming:'supported',source:'USER_VERIFIED',
+    streaming_evidence:{status:'supported',source:'USER_VERIFIED'},
+    thinking_on:{status:'supported',source:'USER_VERIFIED'},thinking_off:{status:'supported',source:'USER_VERIFIED'},
+    thinking_streaming_combination:{status:'supported',source:'USER_VERIFIED'}} :
+    {streaming:'unknown',thinking_on:{status:'unknown'},thinking_off:{status:'unknown'}};
+  let persisted={profile_id:'custom-edit',display_name:'Edit fixture',source:'user_custom',profile_status:'custom',
+    service_id:'dashscope',adapter_id:'openai_chat',base_url:'http://localhost:8111/v1',model:'exact-a',runtime_type:'local',
+    auth_spec:'NONE',thinking_probe_available:true,stored_default_thinking_mode:initialSupported?'off':'auto',
+    stored_default_response_mode:initialSupported?'streaming':'normal',capabilities:caps};
+  let fields={display_name:persisted.display_name,service_id:persisted.service_id,model_family:'unknown',adapter_id:persisted.adapter_id,
+    base_url:persisted.base_url,model:persisted.model,secret_env:'',provider_kind:'local',auth_spec:'NONE',
+    default_thinking_mode:persisted.stored_default_thinking_mode,default_response_mode:persisted.stored_default_response_mode};
+  const calls=[];
+  const page=makePage(async(url,options={})=>{
+    const body=options.body ? JSON.parse(options.body) : null;
+    calls.push({url,method:options.method||'GET',body});
+    if(extraFetch) { const response=await extraFetch(url,options); if(response) return response; }
+    if(url==='/api/config')return r2Reply({profiles:[persisted],presets:[],scenarios:['normal']});
+    if(url.endsWith('/thinking-probe')||url.endsWith('/probe')) {
+      const key=body.mode ? `thinking_${body.mode}` : 'streaming';
+      const updated={...persisted.capabilities,[key]:body.mode ? {status:'supported',source:'USER_VERIFIED'}:'supported'};
+      if(!body.mode){updated.source='USER_VERIFIED';updated.streaming_evidence={status:'supported',source:'USER_VERIFIED'};}
+      persisted={...persisted,capabilities:updated};
+      return r2Reply({status:'success',capability:updated});
+    }
+    if(url==='/api/profiles/custom-edit'&&options.method==='PUT') {
+      fields={...body};delete fields.test_id;
+      persisted={...persisted,model:fields.model,base_url:fields.base_url,service_id:fields.service_id,adapter_id:fields.adapter_id,
+        stored_default_thinking_mode:fields.default_thinking_mode,stored_default_response_mode:fields.default_response_mode,
+        capabilities:{streaming:'unknown',thinking_on:{status:'unknown'},thinking_off:{status:'unknown'}}};
+      return r2Reply({profile:persisted});
+    }
+    if(url==='/api/profiles/custom-edit')return r2Reply({profile:persisted,fields,editable:true});
+    throw new Error(`Unexpected offline route ${url}`);
+  });
+  return {...page,calls,persisted:()=>persisted,fields:()=>fields};
+}
+
+async function startPreferenceEdit(page) {
+  await vm.runInContext('init();',page.context);
+  await vm.runInContext('setAccessMode("managed_custom");',page.context);
+  await new Promise(setImmediate);
+  await page.element('edit-profile').dispatch('click');
+}
+
+test('Default Response gate locks UNKNOWN UNSUPPORTED and CONFLICT while retaining a historical preference',()=>{
+  const page=makePage(async()=>{throw new Error('offline');});
+  for(const item of [{status:'unknown'},{status:'unsupported'},{status:'unknown',resolution:'EVIDENCE_CONFLICT'}]) {
+    vm.runInContext(`formMode='edit';updateDefaultPreferenceControls({stored_default_response_mode:'streaming',capabilities:{streaming_evidence:${JSON.stringify(item)}}},'auto','streaming')`,page.context);
+    const options=page.element('custom-default-response').children;
+    assert.equal(options.find(x=>x.value==='normal').disabled,false);
+    assert.equal(options.find(x=>x.value==='streaming').disabled,true);
+    assert.match(options.find(x=>x.value==='streaming').textContent,item.resolution?/证据冲突/:item.status==='unsupported'?/不支持/:/先执行 Streaming Probe/);
+    assert.equal(page.element('custom-default-response').value,'streaming');
+    assert.match(page.element('runtime-default-summary').textContent,/响应已保存偏好：streaming.*安全响应：normal/);
+  }
+});
+
+test('Thinking ON and OFF Probe refresh resolved panel and default gate together without discarding the edit',async()=>{
+  const page=preferenceEditPage(false);await startPreferenceEdit(page);
+  for(const mode of ['on','off']) {
+    assert.equal(page.element('custom-default-thinking').children.find(x=>x.value===mode).disabled,true);
+    await vm.runInContext(`probeThinking('${mode}')`,page.context);
+    assert.equal(page.element('custom-default-thinking').children.find(x=>x.value===mode).disabled,false);
+    assert.equal(page.element('reasoning-mode').children.find(x=>x.value===mode).disabled,false);
+    assert.equal(vm.runInContext('formMode',page.context),'edit');
+  }
+});
+
+test('Streaming Probe refresh unlocks Default Response immediately and preserves its draft preference',async()=>{
+  const page=preferenceEditPage(false);await startPreferenceEdit(page);
+  assert.equal(page.element('custom-default-response').children.find(x=>x.value==='streaming').disabled,true);
+  await vm.runInContext('probeSelectedCapability()',page.context);
+  assert.equal(page.element('custom-default-response').children.find(x=>x.value==='streaming').disabled,false);
+  assert.equal(page.element('response-mode').children.find(x=>x.value==='streaming').disabled,false);
+  assert.equal(page.element('custom-default-response').value,'normal');
+  assert.equal(page.element('cancel-edit').hidden,false);
+});
+
+test('enter Edit and changing Draft Identity leave persisted profile capability and runtime unchanged',async()=>{
+  const page=preferenceEditPage();await vm.runInContext('init()',page.context);
+  await vm.runInContext('setAccessMode("managed_custom")',page.context);await new Promise(setImmediate);
+  const before=vm.runInContext('JSON.stringify(selectedProfile())',page.context);
+  const capabilityText=page.element('streaming-capability').textContent;
+  await page.element('edit-profile').dispatch('click');
+  assert.equal(page.element('custom-default-thinking').children.find(x=>x.value==='off').disabled,false);
+  page.element('custom-model').value='exact-b';await page.element('custom-model').dispatch('input');
+  assert.equal(vm.runInContext('JSON.stringify(selectedProfile())',page.context),before);
+  assert.equal(page.element('streaming-capability').textContent,capabilityText);
+  assert.equal(page.element('reasoning-mode').value,'off');
+  assert.equal(page.element('response-mode').value,'streaming');
+  assert.equal(page.element('custom-default-thinking').value,'off');
+  assert.equal(page.element('custom-default-response').value,'streaming');
+  assert.equal(page.element('custom-default-thinking').children.find(x=>x.value==='off').disabled,true);
+  assert.match(page.element('draft-identity-notice').textContent,/保存后将重新解析能力/);
+  assert.equal(page.calls.some(x=>x.method==='PUT'),false);
+});
+
+test('Cancel Edit restores all persisted fields without a request Resolve write or runtime change',async()=>{
+  const page=preferenceEditPage();await startPreferenceEdit(page);
+  page.element('custom-model').value='discard-model';page.element('custom-url').value='http://localhost:9999/v1';
+  await page.element('custom-model').dispatch('input');
+  const count=page.calls.length;
+  await page.element('cancel-edit').dispatch('click');
+  assert.equal(page.calls.length,count);
+  const restored=JSON.parse(vm.runInContext('JSON.stringify(collectFields())',page.context));
+  assert.deepEqual(restored,page.fields());
+  assert.equal(page.element('reasoning-mode').value,'off');
+  assert.equal(page.element('response-mode').value,'streaming');
+  assert.equal(page.element('custom-model').disabled,true);
+  assert.equal(page.element('cancel-edit').hidden,true);
+  assert.equal(page.element('edit-profile').hidden,false);
+});
+
+test('saving changed Identity alone replaces runtime capability and safely falls back while keeping stored preferences',async()=>{
+  const page=preferenceEditPage();await startPreferenceEdit(page);
+  page.element('custom-model').value='exact-b';await page.element('custom-model').dispatch('input');
+  assert.equal(vm.runInContext('selectedProfile().model',page.context),'exact-a');
+  await page.element('save-profile').dispatch('click');
+  assert.equal(page.calls.filter(x=>x.method==='PUT').length,1);
+  assert.equal(vm.runInContext('selectedProfile().model',page.context),'exact-b');
+  assert.equal(vm.runInContext('selectedProfile().capabilities.streaming',page.context),'unknown');
+  assert.equal(page.element('reasoning-mode').value,'auto');
+  assert.equal(page.element('response-mode').value,'normal');
+  assert.equal(page.element('custom-default-thinking').value,'off');
+  assert.equal(page.element('custom-default-response').value,'streaming');
+  assert.equal(page.fields().default_thinking_mode,'off');
+  assert.equal(page.fields().default_response_mode,'streaming');
+});
+
+test('normalized trailing slash and host case in Edit do not discard the current exact capability',async()=>{
+  const page=preferenceEditPage();await startPreferenceEdit(page);
+  page.element('custom-url').value='HTTP://LOCALHOST:8111/v1///';await page.element('custom-url').dispatch('input');
+  assert.equal(page.element('custom-default-thinking').children.find(x=>x.value==='off').disabled,false);
+  assert.equal(page.element('custom-default-response').children.find(x=>x.value==='streaming').disabled,false);
+  assert.doesNotMatch(page.element('draft-identity-notice').textContent,/模型身份已修改/);
+});
+
+
+test('Probe refresh preserves changed draft identity without granting it the selected model capability',async()=>{
+  const page=preferenceEditPage(false);await startPreferenceEdit(page);
+  page.element('custom-model').value='draft-unverified';await page.element('custom-model').dispatch('input');
+  await vm.runInContext('probeThinking("on")',page.context);
+  assert.equal(vm.runInContext('selectedProfile().model',page.context),'exact-a');
+  assert.equal(vm.runInContext('selectedProfile().capabilities.thinking_on.status',page.context),'supported');
+  assert.equal(page.element('custom-model').value,'draft-unverified');
+  assert.equal(page.element('custom-default-thinking').children.find(x=>x.value==='on').disabled,true);
+  assert.equal(page.element('reasoning-mode').value,'auto');
+  assert.equal(page.calls.some(x=>x.method==='PUT'),false);
+});
+
+test('Cancel Edit during a pending capability refresh cannot resurrect the discarded draft',async()=>{
+  let hold=false,release;
+  const page=preferenceEditPage(true,async(url)=>{
+    if(hold&&url==='/api/config')return new Promise(done=>{release=done;});
+  });
+  await startPreferenceEdit(page);
+  page.element('custom-model').value='discard-pending';await page.element('custom-model').dispatch('input');
+  hold=true;
+  const pending=vm.runInContext('refreshProfiles("custom-edit",{preserveDraft:true})',page.context);
+  await new Promise(setImmediate);
+  await page.element('cancel-edit').dispatch('click');
+  release(r2Reply({profiles:[page.persisted()]}));
+  await pending;
+  assert.equal(vm.runInContext('formMode',page.context),'view');
+  assert.equal(page.element('custom-model').value,'exact-a');
+  assert.equal(page.element('cancel-edit').hidden,true);
+  assert.equal(page.calls.some(x=>x.method==='PUT'),false);
 });

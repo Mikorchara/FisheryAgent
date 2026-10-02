@@ -1,0 +1,73 @@
+[
+  {
+    "service_id": "dashscope",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen-plus",
+    "default": false,
+    "efforts": [],
+    "urls": [
+      "https://help.aliyun.com/zh/model-studio/deep-thinking",
+      "https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions"
+    ]
+  },
+  {
+    "service_id": "dashscope",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen3.8-flash",
+    "default": true,
+    "efforts": [
+      "low",
+      "medium",
+      "xhigh"
+    ],
+    "urls": [
+      "https://help.aliyun.com/zh/model-studio/deep-thinking",
+      "https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions"
+    ]
+  },
+  {
+    "service_id": "dashscope",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen3.8-omni-flash",
+    "default": true,
+    "efforts": [
+      "low",
+      "medium",
+      "xhigh"
+    ],
+    "urls": [
+      "https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions",
+      "https://help.aliyun.com/zh/model-studio/qwen-omni"
+    ]
+  },
+  {
+    "service_id": "deepseek_api",
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "default": true,
+    "efforts": [
+      "low",
+      "high",
+      "max"
+    ],
+    "urls": [
+      "https://api-docs.deepseek.com/guides/thinking_mode/",
+      "https://api-docs.deepseek.com/zh-cn/api/create-chat-completion/"
+    ]
+  },
+  {
+    "service_id": "deepseek_api",
+    "base_url": "https://api.deepseek.com/v1",
+    "model": "deepseek-flash",
+    "default": true,
+    "efforts": [
+      "low",
+      "high",
+      "max"
+    ],
+    "urls": [
+      "https://api-docs.deepseek.com/guides/thinking_mode/",
+      "https://api-docs.deepseek.com/zh-cn/api/create-chat-completion/"
+    ]
+  }
+]

@@ -437,3 +437,8 @@ class PrivateStorageWebTests(r2.CredentialWebTests):
             response = self.api_change("create", FAKE_A, **{field: str(self.source_root / ".env")})
             self.assertEqual(response.get_json()["error_code"], "INVALID_REQUEST")
         self.assertFalse(self.env.exists())
+
+
+# Explicit historical fixtures; not active startup assets.
+from historical_model_fixtures import install as _install_history
+_install_history(globals())

@@ -166,3 +166,8 @@ class AccessWebTests(unittest.TestCase):
         response = self.client.post("/api/manual", json={**self.payload(control),"body":body,"confirm_network":False}, headers=self.headers)
         self.assertEqual(response.json["error_code"], "NETWORK_CONFIRMATION_REQUIRED")
         self.assertEqual(self.seen, [])
+
+
+# Explicit historical fixtures; not active startup assets.
+from historical_model_fixtures import install as _install_history
+_install_history(globals())

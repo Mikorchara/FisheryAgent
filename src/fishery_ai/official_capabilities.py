@@ -8,19 +8,9 @@ DASHSCOPE_OMNI_DOC = "https://help.aliyun.com/zh/model-studio/qwen-omni"
 DEEPSEEK_CHAT_DOC = "https://api-docs.deepseek.com/zh-cn/api/create-chat-completion/"
 DEEPSEEK_THINKING_DOC = "https://api-docs.deepseek.com/guides/thinking_mode/"
 
-# Model IDs are exact. Endpoint entries are explicit, reviewed API roots.
-DECLARATIONS = {
-    ("dashscope", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus"):
-        (False, (), (DASHSCOPE_THINKING_DOC, DASHSCOPE_CHAT_DOC)),
-    ("dashscope", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen3.8-flash"):
-        (True, ("low", "medium", "xhigh"), (DASHSCOPE_THINKING_DOC, DASHSCOPE_CHAT_DOC)),
-    ("dashscope", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen3.8-omni-flash"):
-        (True, ("low", "medium", "xhigh"), (DASHSCOPE_CHAT_DOC, DASHSCOPE_OMNI_DOC)),
-    ("deepseek_api", "https://api.deepseek.com", "deepseek-flash"):
-        (True, ("low", "high", "max"), (DEEPSEEK_THINKING_DOC, DEEPSEEK_CHAT_DOC)),
-    ("deepseek_api", "https://api.deepseek.com/v1", "deepseek-flash"):
-        (True, ("low", "high", "max"), (DEEPSEEK_THINKING_DOC, DEEPSEEK_CHAT_DOC)),
-}
+# Clean-room reset: no active model-level declarations. Historical declarations
+# are explicit offline fixtures only; ProtocolSpec remains independent.
+DECLARATIONS = {}
 
 
 def apply_official_capabilities(profile):

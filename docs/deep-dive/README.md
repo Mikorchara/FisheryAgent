@@ -40,3 +40,5 @@
 - [R3 ProtocolSpec / R4 Evidence Resolver / R5 Unknown Model Probe](PROTOCOL_EVIDENCE_PROBE_R3_R4_R5.md)：当前阶段实施与测试，包含既有 Credential UI 路径、协议编码分离、保守冲突合并、显式未知模型验证与人工验收项。前面的历史报告中“R3–R5 未实施”描述仅适用于其原阶段。
 
 历史报告描述的是编写时的状态。当前环境准备与项目范围请以[文档导航](../README.md)为准。
+
+- [Clean-room Model Validation Reset](CLEAN_ROOM_MODEL_VALIDATION_RESET.md)：当前空模型起点、可恢复归档、协议/凭据边界、首次 Managed 验证步骤和阶段 A checkpoint。

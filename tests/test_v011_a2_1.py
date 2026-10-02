@@ -147,3 +147,8 @@ class ErrorMappingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# Explicit historical fixtures; not active startup assets.
+from historical_model_fixtures import install as _install_history
+_install_history(globals())

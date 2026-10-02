@@ -382,25 +382,16 @@ def create_app(*, trace_path: Path | None = None,
 
     @app.get("/api/config")
     def config():
-        known = {profile.service_id: profile for profile in builtins
-                 if profile.profile_id != MOCK_PROFILE_ID}
-        presets = [{"id": name, "label": PROVIDERS.get(name).display_name, "service_id": profile.service_id,
-                    "model_family": profile.model_family,
-                    "adapter_id": profile.adapter_id, "base_url": profile.base_url,
-                    "model": profile.model, "secret_env": profile.secret_env,
-                    "auth_spec": (AuthSpec.OPTIONAL_BEARER.value if name == "ollama"
-                                  else PROVIDERS.get(name).auth_spec.value),
-                    "provider_kind": profile.provider_kind, "provider_id": profile.provider_id}
-                   for name, label in (("dashscope", "Qwen · DashScope"),
-                                       ("deepseek_api", "DeepSeek API"),
-                                       ("ollama", "Ollama · 本地"))
-                   for profile in (known[name],)]
-        presets.append({"id": "custom", "label": "Custom OpenAI-compatible",
-                        "service_id": "custom", "model_family": "unknown",
-                        "provider_id": "custom", "adapter_id": "generic_openai_chat",
-                        "base_url": "http://localhost:11434/v1", "model": "",
-                        "secret_env": "", "provider_kind": "local"})
-        presets[-1]["auth_spec"] = AuthSpec.OPTIONAL_BEARER.value
+        # Connection templates are provider infrastructure, independent of model catalogs.
+        presets = [{"id": "custom" if spec.service_id == "generic_openai" else spec.service_id,
+                    "label": spec.display_name,
+                    "service_id": "custom" if spec.service_id == "generic_openai" else spec.service_id,
+                    "model_family": "unknown", "adapter_id": spec.adapter_id,
+                    "base_url": spec.default_base_url or "", "model": "",
+                    "secret_env": spec.expected_credential_name or "", "auth_spec": spec.auth_spec.value,
+                    "provider_kind": spec.default_deployment,
+                    "provider_id": "custom" if spec.service_id == "generic_openai" else spec.service_id}
+                   for spec in PROVIDERS.all()]
         return jsonify({
             "profiles": [_profile_public(profile, sources[profile.profile_id])
                          for profile in profiles.values()],

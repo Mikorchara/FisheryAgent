@@ -63,3 +63,8 @@ class PresetTests(unittest.TestCase):
                     json={"confirm_network": True, "capability": "streaming"})
                 self.assertEqual(response.get_json()["error_code"], "PRESET_READ_ONLY")
             self.assertTrue(calls)
+
+
+# Explicit historical fixtures; not active startup assets.
+from historical_model_fixtures import install as _install_history
+_install_history(globals())

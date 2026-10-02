@@ -118,3 +118,8 @@ class EvidenceResolverTests(unittest.TestCase):
         runtime = registry.snapshot("json", {})
         self.assertEqual(runtime.capabilities.reasoning_on, Support.SUPPORTED)
         self.assertEqual(dict(runtime.capabilities.resolution_details)["reasoning_on"], "EVIDENCE_AGREEMENT")
+
+
+# Explicit historical fixtures; not active startup assets.
+from historical_model_fixtures import install as _install_history
+_install_history(globals())

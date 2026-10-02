@@ -1,8 +1,16 @@
 # 构建与运行
 
+## 当前 Clean-room 起点（2026-10-03）
+
+活动真实模型目录已重置：没有已发布 Preset、Legacy Built-in 或 User Custom 模型；模型级官方声明表和本地活动 Evidence 均为空。Provider 连接模板、ProtocolSpec、凭据、Resolver、Probe、Cancellation 和 Manual V1 保留。
+
+使用 `python -m fishery_ai web`；默认 Preset 页显示空状态。切换 **Managed Custom → 新建**，选择 Provider、填写精确 Model 和 credential_ref；在本地凭据管理中只查看状态或显式设置私有凭据。原凭据未清除，无须重新录入仍有效的 Key。完成显式连接测试并保存后，高级能力仍为 UNKNOWN；先运行 Normal + AUTO，再按需单项 Probe。模型列表成功不解锁 Capability。Manual V1 在有 Saved Connection 后仍可用；Development / Test 保留 Mock。
+
+历史模型数据只保存在 Git、报告、`tests/fixtures/historical_model_assets/` 和非活动 `outputs/archive/model-validation-reset-20261003/`。正常启动从不读取这些测试或归档目录。详见 [Clean-room Reset 报告](deep-dive/CLEAN_ROOM_MODEL_VALIDATION_RESET.md)。
+
 ## Preset / Stop / Manual Expert
 
-继续使用 `python -m fishery_ai web` 启动本机验证台。一级入口为 **Preset / Managed Custom / Manual Expert**，默认显示 Preset，但启动和选择模型不会发送生成请求。Preset 的 Model 中 Qwen Plus 只显示一次，通过独立 Variant 选择 AUTO / OFF / ON；Response Mode 独立选择。DeepSeek Flash 暂只有 AUTO + Normal。旧 Built-in Cloud 不再显示，底层 ID 保留用于兼容。Mock 与未发布的 Ollama 位于折叠的 **Development / Test** 附加入口。
+一级入口仍为 **Preset / Managed Custom / Manual Expert**，默认显示 Preset；当前 Preset 为空，启动不会发送生成请求。Thinking 与 Response Mode 保持独立。**Development / Test** 当前只保留 Mock；过去的 Qwen、DeepSeek 与 Ollama 模型方案已退出活动目录，相关合同仅在显式历史 fixture 测试中加载。
 
 点击“停止生成”会先向后端请求取消 SDK I/O，再停止浏览器读取；页面分别显示后端关闭状态与远端计算 UNKNOWN，不能据此保证停止云端计费。
 
@@ -12,7 +20,7 @@
 
 凭据仍统一来自 **PROCESS_ENV > user-private PROJECT_ENV > MISSING**。上一实施阶段的受控联网阻塞记录保留在[阶段实施报告](deep-dive/PRESET_CANCELLATION_MANUAL_IMPLEMENTATION.md)；用户随后已反馈主要功能人工验证正常。该 UI 整理轮次未发真实请求；用户已反馈当前界面人工验收基本正常，历史待验收记录保留在[三模式 UI 整理报告](deep-dive/MODEL_SELECTION_UI_THREE_MODE_CLEANUP.md)。
 
-需要另行受控复测时使用 `python -X utf8 scripts/validate_access_modes.py --confirm-real-network`，每次最多四次生成尝试、retry=0、小输出上限；无确认参数禁止网络。默认离线测试不会执行它。不要将 `outputs/` 记录加入 Git。
+历史 `validate_access_modes.py` 仍保留确认/retry/timeout 合同，但当前模型目录为空，返回 `INACTIVE_VALIDATION_PROFILE`，不发送请求。它不会从测试 fixture、归档或旧根 `.env` 恢复模型。新一轮验证使用 Managed Custom 的显式 UI；不要将 `outputs/` 记录加入 Git。
 
 ## Managed Custom：凭据与高级能力验证
 
@@ -73,7 +81,7 @@ python -m fishery_ai demo --profile local-demo --scenario partial_stale
 
 输出 JSON 后会打印 **Request Usage** 与 **Validation Session Usage**。Mock 不返回真实 Token 统计，因此显示 `unavailable`，含义是服务没有提供数据，并非消耗为 0。会话累计只在当前进程内存中；本 Demo 只有一次请求。Profile 示例为 EXPERIMENTAL/CUSTOM，没有真实 VERIFIED 预设。
 
-## 显式真实 Cloud 验证
+## 历史显式真实 Cloud 验证（当前停用）
 
 仅在拥有明确授权、确认可能产生费用时使用。例如从项目根目录执行：
 
@@ -81,7 +89,7 @@ python -m fishery_ai demo --profile local-demo --scenario partial_stale
 python -m fishery_ai validate-real --check basic --confirm-network
 ```
 
-该命令使用单独的 DeepSeek EXPERIMENTAL Profile，不改变 `demo` 的离线语义。真实入口每次只执行指定的一项检查，自动重试设为 0；输出仅显示 `Secret: PRESENT/MISSING`，不显示 Key。缺失 Secret 时不会调用 API。当前可用检查与已实测结果见 [A2 报告](deep-dive/V0.1.1_A2_DEEPSEEK_VALIDATION_REPORT.md)；不要把实验探测能力当作已验证的普通业务配置。
+当前该命令所用的 DeepSeek EXPERIMENTAL Profile 已退出活动目录；确认参数存在时也只返回 `INACTIVE_VALIDATION_PROFILE`，不会联网或回退到归档。三个 `scripts/validate_qwen_*.py` 同样停用。以下是历史行为说明，不代表当前模型已验证：该命令曾使用单独的 DeepSeek EXPERIMENTAL Profile，不改变 `demo` 的离线语义。真实入口每次只执行指定的一项检查，自动重试设为 0；输出仅显示 `Secret: PRESENT/MISSING`，不显示 Key。缺失 Secret 时不会调用 API。当前可用检查与已实测结果见 [A2 报告](deep-dive/V0.1.1_A2_DEEPSEEK_VALIDATION_REPORT.md)；不要把实验探测能力当作已验证的普通业务配置。
 
 ## 本地 Developer Validation Web UI
 

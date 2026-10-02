@@ -2,6 +2,7 @@ const $ = (id) => document.getElementById(id);
 let profiles = [];
 let presets = [];
 let editingId = null;
+let editDraft = null;
 let testId = null;
 let testedFingerprint = null;
 let formMode = "view";
@@ -415,7 +416,7 @@ function renderProfiles(selectedId) {
   const representative = visible.find(item => item.profile_id === selectedId
     || (accessMode === "preset" && selected?.preset_id && item.preset_id === selected.preset_id));
   $("profile").value = (representative || visible[0])?.profile_id || "";
-  if (!visible.length) appendChoice($("profile"), "", "尚无自定义连接，请点击新建", true);
+  if (!visible.length) appendChoice($("profile"), "", emptyProfileMessage(), true);
   renderPresetVariants(selectedId);
   $("development-target").replaceChildren();
   for (const item of developmentProfiles()) appendChoice($("development-target"), item.profile_id,
@@ -425,7 +426,7 @@ function renderProfiles(selectedId) {
   updateModeView();
   $("manual-send").disabled = !visible.length;
   $("analyze").disabled = !visible.length;
-  updateProfile();
+  return updateProfile();
 }
 
 function capabilityStatus(profile, name) {
@@ -539,6 +540,12 @@ function syncRuntimeOptionsFromCurrentSelections() {
     response: $("response-mode").value, effort: $("reasoning-effort").value});
 }
 
+function emptyProfileMessage() {
+  return accessMode === "preset" ? "暂无已发布 Preset；请切换 Managed Custom 新建连接"
+    : accessMode === "manual_expert" ? "暂无可用连接；请先在 Managed Custom 保存连接"
+      : "尚无自定义连接，请点击新建";
+}
+
 function updateProfile() {
   const profile = selectedProfile();
   if (!profile) {
@@ -549,7 +556,14 @@ function updateProfile() {
     $("capability-panel").hidden = true;
     $("edit-profile").hidden = true;
     $("delete-profile").hidden = true;
-    setStatus("尚无自定义连接，请新建并保存后运行。", false);
+    editingId = null;
+    setFormMode("view");
+    $("provider-preset").value = "";
+    for (const id of Object.values(customFields)) $(id).value = "";
+    updateRuntimeOptionControls(null, {reasoning: "auto", response: "normal", effort: ""});
+    $("runtime-default-notice").textContent = "";
+    setStatus(emptyProfileMessage(), false);
+    $("manual-status").textContent = accessMode === "manual_expert" ? emptyProfileMessage() : "";
     return;
   }
   if (accessMode === "manual_expert") { updateManualTarget(profile); return; }
@@ -561,6 +575,8 @@ function updateProfile() {
   const revision = ++formRevision;
   editingId = null;
   setFormMode("view");
+  updateDefaultPreferenceControls(profile, profile.stored_default_thinking_mode || "auto",
+    profile.stored_default_response_mode || "normal");
   // Clear the previous selection while the new profile details are loading.
   $("provider-preset").value = "";
   for (const id of Object.values(customFields)) $(id).value = "";
@@ -626,11 +642,11 @@ function updateProfile() {
   }
   $("custom-status").textContent = "正在读取所选配置…";
   $("selected-secret-status").textContent = real ? "Secret 状态：待检查" : "Mock 无需 Secret";
-  fetch(`/api/profiles/${encodeURIComponent(profile.profile_id)}`)
+  return fetch(`/api/profiles/${encodeURIComponent(profile.profile_id)}`)
     .then((response) => { if (!response.ok) throw new Error("PROFILE_READ_FAILED"); return response.json(); })
     .then((data) => {
       if (revision !== formRevision || selectedProfile()?.profile_id !== profile.profile_id) return;
-      fillProfileForm(data.fields, profile);
+      fillProfileForm(data.fields, selectedProfile());
       $("custom-status").textContent = data.editable
         ? "正在查看自定义配置；点击“编辑所选”可修改连接参数，名称不可修改。"
         : "预置配置只读；如需新配置，请点击“新建”。";
@@ -705,6 +721,9 @@ const customFields = {
 
 function setFormMode(mode) {
   formMode = mode;
+  if (mode !== "edit") editDraft = null;
+  $("cancel-edit").hidden = mode !== "edit";
+  $("edit-profile").hidden = mode === "edit" || selectedProfile()?.source !== "user_custom";
   const editable = mode !== "view";
   $("provider-preset").disabled = !editable;
   for (const id of Object.values(customFields)) $(id).disabled = !editable;
@@ -712,43 +731,77 @@ function setFormMode(mode) {
   $("model-options").disabled = !editable;
   $("test-method").disabled = !editable;
   for (const id of ["query-models", "test-profile", "save-profile"]) $(id).hidden = !editable;
-  $("save-profile").textContent = mode === "edit" ? "保存连接修改" : "创建 Profile";
+  $("save-profile").textContent = mode === "edit" ? "保存修改" : "创建 Profile";
+  if (mode !== "edit") $("draft-identity-notice").textContent = "";
 }
 
 let defaultPreferenceProfile = null;
 let savedThinkingPreference = "auto";
+let savedResponsePreference = "normal";
+
+function defaultCapabilityItem(profile, option) {
+  return option === "streaming" ? profile?.capabilities?.streaming_evidence
+    || {status: profile?.capabilities?.streaming || "unknown"}
+    : profile?.capabilities?.[`thinking_${option}`] || {status: "unknown"};
+}
+
+function defaultOptionReason(item, label) {
+  return item?.resolution === "EVIDENCE_CONFLICT" ? "证据冲突，需要人工处理"
+    : item?.status === "supported" ? "已支持" : item?.status === "unsupported" ? "不支持"
+      : `尚未验证，请先执行 ${label} Probe`;
+}
 
 function updateDefaultPreferenceSummary() {
   const profile = defaultPreferenceProfile;
   const current = $("custom-default-thinking").value || "auto";
-  const descriptions = ["on", "off"].map((mode) => {
-    const item = profile?.capabilities?.[`thinking_${mode}`];
-    const reason = item?.resolution === "EVIDENCE_CONFLICT" ? "证据冲突，需要人工处理"
-      : item?.status === "supported" ? "已支持" : item?.status === "unsupported" ? "不支持" : "尚未验证";
-    return `${mode.toUpperCase()}：${reason}`;
-  });
-  const effective = current === "auto" || capabilityStatus(profile, `reasoning_${current}`) === "supported" ? current : "auto";
-  $("runtime-default-summary").textContent = `已保存偏好：${formMode === "new" ? "尚未保存" : savedThinkingPreference.toUpperCase()}；当前表单偏好：${current.toUpperCase()}；当前有效能力：${descriptions.join("；")}；实际安全运行值：${effective.toUpperCase()}。修改偏好不产生能力证据。`;
+  const response = $("custom-default-response").value || "normal";
+  const descriptions = ["on", "off"].map(mode =>
+    `${mode.toUpperCase()}：${defaultOptionReason(defaultCapabilityItem(profile, mode), `Thinking ${mode.toUpperCase()}`)}`);
+  const effective = resolveRuntimeDefaults({...profile, stored_default_thinking_mode: current,
+    stored_default_response_mode: response});
+  $("runtime-default-summary").textContent = `已保存偏好：${formMode === "new" ? "尚未保存" : savedThinkingPreference.toUpperCase()}；当前表单偏好：${current.toUpperCase()}；当前有效能力：${descriptions.join("；")}；实际安全运行值：${effective.thinking.toUpperCase()}。响应已保存偏好：${formMode === "new" ? "尚未保存" : savedResponsePreference}；表单响应：${response}；Streaming：${defaultOptionReason(defaultCapabilityItem(profile, "streaming"), "Streaming")}；安全响应：${effective.response}。修改草稿不会改变当前运行选择或产生能力证据。`;
 }
 
-function updateDefaultPreferenceControls(profile, preference = "auto") {
+function updateDefaultPreferenceControls(profile, preference = "auto", responsePreference = "normal") {
   defaultPreferenceProfile = profile;
   savedThinkingPreference = profile?.stored_default_thinking_mode || preference;
+  savedResponsePreference = profile?.stored_default_response_mode || responsePreference;
   const select = $("custom-default-thinking");
   select.replaceChildren();
   appendChoice(select, "auto", "AUTO（使用服务默认，不发送开关）");
   for (const mode of ["on", "off"]) {
-    const item = profile?.capabilities?.[`thinking_${mode}`];
-    const status = item?.status || "unknown";
-    const reason = item?.resolution === "EVIDENCE_CONFLICT" ? "证据冲突，需要人工处理"
-      : status === "supported" ? "已支持" : status === "unsupported" ? "不支持"
-        : `尚未验证，请先执行 Thinking ${mode.toUpperCase()} Probe`;
-    appendChoice(select, mode, `${mode.toUpperCase()}（${reason}）`, status !== "supported");
+    const item = defaultCapabilityItem(profile, mode);
+    appendChoice(select, mode, `${mode.toUpperCase()}（${defaultOptionReason(item, `Thinking ${mode.toUpperCase()}`)}）`,
+      item.status !== "supported" || item.resolution === "EVIDENCE_CONFLICT");
   }
-  // A disabled, selected historical option remains readable and serializable;
-  // it cannot be newly chosen. Never erase it just because capability changed.
   select.value = ["auto", "on", "off"].includes(preference) ? preference : "auto";
+  const responseSelect = $("custom-default-response");
+  responseSelect.replaceChildren();
+  appendChoice(responseSelect, "normal", "Normal（不启用 Streaming）");
+  const streaming = defaultCapabilityItem(profile, "streaming");
+  appendChoice(responseSelect, "streaming", `Streaming（${defaultOptionReason(streaming, "Streaming")}）`,
+    streaming.status !== "supported" || streaming.resolution === "EVIDENCE_CONFLICT");
+  // Preserve a disabled historical value, but never permit a new unavailable choice.
+  responseSelect.value = responsePreference === "streaming" ? "streaming" : "normal";
   updateDefaultPreferenceSummary();
+}
+
+function draftIdentity(fields) {
+  const url = (fields.base_url || "").trim().replace(/^([^:]+):\/\/([^/]+)/,
+    (_, scheme, host) => `${scheme.toLowerCase()}://${host.toLowerCase()}`).replace(/\/+$/, "");
+  return JSON.stringify([fields.service_id || "", fields.adapter_id || "", url, fields.model || ""]);
+}
+
+function refreshDraftPreferenceGate() {
+  const selected = selectedProfile();
+  if (formMode !== "edit" || !editDraft || selected?.profile_id !== editDraft.profile_id) return;
+  const changed = draftIdentity(collectFields()) !== draftIdentity(editDraft.fields);
+  const target = changed ? {...selected, capabilities: {}} : selected;
+  updateDefaultPreferenceControls(target, $("custom-default-thinking").value || "auto",
+    $("custom-default-response").value || "normal");
+  $("draft-identity-notice").textContent = changed
+    ? "模型身份已修改。保存后将重新解析能力；高级默认设置将在新 Identity 的 Capability 确认后生效。当前运行仍使用已保存 Profile。"
+    : "编辑草稿未保存；当前模型身份、能力与运行选择保持不变。";
 }
 
 function fillProfileForm(fields, profile) {
@@ -765,7 +818,7 @@ function fillProfileForm(fields, profile) {
   $("models-status").textContent = "";
   $("advanced-settings").open = false;
   $("runtime-default-fields").open = false;
-  updateDefaultPreferenceControls(profile, fields.default_thinking_mode || "auto");
+  updateDefaultPreferenceControls(profile, fields.default_thinking_mode || "auto", fields.default_response_mode || "normal");
   updateSecretRequirement();
 }
 
@@ -793,7 +846,11 @@ function invalidateTest() {
   testId = null;
   testedFingerprint = null;
   $("test-status").textContent = "连接字段已改变；Cloud 保存前需重新测试。";
-  if (formMode !== "view") {
+  if (formMode === "edit") {
+    refreshDraftPreferenceGate();
+    return;
+  }
+  if (formMode === "new") {
     updateDefaultPreferenceControls({capabilities: {}}, "auto");
     renderCapabilities({capabilities: {}, default_reasoning_mode: "auto"});
     $("streaming-capability").textContent = "当前表单的模型身份已改变；高级能力待重新加载（UNKNOWN）。";
@@ -910,12 +967,31 @@ async function editSelected() {
   }
   if (revision !== formRevision || $("profile").value !== selected.profile_id) return;
   editingId = selected.profile_id;
-  fillProfileForm(data.fields, selected);
+  editDraft = {profile_id: selected.profile_id, fields: {...data.fields}};
   setFormMode("edit");
+  fillProfileForm(data.fields, selectedProfile());
   showSecret(data.fields.secret_env, "secret-status");
   invalidateTest();
   $("custom-editor").open = true;
   $("custom-status").textContent = "可修改连接参数；Display Name 创建后不可修改。Cloud 修改保存前需重新测试。";
+}
+
+function cancelEdit() {
+  if (formMode !== "edit" || !editDraft) return;
+  const selected = selectedProfile();
+  if (selected?.profile_id !== editDraft.profile_id) return;
+  const saved = editDraft.fields;
+  ++formRevision; // Discard pending draft tests without any server operation.
+  editingId = null;
+  setFormMode("view");
+  fillProfileForm(saved, selected);
+  resetCredentialManager();
+  testId = null;
+  testedFingerprint = null;
+  $("test-status").textContent = "";
+  $("draft-identity-notice").textContent = "";
+  $("custom-editor").open = true;
+  $("custom-status").textContent = "已取消编辑，未保存的草稿已丢弃；当前运行 Profile 和 Evidence 保持不变。";
 }
 
 async function deleteSelected() {
@@ -929,7 +1005,9 @@ async function deleteSelected() {
   $("custom-status").textContent = "配置已从列表移除，原文件保存在本地 archive。";
 }
 
-async function refreshProfiles(selectedId) {
+async function refreshProfiles(selectedId, {preserveDraft = false} = {}) {
+  const draft = preserveDraft && formMode === "edit" && editDraft ? {baseline: editDraft, fields: collectFields(),
+    runtime: {reasoning: $("reasoning-mode").value, response: $("response-mode").value, effort: $("reasoning-effort").value}} : null;
   const initialSelection = $("profile").value;
   const response = await fetch("/api/config");
   if (!response.ok) throw new Error("PROFILE_REFRESH_FAILED");
@@ -937,7 +1015,19 @@ async function refreshProfiles(selectedId) {
   if (!data || !Array.isArray(data.profiles)) throw new Error("PROFILE_REFRESH_FAILED");
   profiles = data.profiles;
   const current = $("profile").value;
-  renderProfiles(current !== initialSelection ? current : selectedId);
+  const keepDraft = draft && formMode === "edit" && editDraft === draft.baseline;
+  if (keepDraft) draft.fields = collectFields();
+  const refreshRevision = formRevision;
+  await renderProfiles(current !== initialSelection ? current : selectedId);
+  if (keepDraft && formRevision === refreshRevision + 1 && selectedProfile()?.profile_id === draft.baseline.profile_id) {
+    editDraft = draft.baseline;
+    editingId = editDraft.profile_id;
+    setFormMode("edit");
+    fillProfileForm(draft.fields, selectedProfile());
+    refreshDraftPreferenceGate();
+    updateRuntimeOptionControls(selectedProfile(), draft.runtime);
+    $("custom-editor").open = true;
+  }
 }
 
 async function probeSelectedCapability(reverify = false) {
@@ -988,7 +1078,7 @@ async function runExplicitProbe(capability, mode = null, reverify = false) {
     if (!data.capability) throw new Error("INVALID_RESPONSE");
     stage = "refresh";
     const currentId = $("profile").value;
-    await refreshProfiles(currentId);
+    await refreshProfiles(currentId, {preserveDraft: true});
     if ($("profile").value !== selected.profile_id) return;
     const metrics = `delta=${show(data.delta_count)}，TTFT=${show(data.ttft_ms)} ms，总耗时=${show(data.latency_ms)} ms；Usage=${JSON.stringify(data.usage || {})}`;
     const resolved = capability === "streaming" ? data.capability.streaming_evidence
@@ -1027,7 +1117,7 @@ async function refreshMetadata() {
       $("metadata-status").textContent = `查询失败：${data.error_code || `HTTP_${response.status}`}`;
       return;
     }
-    await refreshProfiles(selected.profile_id);
+    await refreshProfiles(selected.profile_id, {preserveDraft: true});
     $("metadata-status").textContent = "已读取并保存精确模型的 Thinking metadata。";
   } catch (_) {
     $("metadata-status").textContent = "查询失败：NETWORK_ERROR";
@@ -1514,12 +1604,14 @@ async function init() {
     $("reasoning-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
     $("response-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
     $("custom-default-thinking").addEventListener("change", updateDefaultPreferenceSummary);
+    $("custom-default-response").addEventListener("change", updateDefaultPreferenceSummary);
     $("analyze").addEventListener("click", analyze);
     $("stop-generation").addEventListener("click", stopGeneration);
     $("manual-send").addEventListener("click", sendManual);
     $("provider-preset").addEventListener("change", selectPreset);
     $("new-profile").addEventListener("click", newProfile);
     $("edit-profile").addEventListener("click", editSelected);
+    $("cancel-edit").addEventListener("click", cancelEdit);
     $("delete-profile").addEventListener("click", deleteSelected);
     $("probe-streaming").addEventListener("click", () => probeSelectedCapability(false));
     $("probe-combination").addEventListener("click", () => runExplicitProbe("thinking_streaming_combination"));

@@ -87,3 +87,8 @@ class AccessValidationTests(unittest.TestCase):
         self.assertEqual(cloud["error_code"], "SECRET_MISSING")
         self.assertEqual(cloud["sdk_attempts"], 0)
         self.assertTrue(all(item.provider_kind == "local" for item in snapshots))
+
+
+# Explicit historical fixtures; not active startup assets.
+from historical_model_fixtures import install as _install_history
+_install_history(globals())

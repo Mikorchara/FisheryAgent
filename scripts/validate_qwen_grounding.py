@@ -37,7 +37,10 @@ def main() -> int:
     if not (workspace / "pyproject.toml").is_file():
         print("WORKSPACE_REQUIRED")
         return 2
-    profile = next(item for item in _builtin_profiles() if item.profile_id == PROFILE_ID)
+    profile = next((item for item in _builtin_profiles() if item.profile_id == PROFILE_ID), None)
+    if profile is None:
+        print("INACTIVE_VALIDATION_PROFILE")
+        return 2
     if profile.max_retries != 0:
         print("RETRY_POLICY_MUST_BE_ZERO")
         return 2
