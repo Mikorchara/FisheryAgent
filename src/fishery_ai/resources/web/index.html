@@ -70,14 +70,15 @@
             <input id="custom-secret-env" type="text" autocomplete="off" required>
             <p class="helper">只填写环境变量名，例如 DASHSCOPE_API_KEY；绝不填写真实 API Key。</p>
           </div>
-          <fieldset id="runtime-default-fields" class="runtime-default-fields">
-            <legend>默认运行偏好</legend>
+          <details id="runtime-default-fields" class="runtime-default-fields">
+            <summary>默认运行偏好</summary>
             <label for="custom-default-thinking">Default Thinking</label>
             <select id="custom-default-thinking"><option value="auto">AUTO</option><option value="on">ON</option><option value="off">OFF</option></select>
             <label for="custom-default-response">Default Response Mode</label>
             <select id="custom-default-response"><option value="normal">Normal</option><option value="streaming">Streaming</option></select>
             <p class="helper">这是该 Custom Profile 的使用偏好，不会把 UNKNOWN 能力标记为已支持。</p>
-          </fieldset>
+            <p id="runtime-default-summary" class="helper" role="status"></p>
+          </details>
           <details id="advanced-settings" class="advanced-settings">
             <summary>高级连接设置</summary>
             <p class="helper">仅在需要自定义服务身份、模型家族或 Adapter 时修改。</p>

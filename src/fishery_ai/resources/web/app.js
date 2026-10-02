@@ -715,6 +715,42 @@ function setFormMode(mode) {
   $("save-profile").textContent = mode === "edit" ? "保存连接修改" : "创建 Profile";
 }
 
+let defaultPreferenceProfile = null;
+let savedThinkingPreference = "auto";
+
+function updateDefaultPreferenceSummary() {
+  const profile = defaultPreferenceProfile;
+  const current = $("custom-default-thinking").value || "auto";
+  const descriptions = ["on", "off"].map((mode) => {
+    const item = profile?.capabilities?.[`thinking_${mode}`];
+    const reason = item?.resolution === "EVIDENCE_CONFLICT" ? "证据冲突，需要人工处理"
+      : item?.status === "supported" ? "已支持" : item?.status === "unsupported" ? "不支持" : "尚未验证";
+    return `${mode.toUpperCase()}：${reason}`;
+  });
+  const effective = current === "auto" || capabilityStatus(profile, `reasoning_${current}`) === "supported" ? current : "auto";
+  $("runtime-default-summary").textContent = `已保存偏好：${formMode === "new" ? "尚未保存" : savedThinkingPreference.toUpperCase()}；当前表单偏好：${current.toUpperCase()}；当前有效能力：${descriptions.join("；")}；实际安全运行值：${effective.toUpperCase()}。修改偏好不产生能力证据。`;
+}
+
+function updateDefaultPreferenceControls(profile, preference = "auto") {
+  defaultPreferenceProfile = profile;
+  savedThinkingPreference = profile?.stored_default_thinking_mode || preference;
+  const select = $("custom-default-thinking");
+  select.replaceChildren();
+  appendChoice(select, "auto", "AUTO（使用服务默认，不发送开关）");
+  for (const mode of ["on", "off"]) {
+    const item = profile?.capabilities?.[`thinking_${mode}`];
+    const status = item?.status || "unknown";
+    const reason = item?.resolution === "EVIDENCE_CONFLICT" ? "证据冲突，需要人工处理"
+      : status === "supported" ? "已支持" : status === "unsupported" ? "不支持"
+        : `尚未验证，请先执行 Thinking ${mode.toUpperCase()} Probe`;
+    appendChoice(select, mode, `${mode.toUpperCase()}（${reason}）`, status !== "supported");
+  }
+  // A disabled, selected historical option remains readable and serializable;
+  // it cannot be newly chosen. Never erase it just because capability changed.
+  select.value = ["auto", "on", "off"].includes(preference) ? preference : "auto";
+  updateDefaultPreferenceSummary();
+}
+
 function fillProfileForm(fields, profile) {
   $("provider-preset").value = profile.runtime_type === "mock" ? "built_in_mock"
     : presets.some((preset) => preset.id === fields.service_id) ? fields.service_id : "custom";
@@ -728,6 +764,8 @@ function fillProfileForm(fields, profile) {
   $("model-options").hidden = true;
   $("models-status").textContent = "";
   $("advanced-settings").open = false;
+  $("runtime-default-fields").open = false;
+  updateDefaultPreferenceControls(profile, fields.default_thinking_mode || "auto");
   updateSecretRequirement();
 }
 
@@ -756,6 +794,7 @@ function invalidateTest() {
   testedFingerprint = null;
   $("test-status").textContent = "连接字段已改变；Cloud 保存前需重新测试。";
   if (formMode !== "view") {
+    updateDefaultPreferenceControls({capabilities: {}}, "auto");
     renderCapabilities({capabilities: {}, default_reasoning_mode: "auto"});
     $("streaming-capability").textContent = "当前表单的模型身份已改变；高级能力待重新加载（UNKNOWN）。";
     updateRuntimeOptionControls({capabilities: {}}, {reasoning: "auto", response: "normal", effort: ""});
@@ -846,6 +885,7 @@ function newProfile() {
   $("custom-auth").value = "REQUIRED_BEARER";
   $("custom-default-thinking").value = "auto";
   $("custom-default-response").value = "normal";
+  $("runtime-default-fields").open = false;
   $("model-options").hidden = true;
   $("advanced-settings").open = false;
   $("models-status").textContent = "";
@@ -1473,6 +1513,7 @@ async function init() {
     bindAccessModeControls();
     $("reasoning-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
     $("response-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
+    $("custom-default-thinking").addEventListener("change", updateDefaultPreferenceSummary);
     $("analyze").addEventListener("click", analyze);
     $("stop-generation").addEventListener("click", stopGeneration);
     $("manual-send").addEventListener("click", sendManual);

@@ -13,6 +13,60 @@ const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'fishery_ai',
   'resources', 'web', 'app.css'), 'utf8');
 const knownIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
 
+test('Default preference UNKNOWN, UNSUPPORTED and CONFLICT disable new ON/OFF selections with explanations', () => {
+  const page=makePage(async()=>{throw new Error('offline');});
+  for(const item of [{status:'unknown'}, {status:'unsupported'}, {status:'unknown',resolution:'EVIDENCE_CONFLICT'}]) {
+    vm.runInContext(`formMode='new'; updateDefaultPreferenceControls({capabilities:{thinking_on:${JSON.stringify(item)},thinking_off:${JSON.stringify(item)}}})`,page.context);
+    const choices=page.element('custom-default-thinking').children;
+    assert.equal(choices.find(x=>x.value==='auto').disabled,false);
+    assert.equal(choices.find(x=>x.value==='on').disabled,true);
+    assert.equal(choices.find(x=>x.value==='off').disabled,true);
+    assert.match(choices.find(x=>x.value==='on').textContent,item.resolution ? /证据冲突，需要人工处理/ : item.status==='unsupported' ? /不支持/ : /尚未验证.*Thinking ON Probe/);
+  }
+  assert.match(html,/<details id="runtime-default-fields"[^>]*>/);
+  assert.doesNotMatch(html,/<details id="runtime-default-fields"[^>]*\bopen\b/);
+});
+
+test('Default preference retains saved ON when UNKNOWN and distinguishes its safe AUTO runtime value', () => {
+  const page=makePage(async()=>{throw new Error('offline');});
+  vm.runInContext(`formMode='edit';updateDefaultPreferenceControls({stored_default_thinking_mode:'on',capabilities:{}},'on')`,page.context);
+  assert.equal(page.element('custom-default-thinking').value,'on');
+  assert.equal(page.element('custom-default-thinking').children.find(x=>x.value==='on').disabled,true);
+  assert.match(page.element('runtime-default-summary').textContent,/已保存偏好：ON.*当前有效能力.*实际安全运行值：AUTO/);
+  assert.equal(vm.runInContext('collectFields().default_thinking_mode',page.context),'on');
+  page.element('custom-default-thinking').value='auto';
+  vm.runInContext('updateDefaultPreferenceSummary()',page.context);
+  assert.match(page.element('runtime-default-summary').textContent,/已保存偏好：ON.*当前表单偏好：AUTO/);
+});
+
+test('Default preference unlocks only the supported exact Thinking option', () => {
+  const page=makePage(async()=>{throw new Error('offline');});
+  vm.runInContext(`formMode='edit';updateDefaultPreferenceControls({capabilities:{thinking_on:{status:'supported'},thinking_off:{status:'unknown'}}})`,page.context);
+  assert.equal(page.element('custom-default-thinking').children.find(x=>x.value==='on').disabled,false);
+  assert.equal(page.element('custom-default-thinking').children.find(x=>x.value==='off').disabled,true);
+  vm.runInContext(`formMode='new';invalidateTest()`,page.context);
+  assert.equal(page.element('custom-default-thinking').value,'auto');
+  assert.equal(page.element('custom-default-thinking').children.find(x=>x.value==='on').disabled,true);
+});
+
+test('Default preference unlocks immediately after explicit Thinking Probe and R4 refresh', async () => {
+  const base={profile_id:'custom-default-probe',source:'user_custom',runtime_type:'local',profile_status:'custom',
+    thinking_probe_available:true,capabilities:{thinking_on:{status:'unknown'},thinking_off:{status:'unknown'}}};
+  const updated={...base,capabilities:{...base.capabilities,thinking_on:{status:'supported',source:'USER_VERIFIED'}}};
+  const page=makePage(async(url)=>{
+    if(url.endsWith('/thinking-probe'))return {ok:true,json:async()=>({status:'success',capability:updated.capabilities})};
+    if(url==='/api/config')return {ok:true,json:async()=>({profiles:[updated]})};
+    return {ok:true,json:async()=>({fields:{default_thinking_mode:'auto'},editable:true})};
+  });
+  vm.runInContext(`profiles=[${JSON.stringify(base)}];formMode='edit';updateDefaultPreferenceControls(profiles[0])`,page.context);
+  page.element('profile').value=base.profile_id;
+  assert.equal(page.element('custom-default-thinking').children.find(x=>x.value==='on').disabled,true);
+  await vm.runInContext('probeThinking("on")',page.context);
+  await new Promise(setImmediate);
+  assert.equal(page.element('custom-default-thinking').children.find(x=>x.value==='on').disabled,false);
+  assert.equal(page.element('custom-default-thinking').children.find(x=>x.value==='off').disabled,true);
+});
+
 test('R4 conflicting evidence is UNKNOWN with sources and time, safe choices remain available', () => {
   const page = makePage(async () => { throw new Error('offline'); });
   const conflict = {status:'unknown', source:'USER_VERIFIED', resolution:'EVIDENCE_CONFLICT',

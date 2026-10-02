@@ -1,5 +1,19 @@
 # R3 / R4 / R5 分阶段实施报告
 
+## 2026-10-03 人工验收与阶段 A 收尾
+
+**USER-REPORTED VERIFIED**：用户已完成真实 Probe，并实际跑通 R5 → Evidence → R4 → Capability Gate → 正式模型请求。此记录来自用户反馈，不代表本轮自动执行真实请求；没有记录 Key、未提供的模型清单或 Token 数量。
+
+本轮开始时 Git 实际为干净 main，HEAD `20b702e10a60c5b83ee41e0af318194d92780a5c`（用户“重整前”提交，已经包含前轮 R3/R4/R5）。阶段 A 在其上新增默认偏好 UI 修复，不改历史。
+
+- 默认偏好区域改为默认折叠；AUTO 始终可选，ON/OFF 只能在当前精确 Capability 为 SUPPORTED 时新选择。
+- UNKNOWN 提示先做对应 Probe；UNSUPPORTED 提示不支持；冲突提示人工处理。
+- 已保存 ON/OFF 即使当前不可用，也作为禁用的历史选中项保留。区分已保存值、当前表单值、有效能力和安全运行值；不改后端兼容读取和 Runtime 安全回退。
+- Profile Identity 编辑后重新锁定新身份的默认高级选项；Probe 成功后的既有配置刷新同时更新偏好选项，不要求重建 Profile。
+- 未修改 ProtocolSpec、Resolver、Probe、凭据、取消、Manual 或 Fishery Analysis。
+
+新增 targeted：Python 3、Browser 4 均通过。full Python **307 通过（11.346 秒）**、full Browser **70 通过**；JS syntax、diff check 通过。受控扫描 **117 个公开文件、4 个虚构 fixture 排除、规则内风险 0**；真实 `.env` 与 outputs 均未跟踪。阶段 A 只提交本节和 UI/离线回归改动；阶段 B Reset 严格在阶段 A commit/push 成功后执行，作为独立工作树，不合并提交。实际 checkpoint hash 见 Reset 报告与 Git 元数据。
+
 日期：2026-10-02。起点：`62bf8451b09b2361252d6bb7c633c8e9c0b7026a`，main 工作树干净。
 
 ## 0. Credential UI 审计（完成）
