@@ -58,14 +58,19 @@ def _profile_public(profile: ModelProfile, source: str) -> dict:
     capabilities = profile.capabilities
     def capability(name: str) -> dict:
         status = getattr(capabilities, name).value if capability_scope_matches else Support.UNKNOWN.value
-        return {"status": (getattr(capabilities, name).value if capability_scope_matches
-                           else Support.UNKNOWN.value),
-                "source": (capabilities.source_for(name).value
-                           if capability_scope_matches and status != Support.UNKNOWN.value
-                           else CapabilitySource.UNKNOWN.value),
-                "sources": ([source.value for source in capabilities.sources_for(name)
-                             if source != CapabilitySource.UNKNOWN]
-                            if capability_scope_matches and status != Support.UNKNOWN.value else [])}
+        detail = dict(capabilities.resolution_details).get(name)
+        known_or_conflict = status != Support.UNKNOWN.value or detail == "EVIDENCE_CONFLICT"
+        public = {"status": status,
+                "source": capabilities.source_for(name).value if capability_scope_matches and known_or_conflict else "UNKNOWN",
+                "sources": [item.value for item in capabilities.sources_for(name)
+                            if item != CapabilitySource.UNKNOWN] if capability_scope_matches and known_or_conflict else []}
+        if detail is not None and capability_scope_matches:
+            public["resolution"] = detail
+            public["evidence"] = [{"source": item.source.value, "status": item.status.value,
+                                  "observed_at": item.observed_at, "origin": item.origin}
+                                 for item in profile.capability_evidence if item.capability == name]
+        return public
+
     reasoning_modes = ["auto"]
     if capability("reasoning_on")["status"] == "supported":
         reasoning_modes.append("on")

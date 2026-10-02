@@ -13,6 +13,64 @@ const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'fishery_ai',
   'resources', 'web', 'app.css'), 'utf8');
 const knownIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
 
+test('R4 conflicting evidence is UNKNOWN with sources and time, safe choices remain available', () => {
+  const page = makePage(async () => { throw new Error('offline'); });
+  const conflict = {status:'unknown', source:'USER_VERIFIED', resolution:'EVIDENCE_CONFLICT',
+    sources:['OFFICIAL_DOCS','USER_VERIFIED'], evidence:[
+      {source:'OFFICIAL_DOCS',status:'supported',observed_at:'2026-10-01'},
+      {source:'USER_VERIFIED',status:'unsupported',observed_at:'2026-10-02'}]};
+  const profile = {capabilities:{streaming:'unknown', streaming_evidence:conflict,
+    thinking_on:conflict, thinking_off:{status:'unknown'}}};
+  vm.runInContext(`renderCapabilities(${JSON.stringify(profile)}); updateRuntimeOptionControls(${JSON.stringify(profile)}, {reasoning:'on', response:'streaming'})`, page.context);
+  const text = vm.runInContext(`capabilityText(${JSON.stringify(conflict)})`, page.context);
+  assert.match(text, /证据冲突.*OFFICIAL_DOCS.*USER_VERIFIED.*2026-10-01.*2026-10-02/);
+  assert.equal(page.element('reasoning-mode').value, 'auto');
+  assert.equal(page.element('response-mode').value, 'normal');
+});
+
+test('R5 unknown exact model Thinking Probe unlocks ON only and uses the current Profile', async () => {
+  const base = {profile_id:'custom-unknown-exact', service_id:'dashscope', model:'unlisted-model',
+    profile_status:'custom',runtime_type:'local',source:'user_custom',thinking_probe_available:true,
+    capabilities:{streaming:'unknown',thinking_on:{status:'unknown'},thinking_off:{status:'unknown'}}};
+  const resolved = {...base,capabilities:{...base.capabilities,
+    thinking_on:{status:'supported',source:'USER_VERIFIED',resolution:'EVIDENCE_AGREEMENT'}}};
+  const calls = [];
+  const page = makePage(async (url, options={}) => {
+    if (url.endsWith('/thinking-probe')) {
+      calls.push({url,body:JSON.parse(options.body)});
+      return {ok:true,json:async()=>({status:'success',capability:resolved.capabilities})};
+    }
+    if (url === '/api/config') return {ok:true,json:async()=>({profiles:[resolved]})};
+    return {ok:true,json:async()=>({fields:{},editable:true})};
+  });
+  vm.runInContext(`profiles=[${JSON.stringify(base)}]`,page.context);
+  page.element('profile').value=base.profile_id;
+  await vm.runInContext('probeThinking("on")',page.context);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].url,`/api/profiles/${base.profile_id}/thinking-probe`);
+  assert.equal(calls[0].body.confirm_network,true);
+  assert.equal(page.element('reasoning-mode').children.find(x=>x.value==='on').disabled,false);
+  assert.equal(page.element('reasoning-mode').children.find(x=>x.value==='off').disabled,true);
+  assert.equal(page.element('probe-thinking-on').hidden,true);
+});
+
+test('R5 successful request with conflicting evidence never announces resolved SUPPORTED', async () => {
+  const profile={profile_id:'custom-conflict',profile_status:'custom',runtime_type:'local',source:'user_custom',
+    thinking_probe_available:true,capabilities:{streaming:'unknown',source:'USER_VERIFIED',streaming_evidence:{
+      status:'unknown',source:'USER_VERIFIED',resolution:'EVIDENCE_CONFLICT',sources:['OFFICIAL_DOCS','USER_VERIFIED']}}};
+  const page=makePage(async(url)=> {
+    if(url.endsWith('/probe')) return {ok:true,json:async()=>({status:'success',capability:profile.capabilities})};
+    if(url==='/api/config') return {ok:true,json:async()=>({profiles:[profile]})};
+    return {ok:true,json:async()=>({fields:{},editable:true})};
+  });
+  vm.runInContext(`profiles=[${JSON.stringify(profile)}]`,page.context);
+  page.element('profile').value=profile.profile_id;
+  await vm.runInContext('probeSelectedCapability(true)',page.context);
+  assert.match(page.element('capability-probe-status').textContent,/证据冲突.*UNKNOWN/);
+  assert.doesNotMatch(page.element('capability-probe-status').textContent,/SUPPORTED/);
+  assert.equal(page.element('response-mode').children.find(x=>x.value==='streaming').disabled,true);
+});
+
 const r2Profile = {profile_id:'r2-profile',display_name:'R2 fixture',service_id:'dashscope',
   runtime_type:'cloud',profile_status:'custom',source:'user_custom',auth_spec:'REQUIRED_BEARER',
   secret_env:'TEST_FAKE_KEY',credential_ref:'TEST_FAKE_KEY',capabilities:{streaming:'supported'}};

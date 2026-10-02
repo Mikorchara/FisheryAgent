@@ -14,6 +14,14 @@
 
 需要另行受控复测时使用 `python -X utf8 scripts/validate_access_modes.py --confirm-real-network`，每次最多四次生成尝试、retry=0、小输出上限；无确认参数禁止网络。默认离线测试不会执行它。不要将 `outputs/` 记录加入 Git。
 
+## Managed Custom：凭据与高级能力验证
+
+在 **Managed Custom → 新建 → Provider** 填写连接和凭据引用。展开 **本地凭据管理**，刷新后可设置 / 替换 / 删除用户私有 Key；无须先保存 Profile，查询模型前可先设置凭据。真正外部 PROCESS_ENV 只读，Auth NONE 不要求 Key；页面不返回已有 Secret，也不编辑源码根 `.env`。
+
+高级能力由精确 Identity 的 Evidence 经 Resolver 判断。UNKNOWN 时 Normal + AUTO 仍可用，Streaming / Thinking 的显式选项保持禁用。点击单项 Probe 并确认 REAL NETWORK REQUEST 才联网，每次一个最小请求、retry=0；结果写 Evidence，再重新解析并更新页面。相反证据保持 UNKNOWN，网络失败不写 UNSUPPORTED。Generic Thinking 不猜开关；已知 DashScope/DeepSeek 协议中的未知模型可以显式验证，其他未知 Ollama 模型暂仅开放 Streaming Probe。
+
+Preset 合同不被本地 Evidence 修改，Manual V1 Raw 请求不经过上述编码/解析。阶段测试、限制与人工验收见 [R3/R4/R5 实施报告](deep-dive/PROTOCOL_EVIDENCE_PROBE_R3_R4_R5.md)。本轮没有自动执行真实 Probe。
+
 ## 环境要求
 
 - Python 3.11 或更新版本。

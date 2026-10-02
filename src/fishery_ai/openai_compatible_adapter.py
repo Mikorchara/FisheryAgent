@@ -283,14 +283,8 @@ class OpenAICompatibleAdapter:
 
     @staticmethod
     def supports_thinking_mapping(profile_or_runtime: object) -> bool:
-        if OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(profile_or_runtime):
-            return True
-        if getattr(profile_or_runtime, "adapter_id", None) != "openai_chat":
-            return False
-        models = {"dashscope": {"qwen-plus", "qwen3.8-flash", "qwen3.8-omni-flash"},
-                  "deepseek_api": {"deepseek-flash"}}
-        return getattr(profile_or_runtime, "model", None) in models.get(
-            getattr(profile_or_runtime, "service_id", None), set())
+        from .protocol_specs import protocol_for
+        return protocol_for(profile_or_runtime).thinking_encoding is not None
 
     @staticmethod
     def fetch_ollama_thinking_metadata(runtime: RuntimeSnapshot) -> tuple[tuple[bool, ...], bool]:
@@ -329,7 +323,6 @@ class OpenAICompatibleAdapter:
     @staticmethod
     def _kwargs(request: ModelRequest, runtime: RuntimeSnapshot, *, stream: bool) -> dict:
         generation, reasoning = effective_options(request, runtime)
-        ollama_qwen35 = OpenAICompatibleAdapter.supports_ollama_qwen35_reasoning(runtime)
         try:
             validate_options(generation, reasoning, runtime.capabilities, streaming=stream)
         except OptionValidationError as exc:
@@ -337,39 +330,12 @@ class OpenAICompatibleAdapter:
         kwargs = {"model": runtime.model,
                   "messages": [{"role": message.role, "content": message.content}
                                for message in request.messages]}
-        if stream:
-            kwargs["stream"] = True
-            if runtime.capabilities.streaming_usage == Support.SUPPORTED:
-                kwargs["stream_options"] = {"include_usage": True}
-        if generation.max_output_tokens is not None:
-            kwargs[runtime.capabilities.max_tokens_field] = generation.max_output_tokens
-        if generation.temperature is not None:
-            kwargs["temperature"] = generation.temperature
-        if generation.top_p is not None:
-            kwargs["top_p"] = generation.top_p
-        if reasoning.mode != ReasoningMode.AUTO:
-            if not OpenAICompatibleAdapter.supports_thinking_mapping(runtime):
-                raise GatewayError("OPTION_UNSUPPORTED", option="reasoning")
-            if ollama_qwen35:
-                # Ollama maps recognized reasoning_effort aliases to its model's
-                # thinking control; "none" explicitly requests no thinking.
-                kwargs["reasoning_effort"] = "high" if reasoning.mode == ReasoningMode.ON else "none"
-            elif runtime.service_id == "deepseek_api" and runtime.adapter_id == "openai_chat":
-                kwargs["extra_body"] = {"thinking": {"type": "enabled" if reasoning.mode == ReasoningMode.ON
-                                                     else "disabled"}}
-            elif runtime.service_id == "dashscope" and runtime.adapter_id == "openai_chat":
-                if runtime.model == "qwen3.8-omni-flash":
-                    # This exact model uses effort as its protocol-level switch.
-                    kwargs["reasoning_effort"] = "xhigh" if reasoning.mode == ReasoningMode.ON else "none"
-                else:
-                    kwargs["extra_body"] = {"enable_thinking": reasoning.mode == ReasoningMode.ON}
-            else:
-                raise GatewayError("OPTION_UNSUPPORTED", option="reasoning")
-        if reasoning.effort is not None:
-            if runtime.service_id in ("deepseek_api", "dashscope") and runtime.adapter_id == "openai_chat":
-                kwargs["reasoning_effort"] = reasoning.effort
-            else:
-                raise GatewayError("OPTION_UNSUPPORTED", option="reasoning.effort")
+        from .protocol_specs import ProtocolEncodingError
+        try:
+            kwargs.update(runtime.protocol_spec.encode(generation, reasoning, streaming=stream,
+                include_usage=runtime.capabilities.streaming_usage == Support.SUPPORTED))
+        except ProtocolEncodingError as exc:
+            raise GatewayError("OPTION_UNSUPPORTED", option=exc.option) from exc
         return kwargs
 
     @staticmethod

@@ -37,4 +37,6 @@
 - [R2 用户私有凭据存储迁移说明](R2_PRIVATE_CREDENTIAL_STORAGE_MIGRATION.md)：固定路径规则、单文件来源、首次设置与人工验收。
 - [Post-R2 结构审计（RESOLVED）](POST_R2_STRUCTURAL_AUDIT.md)：记录人工验收收尾、旧验证入口迁移遗漏修复、统一凭据边界与最终离线回归。
 
+- [R3 ProtocolSpec / R4 Evidence Resolver / R5 Unknown Model Probe](PROTOCOL_EVIDENCE_PROBE_R3_R4_R5.md)：当前阶段实施与测试，包含既有 Credential UI 路径、协议编码分离、保守冲突合并、显式未知模型验证与人工验收项。前面的历史报告中“R3–R5 未实施”描述仅适用于其原阶段。
+
 历史报告描述的是编写时的状态。当前环境准备与项目范围请以[文档导航](../README.md)为准。

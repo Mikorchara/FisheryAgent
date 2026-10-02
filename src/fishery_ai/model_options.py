@@ -76,7 +76,7 @@ class ModelCapabilities:
     tool_calling: Support = Support.UNKNOWN
     streaming_usage: Support = Support.UNKNOWN
     thinking_streaming_combination: Support = Support.UNKNOWN
-    max_tokens_field: str | None = None
+    max_tokens_field: str | None = None  # Deprecated: legacy protocol encoding override only.
     effort_values: tuple[str, ...] = ()
     reasoning_temperature_conflict: bool = False
     source: CapabilitySource = CapabilitySource.UNKNOWN
@@ -88,6 +88,7 @@ class ModelCapabilities:
     service_id: str | None = None
     evidence: tuple[tuple[str, CapabilitySource], ...] = ()
     evidence_sources: tuple[tuple[str, CapabilitySource], ...] = ()
+    resolution_details: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         if self.base_url is not None:
@@ -123,8 +124,6 @@ class ModelCapabilities:
             raise ValueError("effort values require supported reasoning effort")
         if self.max_tokens_field not in (None, "max_tokens", "max_completion_tokens"):
             raise ValueError("invalid max_tokens_field")
-        if self.max_output_tokens == Support.SUPPORTED and self.max_tokens_field is None:
-            raise ValueError("supported output limit requires a verified API field")
 
     def source_for(self, capability: str) -> CapabilitySource:
         return dict(self.evidence).get(capability, self.source)

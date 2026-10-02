@@ -15,10 +15,17 @@ PROBE_FIELDS = {"streaming", "reasoning_on", "reasoning_off", "thinking_streamin
 def run_capability_probe(gateway, profile, capability: str, *, runtime=None) -> dict:
     if capability not in PROBE_FIELDS:
         raise ValueError("invalid probe capability")
+    if profile.access_mode == "preset":
+        raise ValueError("preset contract is read-only")
     streaming = capability in ("streaming", "thinking_streaming_combination")
     mode = (ReasoningMode.ON if capability in ("reasoning_on", "thinking_streaming_combination")
             else ReasoningMode.OFF if capability == "reasoning_off" else ReasoningMode.AUTO)
     runtime = runtime if runtime is not None else ProfileRegistry([profile]).snapshot(profile.profile_id)
+    # This is a diagnostic copy, never the Profile or ordinary business runtime.
+    # An unknown protocol switch must not be guessed from a model name.
+    if mode != ReasoningMode.AUTO and runtime.protocol_spec.thinking_encoding is None:
+        return {"capability_name": capability, "status": "failure",
+                "error_code": "CAPABILITY_PROBE_UNSUPPORTED", "latency_ms": 0.0}
     overrides = {capability: Support.SUPPORTED}
     if capability == "streaming" and runtime.capabilities.thinking_default is True:
         # AUTO uses the model default, but this diagnostic records streaming only.
@@ -27,9 +34,15 @@ def run_capability_probe(gateway, profile, capability: str, *, runtime=None) -> 
                            adapter_id=runtime.adapter_id, base_url=runtime.base_url,
                            model_id=runtime.model)
     runtime = replace(runtime, capabilities=capabilities, max_retries=0,
-                      default_generation=GenerationOptions(), default_reasoning=ReasoningOptions())
+                      default_generation=GenerationOptions(), default_reasoning=ReasoningOptions(),
+                      read_timeout_s=min(runtime.read_timeout_s, 30.0),
+                      total_timeout_s=min(runtime.total_timeout_s, 60.0))
+    # Do not bypass an unrelated UNKNOWN token-limit capability. Where the
+    # limit is already supported, keep this one request's output budget small.
+    generation = GenerationOptions(max_output_tokens=64) if (
+        runtime.capabilities.max_output_tokens == Support.SUPPORTED) else GenerationOptions()
     request = ModelRequest(Mode.CHAT, (ModelMessage("user", "只回复 OK"),),
-                           generation=GenerationOptions(), reasoning=ReasoningOptions(mode))
+                           generation=generation, reasoning=ReasoningOptions(mode))
     started = time.monotonic()
     result = {"capability_name": capability, "status": "failure", "delta_count": 0,
               "reasoning_delta_count": 0, "ttft_ms": None, "content_ttft_ms": None,

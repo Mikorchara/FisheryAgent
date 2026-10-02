@@ -46,7 +46,12 @@ class CredentialCompatibilityTests(unittest.TestCase):
             with self.subTest(profile_id=item["public"]["profile_id"]):
                 profile = profiles[item["public"]["profile_id"]]
                 actual = _profile_public(profile, "built_in")
-                self.assertEqual({key: actual[key] for key in item["public"]}, item["public"])
+                def frozen_fields(value, expected):
+                    if isinstance(expected, dict):
+                        return {key: frozen_fields(value[key], child) for key, child in expected.items()}
+                    return value
+                # R4 adds evidence dates/reasons; all historical fields stay frozen.
+                self.assertEqual(frozen_fields(actual, item["public"]), item["public"])
                 runtime = ProfileRegistry([profile]).snapshot(profile.profile_id, {})
                 public_runtime = asdict(runtime.public_info())
                 # Preserve all frozen R0/R2 fields; access-mode metadata is additive.

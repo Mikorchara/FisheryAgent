@@ -646,12 +646,15 @@ function updateProfile() {
 function capabilityText(item) {
   const status = item?.status || "unknown";
   const source = item?.source || "UNKNOWN";
-  if (status === "unknown") return "未验证（UNKNOWN）";
+  const records = item?.evidence?.length ? ` · 证据：${item.evidence.map((record) =>
+    `${record.source} ${record.status} ${record.observed_at || "时间未记录"}`).join("；")}` : "";
+  if (status === "unknown") return item?.resolution === "EVIDENCE_CONFLICT"
+    ? `证据冲突（UNKNOWN）· ${(item.sources || []).join(" + ")}${records}` : "未验证（UNKNOWN）";
   const label = source === "MODEL_METADATA" ? "模型 metadata"
     : source === "USER_VERIFIED" ? "本机已验证"
       : source === "OFFICIAL_DOCS" ? "官方文档" : "来源未知";
   const sources = item?.sources?.length ? item.sources.join(" + ") : source;
-  return `${status === "supported" ? "支持" : "不支持"}（${status.toUpperCase()}）· ${label} · ${sources}`;
+  return `${status === "supported" ? "支持" : "不支持"}（${status.toUpperCase()}）· ${label} · ${sources}${records}`;
 }
 
 function renderCapabilities(profile) {
@@ -675,7 +678,8 @@ function renderCapabilities(profile) {
     const dt = document.createElement("dt");
     const dd = document.createElement("dd");
     dt.textContent = label;
-    dd.textContent = status === "supported" ? "支持" : status === "unsupported" ? "不支持" : "未验证";
+    dd.textContent = status === "supported" ? "支持" : status === "unsupported" ? "不支持"
+      : item?.resolution === "EVIDENCE_CONFLICT" ? "证据冲突" : "未验证";
     dd.className = `capability-status capability-${status}`;
     summary.append(dt, dd);
   }
@@ -947,9 +951,15 @@ async function runExplicitProbe(capability, mode = null, reverify = false) {
     await refreshProfiles(currentId);
     if ($("profile").value !== selected.profile_id) return;
     const metrics = `delta=${show(data.delta_count)}，TTFT=${show(data.ttft_ms)} ms，总耗时=${show(data.latency_ms)} ms；Usage=${JSON.stringify(data.usage || {})}`;
-    status.textContent = data.status === "success"
-      ? `${label} 验证成功（本机已验证）· SUPPORTED · USER_VERIFIED；${metrics}`
-      : `${label} 验证失败：${safeCode}；UNSUPPORTED · USER_VERIFIED；${metrics}`;
+    const resolved = capability === "streaming" ? data.capability.streaming_evidence
+      : capability === "reasoning_on" ? data.capability.thinking_on
+        : capability === "reasoning_off" ? data.capability.thinking_off
+          : data.capability.thinking_streaming_combination;
+    status.textContent = resolved?.resolution === "EVIDENCE_CONFLICT"
+      ? `${label} 请求${data.status === "success" ? "验证成功" : "被明确拒绝"}，但证据冲突；UNKNOWN，选项仍锁定；${metrics}`
+      : data.status === "success"
+        ? `${label} 验证成功（本机已验证）· SUPPORTED · USER_VERIFIED；${metrics}`
+        : `${label} 验证失败：${safeCode}；UNSUPPORTED · USER_VERIFIED；${metrics}`;
   } catch (exc) {
     const code = stage === "request" ? (exc?.name === "AbortError" ? "TIMEOUT" : "NETWORK_ERROR")
       : stage === "response" ? "INVALID_RESPONSE" : stage === "refresh" ? "PROFILE_REFRESH_FAILED" : "PROBE_UI_ERROR";

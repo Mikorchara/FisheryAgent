@@ -56,6 +56,11 @@ class ModelProfile:
     preset_variant: str | None = None
     preset_contract_version: str | None = None
 
+    # Original project declaration stays separate from the resolved view. This
+    # prevents a previous resolution becoming new evidence on the next apply.
+    capability_basis: ModelCapabilities | None = field(default=None, repr=False, compare=False)
+    capability_evidence: tuple = field(default=(), repr=False, compare=False)
+
     def __post_init__(self) -> None:
         if self.access_mode not in ("managed_custom", "preset"):
             raise ValueError("invalid access_mode")
@@ -155,6 +160,8 @@ class ModelProfile:
                 if (exc.code not in ("OPTION_UNKNOWN", "OPTION_UNSUPPORTED") or
                         exc.option in ("temperature", "top_p", "max_output_tokens")):
                     raise ValueError("profile defaults conflict with scoped capabilities") from exc
+        if self.capability_basis is None:
+            object.__setattr__(self, "capability_basis", self.capabilities)
 
     @classmethod
     def from_dict(cls, data: dict) -> ModelProfile:
@@ -253,6 +260,11 @@ class RuntimeSnapshot:
     preset_contract_version: str | None = None
 
     @property
+    def protocol_spec(self):
+        from .protocol_specs import protocol_for
+        return protocol_for(self)
+
+    @property
     def api_key(self) -> str | None:
         """Legacy internal bridge; never include this accessor in public serializers."""
         return self.credential._for_adapter()
@@ -277,8 +289,9 @@ class ProfileRegistry:
     @classmethod
     def from_json(cls, path: Path, credential_store: CredentialStore | None = None) -> ProfileRegistry:
         data = json.loads(path.read_text(encoding="utf-8"))
-        from .official_capabilities import apply_official_capabilities
-        return cls([apply_official_capabilities(ModelProfile.from_dict(item)) for item in data["profiles"]],
+        from .evidence_resolver import project_evidence, resolve_capabilities
+        profiles = [ModelProfile.from_dict(item) for item in data["profiles"]]
+        return cls([resolve_capabilities(profile, project_evidence(profile)) for profile in profiles],
                    credential_store)
 
     def snapshot(self, profile_id: str, environ: Mapping[str, str] | None = None,

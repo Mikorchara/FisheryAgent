@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 import json
 
 from .model_gateway import ModelProfile
-from .model_options import (CapabilitySource, ModelCapabilities, ReasoningMode, Support,
-                            ReasoningOptions, normalize_base_url)
-from .official_capabilities import apply_official_capabilities
+from .model_options import (CapabilitySource, ReasoningMode, Support, normalize_base_url)
+from .evidence_resolver import (CapabilityEvidence, CapabilityIdentity, project_evidence,
+                                resolve_capabilities)
 
 
 class CapabilityStore:
@@ -30,12 +29,6 @@ class CapabilityStore:
         return self.directory / f"{key}.json"
 
     @staticmethod
-    def _with_streaming_evidence(capabilities: ModelCapabilities) -> ModelCapabilities:
-        evidence = dict(capabilities.evidence)
-        evidence["streaming"] = CapabilitySource.USER_VERIFIED
-        return replace(capabilities, evidence=tuple(evidence.items()))
-
-    @staticmethod
     def _record_matches(record: object, identity: dict[str, str], capability: str) -> bool:
         if not isinstance(record, dict) or record.get("capability") != capability:
             return False
@@ -46,84 +39,66 @@ class CapabilityStore:
             return False
         return candidate == identity
 
-    def _read_record(self, profile: ModelProfile, capability: str) -> dict | None:
+    def _read_records(self, profile: ModelProfile, capability: str) -> list[dict]:
         identity = self._identity(profile)
         direct = self._path(profile, capability)
         candidates = [direct]
-        # Older records hashed the original URL spelling. Search allows a trailing slash
-        # migration while still requiring the full service/adapter/model identity.
+        # Keep normalized legacy records visible to the resolver as evidence,
+        # including disagreements; a canonical filename is not higher authority.
         if self.directory.is_dir():
             candidates.extend(path for path in self.directory.glob("*.json") if path != direct)
+        records = []
         for path in candidates:
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError, TypeError):
                 continue
-            if self._record_matches(record, identity, capability):
-                if capability == "streaming":
-                    if (record.get("status") in ("supported", "unsupported")
-                            and record.get("source") == CapabilitySource.USER_VERIFIED.value):
-                        return record
-                elif capability == "thinking":
-                    values = record.get("values")
-                    if (record.get("source") in (CapabilitySource.MODEL_METADATA.value,
-                                                   CapabilitySource.USER_VERIFIED.value)
-                            and isinstance(values, list)
-                            and all(type(item) is bool for item in values)
-                            and type(record.get("default")) is bool
-                            and record["default"] in values):
-                        return record
-                elif (record.get("status") in ("supported", "unsupported")
-                      and record.get("source") == CapabilitySource.USER_VERIFIED.value):
-                    return record
-        return None
-
-    @staticmethod
-    def _replace_capabilities(profile: ModelProfile,
-                              capabilities: ModelCapabilities) -> ModelProfile:
-        # Evidence never rewrites the user's stored runtime preferences.
-        return replace(profile, capabilities=capabilities)
+            if not self._record_matches(record, identity, capability):
+                continue
+            timestamp = record.get("observed_at" if capability == "thinking" else "verified_at")
+            if timestamp is not None and not isinstance(timestamp, str):
+                continue
+            if capability == "thinking":
+                values = record.get("values")
+                valid = (record.get("source") in (CapabilitySource.MODEL_METADATA.value,
+                                                  CapabilitySource.USER_VERIFIED.value)
+                    and isinstance(values, list) and bool(values)
+                    and all(type(item) is bool for item in values)
+                    and type(record.get("default")) is bool and record["default"] in values)
+            else:
+                valid = (record.get("status") in ("supported", "unsupported")
+                         and record.get("source") == CapabilitySource.USER_VERIFIED.value)
+            if valid:
+                records.append(record)
+        return records
 
     def apply(self, profile: ModelProfile) -> ModelProfile:
-        updated = apply_official_capabilities(profile)
-        stream = self._read_record(profile, "streaming")
-        if stream:
-            updated = self._replace_capabilities(updated, replace(
-                updated.capabilities.with_evidence("streaming", CapabilitySource.USER_VERIFIED),
-                streaming=Support(stream["status"]), service_id=profile.service_id,
-                adapter_id=profile.adapter_id, base_url=profile.base_url,
-                model_id=profile.model, verified_at=stream.get("verified_at")))
-        metadata = self._read_record(profile, "thinking")
-        if metadata:
+        if profile.access_mode == "preset" or profile.provider_kind == "mock":
+            return profile
+        identity = CapabilityIdentity.for_profile(profile)
+        claims = project_evidence(profile)
+        for name in ("streaming", "reasoning_on", "reasoning_off", "thinking_streaming_combination"):
+            for record in self._read_records(profile, name):
+                claims.append(CapabilityEvidence(identity, name, Support(record["status"]),
+                    CapabilitySource.USER_VERIFIED, record.get("verified_at"), "local_probe"))
+        for metadata in self._read_records(profile, "thinking"):
             values = metadata["values"]
             source = CapabilitySource.parse(metadata["source"])
-            capabilities = updated.capabilities
-            for name in ("reasoning_on", "reasoning_off", "thinking_default"):
-                capabilities = capabilities.with_evidence(name, source)
-            updated = self._replace_capabilities(updated, replace(
-                capabilities,
-                reasoning_on=Support.SUPPORTED if True in values else Support.UNSUPPORTED,
-                reasoning_off=Support.SUPPORTED if False in values else Support.UNSUPPORTED,
-                thinking_default=metadata["default"],
-                service_id=profile.service_id, adapter_id=profile.adapter_id,
-                base_url=profile.base_url, model_id=profile.model))
-        for option, field_name in (("reasoning_on", "reasoning_on"),
-                                   ("reasoning_off", "reasoning_off"),
-                                   ("thinking_streaming_combination", "thinking_streaming_combination")):
-            record = self._read_record(profile, option)
-            if record:
-                updated = self._replace_capabilities(updated, replace(
-                    updated.capabilities.with_evidence(field_name, CapabilitySource.USER_VERIFIED),
-                    **{field_name: Support(record["status"])}, service_id=profile.service_id,
-                    adapter_id=profile.adapter_id, base_url=profile.base_url,
-                    model_id=profile.model, verified_at=record.get("verified_at")))
-        return updated
+            for name, value in (("reasoning_on", True), ("reasoning_off", False)):
+                claims.append(CapabilityEvidence(identity, name,
+                    Support.SUPPORTED if value in values else Support.UNSUPPORTED,
+                    source, metadata.get("observed_at"), "local_metadata"))
+            claims.append(CapabilityEvidence(identity, "thinking_default", Support.SUPPORTED,
+                source, metadata.get("observed_at"), "local_metadata", metadata["default"]))
+        return resolve_capabilities(profile, claims)
 
     def save_streaming(self, profile: ModelProfile, status: Support, verified_at: str) -> ModelProfile:
         return self.save_probe(profile, "streaming", status, verified_at)
 
     def save_thinking_metadata(self, profile: ModelProfile, values: list[bool],
                                default: bool, observed_at: str) -> ModelProfile:
+        if profile.access_mode == "preset":
+            raise ValueError("preset contract is read-only")
         if (profile.service_id != "ollama" or profile.model != "qwen3.5:4b"
                 or type(default) is not bool
                 or not isinstance(values, list) or not values
@@ -151,6 +126,8 @@ class CapabilityStore:
 
     def save_probe(self, profile: ModelProfile, capability: str, status: Support,
                    verified_at: str, metrics: dict | None = None) -> ModelProfile:
+        if profile.access_mode == "preset":
+            raise ValueError("preset contract is read-only")
         if (capability not in ("streaming", "reasoning_on", "reasoning_off",
                                "thinking_streaming_combination")
                 or status not in (Support.SUPPORTED, Support.UNSUPPORTED)):
