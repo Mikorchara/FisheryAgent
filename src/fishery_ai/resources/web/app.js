@@ -7,6 +7,153 @@ let testedFingerprint = null;
 let formMode = "view";
 let formRevision = 0;
 let probeInProgress = false;
+let credentialState = null;
+let credentialRevision = 0;
+let credentialBusy = false;
+let credentialEpoch = 0;
+let credentialCsrf = null;
+
+function credentialContext() {
+  if (formMode === "view") {
+    const profile = selectedProfile();
+    return profile ? {profile_id: profile.profile_id} : null;
+  }
+  const fields = validateForm({modelOptional: true});
+  return fields ? {draft: fields} : null;
+}
+
+function resetCredentialManager() {
+  ++credentialRevision;
+  credentialState = null;
+  $("credential-value").value = "";
+  $("credential-edit-fields").hidden = true;
+  $("credential-summary").replaceChildren();
+  const auth = formMode === "view" ? selectedProfile()?.auth_spec : $("custom-auth").value;
+  $("credential-status").textContent = auth === "NONE" ? "不需要凭据（NONE_REQUIRED）" : "配置已改变，请刷新凭据状态。";
+  if ($("credential-manager").open && formMode === "view" && !credentialBusy) Promise.resolve().then(refreshCredentialStatus);
+}
+
+function invalidateCredentialCaches() {
+  ++credentialEpoch;
+  testId = null;
+  testedFingerprint = null;
+  $("model-options").replaceChildren();
+  $("model-options").hidden = true;
+  $("models-status").textContent = "凭据已改变；模型列表需重新查询。";
+  $("test-status").textContent = "凭据已改变；旧连接测试授权失效，请重新测试。";
+}
+
+function safeCredentialCode(data, fallback = "CREDENTIAL_ERROR") {
+  return typeof data?.error_code === "string" && /^[A-Z][A-Z0-9_]{0,40}$/.test(data.error_code)
+    ? data.error_code : fallback;
+}
+
+function renderCredentialState(data) {
+  credentialState = data;
+  addPairs("credential-summary", [["Provider", data.provider], ["Credential 名", data.credential_name],
+    ["状态", data.availability], ["来源", data.source],
+    ["文件位置", data.storage === "USER_PRIVATE" ? "用户私有存储（不是源码根目录 .env）" : "应用注入的凭据文件"]]);
+  const editable = data.editable === true && !!data.revision;
+  $("credential-edit-fields").hidden = !editable;
+  $("credential-create").hidden = !editable || data.exists;
+  $("credential-replace").hidden = !editable || !data.exists;
+  $("credential-remove").hidden = !editable || !data.exists;
+  $("credential-status").textContent = data.availability === "NONE_REQUIRED" ? "不需要凭据"
+    : data.source === "PROCESS_ENV" ? "PROCESS_ENV：外部只读，需在应用外修改。"
+      : data.error_code ? `无法编辑：${safeCredentialCode(data)}`
+        : `PROJECT_ENV / ${data.storage === "USER_PRIVATE" ? "用户私有存储" : "应用注入的凭据文件"} 可编辑；修改后新请求立即生效，在途请求保持原快照。`;
+}
+
+async function refreshCredentialStatus() {
+  if (credentialBusy) return;
+  const context = credentialContext();
+  if (!context) {
+    $("credential-status").textContent = "请先选择配置，或填写 Provider、连接地址与凭据变量名。";
+    return;
+  }
+  const revision = ++credentialRevision;
+  $("credential-value").value = "";
+  $("credential-edit-fields").hidden = true;
+  $("credential-status").textContent = "正在检查凭据状态…";
+  try {
+    const response = await fetch("/api/credentials/status", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(context),
+    });
+    const data = await response.json();
+    if (revision !== credentialRevision) return;
+    if (!response.ok) throw new Error(safeCredentialCode(data));
+    if (!data || !["PRESENT", "MISSING", "NONE_REQUIRED"].includes(data.availability)) throw new Error("INVALID_RESPONSE");
+    renderCredentialState(data);
+  } catch (exc) {
+    if (revision === credentialRevision) {
+      const code = /^[A-Z][A-Z0-9_]{0,40}$/.test(exc.message) ? exc.message : "CREDENTIAL_STATUS_ERROR";
+      $("credential-status").textContent = `状态检查失败：${code}`;
+      credentialState = null;
+    }
+  }
+}
+
+async function changeCredential(action) {
+  if (credentialBusy) return;
+  const context = credentialContext();
+  const state = credentialState;
+  if (!context || !state?.editable || !state.revision) {
+    $("credential-value").value = "";
+    $("credential-status").textContent = "请先刷新可编辑的凭据状态。";
+    return;
+  }
+  let value = $("credential-value").value;
+  $("credential-value").value = ""; // Clear before every await, including CSRF failure.
+  if (action !== "remove" && !value) {
+    $("credential-status").textContent = "请填写新 Key；不会显示已有值。";
+    return;
+  }
+  if (!window.confirm(action === "remove" ? "删除该项目凭据？新请求将不能再使用此值。"
+    : "将新 Key 写入当前项目的用户私有凭据文件（不是源码根目录 .env）。继续？")) return;
+  const revision = credentialRevision;
+  credentialBusy = true;
+  for (const id of ["credential-create", "credential-replace", "credential-remove", "credential-refresh"]) $(id).disabled = true;
+  $("credential-status").textContent = "正在安全写入项目凭据…";
+  let stage = "session";
+  try {
+    if (!credentialCsrf) {
+      const response = await fetch("/api/credential-session", {credentials: "same-origin"});
+      const data = await response.json();
+      if (!response.ok || typeof data.csrf_token !== "string") throw new Error(safeCredentialCode(data, "CSRF_INVALID"));
+      credentialCsrf = data.csrf_token;
+    }
+    if (revision !== credentialRevision) return;
+    stage = "write";
+    const response = await fetch("/api/credentials", {
+      method: {create: "POST", replace: "PUT", remove: "DELETE"}[action], credentials: "same-origin",
+      headers: {"Content-Type": "application/json", "X-CSRF-Token": credentialCsrf},
+      body: JSON.stringify({...context, revision: state.revision, ...(action === "remove" ? {} : {secret: value})}),
+    });
+    value = "";
+    const data = await response.json();
+    if (!response.ok) {
+      if (data.error_code === "CSRF_INVALID") credentialCsrf = null;
+      throw new Error(safeCredentialCode(data));
+    }
+    invalidateCredentialCaches(); // Never reset Capability or runtime preferences here.
+    if (revision !== credentialRevision) return;
+    renderCredentialState(data);
+    $("credential-status").textContent = `凭据${action === "remove" ? "已删除" : "已保存"}；新请求立即生效，旧连接测试和模型列表已失效。`;
+    const selected = selectedProfile();
+    if (formMode === "view" && selected) showSecret(data.credential_name, "selected-secret-status", () => revision === credentialRevision, selected);
+    showSecret(data.credential_name, "secret-status", () => revision === credentialRevision, formMode === "view" ? selected : null);
+  } catch (exc) {
+    const code = /^[A-Z][A-Z0-9_]{0,40}$/.test(exc.message) ? exc.message : stage === "write" ? "CREDENTIAL_WRITE_ERROR" : "CSRF_ERROR";
+    if (revision === credentialRevision) $("credential-status").textContent = `凭据修改失败：${code}${code === "ENV_REVISION_CONFLICT" ? "；请刷新状态后重新输入。" : ""}`;
+    // The write may have committed even if the response was lost; discard old authorization.
+    if (stage === "write") invalidateCredentialCaches();
+  } finally {
+    value = "";
+    credentialBusy = false;
+    $("credential-value").value = "";
+    for (const id of ["credential-create", "credential-replace", "credential-remove", "credential-refresh"]) $(id).disabled = false;
+  }
+}
 
 function show(value) {
   return value === null || value === undefined || value === "" ? "unavailable" : String(value);
@@ -377,6 +524,7 @@ function connectionFingerprint(fields) {
 }
 
 function invalidateTest() {
+  resetCredentialManager();
   testId = null;
   testedFingerprint = null;
   $("test-status").textContent = "连接字段已改变；Cloud 保存前需重新测试。";
@@ -425,8 +573,9 @@ async function showSecret(name, targetId, isCurrent = () => true, connection = n
       else {
         const source = data.source || "UNKNOWN";
         const access = source === "PROCESS_ENV" ? "外部只读"
-          : data.editable === true ? "未来可编辑（本轮只读）" : "只读";
-        target.textContent = `${name}: ${data.availability || data.status} · ${source} · ${access}`;
+          : data.editable === true ? "可在本地凭据管理中编辑" : "只读";
+        const location = source === "PROJECT_ENV" && data.storage === "USER_PRIVATE" ? " / 用户私有存储" : "";
+        target.textContent = `${name}: ${data.availability || data.status} · ${source}${location} · ${access}`;
       }
     }
   } catch (_) {
@@ -667,6 +816,9 @@ function validateForm({modelOptional = false} = {}) {
 async function queryModels() {
   const values = validateForm({modelOptional: true});
   if (!values) return;
+  const epoch = credentialEpoch;
+  const revision = formRevision;
+  const fingerprint = connectionFingerprint(values);
   $("models-status").textContent = "正在查询真实服务的模型列表…";
   $("query-models").disabled = true;
   try {
@@ -675,6 +827,7 @@ async function queryModels() {
       body: JSON.stringify({...values, confirm_network: true}),
     });
     const data = await response.json();
+    if (epoch !== credentialEpoch || revision !== formRevision || fingerprint !== connectionFingerprint(collectFields())) return;
     if (!response.ok) {
       $("models-status").textContent = `查询失败：${data.error_code}。可手动填写 Model ID。`;
       return;
@@ -702,6 +855,9 @@ async function queryModels() {
 async function testConnection() {
   const values = validateForm();
   if (!values) return;
+  const epoch = credentialEpoch;
+  const revision = formRevision;
+  const fingerprint = connectionFingerprint(values);
   const method = $("test-method").value;
   if (method === "chat" && !window.confirm("最小 Chat 会发送一次真实生成请求，可能产生费用。继续？")) return;
   $("test-profile").disabled = true;
@@ -712,6 +868,7 @@ async function testConnection() {
       body: JSON.stringify({...values, method, confirm_network: true}),
     });
     const data = await response.json();
+    if (epoch !== credentialEpoch || revision !== formRevision || fingerprint !== connectionFingerprint(collectFields())) return;
     if (!response.ok) {
       invalidateTest();
       $("test-status").textContent = `FAILURE · ${show(data.model || values.model)} · ${show(data.latency_ms)} ms · ${data.error_code}${method === "models" ? "；若服务不支持模型列表，可手动选择最小 Chat 重试（可能收费）。" : ""}`;
@@ -1032,6 +1189,11 @@ async function init() {
     $("model-options").addEventListener("change", () => { if ($("model-options").value) $("custom-model").value = $("model-options").value; invalidateTest(); });
     $("test-profile").addEventListener("click", testConnection);
     $("save-profile").addEventListener("click", saveCustomProfile);
+    $("credential-manager").addEventListener("toggle", () => { if ($("credential-manager").open) refreshCredentialStatus(); });
+    $("credential-refresh").addEventListener("click", refreshCredentialStatus);
+    $("credential-create").addEventListener("click", () => changeCredential("create"));
+    $("credential-replace").addEventListener("click", () => changeCredential("replace"));
+    $("credential-remove").addEventListener("click", () => changeCredential("remove"));
     $("custom-deployment").addEventListener("change", updateSecretRequirement);
     $("custom-auth").addEventListener("change", () => {
       updateSecretRequirement();

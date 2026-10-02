@@ -182,7 +182,9 @@ class GroundingAndProfileTests(unittest.TestCase):
         script = client.get("/assets/app.js").get_data(as_text=True)
         self.assertIn('id="custom-editor"', html)
         self.assertIn('class="panel raw-output"', html)
-        self.assertNotIn('type="password"', html)
+        profile_editor = html.split('id="custom-editor"', 1)[1].split('id="credential-manager"', 1)[0]
+        self.assertNotIn('type="password"', profile_editor)
+        self.assertIn('id="credential-value" type="password"', html)
         self.assertIn('document.createElement("details")', script)
         self.assertIn("Built-in Profiles", script)
         self.assertIn("User Custom Profiles", script)

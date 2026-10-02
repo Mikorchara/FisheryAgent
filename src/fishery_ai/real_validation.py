@@ -11,6 +11,7 @@ import ssl
 import time
 
 from .credentials import CredentialFileError, CredentialStore
+from .credential_paths import CredentialLocationError, private_project_location
 
 from .application import Orchestrator
 from .contracts import AnalysisRequest, Mode, Usage, UsageAccumulator
@@ -152,7 +153,15 @@ def run_real_validation(*, check: str, scenario: str, confirm_network: bool,
     if check not in CHECKS:
         print("UNKNOWN_CHECK")
         return 2
-    credentials = credential_store if credential_store is not None else CredentialStore(Path.cwd() / ".env")
+    if credential_store is None:
+        try:
+            location = private_project_location(Path.cwd())
+        except CredentialLocationError:
+            print("CREDENTIAL_STORAGE_UNAVAILABLE")
+            return 2
+        credentials = CredentialStore(location.env_path, private_location=location)
+    else:
+        credentials = credential_store
     registry = ProfileRegistry.from_json(RESOURCE_ROOT.joinpath(
         "profiles/deepseek_experimental.json"), credentials)
     profile = registry._profiles[PROFILE_ID]

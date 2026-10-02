@@ -23,8 +23,14 @@ Fishery_AI_Prototype/
 │     ├─ knowledge.py             # 知识分块(31 块) + TF-IDF 检索 + 证据构建；三后端 portable/sklearn/keyword
 │     ├─ model_gateway.py         # Profile 分类/身份、精确模型快照、请求/响应、Gateway 与 MockGateway
 │     ├─ model_options.py         # 生成/思考选项、三态能力与严格校验
+│     ├─ providers.py             # 静态 ProviderRegistry 与 AuthSpec
+│     ├─ credentials.py           # 只读 CredentialStore、私有不可变快照、随机凭据 generation
+│     ├─ credential_paths.py      # 启动边界的每项目用户私有路径及存储权限校验
+│     ├─ project_env.py           # 固定所选凭据文件的安全 CRUD、文本保留、revision 与回滚
+│     ├─ secure_files.py          # Windows ACL、安全暂存、跨进程锁与同卷原子替换
+│     ├─ web_security.py          # 本地 Host / Origin、会话 CSRF 与浏览器安全响应头
 │     ├─ openai_compatible_adapter.py  # 唯一直接 import openai 的文件：选项翻译、Usage 映射、重试与流式响应
-│     ├─ real_validation.py      # 仅显式入口使用：加载 .env、单项受控 Cloud 检查与脱敏输出
+│     ├─ real_validation.py      # 仅显式入口使用：私有凭据文件、单项受控 Cloud 检查与脱敏输出
 │     ├─ web.py                  # 本地开发验证 UI：薄 Flask 路由，复用现有 Orchestrator
 │     ├─ observability.py         # 白名单 JSONL Trace（不落 Key、不落 prompt、不落模型正文）
 │     ├─ repositories.py          # 从 scenarios.json 读取固定 Mock 水质与检测输入
@@ -44,6 +50,7 @@ Fishery_AI_Prototype/
 │  ├─ test_v011_a1.py             # A1 离线测试：状态、能力、参数映射、Usage、安全与网络阻断
 │  ├─ test_v011_a2.py             # A2 真实入口的离线假网关测试；不读取 .env
 │  ├─ test_v011_a2_1.py           # A2.1 能力和安全错误分类离线测试
+│  ├─ test_credential_writer.py   # R2 临时私有 .env、CRUD、权限、回滚、Web 安全与轮换缓存
 │  └─ test_v011_a3_web.py         # A3 Flask 客户端、Mock/Cloud 路由与安全边界离线测试
 ├─ scripts/
 │  └─ run_mock_demo.py            # 未安装包时从源码直接跑 demo 的薄包装
@@ -80,8 +87,11 @@ Fishery_AI_Prototype/
 | `knowledge.py` | `chunk_knowledge()`、`KnowledgeService.search()`、`_PortableTfidf`、`EXPANSIONS` | 兼容生产块 ID、扩展词与 0.04 门槛 |
 | `model_gateway.py` | `ModelProfile`、`ProfileRegistry`、`RuntimeSnapshot`、`ModelRequest`/`ModelResponse`/`ModelEvent`、`ModelGateway`、`MockGateway`、`GatewayError`/`RetryableGatewayError` | Provider/协议/模型/部署身份分开；`RuntimeSnapshot` 不可变且 `api_key` 不出现在 `repr` |
 | `model_options.py` | `ProfileStatus`、`Support`、`GenerationOptions`、`ReasoningOptions`、`ModelCapabilities`、`validate_options()` | 显式高级选项严格校验；能力绑定当前精确模型 |
+| `credentials.py` | `CredentialStore.resolve()`、`CredentialSnapshot` | 外部环境优先，每个请求重新读取，已有快照保持原值；只缓存不可逆内部标识和随机 generation |
+| `project_env.py` | `ProjectEnvWriter.inspect()/.mutate()`、`edit_env()` | 固定路径、原始文本片段编辑、revision 冲突、私有暂存与失败回滚 |
+| `web_security.py` | `install_local_security()` | Host 白名单、同源 Origin、当前会话 CSRF、无 CORS |
 | `openai_compatible_adapter.py` | `OpenAICompatibleAdapter.complete()/.stream()`、`RETRYABLE_STATUS` | SDK 自动重试关闭；能力验证后映射标准/受控 Provider 字段；正文已输出后不再重试 |
-| `real_validation.py` | `run_real_validation()` | 仅显式确认后加载 .env；一项检查对应最多一次 SDK 请求尝试，输出脱敏结果 |
+| `real_validation.py` | `run_real_validation()` | 仅显式确认后读取所选私有凭据；一项检查对应最多一次 SDK 请求尝试，输出脱敏结果 |
 | `application.py` | `Orchestrator.analyze()`、`_build_model_request()`、`_parse_model_text()`、`result_to_dict()` | Chat/Advice 共用同一构建路径，仅任务句与 top_k 不同 |
 | `observability.py` | `JsonlTraceSink.record()` | 显式字段白名单，附带线程锁 |
 

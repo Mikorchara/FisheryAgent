@@ -10,6 +10,7 @@ import json
 import uuid
 
 from fishery_ai.credentials import CredentialFileError, CredentialStore
+from fishery_ai.credential_paths import CredentialLocationError, private_project_location
 
 from fishery_ai.application import Orchestrator
 from fishery_ai.composition import RESOURCE_ROOT
@@ -44,9 +45,13 @@ def main() -> int:
         print("RETRY_POLICY_MUST_BE_ZERO")
         return 2
 
-    credentials = CredentialStore(workspace / ".env")
     try:
+        location = private_project_location(workspace)
+        credentials = CredentialStore(location.env_path, private_location=location)
         present = credentials.status(original.credential_ref, original.auth_spec).availability == "PRESENT"
+    except CredentialLocationError:
+        print("CREDENTIAL_STORAGE_UNAVAILABLE")
+        return 2
     except CredentialFileError:
         print("CREDENTIAL_FILE_ERROR")
         return 2

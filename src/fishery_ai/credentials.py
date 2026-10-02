@@ -7,11 +7,17 @@ from typing import Mapping
 import os
 import re
 import threading
+import hashlib
+import hmac
+import secrets
+import uuid
 
 from dotenv import dotenv_values
 from dotenv.parser import parse_stream
 
 from .providers import AuthSpec
+from .credential_paths import PrivateCredentialLocation
+from .secure_files import SecureFileError
 
 
 class CredentialFileError(Exception):
@@ -34,11 +40,12 @@ class CredentialStatus:
 class CredentialSnapshot:
     """Private immutable object, deliberately not a dataclass or JSON value."""
 
-    __slots__ = ("__secret", "status")
+    __slots__ = ("__secret", "status", "revision")
 
-    def __init__(self, secret: str | None, status: CredentialStatus):
+    def __init__(self, secret: str | None, status: CredentialStatus, revision: str | None = None):
         object.__setattr__(self, "_CredentialSnapshot__secret", secret)
         object.__setattr__(self, "status", status)
+        object.__setattr__(self, "revision", revision)
 
     def __setattr__(self, _name, _value):
         raise AttributeError("CredentialSnapshot is immutable")
@@ -66,22 +73,43 @@ class CredentialSnapshot:
 
 
 class CredentialStore:
-    """No write API or cache. A supplied path is fixed once at the startup boundary."""
+    """Read per request; only opaque generations are cached, never secret values."""
 
     def __init__(self, project_env_path: Path | None = None,
-                 process_env: Mapping[str, str] | None = None):
+                 process_env: Mapping[str, str] | None = None, *,
+                 private_location: PrivateCredentialLocation | None = None):
         self.project_env_path = project_env_path.absolute() if project_env_path is not None else None
+        if private_location is not None and private_location.env_path != self.project_env_path:
+            raise ValueError("Private location and CredentialStore paths must match")
+        self.private_location = private_location
         self._process_env = os.environ if process_env is None else process_env
         self._lock = threading.RLock()
+        self._revision_key = secrets.token_bytes(32)
+        self._revisions: dict[str, tuple[bytes, str]] = {}
+
+    def invalidate(self, credential_ref: str) -> None:
+        with self._lock:
+            self._revisions.pop(credential_ref, None)
+
+    def _snapshot(self, ref: str, value: str | None, status: CredentialStatus):
+        # Keyed internal fingerprint is never returned; revision is random and opaque.
+        digest = hmac.digest(self._revision_key,
+                             (status.source + "\0" + (value or "")).encode("utf-8"), hashlib.sha256)
+        previous = self._revisions.get(ref)
+        revision = previous[1] if previous and hmac.compare_digest(previous[0], digest) else uuid.uuid4().hex
+        self._revisions[ref] = (digest, revision)
+        return CredentialSnapshot(value or None, status, revision)
 
     def _project_values(self) -> dict[str, str | None]:
         if self.project_env_path is None:
             return {}
         try:
+            if self.private_location is not None and not self.private_location.check():
+                return {}
             text = self.project_env_path.read_text(encoding="utf-8-sig")
         except FileNotFoundError:
             return {}
-        except (OSError, UnicodeError):
+        except (OSError, UnicodeError, SecureFileError):
             raise CredentialFileError() from None
         try:
             if any(binding.error for binding in parse_stream(StringIO(text))):
@@ -104,14 +132,14 @@ class CredentialStore:
         with self._lock:
             if credential_ref in self._process_env:
                 value = self._process_env[credential_ref]
-                return CredentialSnapshot(value or None,
+                return self._snapshot(credential_ref, value,
                     CredentialStatus("PRESENT" if value else "MISSING", "PROCESS_ENV", False))
             values = self._project_values()
             if credential_ref in values:
                 value = values[credential_ref]
-                return CredentialSnapshot(value or None,
+                return self._snapshot(credential_ref, value,
                     CredentialStatus("PRESENT" if value else "MISSING", "PROJECT_ENV", True))
-            return CredentialSnapshot(None, CredentialStatus("MISSING", "MISSING", True))
+            return self._snapshot(credential_ref, None, CredentialStatus("MISSING", "MISSING", True))
 
     def status(self, credential_ref: str | None, auth_spec: AuthSpec = AuthSpec.REQUIRED_BEARER
                ) -> CredentialStatus:

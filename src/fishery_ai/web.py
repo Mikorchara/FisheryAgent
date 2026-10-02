@@ -21,6 +21,9 @@ from .official_capabilities import apply_official_capabilities
 from .contracts import AnalysisRequest, Mode, Status
 from .custom_profiles import CustomProfileStore, ProfileFieldError
 from .credentials import CredentialFileError, CredentialStore
+from .credential_paths import CredentialLocationError, private_project_location
+from .project_env import EnvWriteError, ProjectEnvWriter
+from .web_security import install_local_security
 from .providers import AuthSpec, PROVIDERS
 from .domain import DiagnosisService
 from .knowledge import KnowledgeService
@@ -129,11 +132,16 @@ def create_app(*, trace_path: Path | None = None,
                custom_profiles_dir: Path | None = None,
                capability_evidence_dir: Path | None = None,
                credential_store: CredentialStore | None = None,
+               credential_writer: ProjectEnvWriter | None = None,
+               allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1"),
                real_gateway_factory: Callable[[], ModelGateway] = OpenAICompatibleAdapter) -> Flask:
     """Construct without loading .env or making a network request."""
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
     credentials = credential_store if credential_store is not None else CredentialStore()
+    if credential_writer is not None and credential_writer.credentials is not credentials:
+        raise ValueError("Credential writer must share the app CredentialStore")
+    credential_gate, credential_origin_gate = install_local_security(app, allowed_hosts)
     store = CustomProfileStore(custom_profiles_dir or Path.cwd() / "outputs/custom_profiles")
     capability_store = CapabilityStore(capability_evidence_dir or
                                         Path.cwd() / "outputs/capability-evidence")
@@ -145,7 +153,8 @@ def create_app(*, trace_path: Path | None = None,
         raise ValueError("duplicate Profile display_name")
     sources = {profile.profile_id: "built_in" for profile in builtins}
     sources.update({profile_id: "user_custom" for profile_id in profiles if profile_id not in sources})
-    successful_tests: dict[str, tuple[tuple[str, ...], float]] = {}
+    successful_tests: dict[str, tuple[tuple[str, ...], float, str | None]] = {}
+    credential_revisions: dict[tuple[str, str], tuple[str, str]] = {}
     repository = MockRepository(RESOURCE_ROOT.joinpath("mock/scenarios.json"))
     scenarios = tuple(repository.data["water_quality"])
     diagnosis = DiagnosisService()
@@ -209,10 +218,21 @@ def create_app(*, trace_path: Path | None = None,
             return True
         if not isinstance(test_id, str) or test_id not in successful_tests:
             return False
-        fingerprint, at = successful_tests[test_id]
-        return time.monotonic() - at <= TEST_TTL_S and fingerprint == _fingerprint(values)
+        fingerprint, at, revision = successful_tests[test_id]
+        try:
+            profile = store.build(values, "draft")[0]
+            current = credentials.resolve(profile.credential_ref, profile.auth_spec)
+        except CredentialFileError:
+            return False
+        return (time.monotonic() - at <= TEST_TTL_S and fingerprint == _fingerprint(values)
+                and revision == current.revision)
 
     def save_profile(payload: dict, *, update_id: str | None = None):
+        # Bind validation and persistence to one credential generation during rotation.
+        with credentials._lock:
+            return persist_profile(payload, update_id=update_id)
+
+    def persist_profile(payload: dict, *, update_id: str | None = None):
         if update_id is not None and sources.get(update_id) != "user_custom":
             return error("PROFILE_NOT_EDITABLE", 403)
         try:
@@ -341,7 +361,107 @@ def create_app(*, trace_path: Path | None = None,
         except CredentialFileError:
             return error("CREDENTIAL_FILE_ERROR", 503)
         return jsonify({"secret_env": "" if auth == AuthSpec.NONE else name,
+                        "storage": "USER_PRIVATE" if credentials.private_location else "PROJECT_DIRECTORY",
                         "status": status["availability"], **status})
+
+    def credential_target(payload):
+        if not isinstance(payload, dict) or set(payload) - {"profile_id", "draft", "revision", "secret"}:
+            return None, error("INVALID_REQUEST", 400)
+        if "profile_id" in payload and "draft" not in payload:
+            identifier = payload["profile_id"]
+            profile = profiles.get(identifier) if isinstance(identifier, str) else None
+            return (profile, None) if profile else (None, error("PROFILE_NOT_FOUND", 404))
+        if "draft" in payload and "profile_id" not in payload and isinstance(payload["draft"], dict):
+            try:
+                _, profile = draft(payload["draft"], model_optional=True)
+                return profile, None
+            except ProfileFieldError as exc:
+                return None, profile_error(exc)
+        return None, error("INVALID_REQUEST", 400)
+
+    def credential_view(profile):
+        with credentials._lock:
+            return credential_view_locked(profile)
+
+    def credential_view_locked(profile):
+        try:
+            status = credentials.status(profile.credential_ref, profile.auth_spec).public_info()
+        except CredentialFileError:
+            return error("CREDENTIAL_FILE_ERROR", 503)
+        info = {"provider": profile.service_id,
+                "credential_name": profile.credential_ref if profile.auth_spec != AuthSpec.NONE else "",
+                **status, "revision": None, "exists": False, "error_code": None}
+        info["storage"] = "USER_PRIVATE" if credentials.private_location else "PROJECT_DIRECTORY"
+        info["editable"] = False
+        if status["source"] not in ("PROCESS_ENV", "NONE_REQUIRED"):
+            if not profile.credential_ref:
+                info["error_code"] = "CREDENTIAL_REF_MISSING"
+            elif credential_writer is None:
+                info["error_code"] = "CREDENTIAL_WRITER_DISABLED"
+            else:
+                try:
+                    state = credential_writer.inspect(profile.credential_ref, profile.auth_spec)
+                    scope = (profile.credential_ref, profile.auth_spec.value)
+                    binding = credential_revisions.get(scope)
+                    if binding is None or binding[0] != state["revision"]:
+                        binding = (state["revision"], uuid.uuid4().hex)
+                        credential_revisions[scope] = binding
+                    info.update(state)
+                    info["revision"] = binding[1]  # Bind file revision to the target credential.
+                    info["editable"] = True
+                except EnvWriteError as exc:
+                    info["error_code"] = exc.code
+        return jsonify(info)
+
+    @app.post("/api/credentials/status")
+    def credential_status():
+        rejected = credential_origin_gate(required=False)
+        if rejected is not None:
+            return rejected
+        profile, failure = credential_target(request.get_json(silent=True))
+        if failure is not None:
+            return failure
+        return credential_view(profile)
+
+    @app.route("/api/credentials", methods=["POST", "PUT", "DELETE"])
+    def mutate_credential():
+        rejected = credential_gate()
+        if rejected is not None:
+            return rejected
+        payload = request.get_json(silent=True)
+        profile, failure = credential_target(payload)
+        if failure is not None:
+            return failure
+        if profile.auth_spec == AuthSpec.NONE:
+            return error("AUTH_NONE", 403)
+        if credential_writer is None:
+            return error("CREDENTIAL_WRITER_DISABLED", 403)
+        action = {"POST": "create", "PUT": "replace", "DELETE": "remove"}[request.method]
+        if action == "remove" and "secret" in payload:
+            return error("INVALID_REQUEST", 400)
+        try:
+            with credentials._lock:
+                # Re-resolve a saved Profile after taking the shared rotation/edit lock.
+                if "profile_id" in payload:
+                    profile = profiles.get(payload["profile_id"])
+                    if profile is None:
+                        return error("PROFILE_NOT_FOUND", 404)
+                credential_writer._editable(profile.credential_ref, profile.auth_spec)
+                binding = credential_revisions.get((profile.credential_ref, profile.auth_spec.value))
+                if binding is None or payload.get("revision") != binding[1]:
+                    raise EnvWriteError("ENV_REVISION_CONFLICT")
+                credential_writer.mutate(profile.credential_ref, profile.auth_spec, action=action,
+                    expected_revision=binding[0], secret=payload.get("secret"))
+                credential_revisions.clear()
+                successful_tests.clear()  # Auth cache only; never remove evidence/defaults.
+        except EnvWriteError as exc:
+            status = (409 if exc.code in {"ENV_REVISION_CONFLICT", "CREDENTIAL_EXISTS", "CREDENTIAL_NOT_FOUND"}
+                      else 403 if exc.code in {"PROCESS_ENV_READ_ONLY", "AUTH_NONE"}
+                      else 400 if exc.code.startswith("INVALID_") else 503)
+            return error(exc.code, status)
+        except Exception:
+            return error("ENV_WRITE_FAILED", 503)
+        return credential_view(profile)
 
     @app.post("/api/profiles/models")
     def query_models():
@@ -364,6 +484,11 @@ def create_app(*, trace_path: Path | None = None,
             return error(code, 502)
         except Exception:
             return error("INTERNAL_ERROR", 500)
+        try:
+            if credentials.resolve(profile.credential_ref, profile.auth_spec).revision != runtime.credential.revision:
+                return error("CREDENTIAL_CHANGED", 409)
+        except CredentialFileError:
+            return error("CREDENTIAL_FILE_ERROR", 503)
         return jsonify({"status": "success", "models": model_ids,
                         "latency_ms": round((time.monotonic() - started) * 1000, 3),
                         "capabilities_verified": False})
@@ -406,8 +531,14 @@ def create_app(*, trace_path: Path | None = None,
             return test_failure(code)
         except Exception:
             return test_failure("INTERNAL_ERROR")
-        test_id = uuid.uuid4().hex
-        successful_tests[test_id] = (_fingerprint(values), time.monotonic())
+        with credentials._lock:
+            try:
+                if credentials.resolve(profile.credential_ref, profile.auth_spec).revision != runtime.credential.revision:
+                    return error("CREDENTIAL_CHANGED", 409)
+            except CredentialFileError:
+                return error("CREDENTIAL_FILE_ERROR", 503)
+            test_id = uuid.uuid4().hex
+            successful_tests[test_id] = (_fingerprint(values), time.monotonic(), runtime.credential.revision)
         return jsonify({"status": "success", "method": method,
                         "model": returned_model,
                         "latency_ms": round((time.monotonic() - started) * 1000, 3),
@@ -642,6 +773,19 @@ def create_app(*, trace_path: Path | None = None,
 
 def run_web(*, port: int = 8765) -> None:
     """Fix the credential path at startup; each request resolves a fresh snapshot."""
-    app = create_app(credential_store=CredentialStore(Path.cwd() / ".env"))
+    try:
+        location = private_project_location(Path.cwd())
+    except CredentialLocationError:
+        print("CREDENTIAL_STORAGE_UNAVAILABLE", flush=True)
+        return
+    credentials = CredentialStore(location.env_path, private_location=location)
+    app = create_app(credential_store=credentials,
+                     credential_writer=ProjectEnvWriter(location.env_path.parent, credentials,
+                                                        require_git_ignored=False),
+                     allowed_hosts=(f"127.0.0.1:{port}", f"localhost:{port}"))
     print(f"Developer Validation Web UI: http://127.0.0.1:{port}", flush=True)
-    app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
+    print(f"Project credentials (user-private): {location.env_path}", flush=True)
+    print("Legacy project .env is not read or migrated.", flush=True)
+    # CredentialStore owns project .env reads; Flask must not import it into os.environ.
+    app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False,
+            load_dotenv=False)

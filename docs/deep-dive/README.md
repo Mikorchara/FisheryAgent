@@ -24,7 +24,11 @@
 
 - [V0.1.1-A3.2 Cloud Capability、Streaming 与 Thinking](V0.1.1_A3_2_CLOUD_CAPABILITY_STREAMING_THINKING.md)：记录全流程审计、官方参数依据、统一单次 Probe、组合门禁和独立 Reasoning 输出。
 - [V0.1.1-A3.2.1 最终输出一致性与 Capability UI](V0.1.1_A3_2_1_OUTPUT_PARITY_AND_CAPABILITY_UI.md)：记录 Normal/Streaming 统一展示、能力证据折叠、四次 Qwen 对照及离线回归。
-- [Provider、Credential 与 Capability 重构研究](PROVIDER_CREDENTIAL_CAPABILITY_REFACTOR_RESEARCH.md)：核对原凭据和能力链路，提出渐进迁移方案；R0/R1 已实施，凭据写入、协议分离、Evidence 冲突、取消与 Manual Mode 仍待后续阶段。
-- [Provider/Credential 重构 R0–R1 实施报告](PROVIDER_CREDENTIAL_REFACTOR_R0_R1.md)：记录兼容请求体基线、静态 ProviderRegistry、只读 CredentialStore、凭据热读取、AuthSpec 与安全验证；R2–R7 尚未实施。
+- [Provider、Credential 与 Capability 重构研究](PROVIDER_CREDENTIAL_CAPABILITY_REFACTOR_RESEARCH.md)：核对原凭据和能力链路，提出渐进迁移方案；R0/R1/R2 已实施，协议分离、Evidence 冲突、取消与 Manual Mode 留待后续阶段。
+- [Provider/Credential 重构 R0–R1 实施报告](PROVIDER_CREDENTIAL_REFACTOR_R0_R1.md)：记录兼容请求体基线、静态 ProviderRegistry、只读 CredentialStore、凭据热读取、AuthSpec 与安全验证；范围为 R0/R1，R2 见下一篇。
+
+- [Provider/Credential 重构 R2 实施报告](PROVIDER_CREDENTIAL_REFACTOR_R2.md)：记录 Credential Web Manager、Windows ACL、revision/回滚、CSRF、热更新与缓存失效，以及用户私有存储迁移；R3–R7 仍未实施。
+- [R2 用户私有凭据存储迁移说明](R2_PRIVATE_CREDENTIAL_STORAGE_MIGRATION.md)：固定路径规则、单文件来源、首次设置与人工验收。
+- [Post-R2 结构审计（RESOLVED）](POST_R2_STRUCTURAL_AUDIT.md)：记录人工验收收尾、旧验证入口迁移遗漏修复、统一凭据边界与最终离线回归。
 
 历史报告描述的是编写时的状态。当前环境准备与项目范围请以[文档导航](../README.md)为准。

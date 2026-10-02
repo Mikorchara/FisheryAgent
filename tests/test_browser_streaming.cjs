@@ -13,6 +13,177 @@ const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'fishery_ai',
   'resources', 'web', 'app.css'), 'utf8');
 const knownIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
 
+const r2Profile = {profile_id:'r2-profile',display_name:'R2 fixture',service_id:'dashscope',
+  runtime_type:'cloud',profile_status:'custom',source:'user_custom',auth_spec:'REQUIRED_BEARER',
+  secret_env:'TEST_FAKE_KEY',credential_ref:'TEST_FAKE_KEY',capabilities:{streaming:'supported'}};
+const r2State = {provider:'dashscope',credential_name:'TEST_FAKE_KEY',availability:'PRESENT',
+  source:'PROJECT_ENV',editable:true,exists:true,revision:'opaque-revision',error_code:null};
+const r2Reply = (data,ok=true,status=ok?200:409) => ({ok,status,json:async()=>data});
+test('R2 private storage is explicitly shown without implying source-root dotenv edits',async()=>{
+  const page=makePage(async()=>r2Reply({...r2State,storage:'USER_PRIVATE'}));
+  r2Setup(page,{...r2State,storage:'USER_PRIVATE'});
+  assert.match(page.element('credential-status').textContent,/PROJECT_ENV.*用户私有存储/);
+  await vm.runInContext(`showSecret('TEST_FAKE_KEY','secret-status',()=>true,${JSON.stringify(r2Profile)})`,page.context);
+  assert.match(page.element('secret-status').textContent,/PROJECT_ENV.*用户私有存储/);
+  assert.match(html,/不编辑或自动迁移源码根目录/);
+});
+function r2Setup(page,state=r2State) {
+  vm.runInContext(`profiles=[${JSON.stringify(r2Profile)}];formMode='view';credentialCsrf='fictional-csrf'`,page.context);
+  page.element('profile').value=r2Profile.profile_id;
+  vm.runInContext(`renderCredentialState(${JSON.stringify(state)})`,page.context);
+}
+
+test('R2 credential submit clears input before request, never changes runtime capability, and clears auth caches',async()=>{
+  let page;
+  let body;
+  page=makePage(async(url,options)=>{
+    if(url==='/api/credentials') {
+      assert.equal(page.element('credential-value').value,'');
+      body=JSON.parse(options.body);
+      assert.equal(options.method,'PUT');
+      assert.equal(options.headers['X-CSRF-Token'],'fictional-csrf');
+      return r2Reply({...r2State,revision:'new-opaque'});
+    }
+    assert.equal(url,'/api/secret-status');
+    return r2Reply({availability:'PRESENT',source:'PROJECT_ENV',editable:true});
+  });
+  r2Setup(page);
+  page.element('credential-value').value='fictional-browser-key';
+  page.element('response-mode').value='streaming';
+  page.element('reasoning-mode').value='off';
+  page.element('model-options').hidden=false;
+  vm.runInContext("testId='old-test';testedFingerprint='old-fingerprint'",page.context);
+  await vm.runInContext("changeCredential('replace')",page.context);
+  assert.equal(body.secret,'fictional-browser-key');
+  assert.equal(body.profile_id,r2Profile.profile_id);
+  assert.equal(page.element('credential-value').value,'');
+  assert.equal(page.element('model-options').hidden,true);
+  assert.equal(vm.runInContext('testId',page.context),null);
+  assert.equal(page.element('response-mode').value,'streaming');
+  assert.equal(page.element('reasoning-mode').value,'off');
+  assert.equal(vm.runInContext('profiles[0].capabilities.streaming',page.context),'supported');
+  assert.match(page.element('credential-status').textContent,/已保存.*立即生效.*失效/);
+  assert.doesNotMatch(page.element('credential-status').textContent,/fictional-browser-key/);
+});
+
+test('R2 first missing credential uses create and deletion sends no secret',async()=>{
+  const calls=[];
+  const page=makePage(async(url,options)=>{
+    if(url==='/api/credentials') {
+      calls.push({method:options.method,body:JSON.parse(options.body)});
+      return r2Reply(options.method==='DELETE' ? {...r2State,availability:'MISSING',exists:false}
+        : r2State);
+    }
+    return r2Reply({availability:'PRESENT',source:'PROJECT_ENV',editable:true});
+  });
+  r2Setup(page,{...r2State,exists:false,availability:'MISSING'});
+  assert.equal(page.element('credential-create').hidden,false);
+  page.element('credential-value').value='fictional-created-key';
+  await vm.runInContext("changeCredential('create')",page.context);
+  assert.equal(page.element('credential-replace').hidden,false);
+  await vm.runInContext("changeCredential('remove')",page.context);
+  assert.deepEqual(calls.map(x=>x.method),['POST','DELETE']);
+  assert.equal(Object.hasOwn(calls[1].body,'secret'),false);
+  assert.match(page.element('credential-status').textContent,/已删除/);
+});
+
+test('R2 readonly PROCESS_ENV and NONE never expose credential edit controls',()=>{
+  const page=makePage(async()=>{throw new Error('offline only');});
+  r2Setup(page,{...r2State,source:'PROCESS_ENV',editable:false,revision:null});
+  assert.equal(page.element('credential-edit-fields').hidden,true);
+  assert.match(page.element('credential-status').textContent,/外部只读/);
+  vm.runInContext("renderCredentialState({availability:'NONE_REQUIRED',source:'NONE_REQUIRED',editable:false})",page.context);
+  assert.equal(page.element('credential-edit-fields').hidden,true);
+  assert.match(page.element('credential-status').textContent,/不需要凭据/);
+});
+
+test('R2 safe conflict, fetch error and bad JSON all clear input without echoing raw exception',async()=>{
+  for(const kind of ['conflict','fetch','json']) {
+    const page=makePage(async()=>{
+      if(kind==='fetch') throw new Error('fictional-browser-secret raw exception');
+      if(kind==='json') return {ok:true,json:async()=>{throw new SyntaxError('fictional-browser-secret');}};
+      return r2Reply({error_code:'ENV_REVISION_CONFLICT'},false);
+    });
+    r2Setup(page);
+    page.element('credential-value').value='fictional-browser-secret';
+    await vm.runInContext("changeCredential('replace')",page.context);
+    assert.equal(page.element('credential-value').value,'');
+    assert.match(page.element('credential-status').textContent,/修改失败/);
+    assert.doesNotMatch(page.element('credential-status').textContent,/fictional-browser-secret|raw exception/);
+    assert.equal(page.element('credential-replace').disabled,false);
+    if(kind==='conflict') assert.match(page.element('credential-status').textContent,/ENV_REVISION_CONFLICT.*刷新/);
+  }
+});
+
+test('R2 CSRF failure clears new key before fetching session token',async()=>{
+  let page;
+  page=makePage(async(url)=>{
+    assert.equal(url,'/api/credential-session');
+    assert.equal(page.element('credential-value').value,'');
+    return r2Reply({error_code:'CSRF_INVALID'},false,403);
+  });
+  r2Setup(page);
+  vm.runInContext('credentialCsrf=null',page.context);
+  page.element('credential-value').value='fictional-browser-secret';
+  await vm.runInContext("changeCredential('replace')",page.context);
+  assert.match(page.element('credential-status').textContent,/CSRF_INVALID/);
+  assert.equal(page.element('credential-value').value,'');
+});
+
+test('R2 credential status response for previous Profile is discarded',async()=>{
+  let resolve;
+  const page=makePage(async()=>new Promise(done=>{resolve=done;}));
+  r2Setup(page);
+  const pending=vm.runInContext('refreshCredentialStatus()',page.context);
+  vm.runInContext("profiles[0]={...profiles[0],profile_id:'next',auth_spec:'NONE'};formMode='view'",page.context);
+  page.element('profile').value='next';
+  vm.runInContext('resetCredentialManager()',page.context);
+  resolve(r2Reply(r2State));
+  await pending;
+  assert.match(page.element('credential-status').textContent,/不需要凭据/);
+  assert.equal(page.element('credential-edit-fields').hidden,true);
+});
+
+test('R2 draft profile can set credential before saving or querying models',async()=>{
+  const fields={display_name:'R2 new',service_id:'dashscope',model_family:'qwen',adapter_id:'openai_chat',
+    base_url:'https://example.invalid/v1',model:'',secret_env:'TEST_FAKE_KEY',provider_kind:'cloud',auth_spec:'REQUIRED_BEARER'};
+  let submitted;
+  const page=makePage(async(url,options)=>{
+    assert.equal(url,'/api/credentials/status');
+    submitted=JSON.parse(options.body);
+    return r2Reply({...r2State,exists:false,availability:'MISSING'});
+  });
+  vm.runInContext('formMode="new"',page.context);
+  page.element('provider-preset').value='dashscope';
+  for(const [field,value] of Object.entries(fields)) {
+    vm.runInContext(`$(customFields[${JSON.stringify(field)}]).value=${JSON.stringify(value)}`,page.context);
+  }
+  await vm.runInContext('refreshCredentialStatus()',page.context);
+  assert.equal(submitted.draft.secret_env,'TEST_FAKE_KEY');
+  assert.equal(Object.hasOwn(submitted,'profile_id'),false);
+  assert.equal(page.element('credential-create').hidden,false);
+});
+
+test('R2 late model-list or connection-test response cannot restore caches after credential rotation',async()=>{
+  for(const action of ['queryModels()','testConnection()']) {
+    let resolve;
+    const page=makePage(async()=>new Promise(done=>{resolve=done;}));
+    const fields={display_name:'R2 new',service_id:'dashscope',model_family:'qwen',adapter_id:'openai_chat',
+      base_url:'https://example.invalid/v1',model:'fake-model',secret_env:'TEST_FAKE_KEY',provider_kind:'cloud',auth_spec:'REQUIRED_BEARER'};
+    vm.runInContext('formMode="new"',page.context);
+    page.element('provider-preset').value='dashscope';
+    page.element('test-method').value='models';
+    for(const [field,value] of Object.entries(fields)) vm.runInContext(`$(customFields[${JSON.stringify(field)}]).value=${JSON.stringify(value)}`,page.context);
+    const pending=vm.runInContext(action,page.context);
+    vm.runInContext('invalidateCredentialCaches()',page.context);
+    resolve(r2Reply({models:['obsolete-model'],test_id:'obsolete-test',model:'fake-model'}));
+    await pending;
+    assert.equal(vm.runInContext('testId',page.context),null);
+    assert.equal(page.element('model-options').hidden,true);
+    assert.match(page.element('test-status').textContent,/失效/);
+  }
+});
+
 function businessView(page) {
   return ['model-inference', 'recommendations', 'uncertainty', 'structured']
     .map(id => ({text: page.element(id).textContent,
@@ -301,11 +472,11 @@ test('Credential status shows source and readonly scope without values or finger
   await vm.runInContext(`showSecret('TEST_FAKE_KEY','secret-status',()=>true,${JSON.stringify(connection)})`,page.context);
   assert.match(page.element('secret-status').textContent,/TEST_FAKE_KEY: PRESENT.*PROCESS_ENV.*外部只读/);
   await vm.runInContext(`showSecret('TEST_FAKE_KEY','secret-status',()=>true,${JSON.stringify(connection)})`,page.context);
-  assert.match(page.element('secret-status').textContent,/PRESENT.*PROJECT_ENV.*未来可编辑.*本轮只读/);
+  assert.match(page.element('secret-status').textContent,/PRESENT.*PROJECT_ENV.*本地凭据管理.*编辑/);
   await vm.runInContext(`showSecret('TEST_FAKE_KEY','secret-status',()=>true,${JSON.stringify(connection)})`,page.context);
   assert.match(page.element('secret-status').textContent,/MISSING.*PROCESS_ENV.*外部只读/);
   assert.deepEqual(requests,Array(3).fill({profile_id:'exact-cloud'}));
-  assert.doesNotMatch(html,/Set Key|Replace Key|Delete Key|type="password"/);
+  assert.match(html,/id="credential-value" type="password" autocomplete="new-password"/);
 });
 
 test('Auth requirements are independent of deployment and changes invalidate connection test',async()=>{

@@ -29,7 +29,7 @@
 
         <details id="custom-editor" class="custom-editor">
           <summary>管理模型配置</summary>
-          <p class="helper">顶部选择后查看当前配置；自定义配置可编辑连接参数，名称创建后不可修改。页面只保存 Secret 环境变量名，不接收真实 Key。</p>
+          <p class="helper">顶部选择后查看当前配置；自定义配置可编辑连接参数，名称创建后不可修改。Profile 只保存凭据变量名；Key 单独通过下方凭据管理写入用户私有存储。</p>
           <div class="manager-actions">
             <button id="new-profile" class="secondary" type="button">新建</button>
             <button id="edit-profile" class="secondary" type="button" hidden>编辑所选</button>
@@ -70,7 +70,7 @@
             <p class="helper">仅在需要自定义服务身份、模型家族或 Adapter 时修改。</p>
             <label for="custom-auth">AuthSpec <span class="required">必选</span></label>
             <select id="custom-auth"><option value="REQUIRED_BEARER">REQUIRED_BEARER（必须认证）</option><option value="OPTIONAL_BEARER">OPTIONAL_BEARER（可选认证）</option><option value="NONE">NONE（无需凭据）</option></select>
-            <p class="helper">认证要求与 Cloud / Local 分开配置。Built-in Ollama 使用只读 NONE；本轮仅显示凭据状态，不提供 Key 编辑。</p>
+            <p class="helper">认证要求与 Cloud / Local 分开配置。Built-in Ollama 使用只读 NONE，不需要凭据。</p>
             <label for="custom-provider">service_id <span class="required">必填</span></label>
             <input id="custom-provider" type="text" maxlength="64" required>
             <p class="helper">API 服务平台标识，例如 dashscope、deepseek_api；自定义兼容服务使用 custom。</p>
@@ -87,6 +87,24 @@
           <p id="test-status" class="status" role="status" aria-live="polite"></p>
           <button id="save-profile" class="secondary" type="button">保存 Profile</button>
           <p id="custom-status" class="status" role="status" aria-live="polite"></p>
+        </details>
+
+        <details id="credential-manager" class="custom-editor">
+          <summary>本地凭据管理</summary>
+          <p class="helper">PROJECT_ENV / 用户私有存储：只写入启动时固定的每项目凭据文件，不编辑或自动迁移源码根目录 .env，不访问模型服务。外部环境变量只读；后端不会返回已有 Key。升级后请手动在这里重新设置凭据。</p>
+          <dl id="credential-summary" class="profile-summary"></dl>
+          <button id="credential-refresh" class="secondary" type="button">刷新凭据状态</button>
+          <div id="credential-edit-fields" hidden>
+            <label for="credential-value">新 Key（设置 / 替换时填写）</label>
+            <input id="credential-value" type="password" autocomplete="new-password" maxlength="4096" spellcheck="false">
+            <p class="helper">不显示旧值；提交后立即清空。不存入 Profile、浏览器本地存储或日志。</p>
+            <div class="manager-actions">
+              <button id="credential-create" class="secondary" type="button" hidden>设置 Key</button>
+              <button id="credential-replace" class="secondary" type="button" hidden>替换 Key</button>
+              <button id="credential-remove" class="danger" type="button" hidden>删除 Key</button>
+            </div>
+          </div>
+          <p id="credential-status" class="status" role="status" aria-live="polite">展开后检查当前配置的凭据。</p>
         </details>
 
         <details id="capability-panel" class="capability-panel" open>

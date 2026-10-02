@@ -1,7 +1,7 @@
 """R1 credentials use temporary files, fake values and a strict socket guard."""
 
 from collections.abc import Mapping
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import FrozenInstanceError, asdict, replace
 from io import StringIO
 from pathlib import Path
@@ -12,6 +12,7 @@ import json
 import os
 import pickle
 import socket
+import sys
 import unittest
 
 from fishery_ai.contracts import Mode, Usage, UsageSource
@@ -82,6 +83,92 @@ class OfflineCredentialTest(unittest.TestCase):
                       max_retries=0)
         values.update(changes)
         return ModelProfile(**values)
+
+
+class WebStartupCredentialTests(OfflineCredentialTest):
+    def setUp(self):
+        super().setUp()
+        from fishery_ai import secure_files
+        from fishery_ai.credential_paths import private_project_location
+        self.base = self.root / "localappdata"
+        secure_files.private_directory(self.base)
+        self.project = self.root / "source"
+        self.project.mkdir()
+        with patch("fishery_ai.credential_paths.Path.home", return_value=self.base):
+            self.location = private_project_location(self.project, {"LOCALAPPDATA": str(self.base)})
+        self.location.check(create=True)
+        self.env_file = self.location.env_path
+
+    def start_cli_without_server(self):
+        from flask import Flask
+        from fishery_ai.__main__ import main
+
+        # Exercise real Flask.run, but prohibit dotenv loading and socket serving.
+        app = Flask("credential-startup-regression")
+        with patch("fishery_ai.web.Path.cwd", return_value=self.project), \
+                patch.dict(os.environ, {"LOCALAPPDATA": str(self.base)}), \
+                patch("fishery_ai.credential_paths.Path.home", return_value=self.base), \
+                patch("fishery_ai.web.create_app", return_value=app) as factory, \
+                patch.object(app, "run", wraps=app.run) as run, \
+                patch("flask.cli.load_dotenv", side_effect=AssertionError(
+                    "Flask must not load any environment file")) as loader, \
+                patch("werkzeug.serving.run_simple") as server, \
+                patch.object(sys, "argv", ["fishery_ai", "web", "--port", "8765"]), \
+                redirect_stdout(StringIO()):
+            main()
+        loader.assert_not_called()
+        server.assert_called_once()
+        self.assertIs(run.call_args.kwargs["load_dotenv"], False)
+        return factory.call_args.kwargs["credential_store"]
+
+    def test_cli_startup_keeps_project_source_and_hot_reload_without_environment_mutation(self):
+        name = "TEST_API_KEY"
+        self.assertNotIn(name, os.environ)
+        from fishery_ai import secure_files
+        secure_files.write_private(self.env_file, f"{name}={FAKE_A}\n".encode())
+        store = self.start_cli_without_server()
+        self.assertNotIn(name, os.environ)
+        first = store.resolve(name)
+        self.assertEqual(first.status.source, "PROJECT_ENV")
+        self.assertEqual(first.status.availability, "PRESENT")
+        self.assertTrue(first.status.editable)
+        self.assertTrue(first._for_adapter() == FAKE_A)
+
+        self.env_file.write_text(f"{name}={FAKE_B}\n", encoding="utf-8")
+        second = store.resolve(name)
+        self.assertEqual(second.status.source, "PROJECT_ENV")
+        self.assertTrue(second._for_adapter() == FAKE_B)
+        self.assertTrue(first._for_adapter() == FAKE_A)
+        self.assertNotEqual(first.revision, second.revision)
+        self.assertNotIn(name, os.environ)
+
+    def test_cli_startup_preserves_external_process_environment_priority(self):
+        name = "TEST_API_KEY"
+        from fishery_ai import secure_files
+        secure_files.write_private(self.env_file, f"{name}={FAKE_B}\n".encode())
+        with patch.dict(os.environ, {name: FAKE_A}):
+            store = self.start_cli_without_server()
+            with patch.object(store, "_project_values", side_effect=AssertionError("no fallback")):
+                snapshot = store.resolve(name)
+            self.assertEqual(snapshot.status.source, "PROCESS_ENV")
+            self.assertFalse(snapshot.status.editable)
+            self.assertTrue(snapshot._for_adapter() == FAKE_A)
+            self.assertTrue(os.environ[name] == FAKE_A)
+
+    def test_cli_never_reads_or_migrates_legacy_project_env(self):
+        legacy = self.project / ".env"
+        legacy.write_text(f"TEST_API_KEY={FAKE_A}\n", encoding="utf-8")
+        before = legacy.read_bytes()
+        original_read = Path.read_text
+        def no_legacy_read(path, *args, **kwargs):
+            if path == legacy:
+                raise AssertionError("legacy project .env must not be read")
+            return original_read(path, *args, **kwargs)
+        with patch.object(Path, "read_text", no_legacy_read):
+            store = self.start_cli_without_server()
+            self.assertEqual(store.status("TEST_API_KEY").availability, "MISSING")
+        self.assertFalse(self.env_file.exists())
+        self.assertTrue(legacy.read_bytes() == before)
 
 
 class CredentialStoreTests(OfflineCredentialTest):
@@ -282,7 +369,7 @@ class WebCredentialTests(OfflineCredentialTest):
         self.write(name="DASHSCOPE_API_KEY")
         response = self.client().post("/api/secret-status", json=dict(profile_id="qwen-plus-experimental"))
         self.assertEqual(response.get_json(), dict(secret_env="DASHSCOPE_API_KEY", status="PRESENT",
-            availability="PRESENT", source="PROJECT_ENV", editable=True))
+            availability="PRESENT", source="PROJECT_ENV", editable=True, storage="PROJECT_DIRECTORY"))
         self.assertNotIn(FAKE_A, response.get_data(as_text=True))
 
     def test_process_present_or_empty_reports_external_readonly(self):
@@ -383,11 +470,11 @@ class WebCredentialTests(OfflineCredentialTest):
         for path in paths:
             self.assertNotIn(FAKE_A, path.read_text(encoding="utf-8"))
 
-    def test_no_credential_writer_and_bad_status_inputs_are_safe(self):
+    def test_no_credential_writer_is_disabled_and_bad_status_inputs_are_safe(self):
         client = self.client()
         for method in ("put", "delete"):
             self.assertEqual(getattr(client, method)("/api/secret-status", json={}).status_code, 405)
-        self.assertEqual(client.post("/api/credentials", json={}).status_code, 404)
+        self.assertEqual(client.post("/api/credentials", json={}).get_json()["error_code"], "ORIGIN_NOT_ALLOWED")
         invalid = client.post("/api/secret-status", json=["invalid"])
         self.assertEqual(invalid.get_json()["error_code"], "INVALID_REQUEST")
         invalid = client.post("/api/secret-status", json=dict(secret_env=REF, auth_spec="invalid"))
