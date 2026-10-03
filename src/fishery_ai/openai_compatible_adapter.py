@@ -80,7 +80,8 @@ class OpenAICompatibleAdapter:
         if any(value is not None and not isinstance(value, str) for value in (delta, reasoning)):
             raise GatewayError("INVALID_STREAM_EVENT")
         usage = _usage(getattr(chunk, "usage", None))
-        return ModelEvent(delta or "", usage if usage.source != UsageSource.UNAVAILABLE else None, reasoning)
+        return ModelEvent(delta or "", usage if usage.source != UsageSource.UNAVAILABLE else None, reasoning,
+                          getattr(chunk.choices[0], "finish_reason", None) if chunk.choices else None)
 
     @staticmethod
     def _manual_response(response, runtime):
@@ -527,9 +528,10 @@ class OpenAICompatibleAdapter:
                     usage = _usage(getattr(chunk, "usage", None))
                     if delta or reasoning_delta:
                         emitted = True
-                    if delta or reasoning_delta or usage.source != UsageSource.UNAVAILABLE:
+                    finish = getattr(chunk.choices[0], "finish_reason", None) if chunk.choices else None
+                    if delta or reasoning_delta or finish or usage.source != UsageSource.UNAVAILABLE:
                         yield ModelEvent(delta=delta or "", usage=usage if usage.source != UsageSource.UNAVAILABLE
-                                         else None, reasoning_delta=reasoning_delta)
+                                         else None, reasoning_delta=reasoning_delta, finish_reason=finish)
                 return
             except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
                 error = (RetryableGatewayError("TOTAL_TIMEOUT") if time.monotonic() >= deadline

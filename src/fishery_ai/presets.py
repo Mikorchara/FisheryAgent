@@ -59,7 +59,8 @@ def preset_profiles(*, include_candidates=False) -> tuple[ModelProfile, ...]:
                         raise ValueError("Duplicate Preset combination")
                     combinations.add((mode.value, response))
                     if response == "streaming" and (caps.streaming.value != "supported" or
-                            mode == ReasoningMode.ON and caps.thinking_streaming_combination.value != "supported"):
+                            mode == ReasoningMode.ON and caps.thinking_streaming_combination.value != "supported" or
+                            mode == ReasoningMode.OFF and caps.thinking_off_streaming_combination.value != "supported"):
                         raise ValueError("Unvalidated Preset streaming combination")
             is_default = defaults.get("thinking") == mode.value
             result.append(replace(base, profile_id=f"preset-{template['id']}-{variant['id']}",

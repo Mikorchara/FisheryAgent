@@ -115,7 +115,7 @@ class ModelProfile:
             getattr(self.capabilities, name).value != "unknown" for name in (
                 "streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
                 "reasoning_off", "reasoning_effort", "structured_output", "tool_calling",
-                "streaming_usage", "thinking_streaming_combination"))
+                "streaming_usage", "thinking_streaming_combination", "thinking_off_streaming_combination"))
         if (declared and capabilities.model_id == self.model
                 and capabilities.base_url == self.base_url
                 and capabilities.service_id in (None, service_id)):
@@ -232,6 +232,10 @@ def effective_runtime_defaults(profile: ModelProfile
         reasoning.mode == ReasoningMode.AUTO and profile.capabilities.thinking_default is True)
     if (response_mode == "streaming" and effective_on
             and profile.capabilities.thinking_streaming_combination != Support.SUPPORTED):
+        response_mode = "normal"
+        notices.append("COMBINATION_DEFAULT_FALLBACK")
+    if (response_mode == "streaming" and reasoning.mode == ReasoningMode.OFF
+            and profile.capabilities.thinking_off_streaming_combination != Support.SUPPORTED):
         response_mode = "normal"
         notices.append("COMBINATION_DEFAULT_FALLBACK")
     return reasoning, response_mode, notices
@@ -387,6 +391,7 @@ class ModelEvent:
     delta: str = ""
     usage: Usage | None = None
     reasoning_delta: str | None = None
+    finish_reason: str | None = None
 
 
 class ModelGateway(Protocol):

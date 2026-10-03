@@ -76,6 +76,7 @@ class ModelCapabilities:
     tool_calling: Support = Support.UNKNOWN
     streaming_usage: Support = Support.UNKNOWN
     thinking_streaming_combination: Support = Support.UNKNOWN
+    thinking_off_streaming_combination: Support = Support.UNKNOWN
     max_tokens_field: str | None = None  # Deprecated: legacy protocol encoding override only.
     effort_values: tuple[str, ...] = ()
     reasoning_temperature_conflict: bool = False
@@ -95,7 +96,7 @@ class ModelCapabilities:
             object.__setattr__(self, "base_url", normalize_base_url(self.base_url))
         for name in ("streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
                      "reasoning_off", "reasoning_effort", "structured_output", "tool_calling",
-                     "streaming_usage", "thinking_streaming_combination"):
+                     "streaming_usage", "thinking_streaming_combination", "thinking_off_streaming_combination"):
             value = getattr(self, name)
             if isinstance(value, bool):  # Existing profile JSON remains readable.
                 value = Support.SUPPORTED if value else Support.UNSUPPORTED
@@ -109,7 +110,7 @@ class ModelCapabilities:
                                   for name, source in evidence))
         allowed = {"streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
                    "reasoning_off", "reasoning_effort", "structured_output", "tool_calling",
-                   "streaming_usage", "thinking_streaming_combination", "thinking_default"}
+                   "streaming_usage", "thinking_streaming_combination", "thinking_off_streaming_combination", "thinking_default"}
         if any(name not in allowed for name, _ in normalized):
             raise ValueError("invalid capability evidence field")
         object.__setattr__(self, "evidence", normalized)
@@ -203,3 +204,5 @@ def validate_options(generation: GenerationOptions, reasoning: ReasoningOptions,
         if (reasoning.mode == ReasoningMode.ON or
                 (reasoning.mode == ReasoningMode.AUTO and capabilities.thinking_default is True)):
             _require("thinking_streaming_combination", capabilities.thinking_streaming_combination)
+        elif reasoning.mode == ReasoningMode.OFF:
+            _require("thinking_off_streaming_combination", capabilities.thinking_off_streaming_combination)

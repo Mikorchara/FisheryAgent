@@ -468,7 +468,8 @@ function capabilityStatus(profile, name) {
   const item = name === "reasoning_on" ? capabilities.thinking_on
     : name === "reasoning_off" ? capabilities.thinking_off
       : name === "reasoning_effort" ? capabilities.reasoning_effort
-        : name === "thinking_streaming_combination" ? capabilities.thinking_streaming_combination : null;
+        : name === "thinking_streaming_combination" ? capabilities.thinking_streaming_combination
+          : name === "thinking_off_streaming_combination" ? capabilities.thinking_off_streaming_combination : null;
   const status = (name === "streaming" ? capabilities.streaming : item?.status)?.toLowerCase();
   return ["supported", "unsupported", "unknown"].includes(status) ? status : "unknown";
 }
@@ -502,7 +503,8 @@ function resolveRuntimeDefaults(profile) {
     response = "normal";
   }
   const effectiveOn = thinking === "on" || (thinking === "auto" && profile.capabilities?.thinking_default === true);
-  if (response === "streaming" && effectiveOn && capabilityStatus(profile, "thinking_streaming_combination") !== "supported") {
+  if (response === "streaming" && ((effectiveOn && capabilityStatus(profile, "thinking_streaming_combination") !== "supported")
+      || (thinking === "off" && capabilityStatus(profile, "thinking_off_streaming_combination") !== "supported"))) {
     notices.push("默认 Streaming + Thinking 组合未验证或不支持，已临时回退为 Normal；原偏好保留。");
     response = "normal";
   }
@@ -530,13 +532,15 @@ function updateRuntimeOptionControls(profile, preferred = {}) {
 
   const effectiveOn = thinkingSelect.value === "on"
     || (thinkingSelect.value === "auto" && profile?.capabilities?.thinking_default === true);
-  const combinationStatus = capabilityStatus(profile, "thinking_streaming_combination");
-  const responseStatus = effectiveOn && combinationStatus !== "supported" ? combinationStatus : streamingStatus;
+  const needsCombination = effectiveOn || thinkingSelect.value === "off";
+  const combinationStatus = capabilityStatus(profile, thinkingSelect.value === "off"
+    ? "thinking_off_streaming_combination" : "thinking_streaming_combination");
+  const responseStatus = needsCombination && combinationStatus !== "supported" ? combinationStatus : streamingStatus;
   responseSelect.replaceChildren();
   appendChoice(responseSelect, "normal", "Normal（不启用 Streaming）");
-  appendChoice(responseSelect, "streaming", `Streaming${statusSuffix(responseStatus)}${effectiveOn && combinationStatus !== "supported" ? "（Thinking 组合待验证）" : ""}`,
-    streamingStatus !== "supported" || (effectiveOn && combinationStatus !== "supported"));
-  responseSelect.value = requestedResponse === "streaming" && streamingStatus === "supported" && (!effectiveOn || combinationStatus === "supported")
+  appendChoice(responseSelect, "streaming", `Streaming${statusSuffix(responseStatus)}${needsCombination && combinationStatus !== "supported" ? "（Thinking 组合待验证）" : ""}`,
+    streamingStatus !== "supported" || (needsCombination && combinationStatus !== "supported"));
+  responseSelect.value = requestedResponse === "streaming" && streamingStatus === "supported" && (!needsCombination || combinationStatus === "supported")
     ? "streaming" : "normal";
 
   effortSelect.replaceChildren();
@@ -692,6 +696,11 @@ function updateProfile() {
   const combinationVerified = profile.capabilities?.thinking_streaming_combination?.source === "USER_VERIFIED";
   $("probe-combination").hidden = !combinationReady || combinationVerified;
   $("reprobe-combination").hidden = !combinationReady || !combinationVerified;
+  const offCombinationReady = thinkingAvailable && streaming === "supported"
+    && profile.capabilities?.thinking_off?.status === "supported";
+  const offCombinationVerified = profile.capabilities?.thinking_off_streaming_combination?.source === "USER_VERIFIED";
+  $("probe-combination-off").hidden = !offCombinationReady || offCombinationVerified;
+  $("reprobe-combination-off").hidden = !offCombinationReady || !offCombinationVerified;
   $("advanced-capability-actions").hidden = !live;
   $("advanced-capability-actions").open = false;
   $("metadata-status").textContent = "";
@@ -752,6 +761,7 @@ function renderCapabilities(profile) {
   const items = [
     ["Streaming", streaming], ["Thinking ON", on], ["Thinking OFF", off],
     ["Streaming + Thinking ON", caps.thinking_streaming_combination],
+    ["Streaming + Thinking OFF", caps.thinking_off_streaming_combination],
     ["Reasoning Effort", caps.reasoning_effort],
     ["Structured Output", caps.structured_output], ["Tool Calling", caps.tool_calling],
   ];
@@ -822,6 +832,17 @@ function defaultOptionReason(item, label) {
 }
 
 function updateDefaultPreferenceSummary() {
+  const thinkingValue = $("custom-default-thinking").value;
+  const streamItem = defaultCapabilityItem(defaultPreferenceProfile, "streaming");
+  const offItem = defaultPreferenceProfile?.capabilities?.thinking_off_streaming_combination || {status:"unknown"};
+  const blockedOff = thinkingValue === "off" && offItem.status !== "supported";
+  const option = Array.from($("custom-default-response").children).find(item => item.value === "streaming");
+  if (option) {
+    const item = blockedOff ? offItem : streamItem;
+    option.disabled = streamItem.status !== "supported" || blockedOff;
+    option.textContent = `Streaming（${defaultOptionReason(item, blockedOff ? "Streaming + Thinking OFF" : "Streaming")}）`;
+  }
+
   const profile = defaultPreferenceProfile;
   const current = $("custom-default-thinking").value || "auto";
   const response = $("custom-default-response").value || "normal";
@@ -938,6 +959,8 @@ function invalidateTest() {
     $("advanced-capability-actions").hidden = true;
     $("probe-combination").hidden = true;
     $("reprobe-combination").hidden = true;
+    $("probe-combination-off").hidden = true;
+    $("reprobe-combination-off").hidden = true;
   }
 }
 
@@ -1150,13 +1173,14 @@ async function runExplicitProbe(capability, mode = null, reverify = false) {
   const selected = selectedProfile();
   const status = $(capability === "streaming" ? "capability-probe-status" : "thinking-probe-status");
   const label = capability === "streaming" ? "Streaming"
-    : capability === "thinking_streaming_combination" ? "Streaming + Thinking ON" : `Thinking ${mode.toUpperCase()}`;
+    : capability === "thinking_streaming_combination" ? "Streaming + Thinking ON"
+      : capability === "thinking_off_streaming_combination" ? "Streaming + Thinking OFF" : `Thinking ${mode.toUpperCase()}`;
   if (!selected || selected.runtime_type === "mock") {
     status.textContent = "验证失败：PROFILE_NOT_FOUND 或 Mock 无需真实验证。";
     return;
   }
   const prefix = reverify ? "reprobe" : "probe";
-  const button = $(`${prefix}-${capability === "streaming" ? "streaming" : capability === "thinking_streaming_combination" ? "combination" : `thinking-${mode}`}`);
+  const button = $(`${prefix}-${capability === "streaming" ? "streaming" : capability === "thinking_streaming_combination" ? "combination" : capability === "thinking_off_streaming_combination" ? "combination-off" : `thinking-${mode}`}`);
   let stage = "confirmation";
   probeInProgress = true;
   button.disabled = true;
@@ -1192,7 +1216,8 @@ async function runExplicitProbe(capability, mode = null, reverify = false) {
     const resolved = capability === "streaming" ? data.capability.streaming_evidence
       : capability === "reasoning_on" ? data.capability.thinking_on
         : capability === "reasoning_off" ? data.capability.thinking_off
-          : data.capability.thinking_streaming_combination;
+          : capability === "thinking_off_streaming_combination" ? data.capability.thinking_off_streaming_combination
+            : data.capability.thinking_streaming_combination;
     status.textContent = resolved?.resolution === "EVIDENCE_CONFLICT"
       ? `${label} 请求${data.status === "success" ? "验证成功" : "被明确拒绝"}，但证据冲突；UNKNOWN，选项仍锁定；${metrics}`
       : data.status === "success"
@@ -1901,6 +1926,8 @@ async function init() {
     $("probe-streaming").addEventListener("click", () => probeSelectedCapability(false));
     $("probe-combination").addEventListener("click", () => runExplicitProbe("thinking_streaming_combination"));
     $("reprobe-combination").addEventListener("click", () => runExplicitProbe("thinking_streaming_combination", null, true));
+    $("probe-combination-off").addEventListener("click", () => runExplicitProbe("thinking_off_streaming_combination"));
+    $("reprobe-combination-off").addEventListener("click", () => runExplicitProbe("thinking_off_streaming_combination", null, true));
     $("reprobe-streaming").addEventListener("click", () => probeSelectedCapability(true));
     $("refresh-metadata").addEventListener("click", refreshMetadata);
     $("probe-thinking-on").addEventListener("click", () => probeThinking("on"));

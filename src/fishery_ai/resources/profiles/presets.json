@@ -6,7 +6,7 @@
       "id": "dashscope-qwen38-flash-r1",
       "display_name": "Qwen 3.8 Flash",
       "release_status": "published",
-      "contract_version": "1.0.0",
+      "contract_version": "1.0.1",
       "connection": {
         "profile_id": "qwen38-flash-template",
         "display_name": "Qwen 3.8 Flash",
@@ -46,7 +46,8 @@
         "streaming_usage": "supported",
         "thinking_streaming_combination": "supported",
         "source": "USER_VERIFIED",
-        "verified_at": "2026-10-02T17:58:24.144432+00:00"
+        "verified_at": "2026-10-02T17:58:24.144432+00:00",
+        "thinking_off_streaming_combination": "supported"
       },
       "defaults": {
         "thinking": "off",
@@ -58,7 +59,8 @@
           "label": "OFF",
           "thinking": "off",
           "response_modes": [
-            "normal"
+            "normal",
+            "streaming"
           ]
         },
         {
@@ -83,7 +85,16 @@
             "ON + Normal",
             "ON + Streaming"
           ],
-          "off_streaming": "未找到当前活动记录中 OFF + Streaming 的直接成功证据；保持未发布及 1.0.0。"
+          "off_streaming": "未找到当前活动记录中 OFF + Streaming 的直接成功证据；保持未发布及 1.0.0。",
+          "additional_confirmation": {
+            "reported_at": "2026-10-04",
+            "source": "USER_CONFIRMED_NORMAL_WEB_PROCESS",
+            "verified": [
+              "OFF + Streaming"
+            ],
+            "record_type": "manual_user_acceptance",
+            "network_request_by_codex": false
+          }
         },
         "evidence_summary": [
           {
@@ -108,18 +119,24 @@
         "manual_v1_inspection": "无持久化原始响应；本轮补查在凭据安全边界被 CREDENTIAL_FILE_ERROR 阻止，留待人工复查，不伪称已完成",
         "not_published": [
           "AUTO",
-          "OFF + Streaming",
           "Reasoning Effort",
           "其他高级参数"
         ],
-        "decision": "仅发布有精确独立 Probe 支持的三种组合；维护依据静态存档，运行时不读取 Evidence"
+        "decision": "User-confirmed OFF + Streaming added to the fixed contract; runtime Managed Evidence does not modify Preset contracts.",
+        "off_streaming_publication": {
+          "published_at": "2026-10-04",
+          "contract_version": "1.0.1",
+          "validation_source": "USER_CONFIRMED_MANUAL_VALIDATION",
+          "verified": "OFF + Streaming",
+          "request_attempts_by_codex": 0
+        }
       }
     },
     {
       "id": "deepseek-flash-r1",
       "display_name": "DeepSeek Flash",
       "release_status": "published",
-      "contract_version": "1.0.0",
+      "contract_version": "1.0.1",
       "connection": {
         "profile_id": "deepseek-flash-r1-template",
         "display_name": "DeepSeek Flash",
@@ -159,7 +176,8 @@
         "streaming_usage": "supported",
         "thinking_streaming_combination": "supported",
         "source": "USER_VERIFIED",
-        "verified_at": "2026-10-02T18:16:20.900208+00:00"
+        "verified_at": "2026-10-02T18:16:20.900208+00:00",
+        "thinking_off_streaming_combination": "supported"
       },
       "defaults": {
         "thinking": "off",
@@ -171,7 +189,8 @@
           "label": "OFF",
           "thinking": "off",
           "response_modes": [
-            "normal"
+            "normal",
+            "streaming"
           ]
         },
         {
@@ -191,7 +210,16 @@
         "saved_connection_id": "custom-a7109e8c55e24900a47890a825b84343",
         "user_acceptance": {
           "reported_at": "2026-10-03",
-          "source": "用户确认已在正常用户 Web 进程完成人工真实验证并要求登记本精确模型。"
+          "source": "用户确认已在正常用户 Web 进程完成人工真实验证并要求登记本精确模型。",
+          "additional_confirmation": {
+            "reported_at": "2026-10-04",
+            "source": "USER_CONFIRMED_NORMAL_WEB_PROCESS",
+            "verified": [
+              "OFF + Streaming"
+            ],
+            "record_type": "manual_user_acceptance",
+            "network_request_by_codex": false
+          }
         },
         "evidence_summary": [
           {
@@ -290,19 +318,25 @@
         "manual_v1_inspection": "活动记录不持久化 Manual V1 原始响应；本轮未重新执行 Raw 检查，不编造 finish_reason 或完整响应观察。",
         "not_published": [
           "AUTO",
-          "OFF + Streaming",
           "Reasoning Effort",
           "其他高级参数"
         ],
-        "decision": "维护者仅发布独立 ON/OFF Normal Probe 与 ON Streaming 组合 Probe 对应的三种组合；不同模型或 service 的 Evidence 不参与。",
-        "excluded_identity": "deepseek-v4-pro 的配置和 Evidence 不参与本合同。Streaming Probe 返回 provider Usage，固定合同据此允许 include_usage；这不改变 R4 的 UNKNOWN 解析。"
+        "decision": "User-confirmed OFF + Streaming added to the fixed contract; runtime Managed Evidence does not modify Preset contracts.",
+        "excluded_identity": "deepseek-v4-pro 的配置和 Evidence 不参与本合同。Streaming Probe 返回 provider Usage，固定合同据此允许 include_usage；这不改变 R4 的 UNKNOWN 解析。",
+        "off_streaming_publication": {
+          "published_at": "2026-10-04",
+          "contract_version": "1.0.1",
+          "validation_source": "USER_CONFIRMED_MANUAL_VALIDATION",
+          "verified": "OFF + Streaming",
+          "request_attempts_by_codex": 0
+        }
       }
     },
     {
       "id": "ollama-qwen35-4b-r1",
       "display_name": "Ollama Qwen3.5 4B",
       "release_status": "published",
-      "contract_version": "1.0.0",
+      "contract_version": "1.0.1",
       "connection": {
         "profile_id": "ollama-qwen35-4b-r1-template",
         "display_name": "Ollama Qwen3.5 4B",
@@ -342,7 +376,8 @@
         "streaming_usage": "unknown",
         "thinking_streaming_combination": "supported",
         "source": "USER_VERIFIED",
-        "verified_at": "2026-10-03T14:45:33.251541+00:00"
+        "verified_at": "2026-10-03T14:45:33.251541+00:00",
+        "thinking_off_streaming_combination": "supported"
       },
       "defaults": {
         "thinking": "off",
@@ -354,7 +389,8 @@
           "label": "OFF",
           "thinking": "off",
           "response_modes": [
-            "normal"
+            "normal",
+            "streaming"
           ]
         },
         {
@@ -468,17 +504,43 @@
               "returned_model": null,
               "latency_ms": 2297.0
             }
+          },
+          {
+            "capability": "thinking_off_streaming_combination",
+            "status": "supported",
+            "source": "USER_VERIFIED",
+            "verified_at": "2026-10-03T16:28:42.671591+00:00",
+            "delta_count": 1,
+            "finish_reason": "stop"
           }
         ],
         "manual_v1_inspection": "活动记录不持久化 Manual V1 原始响应；本轮未重新执行 Raw 检查，不编造 finish_reason 或完整响应观察。",
         "not_published": [
           "AUTO",
-          "OFF + Streaming",
           "Reasoning Effort",
           "其他高级参数"
         ],
-        "decision": "维护者仅发布独立 ON/OFF Normal Probe 与 ON Streaming 组合 Probe 对应的三种组合；不同模型或 service 的 Evidence 不参与。",
-        "performance_note": "用户已在正常 Web 进程验证可运行；ON Normal Probe 9531ms、OFF Normal 328ms。Thinking 较慢是性能现象，不等于不支持。Streaming Usage unavailable，保持 UNKNOWN，不自动请求 include_usage。"
+        "decision": "1.0.0 发布 ON/OFF Normal 与 ON Streaming 三种组合；2026-10-04 新增精确 OFF Streaming 单次成功 Probe，1.0.1 仅增加该组合，不继承其他模型能力。",
+        "performance_note": "用户已在正常 Web 进程验证可运行；ON Normal Probe 9531ms、OFF Normal 328ms。Thinking 较慢是性能现象，不等于不支持。Streaming Usage unavailable，保持 UNKNOWN，不自动请求 include_usage。",
+        "off_streaming_publication": {
+          "published_at": "2026-10-03T16:28:42.671591+00:00",
+          "contract_version": "1.0.1",
+          "validation_source": "用户本轮授权，精确 Identity 单次 R5 OFF+Streaming Probe 成功，retry=0，输出预算16 tokens",
+          "finish_reason": "stop",
+          "delta_count": 1,
+          "reasoning_delta_count": 0,
+          "ttft_ms": 6000.0,
+          "latency_ms": 6016.0,
+          "usage": {
+            "input_tokens": null,
+            "output_tokens": null,
+            "total_tokens": null,
+            "reasoning_tokens": null,
+            "cached_input_tokens": null,
+            "source": "unavailable"
+          },
+          "request_attempts": 1
+        }
       }
     }
   ]

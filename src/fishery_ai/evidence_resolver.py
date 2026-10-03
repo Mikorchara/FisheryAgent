@@ -8,7 +8,7 @@ from .official_capabilities import DECLARATIONS, REVIEWED_AT
 
 FIELDS = ("streaming", "temperature", "top_p", "max_output_tokens", "reasoning_on",
           "reasoning_off", "reasoning_effort", "structured_output", "tool_calling",
-          "streaming_usage", "thinking_streaming_combination", "thinking_default")
+          "streaming_usage", "thinking_streaming_combination", "thinking_off_streaming_combination", "thinking_default")
 
 
 @dataclass(frozen=True)

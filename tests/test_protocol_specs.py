@@ -29,6 +29,7 @@ class ProtocolTests(unittest.TestCase):
                         p = self.profile(service, model, adapter)
                         cap = ModelCapabilities(streaming=Support.SUPPORTED, reasoning_on=Support.SUPPORTED,
                             reasoning_off=Support.SUPPORTED, thinking_streaming_combination=Support.SUPPORTED,
+                            thinking_off_streaming_combination=Support.SUPPORTED,
                             streaming_usage=Support.SUPPORTED, model_id=model, base_url=p.base_url,
                             service_id=service, adapter_id=adapter)
                         runtime = ProfileRegistry([replace(p, capabilities=cap)]).snapshot("test", {})

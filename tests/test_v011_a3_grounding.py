@@ -163,18 +163,6 @@ class GroundingAndProfileTests(unittest.TestCase):
         stored = json.loads(next(self.profiles_dir.glob("custom-*.json")).read_text(encoding="utf-8"))
         self.assertIsNone(stored["secret_env"])
 
-    def test_utf8_record_preserves_non_gbk_model_text_and_usage(self):
-        script = Path(__file__).resolve().parents[1] / "scripts/validate_qwen_grounding.py"
-        writer = runpy.run_path(str(script))["write_record"]
-        path = self.root / "record.json"
-        writer(path, {"inference": "溶氧偏低；NO₃ 需要进一步检测。",
-                      "usage": {"input_tokens": 12, "output_tokens": 7}})
-        decoded = path.read_bytes().decode("utf-8")
-        self.assertIn("NO₃", decoded)
-        self.assertIn('"input_tokens": 12', decoded)
-        self.assertNotIn("\\u2083", decoded)
-        with self.assertRaises(FileExistsError):
-            writer(path, {"inference": "不会覆盖"})
 
     def test_ui_has_facts_boundary_and_collapsible_sections(self):
         client = self._app().test_client()

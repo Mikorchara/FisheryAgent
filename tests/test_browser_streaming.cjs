@@ -534,7 +534,7 @@ test('capabilities use concise colored status and default folded evidence',()=>{
       reasoning_effort:{status:'unknown'},thinking_default:false}};
   vm.runInContext(`renderCapabilities(${JSON.stringify(profile)})`,page.context);
   const status=page.element('capability-list').children.filter(x=>x.className);
-  assert.equal(status.length,7);
+  assert.equal(status.length,8);
   assert.equal(status[0].className,'capability-status capability-supported');
   assert.equal(status[2].className,'capability-status capability-unsupported');
   assert.equal(status[4].className,'capability-status capability-unknown');
@@ -560,7 +560,7 @@ test('Preset fixed thinking variant is readonly while response remains independe
     access_mode:'preset',preset_id:'qwen-plus',preset_variant:'off',preset_contract_version:'1',
     default_reasoning_mode:'off',default_response_mode:'normal',runtime_type:'cloud',profile_status:'experimental',source:'preset',
     capabilities:{streaming:'supported',source:'USER_VERIFIED',thinking_default:false,
-      thinking_on:{status:'supported'},thinking_off:{status:'supported'}}};
+      thinking_on:{status:'supported'},thinking_off:{status:'supported'},thinking_off_streaming_combination:{status:'supported'}}};
   vm.runInContext(`profiles=[${JSON.stringify(profile)}];presets=[];renderProfiles('${profile.profile_id}');updateProfile()`,page.context);
   assert.equal(page.element('reasoning-mode').value,'off');
   assert.equal(page.element('reasoning-mode').disabled,true);
@@ -680,7 +680,7 @@ test('Streaming plus Thinking needs its own exact capability and preserves safe 
   const page = makePage(async () => { throw new Error('offline'); });
   const profile = {capabilities: {streaming: 'supported', thinking_default: true,
     thinking_on: {status: 'supported'}, thinking_off: {status: 'supported'},
-    thinking_streaming_combination: {status: 'unknown'}}};
+    thinking_streaming_combination: {status: 'unknown'},thinking_off_streaming_combination:{status:'supported'}}};
   vm.runInContext(`updateRuntimeOptionControls(${JSON.stringify(profile)}, {reasoning:'on', response:'streaming'})`, page.context);
   assert.equal(page.element('response-mode').value, 'normal');
   assert.equal(page.element('response-mode').children.find(x => x.value === 'streaming').disabled, true);
@@ -1201,6 +1201,7 @@ test('Profile switching restores saved runtime defaults and verified probes move
       streaming: 'supported', source: 'USER_VERIFIED',
       thinking_on: {status: 'supported', source: 'USER_VERIFIED'},
       thinking_off: {status: 'supported', source: 'USER_VERIFIED'},
+      thinking_off_streaming_combination: {status:'supported',source:'USER_VERIFIED'},
     }},
     second = {profile_id: 'custom-local-b', display_name: 'Local B', provider: 'custom',
       service_id: 'custom', model: 'b', profile_status: 'custom', runtime_type: 'local',
@@ -1281,7 +1282,7 @@ test('runtime option choices follow exact capabilities and unavailable defaults 
     thinking_on: {status: 'supported', source: 'MODEL_METADATA'},
     thinking_off: {status: 'supported', source: 'MODEL_METADATA'},
     reasoning_effort: {status: 'supported', source: 'MODEL_METADATA'},
-    thinking_streaming_combination: {status: 'supported', source: 'USER_VERIFIED'}, effort_values: ['low', 'high']}};
+    thinking_off_streaming_combination:{status:'supported',source:'USER_VERIFIED'}, thinking_streaming_combination: {status: 'supported', source: 'USER_VERIFIED'}, effort_values: ['low', 'high']}};
   vm.runInContext(`updateRuntimeOptionControls(${JSON.stringify(supported)}, {reasoning:'on', response:'streaming', effort:'high'})`, page.context);
   assert.equal(choice('reasoning-mode', 'on').disabled, false);
   assert.equal(choice('reasoning-mode', 'off').disabled, false);
@@ -1502,6 +1503,7 @@ function threeModeFixtures() {
     access_mode:'preset',preset_id:'qwen-plus',preset_contract_version:'1',default_response_mode:'normal',
     capabilities:{streaming:'supported',source:'USER_VERIFIED',thinking_default:false,
       thinking_on:{status:'supported'},thinking_off:{status:'supported'},
+      thinking_off_streaming_combination:{status:'supported'},
       thinking_streaming_combination:{status:'supported'}}};
   const fixed=['off','on','auto'].map(variant=>({...base,profile_id:`preset-qwen-plus-${variant}`,
     preset_variant:variant,default_reasoning_mode:variant,display_name:`Preset Qwen Plus · ${variant}`}));
@@ -1564,12 +1566,12 @@ test('published three exact models retain Qwen default and exclude the v4 pro ca
   assert.equal(vm.runInContext('profiles.some(p=>p.model==="deepseek-v4-pro")',page.context),false);
 });
 
-test('published DeepSeek and Ollama expose only maintained combinations without research fields',async()=>{
+test('published OFF and ON Streaming combinations are visible without research fields',async()=>{
   const page=releasedModelsPage();await vm.runInContext('init()',page.context);
-  for(const id of ['deepseek-flash-r1','ollama-qwen35-4b-r1']){
+  for(const id of ['dashscope-qwen38-flash-r1','deepseek-flash-r1','ollama-qwen35-4b-r1']){
     page.element('profile').value=`preset-${id}-off`;await page.element('profile').dispatch('change');
     assert.equal(vm.runInContext('selectedProfile().preset_id',page.context),id);
-    assert.equal(page.element('preset-response-mode').children.find(x=>x.value==='streaming').disabled,true);
+    assert.equal(page.element('preset-response-mode').children.find(x=>x.value==='streaming').disabled,false);
     assert.deepEqual(page.element('preset-variant').children.map(x=>x.textContent),['Thinking OFF','Thinking ON']);
     page.element('preset-variant').value=`preset-${id}-on`;await page.element('preset-variant').dispatch('change');
     assert.equal(page.element('preset-response-mode').children.find(x=>x.value==='streaming').disabled,false);
@@ -1853,6 +1855,7 @@ function preferenceEditPage(initialSupported=true, extraFetch=null) {
   const caps=initialSupported ? {streaming:'supported',source:'USER_VERIFIED',
     streaming_evidence:{status:'supported',source:'USER_VERIFIED'},
     thinking_on:{status:'supported',source:'USER_VERIFIED'},thinking_off:{status:'supported',source:'USER_VERIFIED'},
+    thinking_off_streaming_combination:{status:'supported',source:'USER_VERIFIED'},
     thinking_streaming_combination:{status:'supported',source:'USER_VERIFIED'}} :
     {streaming:'unknown',thinking_on:{status:'unknown'},thinking_off:{status:'unknown'}};
   let persisted={profile_id:'custom-edit',display_name:'Edit fixture',source:'user_custom',profile_status:'custom',
@@ -2088,4 +2091,65 @@ test('Exit Create from clean-room empty state remains safe and does not fetch a 
   assert.equal(page.element('custom-model').value,'');
   assert.equal(page.element('exit-new').hidden,true);assert.equal(page.element('edit-profile').hidden,true);
   assert.equal(page.element('save-profile').hidden,true);assert.equal(page.element('analyze').disabled,true);
+});
+
+
+test('OFF Streaming remains locked despite supported independent capabilities until exact combination evidence',()=>{
+  const page=makePage(async()=>null);
+  const caps={streaming:'supported',thinking_off:{status:'supported'},thinking_on:{status:'supported'},
+    thinking_streaming_combination:{status:'supported'},thinking_off_streaming_combination:{status:'unknown'}};
+  vm.runInContext(`updateRuntimeOptionControls({capabilities:${JSON.stringify(caps)}},{reasoning:'off',response:'streaming'})`,page.context);
+  assert.equal(page.element('response-mode').children.find(o=>o.value==='streaming').disabled,true);
+  assert.equal(page.element('response-mode').value,'normal');
+  for(const status of ['supported','unsupported','unknown']) {
+    caps.thinking_off_streaming_combination={status};
+    vm.runInContext(`updateRuntimeOptionControls({capabilities:${JSON.stringify(caps)}},{reasoning:'off',response:'streaming'})`,page.context);
+    assert.equal(page.element('response-mode').children.find(o=>o.value==='streaming').disabled,status!=='supported');
+  }
+});
+
+test('OFF combination explicit Probe posts current Profile then refreshes both capability and runtime controls',async()=>{
+  const before={profile_id:'custom-off-combo',source:'user_custom',runtime_type:'local',profile_status:'custom',
+    thinking_probe_available:true,stored_default_thinking_mode:'off',stored_default_response_mode:'streaming',
+    capabilities:{streaming:'supported',thinking_off:{status:'supported'},thinking_on:{status:'supported'},
+      thinking_streaming_combination:{status:'unknown'},thinking_off_streaming_combination:{status:'unknown'}}};
+  const after={...before,capabilities:{...before.capabilities,
+    thinking_off_streaming_combination:{status:'supported',source:'USER_VERIFIED'}}};
+  const page=makePage(async(url,options)=>{
+    if(url.endsWith('/probe')) {
+      assert.equal(url,'/api/profiles/custom-off-combo/probe');
+      assert.equal(JSON.parse(options.body).capability,'thinking_off_streaming_combination');
+      return r2Reply({status:'success',delta_count:1,finish_reason:'stop',capability:after.capabilities});
+    }
+    if(url==='/api/config')return r2Reply({profiles:[after],scenarios:['normal'],presets:[]});
+    return r2Reply({fields:{},editable:true});
+  });
+  vm.runInContext(`profiles=[${JSON.stringify(before)}];presets=[];renderProfiles('custom-off-combo')`,page.context);
+  assert.equal(page.element('probe-combination-off').hidden,false);
+  await vm.runInContext('runExplicitProbe("thinking_off_streaming_combination")',page.context);
+  assert.equal(page.element('probe-combination-off').hidden,true);
+  assert.equal(page.element('reprobe-combination-off').hidden,false);
+  assert.equal(page.element('response-mode').children.find(o=>o.value==='streaming').disabled,false);
+  assert.match(page.element('thinking-probe-status').textContent,/验证成功/);
+});
+
+test('OFF combination network error is visible and leaves options locked without refreshing evidence',async()=>{
+  const profile={profile_id:'custom-off-error',source:'user_custom',runtime_type:'cloud',thinking_probe_available:true,
+    capabilities:{streaming:'supported',thinking_off:{status:'supported'},thinking_off_streaming_combination:{status:'unknown'}}};
+  const page=makePage(async()=>r2Reply({status:'failure',error_code:'CONNECT_TIMEOUT'},false,502));
+  vm.runInContext(`profiles=[${JSON.stringify(profile)}];presets=[]`,page.context);page.element('profile').value=profile.profile_id;
+  await vm.runInContext('runExplicitProbe("thinking_off_streaming_combination")',page.context);
+  assert.match(page.element('thinking-probe-status').textContent,/CONNECT_TIMEOUT/);
+  assert.equal(vm.runInContext('selectedProfile().capabilities.thinking_off_streaming_combination.status',page.context),'unknown');
+});
+
+test('OFF combination default preference follows resolved conflict and latest successful evidence',()=>{
+  const page=makePage(async()=>null);
+  for (const [status,resolution] of [['unknown','NO_EVIDENCE'],['unknown','EVIDENCE_CONFLICT'],['unsupported','EVIDENCE_AGREEMENT'],['supported','EVIDENCE_AGREEMENT']]) {
+    const profile={capabilities:{streaming:'supported',thinking_off:{status:'supported'},thinking_off_streaming_combination:{status,resolution}}};
+    vm.runInContext(`updateDefaultPreferenceControls(${JSON.stringify(profile)},'off','normal')`,page.context);
+    const option=page.element('custom-default-response').children.find(o=>o.value==='streaming');
+    assert.equal(option.disabled,status!=='supported');
+    if(resolution==='EVIDENCE_CONFLICT') assert.match(option.textContent,/冲突/);
+  }
 });

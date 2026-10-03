@@ -65,6 +65,9 @@ class CredentialCompatibilityTests(unittest.TestCase):
             with self.subTest(profile=case["profile_id"], mode=case["thinking_mode"],
                               streaming=case["streaming"], effort=case.get("effort")):
                 profile = profiles[case["profile_id"]]
+                # Golden wire-body fixture, not production capability evidence.
+                profile = replace(profile, capabilities=replace(profile.capabilities,
+                    thinking_off_streaming_combination=Support.SUPPORTED))
                 runtime = ProfileRegistry([profile]).snapshot(profile.profile_id, {})
                 request = ModelRequest(Mode.CHAT, (ModelMessage("user", "只回复 OK"),),
                     reasoning=ReasoningOptions(ReasoningMode(case["thinking_mode"]), case.get("effort")))

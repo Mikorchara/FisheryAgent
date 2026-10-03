@@ -77,7 +77,7 @@ class CapabilityStore:
             return profile
         identity = CapabilityIdentity.for_profile(profile)
         claims = project_evidence(profile)
-        for name in ("streaming", "reasoning_on", "reasoning_off", "thinking_streaming_combination"):
+        for name in ("streaming", "reasoning_on", "reasoning_off", "thinking_streaming_combination", "thinking_off_streaming_combination"):
             for record in self._read_records(profile, name):
                 claims.append(CapabilityEvidence(identity, name, Support(record["status"]),
                     CapabilitySource.USER_VERIFIED, record.get("verified_at"), "local_probe"))
@@ -129,7 +129,7 @@ class CapabilityStore:
         if profile.access_mode == "preset":
             raise ValueError("preset contract is read-only")
         if (capability not in ("streaming", "reasoning_on", "reasoning_off",
-                               "thinking_streaming_combination")
+                               "thinking_streaming_combination", "thinking_off_streaming_combination")
                 or status not in (Support.SUPPORTED, Support.UNSUPPORTED)):
             raise ValueError("invalid probe result")
         record = {**self._identity(profile), "capability": capability,
@@ -138,7 +138,7 @@ class CapabilityStore:
         if metrics:
             record["metrics"] = {key: value for key, value in metrics.items() if key in (
                 "delta_count", "reasoning_delta_count", "ttft_ms", "content_ttft_ms",
-                "latency_ms", "usage", "returned_model", "error_code")}
+                "latency_ms", "usage", "returned_model", "error_code", "finish_reason")}
         self.directory.mkdir(parents=True, exist_ok=True)
         path = self._path(profile, capability)
         temporary = path.with_suffix(".tmp")

@@ -36,14 +36,14 @@ class PublicationTests(unittest.TestCase):
     def make_runtime(self, profile):
         return ProfileRegistry([profile], self.credentials).snapshot(profile.profile_id)
 
-    def test_exact_models_and_only_three_combinations_per_contract(self):
+    def test_exact_models_and_only_directly_validated_combinations_per_contract(self):
         self.assertEqual({p.model for p in self.profiles},
                          {'qwen3.8-flash', 'deepseek-flash', 'qwen3.5:4b'})
-        self.assertEqual({p.preset_contract_version for p in self.profiles}, {'1.0.0'})
+        self.assertEqual({p.preset_contract_version for p in self.profiles}, {'1.0.1'})
         for model in ('qwen3.8-flash', 'deepseek-flash', 'qwen3.5:4b'):
             self.assertEqual({(p.preset_variant, r) for p in self.profiles if p.model == model
                               for r in p.preset_response_modes},
-                             {('off', 'normal'), ('on', 'normal'), ('on', 'streaming')})
+                             {('off', 'normal'), ('off', 'streaming'), ('on', 'normal'), ('on', 'streaming')})
         self.assertTrue(self.off.preset_is_default)
         self.assertFalse(self.on.preset_is_default)
 
@@ -60,10 +60,15 @@ class PublicationTests(unittest.TestCase):
         self.assertTrue(kwargs['stream'])
         self.assertEqual(kwargs['stream_options'], {'include_usage': True})
 
-    def test_off_streaming_and_thinking_override_are_rejected(self):
-        with self.assertRaises(GatewayError) as caught:
-            OpenAICompatibleAdapter._kwargs(self.request, self.make_runtime(self.off), stream=True)
-        self.assertEqual(caught.exception.code, 'PRESET_MODE_NOT_PUBLISHED')
+    def test_off_streaming_is_published_but_variant_thinking_cannot_be_overridden(self):
+        for model in ('qwen3.8-flash', 'deepseek-flash', 'qwen3.5:4b'):
+            off = next(p for p in self.profiles if p.model == model and p.preset_variant == 'off')
+            body = OpenAICompatibleAdapter._kwargs(self.request, self.make_runtime(off), stream=True)
+            self.assertTrue(body['stream'])
+            with self.assertRaises(GatewayError) as caught:
+                OpenAICompatibleAdapter._kwargs(replace(self.request, reasoning=ReasoningOptions(ReasoningMode.ON)),
+                                                self.make_runtime(off), stream=False)
+            self.assertEqual(caught.exception.code, 'PRESET_OPTION_LOCKED')
         with self.assertRaises(GatewayError) as caught:
             MockGateway().complete(replace(self.request, reasoning=ReasoningOptions(ReasoningMode.AUTO)),
                                    self.make_runtime(self.off))
@@ -85,7 +90,12 @@ class PublicationTests(unittest.TestCase):
                 self.assertNotIn('extra_body', kwargs)
             self.assertIs(runtime.protocol_spec, profile.preset_protocol_spec)
             self.assertEqual(runtime.max_retries, 0)
-            if profile.preset_variant == 'on':
+            if profile.preset_variant == 'off':
+                streaming = OpenAICompatibleAdapter._kwargs(self.request, runtime, stream=True)
+                self.assertTrue(streaming['stream'])
+                if profile.model == 'deepseek-flash':
+                    self.assertEqual(streaming['extra_body'], {'thinking': {'type': 'disabled'}})
+            elif profile.preset_variant == 'on':
                 streaming = OpenAICompatibleAdapter._kwargs(self.request, runtime, stream=True)
                 self.assertTrue(streaming['stream'])
                 if profile.model == 'deepseek-flash':
@@ -144,17 +154,31 @@ class PublicationTests(unittest.TestCase):
                 on = next(p for p in self.profiles if p.model == model and p.preset_variant == 'on')
                 stream = client.post('/api/analyze/stream', json={**payload, 'profile_id': on.profile_id})
                 self.assertIn('event: completed', stream.get_data(as_text=True))
-            denied = client.post('/api/analyze/stream', json=payload)
-            self.assertEqual(denied.get_json()['error_code'], 'PRESET_MODE_NOT_PUBLISHED')
+            stream_off = client.post('/api/analyze/stream', json=payload)
+            if model=='qwen3.5:4b':
+                self.assertIn('event: completed',stream_off.get_data(as_text=True))
+            else:
+                self.assertEqual(stream_off.get_json()['error_code'], 'SECRET_MISSING')
 
     def test_new_release_maintenance_is_exact_and_not_legacy(self):
-        for template in _catalog()['templates'][1:]:
-            self.assertEqual(template['contract_version'], '1.0.0')
+        for template in _catalog()['templates']:
+            self.assertEqual(template['contract_version'], '1.0.1')
             records = template['maintenance']['evidence_summary']
-            self.assertEqual({r['capability'] for r in records},
-                             {'reasoning_on', 'reasoning_off', 'streaming', 'thinking_streaming_combination'})
-            self.assertTrue(all(r['status'] == 'supported' and r['source'] == 'USER_VERIFIED' for r in records))
-            self.assertIn('OFF + Streaming', template['maintenance']['not_published'])
+            recorded = {r.get('capability') for r in records if r.get('capability')}
+            self.assertTrue(recorded.issubset({'reasoning_on', 'reasoning_off', 'streaming',
+                                               'thinking_streaming_combination',
+                                               'thinking_off_streaming_combination'}))
+            self.assertTrue(all(r.get('status') == 'supported' and r.get('source') == 'USER_VERIFIED'
+                                for r in records if r.get('capability')))
+            self.assertNotIn('OFF + Streaming', template['maintenance']['not_published'])
+            publication = template['maintenance']['off_streaming_publication']
+            self.assertEqual(publication['contract_version'], '1.0.1')
+            if template['connection']['model'] in ('qwen3.8-flash', 'deepseek-flash'):
+                self.assertEqual(publication['validation_source'], 'USER_CONFIRMED_MANUAL_VALIDATION')
+                self.assertEqual(publication['request_attempts_by_codex'], 0)
+            else:
+                self.assertIn('R5', publication['validation_source'])
+                self.assertEqual(publication['request_attempts'], 1)
             self.assertIn('AUTO', template['maintenance']['not_published'])
 
     def test_evidence_cannot_modify_contract_or_enter_resolver(self):
@@ -178,14 +202,17 @@ class PublicationTests(unittest.TestCase):
         for profile in fixed:
             for field in ('base_url', 'capabilities', 'credential_ref', 'secret_env', 'protocol_spec', 'service_id'):
                 self.assertNotIn(field, profile)
+        for model in ('qwen3.8-flash', 'deepseek-flash', 'qwen3.5:4b'):
+            off = next(p for p in fixed if p['model'] == model and p['preset_variant'] == 'off')
+            self.assertEqual(set(off['preset_response_modes']), {'normal', 'streaming'})
 
-    def test_missing_credentials_and_unpublished_endpoint_fail_before_gateway(self):
+    def test_missing_credentials_fail_before_gateway_for_published_off_streaming(self):
         gateway = MockGateway()
         client = self.client(gateway)
         payload = dict(profile_id=self.off.profile_id, scenario='normal', question='OK', confirm_network=True)
         self.assertEqual(client.post('/api/analyze', json=payload).get_json()['error_code'], 'SECRET_MISSING')
         self.assertEqual(client.post('/api/analyze/stream', json=payload).get_json()['error_code'],
-                         'PRESET_MODE_NOT_PUBLISHED')
+                         'SECRET_MISSING')
         self.assertEqual(gateway.calls, [])
         payload['profile_id'] = 'preset-dashscope-qwen38-flash-r1-auto'
         self.assertEqual(client.post('/api/analyze', json=payload).get_json()['error_code'], 'INVALID_REQUEST')
@@ -220,3 +247,29 @@ class PublicationTests(unittest.TestCase):
             modify(catalog)
             with patch('fishery_ai.presets._catalog', return_value=catalog), self.assertRaises(ValueError):
                 preset_profiles()
+
+
+    def test_off_streaming_fixed_contract_does_not_read_managed_evidence(self):
+        store=CapabilityStore(self.root/'evidence')
+        for model in ('qwen3.8-flash', 'deepseek-flash', 'qwen3.5:4b'):
+            off=next(p for p in self.profiles if p.model==model and p.preset_variant=='off')
+            self.assertEqual(off.preset_contract_version,'1.0.1')
+            self.assertIn('streaming',off.preset_response_modes)
+            self.assertEqual(off.capabilities.thinking_off_streaming_combination,Support.SUPPORTED)
+            managed=replace(off,access_mode='managed_custom',preset_id=None,preset_variant=None,
+                            preset_response_modes=(),preset_protocol_spec=None)
+            store.save_probe(managed,'thinking_off_streaming_combination',Support.UNSUPPORTED,'2026-10-04')
+            self.assertIs(store.apply(off),off)
+            body=OpenAICompatibleAdapter._kwargs(self.request,self.make_runtime(off),stream=True)
+            self.assertTrue(body['stream'])
+            if model == 'deepseek-flash':
+                self.assertEqual(body['extra_body'], {'thinking': {'type': 'disabled'}})
+            elif model == 'qwen3.8-flash':
+                self.assertEqual(body['extra_body'], {'enable_thinking': False})
+            else:
+                self.assertEqual(body['reasoning_effort'], 'none')
+        catalog=_catalog()
+        qwen=next(t for t in catalog['templates'] if t['connection']['model']=='qwen3.8-flash')
+        qwen['capabilities']['thinking_off_streaming_combination']='unknown'
+        with patch('fishery_ai.presets._catalog',return_value=catalog), self.assertRaises(ValueError):
+            preset_profiles()

@@ -56,7 +56,9 @@ def qualify(gateway, runtime, mode, streaming, *, manual=False):
         reasoning_off=Support.SUPPORTED if mode == ReasoningMode.OFF else runtime.capabilities.reasoning_off,
         streaming=Support.SUPPORTED if streaming else runtime.capabilities.streaming,
         thinking_streaming_combination=Support.SUPPORTED if streaming and mode == ReasoningMode.ON
-            else runtime.capabilities.thinking_streaming_combination)
+            else runtime.capabilities.thinking_streaming_combination,
+        thinking_off_streaming_combination=Support.SUPPORTED if streaming and mode == ReasoningMode.OFF
+            else runtime.capabilities.thinking_off_streaming_combination)
     runtime = replace(runtime, capabilities=caps, max_retries=0,
         default_generation=GenerationOptions(), default_reasoning=ReasoningOptions(),
         read_timeout_s=30, total_timeout_s=60)

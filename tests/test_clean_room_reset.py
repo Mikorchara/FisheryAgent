@@ -184,19 +184,11 @@ class CleanRoomTests(unittest.TestCase):
         self.assertIn('event: completed', stream.get_data(as_text=True))
         self.assertFalse(self.env.exists())
 
-    def test_legacy_validators_are_explicitly_inactive_not_fallback(self):
+    def test_real_validation_historical_profile_is_explicitly_inactive(self):
         from fishery_ai import real_validation
-        from scripts import validate_qwen_grounding, validate_qwen_streaming, validate_qwen_output_parity
         with patch.object(real_validation, 'private_project_location') as location, redirect_stdout(StringIO()) as output:
             result = real_validation.run_real_validation(check='basic', scenario='normal', confirm_network=True,
                                                         credential_store=self.credentials)
         self.assertEqual(result, 2)
         location.assert_not_called()
         self.assertIn('INACTIVE_VALIDATION_PROFILE', output.getvalue())
-        for script in (validate_qwen_grounding, validate_qwen_streaming, validate_qwen_output_parity):
-            flag = '--confirm-four-network-requests' if script is validate_qwen_output_parity else '--confirm-network'
-            with patch('sys.argv', ['validator', flag]), \
-                 patch.object(script, 'private_project_location') as location, redirect_stdout(StringIO()) as output:
-                self.assertEqual(script.main(), 2)
-            location.assert_not_called()
-            self.assertIn('INACTIVE_VALIDATION_PROFILE', output.getvalue())

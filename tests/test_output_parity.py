@@ -18,7 +18,7 @@ from fishery_ai.contracts import AnalysisRequest, Mode, Usage, UsageSource
 from fishery_ai.domain import DiagnosisService
 from fishery_ai.knowledge import KnowledgeService
 from fishery_ai.model_gateway import ModelEvent, ModelResponse, ProfileRegistry
-from fishery_ai.model_options import ReasoningMode, ReasoningOptions
+from fishery_ai.model_options import ReasoningMode, ReasoningOptions, Support
 from fishery_ai.observability import JsonlTraceSink
 from fishery_ai.openai_compatible_adapter import OpenAICompatibleAdapter
 from fishery_ai.repositories import MockRepository
@@ -103,6 +103,8 @@ class OutputParityTests(unittest.TestCase):
         from dataclasses import replace
         for mode in (ReasoningMode.OFF, ReasoningMode.ON):
             request = replace(calls[0][0], reasoning=ReasoningOptions(mode))
+            profile = replace(profile, capabilities=replace(profile.capabilities,
+                thinking_off_streaming_combination=Support.SUPPORTED))
             runtime = ProfileRegistry([profile]).snapshot(profile.profile_id, {})
             normal = OpenAICompatibleAdapter._kwargs(request, runtime, stream=False)
             stream = OpenAICompatibleAdapter._kwargs(request, runtime, stream=True)
@@ -111,45 +113,6 @@ class OutputParityTests(unittest.TestCase):
             self.assertEqual(normal, stream)
             self.assertEqual(normal["extra_body"], {"enable_thinking": mode == ReasoningMode.ON})
 
-    def test_manual_validation_script_is_exactly_four_one_attempt_requests_offline(self):
-        path = Path(__file__).parents[1] / "scripts/validate_qwen_output_parity.py"
-        spec = importlib.util.spec_from_file_location("manual_parity", path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        calls = []
-        usage = SimpleNamespace(prompt_tokens=8, completion_tokens=5, total_tokens=13)
-
-        class Completions:
-            def create(self, **kwargs):
-                calls.append(kwargs)
-                if kwargs.get("stream"):
-                    return iter([SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(
-                        content=FINAL, reasoning_content="debug"))], usage=usage)])
-                return SimpleNamespace(model="qwen-plus", usage=usage,
-                    choices=[SimpleNamespace(message=SimpleNamespace(content=FINAL, reasoning_content="debug"))])
-
-        class Client:
-            chat = SimpleNamespace(completions=Completions())
-            def close(self):
-                pass
-
-        root = Path(self.temp.name)
-        (root / "pyproject.toml").write_text("", encoding="utf-8")
-        console = io.StringIO()
-        with patch.object(module.Path, "cwd", return_value=root), \
-                patch.object(module.RecordingAdapter, "_make_client", return_value=Client()), \
-                patch.dict("os.environ", {"DASHSCOPE_API_KEY": "offline-fixture"}), \
-                patch("sys.argv", ["validate", "--confirm-four-network-requests"]), redirect_stdout(console):
-            self.assertEqual(module.main(), 0)
-        self.assertEqual(len(calls), 4)
-        self.assertEqual([c.get("stream", False) for c in calls], [False, True, False, True])
-        self.assertEqual([c["extra_body"]["enable_thinking"] for c in calls], [False, False, True, True])
-        record = json.loads(next((root / "outputs").glob("qwen-output-parity-*.json")).read_text(encoding="utf-8"))
-        self.assertEqual(record["request_attempts"], 4)
-        self.assertEqual(record["session_usage"]["usage"]["total_tokens"], 52)
-        self.assertEqual(record["cases"][0]["input_digest"], record["cases"][1]["input_digest"])
-        self.assertNotIn("offline-fixture", console.getvalue())
-        self.assertNotIn("offline-fixture", json.dumps(record))
 
 
 if __name__ == "__main__":

@@ -109,6 +109,7 @@ def _profile_public(profile: ModelProfile, source: str) -> dict:
                 "source": capability("streaming")["source"],
                 "streaming_evidence": capability("streaming"),
                 "thinking_streaming_combination": capability("thinking_streaming_combination"),
+                "thinking_off_streaming_combination": capability("thinking_off_streaming_combination"),
                 "thinking_default_sources": ([item.value for item in capabilities.sources_for("thinking_default")]
                                              if capability_scope_matches and capabilities.thinking_default is not None else []),
                 "thinking_on": capability("reasoning_on"),
@@ -674,9 +675,10 @@ def create_app(*, trace_path: Path | None = None,
             return error("CAPABILITY_PROBE_UNSUPPORTED", 400)
         if capability != "streaming" and not OpenAICompatibleAdapter.supports_thinking_mapping(profile):
             return error("CAPABILITY_PROBE_UNSUPPORTED", 400)
-        if capability == "thinking_streaming_combination" and (
+        if capability in ("thinking_streaming_combination", "thinking_off_streaming_combination") and (
                 profile.capabilities.streaming != Support.SUPPORTED or
-                profile.capabilities.reasoning_on != Support.SUPPORTED):
+                getattr(profile.capabilities, "reasoning_off" if capability == "thinking_off_streaming_combination"
+                        else "reasoning_on") != Support.SUPPORTED):
             return error("OPTION_CONFLICT", 400)
         user_verified = profile.capabilities.source_for(capability) == CapabilitySource.USER_VERIFIED
         reverify = payload.get("reverify") is True
@@ -711,7 +713,7 @@ def create_app(*, trace_path: Path | None = None,
         if not isinstance(payload, dict) or payload.get("confirm_network") is not True:
             return error("NETWORK_CONFIRMATION_REQUIRED", 403)
         capability = payload.get("capability")
-        if capability not in ("streaming", "thinking_streaming_combination"):
+        if capability not in ("streaming", "thinking_streaming_combination", "thinking_off_streaming_combination"):
             return error("INVALID_REQUEST", 400)
         return execute_capability_probe(profile_id, payload, capability)
 
