@@ -46,7 +46,7 @@
           <div class="manager-actions">
             <button id="new-profile" class="secondary" type="button">新建</button>
             <button id="edit-profile" class="secondary" type="button" hidden>编辑所选</button>
-            <button id="save-profile" class="secondary" type="button">保存 Profile</button>
+            <button id="exit-new" class="secondary" type="button" hidden>退出新建</button>
             <button id="cancel-edit" class="secondary" type="button" hidden>取消编辑</button>
             <button id="delete-profile" class="danger" type="button" hidden>删除所选</button>
           </div>
@@ -102,6 +102,7 @@
           <select id="test-method"><option value="models">模型列表（优先，非生成）</option><option value="chat">最小 Chat（可能产生费用）</option></select>
           <button id="test-profile" class="secondary" type="button">测试连接（真实联网）</button>
           <p id="test-status" class="status" role="status" aria-live="polite"></p>
+          <button id="save-profile" class="secondary" type="button">保存 Profile</button>
           <p id="custom-status" class="status" role="status" aria-live="polite"></p>
         </details>
 

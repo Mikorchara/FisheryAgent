@@ -1741,3 +1741,73 @@ test('Cancel Edit during a pending capability refresh cannot resurrect the disca
   assert.equal(page.element('cancel-edit').hidden,true);
   assert.equal(page.calls.some(x=>x.method==='PUT'),false);
 });
+
+
+test('Profile submit stays below connection testing and View Edit Create actions never conflict',async()=>{
+  const actions=html.match(/<div class="manager-actions">([\s\S]*?)<\/div>/)[1];
+  assert.doesNotMatch(actions,/id="save-profile"/);
+  assert.ok(html.indexOf('id="test-status"')<html.indexOf('id="save-profile"'));
+  assert.ok(html.indexOf('id="save-profile"')<html.indexOf('id="custom-status"'));
+  const page=preferenceEditPage();await vm.runInContext('init()',page.context);
+  await vm.runInContext('setAccessMode("managed_custom")',page.context);await new Promise(setImmediate);
+  assert.equal(page.element('edit-profile').hidden,false);
+  for(const id of ['cancel-edit','exit-new','save-profile'])assert.equal(page.element(id).hidden,true,id);
+  await page.element('edit-profile').dispatch('click');
+  assert.equal(page.element('edit-profile').hidden,true);
+  assert.equal(page.element('cancel-edit').hidden,false);
+  assert.equal(page.element('exit-new').hidden,true);
+  assert.equal(page.element('save-profile').textContent,'保存修改');
+  await page.element('new-profile').dispatch('click');
+  assert.equal(page.element('edit-profile').hidden,true);
+  assert.equal(page.element('cancel-edit').hidden,true);
+  assert.equal(page.element('exit-new').hidden,false);
+  assert.equal(page.element('save-profile').textContent,'创建 Profile');
+});
+
+test('Exit Create discards its fields and restores the previous View and selected runtime without writing',async()=>{
+  const page=preferenceEditPage();await vm.runInContext('init()',page.context);
+  await vm.runInContext('setAccessMode("managed_custom")',page.context);await new Promise(setImmediate);
+  page.element('reasoning-mode').value='on';page.element('response-mode').value='normal';
+  page.element('advanced-settings').open=true;
+  const before=vm.runInContext('JSON.stringify(selectedProfile())',page.context);
+  await page.element('new-profile').dispatch('click');
+  page.element('custom-name').value='Never saved';page.element('custom-model').value='discard-create';
+  await page.element('exit-new').dispatch('click');
+  assert.equal(vm.runInContext('formMode',page.context),'view');
+  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(collectFields())',page.context)),page.fields());
+  assert.equal(vm.runInContext('JSON.stringify(selectedProfile())',page.context),before);
+  assert.equal(page.element('reasoning-mode').value,'on');assert.equal(page.element('response-mode').value,'normal');
+  assert.equal(page.element('advanced-settings').open,true);
+  assert.equal(page.element('exit-new').hidden,true);assert.equal(page.element('edit-profile').hidden,false);
+  assert.equal(page.calls.some(x=>x.method!=='GET'),false);
+});
+
+test('Exit Create restores an earlier Edit draft and cancellation still restores the saved Profile',async()=>{
+  const page=preferenceEditPage();await startPreferenceEdit(page);
+  page.element('custom-model').value='earlier-edit';await page.element('custom-model').dispatch('input');
+  await page.element('new-profile').dispatch('click');page.element('custom-model').value='discard-create';
+  await page.element('exit-new').dispatch('click');
+  assert.equal(vm.runInContext('formMode',page.context),'edit');
+  assert.equal(page.element('custom-model').value,'earlier-edit');
+  assert.equal(vm.runInContext('selectedProfile().model',page.context),'exact-a');
+  assert.equal(page.element('cancel-edit').hidden,false);assert.equal(page.element('exit-new').hidden,true);
+  assert.equal(page.element('reasoning-mode').value,'off');assert.equal(page.element('response-mode').value,'streaming');
+  await page.element('cancel-edit').dispatch('click');
+  assert.equal(page.element('custom-model').value,'exact-a');
+  assert.equal(page.calls.some(x=>x.method!=='GET'),false);
+});
+
+test('Exit Create from clean-room empty state remains safe and does not fetch a missing Profile',async()=>{
+  const mock={profile_id:'mock-demo',display_name:'Mock',runtime_type:'mock',source:'built_in',
+    auth_spec:'NONE',model:'offline-mock',capabilities:{streaming:'supported'}};
+  const page=threeModePage(null,[mock]);await vm.runInContext('init()',page.context);
+  await vm.runInContext('setAccessMode("managed_custom")',page.context);
+  await page.element('new-profile').dispatch('click');page.element('custom-model').value='discard-empty';
+  const count=page.calls.length;
+  await page.element('exit-new').dispatch('click');
+  assert.equal(page.calls.length,count);
+  assert.equal(vm.runInContext('formMode',page.context),'view');
+  assert.equal(page.element('custom-model').value,'');
+  assert.equal(page.element('exit-new').hidden,true);assert.equal(page.element('edit-profile').hidden,true);
+  assert.equal(page.element('save-profile').hidden,true);assert.equal(page.element('analyze').disabled,true);
+});

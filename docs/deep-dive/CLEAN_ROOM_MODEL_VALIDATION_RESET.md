@@ -101,7 +101,7 @@ Normal + AUTO 不发送高级开关。模型列表或连接测试成功只证明
 - 引入轻量 `editDraft`，仅持有已保存表单基线和 Profile ID；DOM 表单承载未保存字段。当前 `profiles` / Selected Profile / Runtime 控件继续引用已保存对象。
 - 进入编辑或修改草稿不再清空当前面板、运行选项或 Evidence。草稿 Identity 用 service / adapter / 规范化 URL / exact Model 比较；URL scheme / host 大小写和末尾 `/` 不构成新身份。
 - Identity 改动仅显示“保存后重新解析”的提示，并限制新草稿高级偏好的选择；旧 ON/OFF/Streaming 偏好不静默删除。原 Profile 仍可正常运行或执行其精确 Probe。
-- “保存修改 / 取消编辑”位于管理操作区。取消仅恢复缓存的已保存表单，丢弃草稿和草稿测试状态，不写 Profile / Evidence，不请求 R4 重新解析，不更改当前运行选项。
+- 此次修复最初将“保存修改 / 取消编辑”放在管理操作区；保存按钮位置随后由第 8 节调整。取消仅恢复缓存的已保存表单，丢弃草稿和草稿测试状态，不写 Profile / Evidence，不请求 R4 重新解析，不更改当前运行选项。
 - 保存成功后仍复用已有 PUT → Persist → R4 Resolver → 页面刷新。新身份 UNKNOWN 时当前运行安全回退 AUTO + Normal；已保存历史偏好继续可读。
 - 异步刷新不会重新打开已取消的草稿，或覆盖期间新进入的编辑状态。
 
@@ -123,3 +123,24 @@ Normal + AUTO 不发送高级开关。模型列表或连接测试成功只证明
 ### 再次人工验收
 
 重启 Web 后对已验证 Profile 点击编辑，确认默认 ON/OFF 和 Streaming 可选；修改 Model / URL 时，当前能力面板和运行选择应保持原值，仅显示草稿提示。点击取消应恢复旧表单。保存新 Model 后确认能力重新解析，未验证高级选项锁定且实际运行 AUTO + Normal，旧偏好仍显示。单项 Probe 后无需重建 Profile 或刷新页面即可解锁对应默认偏好。
+
+## 8. 最终 UI 调整：保存位置与退出新建
+
+编辑已有 Profile 时，顶部保留“取消编辑”，“保存修改”恢复到表单下方的连接测试之后。新建时隐藏“编辑所选”和“取消编辑”，顶部显示“退出新建”；“创建 Profile”仍在表单提交位置。View / Edit / Create 三种状态的按钮分别显示，不相互冲突。
+
+进入新建前，仅在页面内保存表单引用字段、运行选项、折叠状态及原编辑草稿；不保存真实 Key。退出新建丢弃未保存的新建字段，恢复此前的 View 或 Edit 状态；从 Edit 进入新建后退出，还可继续原草稿或取消编辑。空状态退出不尝试读取不存在的 Profile。
+
+退出操作复用现有已保存 Profile 的只读显示流程，不写 Profile / Evidence，不修改后端 Resolve 或 Capability 逻辑。连接测试缓存仅在凭据代际未变化时恢复，避免恢复已经失效的授权。本轮未改后端、RAG、Grounding、Orchestrator、CredentialStore 或 Probe。
+
+### 最终检查
+
+| 命令 / 检查 | 结果 |
+| --- | --- |
+| `node --test --test-name-pattern='Profile submit\|Exit Create' tests/test_browser_streaming.cjs` | 4 项通过 |
+| `python -m unittest discover -s tests` | 321 项通过，13.820 秒 |
+| `node --test tests/test_browser_streaming.cjs` | 85 项通过，无跳过 |
+| `node --check src/fishery_ai/resources/web/app.js` | 通过 |
+| `git diff --check` | 通过 |
+| Secret / sensitive-path 扫描 | 126 个公开文件，5 处明确虚构 fixture 排除，未发现风险；不读取真实凭据或 ignored 本地数据 |
+
+新增 Browser 测试覆盖按钮位置与三种状态、退出恢复 View / Runtime、退出恢复原 Edit 草稿及取消、Clean-room 空状态。没有真实联网或模型请求，未访问正式项目或真实凭据；没有 commit / push。

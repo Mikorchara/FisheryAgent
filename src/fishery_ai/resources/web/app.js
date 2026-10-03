@@ -3,6 +3,7 @@ let profiles = [];
 let presets = [];
 let editingId = null;
 let editDraft = null;
+let createReturnState = null;
 let testId = null;
 let testedFingerprint = null;
 let formMode = "view";
@@ -722,8 +723,10 @@ const customFields = {
 function setFormMode(mode) {
   formMode = mode;
   if (mode !== "edit") editDraft = null;
+  if (mode !== "new") createReturnState = null;
+  $("exit-new").hidden = mode !== "new";
   $("cancel-edit").hidden = mode !== "edit";
-  $("edit-profile").hidden = mode === "edit" || selectedProfile()?.source !== "user_custom";
+  $("edit-profile").hidden = mode !== "view" || selectedProfile()?.source !== "user_custom";
   const editable = mode !== "view";
   $("provider-preset").disabled = !editable;
   for (const id of Object.values(customFields)) $(id).disabled = !editable;
@@ -927,9 +930,17 @@ function selectPreset() {
 function newProfile() {
   if (activeExecution || accessMode === "preset" || accessMode === "manual_expert") return;
   if (accessMode !== "managed_custom") setAccessMode("managed_custom");
+  const previous = formMode === "new" && createReturnState ? createReturnState : {
+    mode: formMode, fields: collectFields(), editingId, editDraft,
+    runtime: {reasoning: $("reasoning-mode").value, response: $("response-mode").value, effort: $("reasoning-effort").value},
+    editorOpen: $("custom-editor").open, advancedOpen: $("advanced-settings").open,
+    defaultsOpen: $("runtime-default-fields").open, testId, testedFingerprint, credentialEpoch,
+    testStatus: $("test-status").textContent,
+  };
   ++formRevision;
   editingId = null;
   setFormMode("new");
+  createReturnState = previous;
   $("custom-name").value = "";
   $("provider-preset").value = "";
   $("custom-provider").value = "";
@@ -951,6 +962,36 @@ function newProfile() {
   updateSecretRequirement();
   invalidateTest();
   $("custom-status").textContent = "新配置尚未保存。";
+}
+
+async function exitNewProfile() {
+  if (formMode !== "new" || !createReturnState) return;
+  const previous = createReturnState;
+  const profileId = selectedProfile()?.profile_id;
+  const revision = formRevision + 1;
+  // Reuse the existing selected-Profile renderer; never save the Create draft.
+  await updateProfile();
+  if (formRevision !== revision || selectedProfile()?.profile_id !== profileId) return;
+  const profile = selectedProfile();
+  if (previous.mode === "edit" && profile) {
+    editDraft = previous.editDraft;
+    editingId = previous.editingId;
+    setFormMode("edit");
+  }
+  if (profile) {
+    fillProfileForm(previous.fields, profile);
+    if (previous.mode === "edit") refreshDraftPreferenceGate();
+  }
+  updateRuntimeOptionControls(profile, previous.runtime);
+  $("custom-editor").open = previous.editorOpen;
+  $("advanced-settings").open = previous.advancedOpen;
+  $("runtime-default-fields").open = previous.defaultsOpen;
+  if (previous.credentialEpoch === credentialEpoch) {
+    testId = previous.testId;
+    testedFingerprint = previous.testedFingerprint;
+    $("test-status").textContent = previous.testStatus;
+  }
+  $("custom-status").textContent = "已退出新建，未保存的 Draft 已丢弃，已恢复进入新建前的状态。";
 }
 
 async function editSelected() {
@@ -1610,6 +1651,7 @@ async function init() {
     $("manual-send").addEventListener("click", sendManual);
     $("provider-preset").addEventListener("change", selectPreset);
     $("new-profile").addEventListener("click", newProfile);
+    $("exit-new").addEventListener("click", exitNewProfile);
     $("edit-profile").addEventListener("click", editSelected);
     $("cancel-edit").addEventListener("click", cancelEdit);
     $("delete-profile").addEventListener("click", deleteSelected);
