@@ -1,5 +1,7 @@
 # Provider / Credential 渐进重构 R0–R1
 
+> 文档分类：**HISTORICAL**。历史实施 / 验证记录；数字、限制与能力结论只对应当时版本，不是当前全局状态。 R0/R1 优先级与兼容测试历史；旧项目根 .env 路径被私有存储替代。 当前边界见[架构总览](../../architecture/CURRENT_ARCHITECTURE.md)。
+
 日期：2026-10-02。实施范围：R0 Compatibility Baseline、R1 ProviderRegistry 与只读 CredentialStore。
 
 ## 实施边界
@@ -14,7 +16,7 @@
 - 用户明确批准了受控 Secret 风险扫描：不读取项目 `.env`，不输出匹配值。
 - 当前跟踪文件 81 个、待推送历史 blob 175 个；未发现扫描规则命中的风险或敏感路径。
 - `.env`、`outputs/`、真实验证记录被 Git 忽略且未被跟踪。
-- `docs/CODE_REVIEW.md` 已在此前提交中，本轮没有独立修改；内容为空白评审模板，不需要额外提交。
+- `docs/guides/CODE_REVIEW.md` 已在此前提交中，本轮没有独立修改；内容为空白评审模板，不需要额外提交。
 - Checkpoint：`0d55cbc`，`feat: complete cloud capability validation baseline`；已 push 到现有 main，未创建或移动 tag。
 
 ## R0 兼容保护

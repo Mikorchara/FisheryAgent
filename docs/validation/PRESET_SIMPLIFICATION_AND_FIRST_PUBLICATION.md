@@ -1,5 +1,7 @@
 # Preset 简化与首个正式方案发布
 
+> 文档分类：**CURRENT**。当前指南 / 维护依据；其中明确标记的旧阶段内容仍为历史。当前源码高于文档。 第 12 节登记当前三个固定合同与人工依据；其余章节明确保留历史。 当前边界见[架构总览](../architecture/CURRENT_ARCHITECTURE.md)。
+
 日期：2026-10-03。当前状态：Qwen 3.8 Flash、DeepSeek Flash、Ollama Qwen3.5 4B 已登记发布合同，各为 1.0.0；离线验证完成，工作树等待最终人工验收；不 commit / push。
 
 **阅读说明：第 1–11 节保留首轮发布及上轮资格验证的历史；当前发布状态以第 12 节为准。用户随后已在正常 Web 进程完成人工验证。旧 CREDENTIAL_FILE_ERROR / READ_TIMEOUT 与未发布候选结论不再代表当前登记状态。**

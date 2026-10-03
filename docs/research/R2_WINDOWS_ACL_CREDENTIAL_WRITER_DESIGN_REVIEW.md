@@ -1,8 +1,10 @@
 # R2 Windows ACL / Credential Writer 设计复审
 
+> 文档分类：**REFERENCE**。研究参考；保留当时假设与设计取舍，不是当前运行状态。 保留父目录 ACL 威胁分析和备选方案；当前已选择私有存储，不是待实施根目录方案。 当前边界见[架构总览](../architecture/CURRENT_ARCHITECTURE.md)。
+
 日期：2026-10-02。仅设计审查，不实施权限或凭据迁移。
 
-**历史设计记录**：本报告描述根目录 `.env` Writer 遇到共享 ACL 时的设计复审。随后用户批准方案 C，用户私有存储已实施并完成人工验收；此处方案 D 的“立即只读”是当时的过渡建议，不是当前 Web 的功能限制。源码根目录 ACL 不再是当前 Writer 门禁。当前行为与验收见 [R2 报告](PROVIDER_CREDENTIAL_REFACTOR_R2.md) 和 [私有迁移说明](R2_PRIVATE_CREDENTIAL_STORAGE_MIGRATION.md)；下文保留设计过程与风险分析。
+**历史设计记录**：本报告描述根目录 `.env` Writer 遇到共享 ACL 时的设计复审。随后用户批准方案 C，用户私有存储已实施并完成人工验收；此处方案 D 的“立即只读”是当时的过渡建议，不是当前 Web 的功能限制。源码根目录 ACL 不再是当前 Writer 门禁。当前行为与验收见 [R2 报告](../history/implementation/PROVIDER_CREDENTIAL_REFACTOR_R2.md) 和 [私有迁移说明](../guides/R2_PRIVATE_CREDENTIAL_STORAGE_MIGRATION.md)；下文保留设计过程与风险分析。
 
 ## 1. 依据与结论
 
@@ -22,7 +24,7 @@
 - 暂存目录在创建时设置私有、禁止继承的 ACL；新文件和恢复文件也显式设置 ACL。现有文件的已检查 owner/DACL 被复制到替换文件，替换前后校验。使用同卷 `MoveFileExW`，不允许跨卷复制降级。
 - 当前只读 CredentialStore 不受 Writer ACL 门禁保护。Writer 拒绝编辑，不会阻止其他获授权主体直接读取原 `.env`。
 
-代码依据：[secure_files.py](../../src/fishery_ai/secure_files.py)、[project_env.py](../../src/fishery_ai/project_env.py)、[credentials.py](../../src/fishery_ai/credentials.py)、[R2 报告](PROVIDER_CREDENTIAL_REFACTOR_R2.md)。
+代码依据：[secure_files.py](../../src/fishery_ai/secure_files.py)、[project_env.py](../../src/fishery_ai/project_env.py)、[credentials.py](../../src/fishery_ai/credentials.py)、[R2 报告](../history/implementation/PROVIDER_CREDENTIAL_REFACTOR_R2.md)。
 
 ## 3. 四种权限问题必须分开
 

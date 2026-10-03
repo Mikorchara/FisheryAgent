@@ -1,8 +1,10 @@
 # 模型接入三模式设计说明
 
+> 文档分类：**REFERENCE**。研究参考；保留当时假设与设计取舍，不是当前运行状态。 三模式产品决策仍有价值；V2 DEFERRED 和 R3 未实施属于原设计时点。 当前边界见[架构总览](../architecture/CURRENT_ARCHITECTURE.md)。
+
 初稿日期：2026-10-02，历史基线为 R0/R1/R2。下方第 1–8 节保留初稿设计过程，不将其中的“尚未实现”视为当前状态。
 
-本次产品定义校正与实际源码审计：2026-10-02；当前 Preset / Cancellation / Manual V1 / 三模式 UI 已实现且用户反馈人工验收基本正常。详细代码依据与 checkpoint 回归见[实施报告第 10 节](PRESET_CANCELLATION_MANUAL_IMPLEMENTATION.md#10-manual-expert-产品定义校正与架构兼容性审计)。
+本次产品定义校正与实际源码审计：2026-10-02；当前 Preset / Cancellation / Manual V1 / 三模式 UI 已实现且用户反馈人工验收基本正常。详细代码依据与 checkpoint 回归见[实施报告第 10 节](../history/implementation/PRESET_CANCELLATION_MANUAL_IMPLEMENTATION.md#10-manual-expert-产品定义校正与架构兼容性审计)。
 
 ## 0. 当前产品定位与冻结结论
 
@@ -46,7 +48,7 @@ Response 的长期方向是可选展示 HTTP Status、latency、content、reason
 - `ModelRequest` 只有 messages、GenerationOptions、ReasoningOptions；Adapter 会合并 Profile 默认值，并调用 CapabilityValidator。它目前不能作为“不注入默认值”的 Manual 原始请求通道。
 - R1/R2 的 CredentialStore、不可变 CredentialSnapshot、安全 `.env` Writer、Web 安全门禁、热读取与认证缓存失效已经独立于 Capability。
 
-依据：[重构研究](PROVIDER_CREDENTIAL_CAPABILITY_REFACTOR_RESEARCH.md)、[R0/R1](PROVIDER_CREDENTIAL_REFACTOR_R0_R1.md)、[R2](PROVIDER_CREDENTIAL_REFACTOR_R2.md)，以及当前 `providers.py`、`model_gateway.py`、`model_options.py`、`openai_compatible_adapter.py`、`capability_store.py`、`capability_probe.py`、`web.py`、`application.py`。
+依据：[重构研究](PROVIDER_CREDENTIAL_CAPABILITY_REFACTOR_RESEARCH.md)、[R0/R1](../history/implementation/PROVIDER_CREDENTIAL_REFACTOR_R0_R1.md)、[R2](../history/implementation/PROVIDER_CREDENTIAL_REFACTOR_R2.md)，以及当前 `providers.py`、`model_gateway.py`、`model_options.py`、`openai_compatible_adapter.py`、`capability_store.py`、`capability_probe.py`、`web.py`、`application.py`。
 
 ## 2. 三种模式的边界
 

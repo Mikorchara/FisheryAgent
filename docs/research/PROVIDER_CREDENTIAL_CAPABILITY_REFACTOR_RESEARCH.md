@@ -1,5 +1,7 @@
 # Provider、Credential 与 Capability 重构研究
 
+> 文档分类：**REFERENCE**。研究参考；保留当时假设与设计取舍，不是当前运行状态。 Provider、凭据、协议和证据拆分依据仍有价值；原建议顺序与旧根 .env Writer 不是当前事实。 当前边界见[架构总览](../architecture/CURRENT_ARCHITECTURE.md)。
+
 - 日期：2026-10-01（Asia/Shanghai）
 - 阶段基线：当前 A3.2.1 源码
 - 性质：代码审查、官方资料研究和迁移建议；**不是实施报告**。

@@ -1,6 +1,8 @@
 # 多模型 API、能力与参数架构评审计划
 
-状态：**设计提案，尚未批准或实现**。本轮只依据当前源码和官方接口文档分析；没有读取正式项目保存真实 Key 的 `llm_settings.json`，也没有调用任何模型 API。正式项目 `D:\Fishery_Project` 始终只读。本文优先服务于受硬件条件限制时的外接 LLM 连接与结果显示；本地运行时验证仍按 [V0.1.1 计划](V0.1.1_LOCAL_RUNTIME_VALIDATION.md)在条件具备时进行。
+> 文档分类：**REFERENCE**。研究参考；保留当时假设与设计取舍，不是当前运行状态。 保留语义参数、模型能力与 Adapter 的取舍；提案状态不等于当前实施状态。 当前边界见[架构总览](../architecture/CURRENT_ARCHITECTURE.md)。
+
+状态：**设计提案，尚未批准或实现**。本轮只依据当前源码和官方接口文档分析；没有读取正式项目保存真实 Key 的 `llm_settings.json`，也没有调用任何模型 API。正式项目 `D:\Fishery_Project` 始终只读。本文优先服务于受硬件条件限制时的外接 LLM 连接与结果显示；本地运行时验证仍按 [V0.1.1 计划](../validation/V0.1.1_LOCAL_RUNTIME_VALIDATION.md)在条件具备时进行。
 
 ## 1. 正式项目：当前配置与请求链
 
@@ -26,7 +28,7 @@
 
 `ModelGateway` 已有 `complete()` 和 `stream()`，SDK 只在 `OpenAICompatibleAdapter` 中导入；SDK 自身重试已关闭，适配器按“正文尚未输出”边界重试。`Orchestrator.analyze()` 目前只调用 `complete()`；默认 Demo 只装配 `MockGateway`，因此 Cloud/Local 示例 Profile 的路由测试不等于真实连接或应用层流式显示。`ModelEvent` 仅有 `delta/usage`。证据：`src/fishery_ai/openai_compatible_adapter.py:27-135`、`model_gateway.py:109-160`、`composition.py:15-29`。
 
-本计划与现有 [README](../../README.md)、[路线图](../ROADMAP.md)、[结构说明](../STRUCTURE.md)和 [V0.1.1 验证计划](V0.1.1_LOCAL_RUNTIME_VALIDATION.md)保持一致。此处不把尚未实现的能力描述成现有功能。
+本计划与现有 [README](../../README.md)、[路线图](../ROADMAP.md)、[结构说明](../STRUCTURE.md)和 [V0.1.1 验证计划](../validation/V0.1.1_LOCAL_RUNTIME_VALIDATION.md)保持一致。此处不把尚未实现的能力描述成现有功能。
 
 ## 3. 五个必须分开的概念
 
@@ -142,7 +144,7 @@
 
 ## 14. 分阶段迁移计划
 
-1. **证据清单（先做）**：记录要接入的外接 API、准确模型 ID、官方参数范围与当前生产使用经验；用户报告的“三家”需由用户确认，不从预设推断。与 [V0.1.1 验证计划](V0.1.1_LOCAL_RUNTIME_VALIDATION.md)区分“Mock 已通过”和“真实 API 已通过”。
+1. **证据清单（先做）**：记录要接入的外接 API、准确模型 ID、官方参数范围与当前生产使用经验；用户报告的“三家”需由用户确认，不从预设推断。与 [V0.1.1 验证计划](../validation/V0.1.1_LOCAL_RUNTIME_VALIDATION.md)区分“Mock 已通过”和“真实 API 已通过”。
 2. **合同与 Profile（后续实施）**：以兼容旧 JSON/离线测试的方式增加协议身份、可选语义选项与精确模型能力声明。切换模型时使旧能力声明失效。明确 `max_tokens` 默认值迁移，避免现有 Advice/Chat 的固定上限导致通用服务误报或静默省略。
 3. **校验与翻译**：先做纯离线严格校验，再让适配器映射标准参数及少数有证据的 Provider 专项参数。SDK 仍只在适配器中；默认 MockGateway 与 JSONL 脱敏保持不变。
 4. **外接 Cloud API 受控验证**：在明确授权、实际 Key 与费用边界下，逐个验证 Provider/模型的非流式、网关流式、错误与显示字段；不把一次成功连接推广为该 Provider 所有模型的能力。

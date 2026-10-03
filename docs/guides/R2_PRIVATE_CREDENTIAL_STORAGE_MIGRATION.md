@@ -1,6 +1,8 @@
 # R2 用户私有凭据存储迁移说明
 
-> 2026-10-02 收尾审计补充：首次审计发现三个历史 Qwen 脚本遗漏迁移并暂停 checkpoint；现已修复并补充离线回归，和 Web / 主 `validate-real` 统一使用私有凭据 composition。没有运行真实模型。见 [已解决的 Post-R2 审计](POST_R2_STRUCTURAL_AUDIT.md)。
+> 文档分类：**CURRENT**。当前指南 / 维护依据；其中明确标记的旧阶段内容仍为历史。当前源码高于文档。 当前受管私有路径、hot reload、无旧 .env fallback 与安全验收说明。 当前边界见[架构总览](../architecture/CURRENT_ARCHITECTURE.md)。
+
+> 2026-10-02 收尾审计补充：首次审计发现三个历史 Qwen 脚本遗漏迁移并暂停 checkpoint；现已修复并补充离线回归，和 Web / 主 `validate-real` 统一使用私有凭据 composition。没有运行真实模型。见 [已解决的 Post-R2 审计](../history/implementation/POST_R2_STRUCTURAL_AUDIT.md)。
 
 日期：2026-10-02。已实现固定存储切换；真实凭据由用户手动重新设置，程序不自动迁移。
 
@@ -50,7 +52,7 @@ Windows：
 
 ## 人工验收清单
 
-**2026-10-02 用户验收已完成**：实际路径为上面的 `project-4e5f7b2702af5d742ab9`；应用/project/credentials 目录、`.env` 和锁均为当前用户 owner、禁止继承，仅当前用户和 SYSTEM FullControl。Web CRUD、无重启 Qwen 调用、删除后 SECRET_MISSING 且不回退旧 `.env`、重新设置恢复、完整重启后持久化，以及双标签页 stale revision 均通过。PowerShell 中 DASHSCOPE_API_KEY 始终不存在。详细记录见 [R2 人工验收记录](PROVIDER_CREDENTIAL_REFACTOR_R2.md)。助手没有重新读取真实凭据或发起真实模型请求。
+**2026-10-02 用户验收已完成**：实际路径为上面的 `project-4e5f7b2702af5d742ab9`；应用/project/credentials 目录、`.env` 和锁均为当前用户 owner、禁止继承，仅当前用户和 SYSTEM FullControl。Web CRUD、无重启 Qwen 调用、删除后 SECRET_MISSING 且不回退旧 `.env`、重新设置恢复、完整重启后持久化，以及双标签页 stale revision 均通过。PowerShell 中 DASHSCOPE_API_KEY 始终不存在。详细记录见 [R2 人工验收记录](../history/implementation/PROVIDER_CREDENTIAL_REFACTOR_R2.md)。助手没有重新读取真实凭据或发起真实模型请求。
 
 以下保留为后续机器或权限变化时的复验清单，不是当前未完成事项：
 

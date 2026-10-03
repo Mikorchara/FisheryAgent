@@ -1,5 +1,7 @@
 # R2：安全凭据 Writer 与 Web Credential Manager
 
+> 文档分类：**HISTORICAL**。历史实施 / 验证记录；数字、限制与能力结论只对应当时版本，不是当前全局状态。 保留 Writer、Flask 修复、ACL 复审、迁移及用户验收全过程。 当前边界见[架构总览](../../architecture/CURRENT_ARCHITECTURE.md)。
+
 日期：2026-10-02。本轮只实现凭据生命周期、安全写入和本地 Web 管理，不实施 R3–R7 或 Tool Calling。
 
 **当前收尾状态：人工验收已登记，Post-R2 唯一阻塞已修复，离线完整回归通过。** 见 [结构审计（RESOLVED）](POST_R2_STRUCTURAL_AUDIT.md)；下文各阶段的测试和 Git 状态均按当时记录保留。
@@ -16,7 +18,7 @@ CredentialStore 继续只读，不导入全局环境；ProjectEnvWriter 负责�
 
 ## 用户私有凭据目录迁移（当前实现，2026-10-02）
 
-依据：[Windows ACL 设计复审](R2_WINDOWS_ACL_CREDENTIAL_WRITER_DESIGN_REVIEW.md)。本次仅实施方案 C 的固定存储迁移，不修改真实凭据或 ACL；后面的初版记录保留历史语境，不代表仍以源码根目录作为 Web 写入边界。
+依据：[Windows ACL 设计复审](../../research/R2_WINDOWS_ACL_CREDENTIAL_WRITER_DESIGN_REVIEW.md)。本次仅实施方案 C 的固定存储迁移，不修改真实凭据或 ACL；后面的初版记录保留历史语境，不代表仍以源码根目录作为 Web 写入边界。
 
 - 新增 `credential_paths.py`：启动端从 Windows LOCALAPPDATA 和规范化项目绝对路径生成固定位置，不读取任何旧 Secret。项目 ID 为 `SHA256(normcase(abspath(project_root)))` 前 20 位十六进制；当前工作区对应 `project-4e5f7b2702af5d742ab9`。目标为 `%LOCALAPPDATA%\Fishery_AI_Prototype\<project-id>\credentials\.env`。缺失/相对 LOCALAPPDATA、解析目标落入源码树时 fail closed，不改为根目录 fallback。
 - Web 和显式 `validate-real` 的默认启动组合统一选择此文件。CredentialStore 与 Writer 共享同一不可变位置配置，优先级仍为 PROCESS_ENV > 所选私有文件 > MISSING；保留来源名 PROJECT_ENV，UI 标注“用户私有存储”。调用方注入临时 Store 的离线测试保持兼容。
@@ -27,7 +29,7 @@ CredentialStore 继续只读，不导入全局环境；ProjectEnvWriter 负责�
 
 ### 本次修改文件
 
-新增 `src/fishery_ai/credential_paths.py`、`tests/test_credentials_private_storage.py`、[迁移说明](R2_PRIVATE_CREDENTIAL_STORAGE_MIGRATION.md)。修改 `credentials.py`、`project_env.py`、`secure_files.py`、`web.py`、`real_validation.py`、Web `app.js/index.html`，以及 `test_credentials.py`、`test_credential_writer.py`、`test_browser_streaming.cjs`。同步 AGENTS、README、BUILD_RUN、STRUCTURE、deep-dive 导航和本报告。没有修改 Profile、Orchestrator、Adapter 或 RAG。
+新增 `src/fishery_ai/credential_paths.py`、`tests/test_credentials_private_storage.py`、[迁移说明](../../guides/R2_PRIVATE_CREDENTIAL_STORAGE_MIGRATION.md)。修改 `credentials.py`、`project_env.py`、`secure_files.py`、`web.py`、`real_validation.py`、Web `app.js/index.html`，以及 `test_credentials.py`、`test_credential_writer.py`、`test_browser_streaming.cjs`。同步 AGENTS、README、BUILD_RUN、STRUCTURE、deep-dive 导航和本报告。没有修改 Profile、Orchestrator、Adapter 或 RAG。
 
 ### 本次验证
 

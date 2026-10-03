@@ -1,5 +1,7 @@
 # R3 / R4 / R5 分阶段实施报告
 
+> 文档分类：**HISTORICAL**。历史实施 / 验证记录；数字、限制与能力结论只对应当时版本，不是当前全局状态。 保留 R3/R4/R5 顺序实施、验收与回归依据；当前边界汇总到架构指南。 当前边界见[架构总览](../../architecture/CURRENT_ARCHITECTURE.md)。
+
 ## 2026-10-03 人工验收与阶段 A 收尾
 
 **USER-REPORTED VERIFIED**：用户已完成真实 Probe，并实际跑通 R5 → Evidence → R4 → Capability Gate → 正式模型请求。此记录来自用户反馈，不代表本轮自动执行真实请求；没有记录 Key、未提供的模型清单或 Token 数量。

@@ -1,5 +1,7 @@
 # 模型选择 UI 收敛与 Manual Expert 独立页面
 
+> 文档分类：**HISTORICAL**。历史实施 / 验证记录；数字、限制与能力结论只对应当时版本，不是当前全局状态。 记录早期三模式 UI 收敛；旧 Built-in、V2 待实现描述已被后续替代。 当前边界见[架构总览](../../architecture/CURRENT_ARCHITECTURE.md)。
+
 日期：2026-10-02。基于尚未提交的 Preset / R6 / R7 工作树，HEAD 仍为 `20744631dc627b48657ce19e6b62818bd064d67a`。本轮不 commit / push、不移动 tag。
 
 ## 1. 范围与依据

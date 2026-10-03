@@ -1,5 +1,7 @@
 # Post-R2 Structural Audit
 
+> 文档分类：**HISTORICAL**。历史实施 / 验证记录；数字、限制与能力结论只对应当时版本，不是当前全局状态。 保留 R2 阻塞发现、修复和用户验收；当前凭据规则见私有存储指南。 当前边界见[架构总览](../../architecture/CURRENT_ARCHITECTURE.md)。
+
 日期：2026-10-02。依据当前源码、AGENTS.md、R2 报告、ACL 复审和私有存储迁移说明。
 
 ## 当前结论：RESOLVED，唯一阻塞已修复

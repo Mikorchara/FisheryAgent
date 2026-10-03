@@ -1,5 +1,7 @@
 # Manual Expert V2 基础版实施报告
 
+> 文档分类：**HISTORICAL**。历史实施 / 验证记录；数字、限制与能力结论只对应当时版本，不是当前全局状态。 保留 V2 独立实验、凭据隔离和 UX 实施记录；当前操作见 BUILD_RUN。 当前边界见[架构总览](../../architecture/CURRENT_ARCHITECTURE.md)。
+
 日期：2026-10-03。本轮未 commit / push，供人工验收。
 
 ## 1. 定位与入口

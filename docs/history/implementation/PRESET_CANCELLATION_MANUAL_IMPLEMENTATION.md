@@ -1,5 +1,7 @@
 # Preset 小迁移、R6 Cancellation 与 R7 Manual Expert
 
+> 文档分类：**HISTORICAL**。历史实施 / 验证记录；数字、限制与能力结论只对应当时版本，不是当前全局状态。 保留 Stop 后端 I/O 语义和 Manual V1 产品校正；首批旧 Preset 已被 Clean-room 替代。 当前边界见[架构总览](../../architecture/CURRENT_ARCHITECTURE.md)。
+
 初次实施日期：2026-10-02。起点：`main` / `20744631dc627b48657ce19e6b62818bd064d67a`。第 1–9 节记录原实施轮次，当时不 commit / push；第 10 节是用户人工验收后追加的产品校正、架构审计与收尾授权，checkpoint 状态以该节及实际 Git 为准，v0.1 tag 不移动。
 
 ## 1. 范围与审计结论

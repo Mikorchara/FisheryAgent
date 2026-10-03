@@ -1,5 +1,7 @@
 # Clean-room Model Validation Reset
 
+> 文档分类：**HISTORICAL**。历史实施 / 验证记录；数字、限制与能力结论只对应当时版本，不是当前全局状态。 保留 Reset、编辑草稿与人工验收修复过程；空模型目录已不是当前启动状态。 当前边界见[架构总览](../../architecture/CURRENT_ARCHITECTURE.md)。
+
 日期：2026-10-03。阶段 B 保留在工作树，未 commit / push。
 
 本文第 2–6 节记录初次 Reset 当时的状态；其后的人工新建 Profile / Evidence 不会被本轮再次清空。最新人工验收修复和测试结果见第 7 节。
