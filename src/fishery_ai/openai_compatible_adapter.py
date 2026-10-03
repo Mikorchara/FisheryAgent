@@ -322,6 +322,8 @@ class OpenAICompatibleAdapter:
 
     @staticmethod
     def _kwargs(request: ModelRequest, runtime: RuntimeSnapshot, *, stream: bool) -> dict:
+        from .model_gateway import validate_preset_response
+        validate_preset_response(runtime, streaming=stream)
         generation, reasoning = effective_options(request, runtime)
         try:
             validate_options(generation, reasoning, runtime.capabilities, streaming=stream)

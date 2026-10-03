@@ -101,12 +101,14 @@ def edit_env(body: bytes, name: str, action: str, secret: str | None) -> bytes:
 
 
 class ProjectEnvWriter:
-    """Only the startup-selected storage root/.env is writable; no Web path API."""
+    """Only a startup-selected fixed credential file is writable; no Web path API."""
 
     def __init__(self, project_root: Path, credential_store: CredentialStore,
-                 *, require_git_ignored: bool = True):
+                 *, require_git_ignored: bool = True, filename: str = ".env"):
+        if filename not in (".env", "manual.env"):
+            raise ValueError("Only fixed credential filenames are allowed")
         self.root = project_root.absolute()
-        self.path = self.root / ".env"
+        self.path = self.root / filename
         if credential_store.project_env_path != self.path:
             raise ValueError("Writer and CredentialStore paths must match")
         self.credentials = credential_store
@@ -130,7 +132,7 @@ class ProjectEnvWriter:
         secure_files.check_volume(self.root)
         secure_files.inspect_policy(self.root, directory=True)
         if self.require_git_ignored:
-            self._check_ignored((".env", ".env.writer.lock"))
+            self._check_ignored((self.path.name, self.path.name + ".writer.lock"))
         if self.path.exists():
             info = self.path.stat()
             # Read-only, reparse, EFS, compressed and sparse files need a separate policy.
@@ -203,7 +205,7 @@ class ProjectEnvWriter:
                 self.credentials.private_location.check(create=True)
             self._policy()
             try:
-                with secure_files.exclusive_lock(self.root / ".env.writer.lock"):
+                with secure_files.exclusive_lock(self.root / (self.path.name + ".writer.lock")):
                     body, state, policy, revision = self._state()
                     if not isinstance(expected_revision, str) or expected_revision != revision:
                         raise EnvWriteError("ENV_REVISION_CONFLICT")
@@ -217,7 +219,7 @@ class ProjectEnvWriter:
                 raise EnvWriteError("ENV_LOCK_UNAVAILABLE") from None
 
     def _commit(self, original: bytes | None, changed: bytes, state, policy):
-        staging = self.root / (".env.stage-" + uuid.uuid4().hex)
+        staging = self.root / (self.path.name + ".stage-" + uuid.uuid4().hex)
         if self.require_git_ignored:
             self._check_ignored((staging.name + "/new", staging.name + "/original"))
         secure_files.private_directory(staging)

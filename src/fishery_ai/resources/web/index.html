@@ -32,8 +32,11 @@
         <label id="profile-label" for="profile">Model</label>
         <select id="profile"></select>
         <div id="preset-variant-field" hidden>
-          <label for="preset-variant">Variant / Thinking</label>
+          <label for="preset-variant">Thinking</label>
           <select id="preset-variant"></select>
+          <label for="preset-response-mode">Response Mode</label>
+          <select id="preset-response-mode"></select>
+          <small>仅提供此方案已发布的模式。</small>
           <p class="helper">切换到该模型已发布的精确 Variant；AUTO 使用服务默认行为，不等于 OFF。</p>
         </div>
         <p id="profile-meta" class="helper"></p>
@@ -202,12 +205,49 @@
 
         <section id="manual-expert" class="panel manual-panel" hidden>
           <h2>Manual Expert · 原始请求实验</h2>
+          <label for="manual-version">Manual 入口</label>
+          <select id="manual-version"><option value="v1">Saved Connection / V1</option><option value="v2">Manual V2 · 独立实验</option></select>
+          <div id="manual-v1-fields">
           <p class="helper">仅使用左侧已保存目标的连接、Timeout 和凭据引用。新增连接请先进入 Managed Custom。请求体不经过 Capability、Runtime Defaults 或 Fishery 分析；不自动加入 Thinking、Effort、include_usage。不执行 tool_calls。</p>
           <dl id="manual-connection" class="profile-summary"></dl>
           <label for="manual-body">Raw request body（JSON，最多 12 KiB）</label>
           <textarea id="manual-body" rows="16" spellcheck="false"></textarea>
           <p class="helper">model 必须与当前连接一致；不允许自定义 Headers、Authorization、URL 或传输配置。Secret 仍由用户私有凭据管理提供；不要在请求正文填写 Key。retry=0；Stop 与分析共用。</p>
+          </div>
+          <div id="manual-v2-fields" hidden>
+            <p class="helper">完全实验路径；Service Name 仅为标签。不使用 Profile、Capability、Evidence 或 Fishery 分析。请自行确认目标和 JSON 参数；不执行 tool_calls。</p>
+            <label for="experiment-select">已保存 Experiment</label><select id="experiment-select"><option value="">未保存草稿</option></select>
+            <div class="manager-actions">
+              <button id="experiment-new" type="button" class="secondary">New</button>
+              <button id="experiment-save" type="button" class="secondary">Save</button>
+              <button id="experiment-save-as" type="button" class="secondary">Save As</button>
+              <button id="experiment-delete" type="button" class="danger">Delete</button>
+            </div>
+            <p class="helper">Save：保存/更新当前 Experiment。Save As：以当前内容创建一个新的 Experiment，原 Experiment 保留。实验保存到 Git ignored 的 outputs/manual-experiments/。</p>
+            <label for="experiment-name">Experiment Name（必填）</label><input id="experiment-name" placeholder="例如：本地参数实验">
+            <label for="experiment-service">Service Name（必填，自由标签）</label><input id="experiment-service" placeholder="不要求平台注册">
+            <label for="experiment-transport">Transport</label><select id="experiment-transport"><option value="openai_chat">OpenAI-compatible Chat Completions</option></select>
+            <label for="experiment-url">Base URL（必填）</label><input id="experiment-url" placeholder="http://127.0.0.1:11434/v1">
+            <label for="experiment-model">Model（必填，Target 的权威模型 ID）</label><input id="experiment-model" placeholder="填写精确模型 ID，无需在 Raw JSON 中重复填写">
+            <label for="experiment-ref">Credential Ref / 凭据名称（可选）</label><input id="experiment-ref" placeholder="例如：DASHSCOPE_MANUAL_KEY">
+            <p class="helper">这里只填凭据名称，不填真实 Key。真实 Key 保存到独立用户私有 manual.env；Experiment 只保存 credential_ref，不保存 Key。留空表示不需要凭据，不读取正式 .env 或进程凭据。</p>
+            <button id="manual-key-refresh" type="button" class="secondary">刷新 Credential 状态</button>
+            <p id="manual-key-status" class="status" aria-live="polite">MISSING · 尚未检查</p>
+            <label for="manual-key-value">New Key / API Key Value</label><input id="manual-key-value" type="password" autocomplete="off" placeholder="这里只填写真实 Key 值，不填写 NAME=value">
+            <p class="helper">只输入真实 Key 值，不输入 NAME=value。提交后清空，永不显示已有 Key。</p>
+            <div class="manager-actions">
+              <button id="manual-key-create" type="button" class="secondary">Create / Set Key</button>
+              <button id="manual-key-replace" type="button" class="secondary">Replace Key</button>
+              <button id="manual-key-delete" type="button" class="danger">Delete Key</button>
+            </div>
+            <label for="experiment-timeout">Timeout（秒，1–600）</label><input id="experiment-timeout" type="number" min="1" max="600" value="120">
+            <label for="experiment-body">Raw Request JSON（必填，最多 12 KiB）</label><textarea id="experiment-body" rows="16" spellcheck="false"></textarea>
+            <p class="helper">未填写 model 时，后端仅在请求准备时使用上方 Model 补入，不改编辑器或保存的 JSON。已有 model 必须与上方相同，否则返回 MANUAL_MODEL_MISMATCH。</p>
+            <label for="experiment-notes">Notes（可选，不填写 Secret）</label><textarea id="experiment-notes" rows="2"></textarea>
+            <p id="experiment-status" class="status" role="status" aria-live="polite"></p>
+          </div>
           <button id="manual-send" class="secondary" type="button">Send · REAL NETWORK REQUEST</button>
+          <button id="manual-stop" class="secondary" type="button" disabled>Stop</button>
           <p id="manual-status" class="status" role="status" aria-live="polite"></p>
           <h3>Raw Response / Usage / Latency</h3><pre id="manual-output" class="model-output"></pre>
         </section>

@@ -1,6 +1,22 @@
 # 构建与运行
 
-## 当前 Clean-room 起点（2026-10-03）
+## 当前 Preset 发布（2026-10-03）
+
+当前发布 **Qwen 3.8 Flash、DeepSeek Flash、Ollama Qwen3.5 4B**，均为 contract **1.0.0**，来自 Clean-room 后的精确活动 Evidence 与用户正常 Web 进程人工验收，不恢复旧 Preset。三个模型均发布 **OFF + Normal、ON + Normal、ON + Streaming**；AUTO、OFF + Streaming 暂未发布。Qwen 仍是默认模型，默认 **Thinking OFF + Normal**。启动页面不会自动联网。
+
+Preset 页仅选择 Model、Thinking、Response Mode，再选择水质场景和问题、确认 REAL NETWORK REQUEST 后开始分析。不显示连接参数、Capability Evidence 或 Probe。凭据缺失返回 SECRET_MISSING；请在 Managed Custom 的凭据管理入口设置用户私有凭据，Preset 页不录入 Key。
+
+开发者在包内 `resources/profiles/presets.json` 维护固定 Template / Variant / ProtocolSpec / contract；`default_preset_id` 设为已发布 ID 时自动选择对应默认组合，设为 null 或移除时显示“请选择模型”。不提供 Publisher UI，不从本地 Evidence 自动更新合同。详见 [Preset 简化与首次发布](deep-dive/PRESET_SIMPLIFICATION_AND_FIRST_PUBLICATION.md)。
+
+DeepSeek 发布对象为 **deepseek-flash**（Saved Connection DS_2），不是 deepseek-v4-pro；凭据引用 DEEPSEEK_API_KEY。Ollama 发布对象为 **qwen3.5:4b / http://127.0.0.1:11434/v1 / generic_openai_chat**，Auth NONE，connect/read/total 为 5/120/180 秒。Thinking 较慢是性能现象，不等于不支持；Streaming Usage 未证实，显示 unavailable。
+
+历史资格验证中 Codex 的 CREDENTIAL_FILE_ERROR 与本地 READ_TIMEOUT 记录仍保留，已由本轮用户正常 Web 进程人工验收和新活动 Evidence 补充。Qwen 没有 OFF + Streaming 的直接组合成功记录，未升级至 1.0.1。本轮仅登记合同，没有重新联网、解析真实凭据或修改 CredentialStore。详见发布报告第 12 节。
+
+`scripts/qualify_local_preset_request.py` 是开发者**单次**本地资格检查工具，需显式 --confirm-network、现有精确本地 Saved Connection、--thinking on/off，可选 --streaming 或 --manual-v1。每次最多一个 64-token请求、retry=0；不自动重试、扫描、写 Evidence 或发布合同。超时后应先诊断，不能循环执行；摘要存于 ignored outputs/preset-qualification，不存完整正文。
+
+## Clean-room 重置历史（2026-10-03）
+
+以下记录重置当时的空目录状态；随后用户创建的连接、Evidence 和上述新 Preset 均不再为空。旧模型资产仍只在历史 fixture / 归档中保留，正常启动不恢复。
 
 活动真实模型目录已重置：没有已发布 Preset、Legacy Built-in 或 User Custom 模型；模型级官方声明表和本地活动 Evidence 均为空。Provider 连接模板、ProtocolSpec、凭据、Resolver、Probe、Cancellation 和 Manual V1 保留。
 
@@ -10,17 +26,21 @@
 
 ## Preset / Stop / Manual Expert
 
-一级入口仍为 **Preset / Managed Custom / Manual Expert**，默认显示 Preset；当前 Preset 为空，启动不会发送生成请求。Thinking 与 Response Mode 保持独立。**Development / Test** 当前只保留 Mock；过去的 Qwen、DeepSeek 与 Ollama 模型方案已退出活动目录，相关合同仅在显式历史 fixture 测试中加载。
+一级入口仍为 **Preset / Managed Custom / Manual Expert**，默认显示 Preset；默认选择新发布的 Qwen 3.8 Flash，启动不会发送生成请求。Thinking 与 Response Mode 保持独立。**Development / Test** 当前只保留 Mock；Clean-room 前的模型方案未恢复，相关旧合同仅在显式历史 fixture 测试中加载。当前 DeepSeek Flash 与 Ollama 是新登记的固定合同。
 
 点击“停止生成”会先向后端请求取消 SDK I/O，再停止浏览器读取；页面分别显示后端关闭状态与远端计算 UNKNOWN，不能据此保证停止云端计费。
 
-在一级运行方式中选择 **Manual Expert**，使用最小的 Connection / Target 选择器，进入独立 Raw Request / Raw Response 页面。Capability、Probe、水质场景、Thinking、Response Mode 和 CRUD 均隐藏。直接编辑 Raw JSON body；model 必须一致，禁止自定义 Header / URL / Credential / transport 配置。点击 Send 后显式确认 REAL NETWORK REQUEST。Normal 与 `stream:true` 都支持 Stop。该路径不执行水质分析、RAG、Capability / 默认值注入或 tool_calls；Raw response、Usage 与耗时只在调试区显示，不存模板。
+在一级运行方式中选择 **Manual Expert**，默认 **Saved Connection / V1** 使用最小的 Connection / Target 选择器，进入独立 Raw Request / Raw Response 页面。V1 的 Capability、Probe、水质场景、Thinking、Response Mode 和连接 CRUD 均隐藏。直接编辑 Raw JSON body；model 必须一致，禁止自定义 Header / URL / Credential / transport 配置。点击 Send 后显式确认 REAL NETWORK REQUEST。Normal 与 `stream:true` 都支持 Stop。V1 不执行水质分析、RAG、Capability / 默认值注入或 tool_calls；Raw response、Usage 与耗时只在调试区显示，不存模板。
 
-**Manual 产品定位**：当前 V1 仅借用 Saved Connection 发送 Raw Request；长期方向是独立 LLM / Provider API 实验台，可保存独立 Manual Experiment。实验资产不等于 Managed Custom Connection，成功不等于 Fishery compatibility verified；不自动“保存为正式连接”。转换机制 NOT DECIDED，V2 DEFERRED。本阶段只校正文档，不开放任意目标或新增实验 CRUD。见[三模式设计校正](deep-dive/MODEL_ACCESS_THREE_MODE_PLAN.md)。
+**Manual V2 基础版**：在 Manual Expert 页面选择 **Manual V2 · 独立实验**。自行填写 Experiment Name、Service Name（自由标签）、Base URL、Model、Timeout、Raw JSON。页面 Model 是权威 ID；Raw JSON 可省略 model，后端请求准备时补入，不改编辑器或保存内容；显式 model 必须相同，否则返回 MANUAL_MODEL_MISMATCH。可 New / Save / Save As / Delete；Save 保存/更新当前实验，Save As 用当前内容创建新实验并保留原实验。保存位置为 Git ignored 的 `outputs/manual-experiments/`。
+
+V2 的 Credential Ref / 凭据名称（例如 `DASHSCOPE_MANUAL_KEY`）只引用独立用户私有 `credentials/manual.env`。填写引用名 → 刷新状态 → 在 New Key / API Key Value 中仅输入真实 Key 值（不填 NAME=value）→ Create / Set Key（已有时 Replace / Delete）。Experiment 只保存 credential_ref，不保存 Key。输入提交即清空，旧 Key 永不回显；空引用表示无需凭据。V2 不读取正式 `credentials/.env`、进程 Key 或源码根 `.env`。V1 与 Managed 继续使用原凭据来源，不读取 manual.env。
+
+Send 必须确认 REAL NETWORK REQUEST；Raw `stream:true` 使用同一流式传输，Stop 复用后端取消机制。不会自动注入 Thinking / Effort / include_usage，不生成 Evidence，不执行 tool_calls。切换 V1 / V2 保留双方草稿；V2 不要求先有 Saved Connection。实验资产不等于正式连接，转换机制仍 NOT DECIDED。详见 [Manual V2 实施报告](deep-dive/MANUAL_EXPERT_V2_IMPLEMENTATION.md)；原[三模式设计校正](deep-dive/MODEL_ACCESS_THREE_MODE_PLAN.md)保留为设计历史。
 
 凭据仍统一来自 **PROCESS_ENV > user-private PROJECT_ENV > MISSING**。上一实施阶段的受控联网阻塞记录保留在[阶段实施报告](deep-dive/PRESET_CANCELLATION_MANUAL_IMPLEMENTATION.md)；用户随后已反馈主要功能人工验证正常。该 UI 整理轮次未发真实请求；用户已反馈当前界面人工验收基本正常，历史待验收记录保留在[三模式 UI 整理报告](deep-dive/MODEL_SELECTION_UI_THREE_MODE_CLEANUP.md)。
 
-历史 `validate_access_modes.py` 仍保留确认/retry/timeout 合同，但当前模型目录为空，返回 `INACTIVE_VALIDATION_PROFILE`，不发送请求。它不会从测试 fixture、归档或旧根 `.env` 恢复模型。新一轮验证使用 Managed Custom 的显式 UI；不要将 `outputs/` 记录加入 Git。
+历史 `validate_access_modes.py` 仍保留确认/retry/timeout 合同，其旧目标未恢复，返回 `INACTIVE_VALIDATION_PROFILE`，不发送请求。它不会从测试 fixture、归档或旧根 `.env` 恢复模型。新一轮验证使用 Managed Custom 的显式 UI；不要将 `outputs/` 记录加入 Git。
 
 ## Managed Custom：凭据与高级能力验证
 
@@ -100,7 +120,7 @@ python -m fishery_ai validate-real --check basic --confirm-network
 .\.venv\Scripts\python.exe -m fishery_ai web
 ```
 
-启动后浏览器访问 `http://127.0.0.1:8765`；可用 `--port 8766` 更换端口。默认只绑定 `127.0.0.1`，只接受当前端口的 loopback Host，默认展示 Preset，不自动生成；Mock 需从 Development / Test 入口显式选择。页面分析仍使用已有水质 Mock 场景。Qwen Plus / DeepSeek Flash 使用已发布的固定 Variant，保留原 **EXPERIMENTAL** Profile 状态，不因此宣称所有能力已稳定。真实分析需勾选 **REAL NETWORK REQUEST**，Cloud 可能产生费用；请求使用固定用户私有文件或进程环境中的 Secret。凭据管理接收用户新输入的 Key，不返回已有 Key。启动终端输出固定凭据文件位置（不输出值）。关闭终端即可停止本地服务。
+启动后浏览器访问 `http://127.0.0.1:8765`；可用 `--port 8766` 更换端口。默认只绑定 `127.0.0.1`，只接受当前端口的 loopback Host，默认展示 Preset，不自动生成；Mock 需从 Development / Test 入口显式选择。页面分析仍使用已有水质 Mock 场景。Qwen 3.8 Flash / DeepSeek Flash / Ollama Qwen3.5 4B 使用已发布的固定 Variant，只对合同中的组合负责，不宣称其他高级能力已验证。真实分析需勾选 **REAL NETWORK REQUEST**，Cloud 可能产生费用；请求使用固定用户私有文件或进程环境中的 Secret，Ollama Auth NONE 不需要 Key。凭据管理接收用户新输入的 Key，不返回已有 Key。启动终端输出固定凭据文件位置（不输出值）。关闭终端即可停止本地服务。
 
 仅 Managed Custom 显示“管理模型配置”，可选择 Qwen、DeepSeek、Ollama 或 Custom OpenAI-compatible 的连接预设。这些 Provider 连接预设不是项目维护的模型 Preset Contract。高级设置包含 `service_id`、Adapter、Secret 环境变量名与 `AuthSpec`；认证要求与 Cloud/Local 类型独立。Provider 注册和 Profile、Capability、Evidence 不依赖凭据是否存在。
 

@@ -21,6 +21,7 @@ class ProtocolTests(unittest.TestCase):
             ("dashscope", "qwen3.8-flash", "openai_chat", "enable_thinking"),
             ("dashscope", "qwen3.8-omni-flash", "openai_chat", "effort_xhigh_none"),
             ("deepseek_api", "deepseek-flash", "openai_chat", "thinking_type"),
+            ("deepseek_api", "deepseek-v4-pro", "openai_chat", "thinking_type"),
             ("ollama", "qwen3.5:4b", "generic_openai_chat", "effort_high_none")):
             for mode in ReasoningMode:
                 for streaming in (False, True):

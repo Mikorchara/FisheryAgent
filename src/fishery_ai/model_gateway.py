@@ -18,6 +18,7 @@ from .model_options import (CapabilitySource, GenerationOptions, ModelCapabiliti
 
 if TYPE_CHECKING:
     from .manual import ManualRequest, ManualResponse
+    from .protocol_specs import ProtocolSpec
 
 
 Capabilities = ModelCapabilities
@@ -55,6 +56,9 @@ class ModelProfile:
     preset_id: str | None = None
     preset_variant: str | None = None
     preset_contract_version: str | None = None
+    preset_response_modes: tuple[str, ...] = ()
+    preset_protocol_spec: ProtocolSpec | None = field(default=None, repr=False)
+    preset_is_default: bool = False
 
     # Original project declaration stays separate from the resolved view. This
     # prevents a previous resolution becoming new evidence on the next apply.
@@ -62,6 +66,7 @@ class ModelProfile:
     capability_evidence: tuple = field(default=(), repr=False, compare=False)
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "preset_response_modes", tuple(self.preset_response_modes))
         if self.access_mode not in ("managed_custom", "preset"):
             raise ValueError("invalid access_mode")
         if self.access_mode == "preset" and not all((self.preset_id, self.preset_variant, self.preset_contract_version)):
@@ -207,6 +212,8 @@ class ModelProfile:
 def effective_runtime_defaults(profile: ModelProfile
                                 ) -> tuple[ReasoningOptions, str, list[str]]:
     """Resolve stored preferences without treating UNKNOWN as capability evidence."""
+    if profile.access_mode == "preset":
+        return profile.default_reasoning, profile.default_response_mode, []
     reasoning = profile.default_reasoning
     response_mode = profile.default_response_mode
     notices = []
@@ -258,11 +265,13 @@ class RuntimeSnapshot:
     preset_id: str | None = None
     preset_variant: str | None = None
     preset_contract_version: str | None = None
+    preset_response_modes: tuple[str, ...] = ()
+    preset_protocol_spec: ProtocolSpec | None = field(default=None, repr=False)
 
     @property
     def protocol_spec(self):
         from .protocol_specs import protocol_for
-        return protocol_for(self)
+        return self.preset_protocol_spec or protocol_for(self)
 
     @property
     def api_key(self) -> str | None:
@@ -322,6 +331,8 @@ class ProfileRegistry:
             model_family=profile.model_family or "unknown",
             access_mode=profile.access_mode, preset_id=profile.preset_id,
             preset_variant=profile.preset_variant, preset_contract_version=profile.preset_contract_version,
+            preset_response_modes=profile.preset_response_modes,
+            preset_protocol_spec=profile.preset_protocol_spec,
         )
 
 
@@ -353,6 +364,13 @@ def effective_options(request: ModelRequest, runtime: RuntimeSnapshot
     if runtime.access_mode == "preset" and reasoning != runtime.default_reasoning:
         raise GatewayError("PRESET_OPTION_LOCKED", option="reasoning")
     return generation, reasoning
+
+
+def validate_preset_response(runtime, *, streaming: bool) -> None:
+    """Published combinations are an allowlist, independent of runtime evidence."""
+    if (runtime.access_mode == "preset" and runtime.preset_response_modes
+            and ("streaming" if streaming else "normal") not in runtime.preset_response_modes):
+        raise GatewayError("PRESET_MODE_NOT_PUBLISHED")
 
 
 @dataclass(frozen=True)
@@ -402,6 +420,7 @@ class MockGateway:
         raise GatewayError("MANUAL_CONNECTION_REQUIRED")
 
     def complete(self, request: ModelRequest, runtime: RuntimeSnapshot) -> ModelResponse:
+        validate_preset_response(runtime, streaming=False)
         generation, reasoning = effective_options(request, runtime)
         try:
             validate_options(generation, reasoning, runtime.capabilities)
@@ -416,6 +435,7 @@ class MockGateway:
         return ModelResponse(text)
 
     def stream(self, request: ModelRequest, runtime: RuntimeSnapshot) -> Iterator[ModelEvent]:
+        validate_preset_response(runtime, streaming=True)
         generation, reasoning = effective_options(request, runtime)
         try:
             validate_options(generation, reasoning, runtime.capabilities)

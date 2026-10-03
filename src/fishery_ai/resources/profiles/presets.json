@@ -1,3 +1,485 @@
 {
-  "templates": []
+  "schema_version": 2,
+  "default_preset_id": "dashscope-qwen38-flash-r1",
+  "templates": [
+    {
+      "id": "dashscope-qwen38-flash-r1",
+      "display_name": "Qwen 3.8 Flash",
+      "release_status": "published",
+      "contract_version": "1.0.0",
+      "connection": {
+        "profile_id": "qwen38-flash-template",
+        "display_name": "Qwen 3.8 Flash",
+        "provider_kind": "cloud",
+        "provider_id": "qwen",
+        "service_id": "dashscope",
+        "model_family": "qwen",
+        "adapter_id": "openai_chat",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "model": "qwen3.8-flash",
+        "auth_spec": "REQUIRED_BEARER",
+        "credential_ref": "DASHSCOPE_API_KEY",
+        "connect_timeout_s": 5,
+        "read_timeout_s": 30,
+        "total_timeout_s": 120,
+        "max_retries": 0
+      },
+      "identity": [
+        "dashscope",
+        "openai_chat",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "qwen3.8-flash"
+      ],
+      "protocol_spec": {
+        "spec_id": "dashscope_chat",
+        "version": "1",
+        "max_output_tokens_field": "max_tokens",
+        "thinking_encoding": "enable_thinking",
+        "effort_field": "reasoning_effort",
+        "stream_field": "stream",
+        "usage_options_field": "stream_options"
+      },
+      "capabilities": {
+        "reasoning_on": "supported",
+        "reasoning_off": "supported",
+        "streaming": "supported",
+        "streaming_usage": "supported",
+        "thinking_streaming_combination": "supported",
+        "source": "USER_VERIFIED",
+        "verified_at": "2026-10-02T17:58:24.144432+00:00"
+      },
+      "defaults": {
+        "thinking": "off",
+        "response_mode": "normal"
+      },
+      "variants": [
+        {
+          "id": "off",
+          "label": "OFF",
+          "thinking": "off",
+          "response_modes": [
+            "normal"
+          ]
+        },
+        {
+          "id": "on",
+          "label": "ON",
+          "thinking": "on",
+          "response_modes": [
+            "normal",
+            "streaming"
+          ]
+        }
+      ],
+      "maintenance": {
+        "published_at": "2026-10-03",
+        "maintainer": "project-developer",
+        "validation_source": "Clean-room 后用户显式 Probe 与成功分析 Trace；不是旧 Preset 恢复",
+        "user_acceptance": {
+          "reported_at": "2026-10-03",
+          "source": "用户本轮明确人工验收反馈",
+          "passed": [
+            "OFF + Normal",
+            "ON + Normal",
+            "ON + Streaming"
+          ],
+          "off_streaming": "未找到当前活动记录中 OFF + Streaming 的直接成功证据；保持未发布及 1.0.0。"
+        },
+        "evidence_summary": [
+          {
+            "mode": "ON + Normal",
+            "validated_at": "2026-10-02T17:58:12.842216+00:00",
+            "latency_ms": 1312,
+            "total_tokens": 78
+          },
+          {
+            "mode": "OFF + Normal",
+            "validated_at": "2026-10-02T17:58:15.441831+00:00",
+            "latency_ms": 859
+          },
+          {
+            "mode": "ON + Streaming",
+            "validated_at": "2026-10-02T17:58:24.144432+00:00",
+            "content_delta_count": 1,
+            "reasoning_delta_count": 8,
+            "total_tokens": 86
+          }
+        ],
+        "manual_v1_inspection": "无持久化原始响应；本轮补查在凭据安全边界被 CREDENTIAL_FILE_ERROR 阻止，留待人工复查，不伪称已完成",
+        "not_published": [
+          "AUTO",
+          "OFF + Streaming",
+          "Reasoning Effort",
+          "其他高级参数"
+        ],
+        "decision": "仅发布有精确独立 Probe 支持的三种组合；维护依据静态存档，运行时不读取 Evidence"
+      }
+    },
+    {
+      "id": "deepseek-flash-r1",
+      "display_name": "DeepSeek Flash",
+      "release_status": "published",
+      "contract_version": "1.0.0",
+      "connection": {
+        "profile_id": "deepseek-flash-r1-template",
+        "display_name": "DeepSeek Flash",
+        "provider_kind": "cloud",
+        "provider_id": "deepseek",
+        "service_id": "deepseek_api",
+        "model_family": "deepseek",
+        "adapter_id": "openai_chat",
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "auth_spec": "REQUIRED_BEARER",
+        "credential_ref": "DEEPSEEK_API_KEY",
+        "connect_timeout_s": 5,
+        "read_timeout_s": 30,
+        "total_timeout_s": 120,
+        "max_retries": 0
+      },
+      "identity": [
+        "deepseek_api",
+        "openai_chat",
+        "https://api.deepseek.com",
+        "deepseek-flash"
+      ],
+      "protocol_spec": {
+        "spec_id": "deepseek_chat",
+        "version": "1",
+        "max_output_tokens_field": "max_tokens",
+        "thinking_encoding": "thinking_type",
+        "effort_field": "reasoning_effort",
+        "stream_field": "stream",
+        "usage_options_field": "stream_options"
+      },
+      "capabilities": {
+        "reasoning_on": "supported",
+        "reasoning_off": "supported",
+        "streaming": "supported",
+        "streaming_usage": "supported",
+        "thinking_streaming_combination": "supported",
+        "source": "USER_VERIFIED",
+        "verified_at": "2026-10-02T18:16:20.900208+00:00"
+      },
+      "defaults": {
+        "thinking": "off",
+        "response_mode": "normal"
+      },
+      "variants": [
+        {
+          "id": "off",
+          "label": "OFF",
+          "thinking": "off",
+          "response_modes": [
+            "normal"
+          ]
+        },
+        {
+          "id": "on",
+          "label": "ON",
+          "thinking": "on",
+          "response_modes": [
+            "normal",
+            "streaming"
+          ]
+        }
+      ],
+      "maintenance": {
+        "published_at": "2026-10-03",
+        "maintainer": "project-developer",
+        "validation_source": "Clean-room 后当前精确 Saved Connection 的活动 USER_VERIFIED Evidence + 用户正常 Web 进程人工验收；未发起本轮模型请求。",
+        "saved_connection_id": "custom-a7109e8c55e24900a47890a825b84343",
+        "user_acceptance": {
+          "reported_at": "2026-10-03",
+          "source": "用户确认已在正常用户 Web 进程完成人工真实验证并要求登记本精确模型。"
+        },
+        "evidence_summary": [
+          {
+            "record_id": "284bbdee25d00df3b661a18e58017acbab33a6b62bbe194e9a90758e163eeeb3",
+            "capability": "reasoning_off",
+            "status": "supported",
+            "source": "USER_VERIFIED",
+            "verified_at": "2026-10-02T18:16:15.462041+00:00",
+            "metrics": {
+              "delta_count": 0,
+              "reasoning_delta_count": 0,
+              "ttft_ms": null,
+              "content_ttft_ms": null,
+              "usage": {
+                "input_tokens": 7,
+                "output_tokens": 1,
+                "total_tokens": 8,
+                "reasoning_tokens": null,
+                "cached_input_tokens": 0,
+                "source": "provider"
+              },
+              "returned_model": "deepseek-flash",
+              "latency_ms": 360.0
+            }
+          },
+          {
+            "record_id": "daa2ded61c05b828af2bbca4071ee1e4e6badab4bcf12c28c03096ae8202897f",
+            "capability": "reasoning_on",
+            "status": "supported",
+            "source": "USER_VERIFIED",
+            "verified_at": "2026-10-02T18:16:13.709517+00:00",
+            "metrics": {
+              "delta_count": 0,
+              "reasoning_delta_count": 0,
+              "ttft_ms": null,
+              "content_ttft_ms": null,
+              "usage": {
+                "input_tokens": 33,
+                "output_tokens": 32,
+                "total_tokens": 65,
+                "reasoning_tokens": 30,
+                "cached_input_tokens": 0,
+                "source": "provider"
+              },
+              "returned_model": "deepseek-flash",
+              "latency_ms": 735.0
+            }
+          },
+          {
+            "record_id": "e6002b6734db83ed46300c3b9662204c5550152b5d1fe3dc789947e2ffe36d8e",
+            "capability": "streaming",
+            "status": "supported",
+            "source": "USER_VERIFIED",
+            "verified_at": "2026-10-02T18:16:17.899557+00:00",
+            "metrics": {
+              "delta_count": 1,
+              "reasoning_delta_count": 23,
+              "ttft_ms": 593.0,
+              "content_ttft_ms": 734.0,
+              "usage": {
+                "input_tokens": 33,
+                "output_tokens": 25,
+                "total_tokens": 58,
+                "reasoning_tokens": 23,
+                "cached_input_tokens": 0,
+                "source": "provider"
+              },
+              "returned_model": null,
+              "latency_ms": 734.0
+            }
+          },
+          {
+            "record_id": "419a873a8838dcefb1aaf50d494b7f7d16f0ef7a56e8a142bd9ce699966d5df7",
+            "capability": "thinking_streaming_combination",
+            "status": "supported",
+            "source": "USER_VERIFIED",
+            "verified_at": "2026-10-02T18:16:20.900208+00:00",
+            "metrics": {
+              "delta_count": 1,
+              "reasoning_delta_count": 23,
+              "ttft_ms": 766.0,
+              "content_ttft_ms": 891.0,
+              "usage": {
+                "input_tokens": 33,
+                "output_tokens": 25,
+                "total_tokens": 58,
+                "reasoning_tokens": 23,
+                "cached_input_tokens": 0,
+                "source": "provider"
+              },
+              "returned_model": null,
+              "latency_ms": 891.0
+            }
+          }
+        ],
+        "manual_v1_inspection": "活动记录不持久化 Manual V1 原始响应；本轮未重新执行 Raw 检查，不编造 finish_reason 或完整响应观察。",
+        "not_published": [
+          "AUTO",
+          "OFF + Streaming",
+          "Reasoning Effort",
+          "其他高级参数"
+        ],
+        "decision": "维护者仅发布独立 ON/OFF Normal Probe 与 ON Streaming 组合 Probe 对应的三种组合；不同模型或 service 的 Evidence 不参与。",
+        "excluded_identity": "deepseek-v4-pro 的配置和 Evidence 不参与本合同。Streaming Probe 返回 provider Usage，固定合同据此允许 include_usage；这不改变 R4 的 UNKNOWN 解析。"
+      }
+    },
+    {
+      "id": "ollama-qwen35-4b-r1",
+      "display_name": "Ollama Qwen3.5 4B",
+      "release_status": "published",
+      "contract_version": "1.0.0",
+      "connection": {
+        "profile_id": "ollama-qwen35-4b-r1-template",
+        "display_name": "Ollama Qwen3.5 4B",
+        "provider_kind": "local",
+        "provider_id": "ollama",
+        "service_id": "ollama",
+        "model_family": "qwen",
+        "adapter_id": "generic_openai_chat",
+        "base_url": "http://127.0.0.1:11434/v1",
+        "model": "qwen3.5:4b",
+        "auth_spec": "NONE",
+        "credential_ref": null,
+        "connect_timeout_s": 5,
+        "read_timeout_s": 120,
+        "total_timeout_s": 180,
+        "max_retries": 0
+      },
+      "identity": [
+        "ollama",
+        "generic_openai_chat",
+        "http://127.0.0.1:11434/v1",
+        "qwen3.5:4b"
+      ],
+      "protocol_spec": {
+        "spec_id": "ollama_openai_chat",
+        "version": "1",
+        "max_output_tokens_field": "max_tokens",
+        "thinking_encoding": "effort_high_none",
+        "effort_field": null,
+        "stream_field": "stream",
+        "usage_options_field": "stream_options"
+      },
+      "capabilities": {
+        "reasoning_on": "supported",
+        "reasoning_off": "supported",
+        "streaming": "supported",
+        "streaming_usage": "unknown",
+        "thinking_streaming_combination": "supported",
+        "source": "USER_VERIFIED",
+        "verified_at": "2026-10-03T14:45:33.251541+00:00"
+      },
+      "defaults": {
+        "thinking": "off",
+        "response_mode": "normal"
+      },
+      "variants": [
+        {
+          "id": "off",
+          "label": "OFF",
+          "thinking": "off",
+          "response_modes": [
+            "normal"
+          ]
+        },
+        {
+          "id": "on",
+          "label": "ON",
+          "thinking": "on",
+          "response_modes": [
+            "normal",
+            "streaming"
+          ]
+        }
+      ],
+      "maintenance": {
+        "published_at": "2026-10-03",
+        "maintainer": "project-developer",
+        "validation_source": "Clean-room 后当前精确 Saved Connection 的活动 USER_VERIFIED Evidence + 用户正常 Web 进程人工验收；未发起本轮模型请求。",
+        "saved_connection_id": "custom-b291d8a7148342ebb462f8a19f398cee",
+        "user_acceptance": {
+          "reported_at": "2026-10-03",
+          "source": "用户确认已在正常用户 Web 进程完成人工真实验证并要求登记本精确模型。"
+        },
+        "evidence_summary": [
+          {
+            "record_id": "0edf28add8a7a9968d7ca649d304b2d6ba92e2bd9a11978202cbb24fad82edaf",
+            "capability": "reasoning_off",
+            "status": "supported",
+            "source": "USER_VERIFIED",
+            "verified_at": "2026-10-03T14:45:24.195022+00:00",
+            "metrics": {
+              "delta_count": 0,
+              "reasoning_delta_count": 0,
+              "ttft_ms": null,
+              "content_ttft_ms": null,
+              "usage": {
+                "input_tokens": 15,
+                "output_tokens": 2,
+                "total_tokens": 17,
+                "reasoning_tokens": null,
+                "cached_input_tokens": 9,
+                "source": "provider"
+              },
+              "returned_model": "qwen3.5:4b",
+              "latency_ms": 328.0
+            }
+          },
+          {
+            "record_id": "d8acc6f8032b58bd515c60b15e18cb75bcd1f9e317ce04073b4bf3a94147c81f",
+            "capability": "reasoning_on",
+            "status": "supported",
+            "source": "USER_VERIFIED",
+            "verified_at": "2026-10-03T14:45:18.867642+00:00",
+            "metrics": {
+              "delta_count": 0,
+              "reasoning_delta_count": 0,
+              "ttft_ms": null,
+              "content_ttft_ms": null,
+              "usage": {
+                "input_tokens": 13,
+                "output_tokens": 243,
+                "total_tokens": 256,
+                "reasoning_tokens": null,
+                "cached_input_tokens": 0,
+                "source": "provider"
+              },
+              "returned_model": "qwen3.5:4b",
+              "latency_ms": 9531.0
+            }
+          },
+          {
+            "record_id": "e204f34fb7567a17306aae3b46e94f89f47d2e48d8485e0263a26ceb020dd8e8",
+            "capability": "streaming",
+            "status": "supported",
+            "source": "USER_VERIFIED",
+            "verified_at": "2026-10-03T14:45:29.168641+00:00",
+            "metrics": {
+              "delta_count": 1,
+              "reasoning_delta_count": 0,
+              "ttft_ms": 2375.0,
+              "content_ttft_ms": 2375.0,
+              "usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null,
+                "cached_input_tokens": null,
+                "source": "unavailable"
+              },
+              "returned_model": null,
+              "latency_ms": 2390.0
+            }
+          },
+          {
+            "record_id": "3e4d1205634af2c86b3d67fee93fbd2eb956006da18507033abd12d1bb0a8ec9",
+            "capability": "thinking_streaming_combination",
+            "status": "supported",
+            "source": "USER_VERIFIED",
+            "verified_at": "2026-10-03T14:45:33.251541+00:00",
+            "metrics": {
+              "delta_count": 1,
+              "reasoning_delta_count": 0,
+              "ttft_ms": 2297.0,
+              "content_ttft_ms": 2297.0,
+              "usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null,
+                "cached_input_tokens": null,
+                "source": "unavailable"
+              },
+              "returned_model": null,
+              "latency_ms": 2297.0
+            }
+          }
+        ],
+        "manual_v1_inspection": "活动记录不持久化 Manual V1 原始响应；本轮未重新执行 Raw 检查，不编造 finish_reason 或完整响应观察。",
+        "not_published": [
+          "AUTO",
+          "OFF + Streaming",
+          "Reasoning Effort",
+          "其他高级参数"
+        ],
+        "decision": "维护者仅发布独立 ON/OFF Normal Probe 与 ON Streaming 组合 Probe 对应的三种组合；不同模型或 service 的 Evidence 不参与。",
+        "performance_note": "用户已在正常 Web 进程验证可运行；ON Normal Probe 9531ms、OFF Normal 328ms。Thinking 较慢是性能现象，不等于不支持。Streaming Usage unavailable，保持 UNKNOWN，不自动请求 include_usage。"
+      }
+    }
+  ]
 }

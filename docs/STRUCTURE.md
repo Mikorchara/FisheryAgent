@@ -4,13 +4,13 @@
 
 ## 三种模型访问入口
 
-包内 `resources/web/index.html`、`app.js`、`app.css` 将 Preset 模型与 Variant 分开，Managed Custom 独占 CRUD，Manual Expert 使用独立 Raw JSON 面板。旧 Cloud Built-in 仅从界面隐藏，后端和 CLI 定义保留；Mock / 未发布 Ollama 放在 Development / Test。详见[界面整理报告](deep-dive/MODEL_SELECTION_UI_THREE_MODE_CLEANUP.md)。
+包内 `resources/web/index.html`、`app.js`、`app.css` 将 Preset 模型与 Variant 分开，Managed Custom 独占 CRUD，Manual Expert 使用独立 Raw JSON 面板。当前新发布 Qwen 3.8 Flash、DeepSeek Flash、Ollama Qwen3.5 4B；Mock 放在 Development / Test。Clean-room 前 Built-in 与合同只在显式历史 fixture / 归档中保留，不在正常启动时恢复。详见[当前发布报告](deep-dive/PRESET_SIMPLIFICATION_AND_FIRST_PUBLICATION.md)；[界面整理报告](deep-dive/MODEL_SELECTION_UI_THREE_MODE_CLEANUP.md)保留历史。
 
 ## Preset / R6 / R7 新增模块
 
 | 文件 | 作用 |
 |---|---|
-| `presets.py` / `resources/profiles/presets.json` | 项目维护的固定 Template / Variant 与版本化合同，发布入口不加载本地 Evidence；Ollama 尚为未发布候选 |
+| `presets.py` / `resources/profiles/presets.json` | 项目维护的固定 Template / Variant 与版本化合同，发布入口不加载本地 Evidence；已发布三个精确模型，各三种组合 |
 | `execution.py` | 本地单进程 RequestHandle、控制令牌、状态与取消上下文 |
 | `manual.py` | 独立 Raw JSON 请求及原始结果合同，无水质业务或 Capability 判断 |
 | `openai_compatible_adapter.py` | 保留原编码；新增 AsyncOpenAI bridge，实际取消 SDK await、关闭流和 client，Manual passthrough 共用安全传输 |
@@ -26,7 +26,6 @@ Fishery_AI_Prototype/
 ├─ README.md                      # 项目定位、V0.1 已实现/范围外、与其他项目的关系、命令速查
 ├─ AGENTS.md                      # AI 协作约定：生产项目只读、测试必须离线、文档用中文、禁止自动发起付费 LLM 调用
 ├─ pyproject.toml                 # 包元数据 + 运行依赖(openai/httpx/python-dotenv/Flask) + 包内资源声明
-├─ .env.example                   # DeepSeek/Qwen Key 的空占位；真实 Key 不入库
 ├─ .gitignore                     # 忽略 .venv/、.env、outputs/、*.egg-info/、build/、模型权重(*.pt 等)
 ├─ .venv/                         # 本地虚拟环境（不入库）
 ├─ src/

@@ -2,7 +2,9 @@
 
 此目录保存详细架构分析、技术决策和设计讨论，不是主要使用指南。新开发者请先阅读[构建与运行](../BUILD_RUN.md)及[项目结构](../STRUCTURE.md)。
 
-- [模型接入三模式设计与产品校正](MODEL_ACCESS_THREE_MODE_PLAN.md)：当前 V1 与长期独立 Manual Experiment 的区别、正式连接边界、转换 NOT DECIDED / V2 DEFERRED；兼容性审计收尾见现有 Preset/R6/R7 实施报告第 10 节。
+- [Preset 简化与首次正式发布](PRESET_SIMPLIFICATION_AND_FIRST_PUBLICATION.md)：Qwen 3.8 Flash、DeepSeek Flash、Ollama Qwen3.5 4B 固定合同、已发布组合、开发者默认值与精确 Evidence 边界；第 12 节登记本轮人工验收。
+- [Manual Expert V2 基础版实施](MANUAL_EXPERT_V2_IMPLEMENTATION.md)：独立实验配置、manual.env 凭据隔离、共享传输 / Stop、离线测试与人工验收。
+- [模型接入三模式设计与产品校正](MODEL_ACCESS_THREE_MODE_PLAN.md)：V1 与独立 Manual Experiment 的设计历史、正式连接边界、转换 NOT DECIDED；其中 V2 DEFERRED 为历史状态，当前基础实现见上述报告。
 
 - [模型选择三模式 UI 整理](MODEL_SELECTION_UI_THREE_MODE_CLEANUP.md)：Preset 按模型收敛、精确 Variant 映射、旧 Built-in 隐藏、Managed Custom CRUD 边界与 Manual 独立页面。
 

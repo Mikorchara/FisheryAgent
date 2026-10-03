@@ -33,7 +33,7 @@ class PrivateCredentialLocation:
             raise secure_files.SecureFileError() from None
         if (len(parts) != 4 or parts[0] != "Fishery_AI_Prototype"
                 or not re.fullmatch(r"project-[0-9a-f]{20}", parts[1])
-                or parts[2:] != ("credentials", ".env")):
+                or parts[2] != "credentials" or parts[3] not in (".env", "manual.env")):
             raise secure_files.SecureFileError()
         parent = self.base
         for part in parts[:-1]:
@@ -71,3 +71,10 @@ def private_project_location(project_root: Path,
         # External-storage mode must never become a way to bypass workspace Git checks.
         raise CredentialLocationError()
     return PrivateCredentialLocation(base, path)
+
+
+def private_manual_location(project_root: Path,
+                            environment: Mapping[str, str] | None = None) -> PrivateCredentialLocation:
+    """Same protected boundary, separate fixed file; never inspect or migrate .env."""
+    location = private_project_location(project_root, environment)
+    return PrivateCredentialLocation(location.base, location.env_path.with_name("manual.env"))

@@ -45,14 +45,18 @@ class CleanRoomTests(unittest.TestCase):
             custom_profiles_dir=self.root / 'profiles', capability_evidence_dir=self.root / 'evidence',
             credential_store=self.credentials, real_gateway_factory=lambda: gateway).test_client()
 
-    def test_active_catalogs_empty_mock_is_isolated_and_web_loads(self):
+    def test_old_catalogs_stay_empty_first_fresh_publication_and_mock_load(self):
         self.assertEqual(DECLARATIONS, {})
-        self.assertEqual(preset_profiles(include_candidates=True), ())
+        released = preset_profiles(include_candidates=True)
+        self.assertEqual({p.model for p in released}, {'qwen3.8-flash', 'deepseek-flash', 'qwen3.5:4b'})
+        self.assertEqual({p.preset_id for p in released},
+                         {'dashscope-qwen38-flash-r1', 'deepseek-flash-r1', 'ollama-qwen35-4b-r1'})
         self.assertEqual([p.profile_id for p in _builtin_profiles()], ['mock-demo'])
         client = self.client()
         self.assertEqual(client.get('/').status_code, 200)
         config = client.get('/api/config').get_json()
-        self.assertEqual([p['profile_id'] for p in config['profiles']], ['mock-demo'])
+        self.assertEqual([p['profile_id'] for p in config['profiles']],
+                         ['mock-demo'] + [p.profile_id for p in released])
         self.assertTrue(config['presets'])  # Provider connection presets remain, not model Presets.
 
     def test_previous_exact_models_have_no_maintained_evidence_or_preferences(self):

@@ -13,6 +13,182 @@ const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'fishery_ai',
   'resources', 'web', 'app.css'), 'utf8');
 const knownIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
 
+function manualV2Draft(overrides={}) {
+  return {id:'experiment-'+'a'.repeat(32), name:'Offline V2', service_name:'unregistered label', transport:'openai_chat',
+    base_url:'http://127.0.0.1:11434/v1', model:'free-model',credential_ref:'',timeout:30,
+    raw_request_body:{model:'free-model',messages:[{role:'user',content:'OK'}],enable_thinking:false},notes:'',...overrides};
+}
+
+test('Manual V2 new raw template omits model and Send never rewrites editor JSON',async()=>{
+  const calls=[];
+  const page=makePage(async(url,options={})=>{
+    calls.push({url,body:JSON.parse(options.body)});
+    return r2Reply({raw_response:{choices:[]},total_latency_ms:1});
+  });
+  vm.runInContext('manualVersion="v2";credentialCsrf="fictional-csrf";fillExperiment(null)',page.context);
+  assert.equal(Object.hasOwn(JSON.parse(page.element('experiment-body').value),'model'),false);
+  page.element('experiment-name').value='new draft';page.element('experiment-service').value='label';
+  page.element('experiment-url').value='http://127.0.0.1:11434/v1';page.element('experiment-model').value='authoritative-model';
+  const original=' { "messages": [{"role":"user", "content":"OK"}] } ';
+  page.element('experiment-body').value=original;
+  await vm.runInContext('sendManual()',page.context);
+  assert.equal(calls[0].url,'/api/manual-v2');
+  assert.equal(calls[0].body.experiment.model,'authoritative-model');
+  assert.equal(Object.hasOwn(calls[0].body.experiment.raw_request_body,'model'),false);
+  assert.equal(page.element('experiment-body').value,original);
+});
+
+test('Manual V2 labels explain Credential name versus Key value and Save versus Save As',()=>{
+  assert.match(html,/Credential Ref \/ 凭据名称/);
+  assert.match(html,/DASHSCOPE_MANUAL_KEY/);
+  assert.match(html,/New Key \/ API Key Value/);
+  assert.match(html,/这里只填写真实 Key 值，不填写 NAME=value/);
+  assert.match(html,/Experiment 只保存 credential_ref，不保存 Key/);
+  assert.match(html,/Save：保存\/更新当前 Experiment/);
+  assert.match(html,/Save As：以当前内容创建一个新的 Experiment，原 Experiment 保留/);
+  assert.match(html,/outputs\/manual-experiments\//);
+});
+
+test('Manual V2 switches without losing V1 or V2 drafts and hides the saved connection selector',async()=>{
+  const page=threeModePage(async(url)=>url==='/api/manual-v2/experiments' ? r2Reply({experiments:[]}) : null);
+  await vm.runInContext('(async()=>{await init();setAccessMode("manual_expert");})()',page.context);
+  page.element('manual-body').value='V1 draft preserved';
+  const target=vm.runInContext('manualTargetId',page.context);
+  await vm.runInContext('setManualVersion("v2")',page.context);
+  page.element('experiment-name').value='V2 draft preserved';
+  page.element('experiment-body').value='V2 raw draft preserved';
+  assert.equal(page.element('profile').hidden,true);
+  assert.equal(page.element('manual-v1-fields').hidden,true);
+  await vm.runInContext('setManualVersion("v1")',page.context);
+  assert.equal(page.element('manual-body').value,'V1 draft preserved');
+  assert.equal(vm.runInContext('manualTargetId',page.context),target);
+  assert.equal(page.element('profile').hidden,false);
+  await vm.runInContext('setManualVersion("v2")',page.context);
+  assert.equal(page.element('experiment-name').value,'V2 draft preserved');
+  assert.equal(page.element('experiment-body').value,'V2 raw draft preserved');
+});
+
+test('Manual V2 empty clean-room can send without any Profile and leaving mode preserves its draft',async()=>{
+  const page=threeModePage(async(url)=>url==='/api/manual-v2/experiments' ? r2Reply({experiments:[]}) : null,[]);
+  await vm.runInContext('(async()=>{await init();setAccessMode("manual_expert");await setManualVersion("v2");})()',page.context);
+  assert.equal(page.element('manual-send').disabled,false);
+  page.element('experiment-name').value='keep';
+  vm.runInContext('setAccessMode("managed_custom");setAccessMode("manual_expert")',page.context);
+  assert.equal(page.element('manual-send').disabled,false);
+  assert.equal(page.element('experiment-name').value,'keep');
+});
+
+test('Manual V2 Save update Save As and Delete use only independent experiment endpoints',async()=>{
+  let saved=[];
+  const calls=[];
+  const page=makePage(async(url,options={})=>{
+    calls.push({url,method:options.method||'GET',body:options.body?JSON.parse(options.body):null});
+    if(url==='/api/manual-v2/experiments' && !options.method)return r2Reply({experiments:saved});
+    if(options.method==='DELETE'){saved=[];return r2Reply({status:'success'});}
+    const data={...JSON.parse(options.body),id:'experiment-'+(options.method==='PUT'?'a':'b').repeat(32)};
+    saved=[data];return r2Reply({experiment:data});
+  });
+  vm.runInContext(`credentialCsrf='fictional-csrf';fillExperiment(${JSON.stringify(manualV2Draft())})`,page.context);
+  await vm.runInContext('saveExperiment()',page.context);
+  assert.equal(calls[0].method,'PUT');
+  await vm.runInContext('saveExperiment(true)',page.context);
+  assert.equal(calls.find(x=>x.method==='POST').url,'/api/manual-v2/experiments');
+  await vm.runInContext('deleteExperiment()',page.context);
+  assert.equal(vm.runInContext('experimentId',page.context),null);
+  assert.equal(calls.some(x=>x.url.includes('profiles')||x.url.includes('credentials')),false);
+});
+
+test('Manual V2 Send preserves raw JSON and custom target without capability or defaults',async()=>{
+  const calls=[];
+  const page=makePage(async(url,options={})=>{
+    calls.push({url,body:options.body?JSON.parse(options.body):null});
+    return r2Reply({raw_response:{choices:[{message:{tool_calls:[{id:'display_only'}]}}]},usage:{total_tokens:3},total_latency_ms:2});
+  });
+  const values=manualV2Draft();
+  vm.runInContext(`manualVersion='v2';credentialCsrf='fictional-csrf';fillExperiment(${JSON.stringify(values)})`,page.context);
+  await vm.runInContext('sendManual()',page.context);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].url,'/api/manual-v2');
+  assert.deepEqual(calls[0].body.experiment.raw_request_body,values.raw_request_body);
+  assert.equal(calls[0].body.profile_id,undefined);
+  assert.equal(calls[0].body.experiment.service_name,'unregistered label');
+  assert.match(page.element('manual-output').textContent,/display_only/);
+});
+
+test('Manual V2 Streaming uses common raw events and Stop uses shared cancellation',async()=>{
+  const calls=[];
+  const page=makePage(async(url,options={})=>{
+    calls.push(url);
+    if(url.startsWith('/api/requests/'))return r2Reply({state:'CANCELLED',backend_io_closed:true});
+    return sseResponse([['raw_delta',{raw_response:{choices:[{delta:{content:'offline'}}]},usage:{total_tokens:3}}],['completed',{total_latency_ms:4}]]);
+  });
+  const values=manualV2Draft({raw_request_body:{model:'free-model',messages:[{role:'user',content:'OK'}],stream:true}});
+  vm.runInContext(`manualVersion='v2';credentialCsrf='fictional-csrf';fillExperiment(${JSON.stringify(values)})`,page.context);
+  await vm.runInContext('sendManual()',page.context);
+  assert.match(page.element('manual-output').textContent,/offline/);
+  assert.match(page.element('manual-status').textContent,/完成/);
+  await vm.runInContext('beginExecution()',page.context);
+  assert.equal(page.element('manual-stop').disabled,false);
+  await vm.runInContext('stopGeneration()',page.context);
+  assert.match(page.element('manual-status').textContent,/USER_CANCELLED/);
+  assert.equal(page.element('manual-stop').disabled,true);
+  assert.ok(calls.some(x=>x.endsWith('/cancel')));
+});
+
+test('Manual V2 credential CRUD clears input and never puts Key into experiment fields',async()=>{
+  const calls=[];
+  const state={credential_ref:'MANUAL_TEST_KEY',availability:'MISSING',editable:true,exists:false,revision:'opaque'};
+  const page=makePage(async(url,options={})=>{
+    calls.push({url,body:JSON.parse(options.body)});
+    assert.equal(page.element('manual-key-value').value,'');
+    return r2Reply({...state,availability:'PRESENT',exists:true,revision:'rotated'});
+  });
+  vm.runInContext(`credentialCsrf='fictional-csrf';fillExperiment(${JSON.stringify(manualV2Draft({credential_ref:'MANUAL_TEST_KEY'}))});manualKeyState=${JSON.stringify(state)}`,page.context);
+  page.element('manual-key-value').value='fictional-manual-key';
+  await vm.runInContext('changeManualCredential("create")',page.context);
+  assert.equal(calls[0].url,'/api/manual-v2/credentials');
+  assert.equal(calls[0].body.secret,'fictional-manual-key');
+  assert.equal(JSON.stringify(vm.runInContext('collectExperiment()',page.context)).includes('fictional-manual-key'),false);
+  assert.doesNotMatch(page.element('manual-key-status').textContent,/fictional-manual-key/);
+  await vm.runInContext('changeManualCredential("remove")',page.context);
+  assert.equal(calls[1].body.secret,undefined);
+  assert.equal(page.element('experiment-ref').value,'MANUAL_TEST_KEY');
+});
+
+test('Manual V2 errors are safe and credential responses for an older ref are discarded',async()=>{
+  let finish;
+  const page=makePage(async()=>new Promise(resolve=>{finish=resolve;}));
+  page.element('experiment-ref').value='FIRST_KEY';
+  const pending=vm.runInContext('refreshManualCredential()',page.context);
+  page.element('experiment-ref').value='SECOND_KEY';
+  vm.runInContext('resetManualKeyState()',page.context);
+  finish(r2Reply({credential_ref:'FIRST_KEY',availability:'PRESENT',editable:true,revision:'old'}));
+  await pending;
+  assert.equal(vm.runInContext('manualKeyState',page.context),null);
+  const failed=makePage(async()=>{throw new Error('sensitive fake exception');});
+  vm.runInContext(`credentialCsrf='fake';manualKeyState={credential_ref:'TEST_KEY',editable:true,revision:'old'}`,failed.context);
+  failed.element('experiment-ref').value='TEST_KEY';failed.element('manual-key-value').value='fictional-manual-key';
+  await vm.runInContext('changeManualCredential("create")',failed.context);
+  assert.equal(failed.element('manual-key-value').value,'');
+  assert.match(failed.element('manual-key-status').textContent,/NETWORK_ERROR/);
+  assert.doesNotMatch(failed.element('manual-key-status').textContent,/sensitive/);
+});
+
+test('Manual V2 malformed JSON fails locally and New never clears V1 draft',async()=>{
+  let count=0;
+  const page=makePage(async()=>{count++;throw new Error('offline');});
+  vm.runInContext('manualVersion="v2";bindManualV2Controls()',page.context);
+  page.element('manual-body').value='keep V1';page.element('experiment-body').value='invalid';
+  await vm.runInContext('sendManual()',page.context);
+  assert.equal(count,0);
+  assert.match(page.element('manual-status').textContent,/INVALID_REQUEST/);
+  await page.element('experiment-new').dispatch('click');
+  assert.equal(page.element('manual-body').value,'keep V1');
+  assert.equal(page.element('experiment-name').value,'');
+  assert.equal(page.element('experiment-model').value,'');
+  assert.equal(page.element('experiment-delete').disabled,true);
+});
+
 test('Default preference UNKNOWN, UNSUPPORTED and CONFLICT disable new ON/OFF selections with explanations', () => {
   const page=makePage(async()=>{throw new Error('offline');});
   for(const item of [{status:'unknown'}, {status:'unsupported'}, {status:'unknown',resolution:'EVIDENCE_CONFLICT'}]) {
@@ -1355,6 +1531,108 @@ function threeModePage(extraFetch=null,items=threeModeFixtures()) {
   });
   return {...page,calls,items};
 }
+
+function publicationPage(defaultId='fresh-release', extraFetch=null) {
+  const fixed = ['off', 'on'].map(mode => ({profile_id:`preset-fresh-${mode}`,
+    display_name:`Fresh Model · ${mode.toUpperCase()}`,source:'preset',access_mode:'preset',
+    preset_id:'fresh-release',preset_variant:mode,preset_contract_version:'1.0.0',model:'exact-model',
+    runtime_type:'cloud',default_reasoning_mode:mode,default_response_mode:'normal',
+    preset_is_default:mode==='off',preset_response_modes:mode==='off'?['normal']:['normal','streaming']}));
+  return threeModePage(async(url,options)=>{
+    if(url==='/api/config')return r2Reply({profiles:fixed,presets:[],scenarios:['normal'],default_preset_id:defaultId});
+    return extraFetch?extraFetch(url,options):null;
+  },fixed);
+}
+
+function releasedModelsPage() {
+  const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'../src/fishery_ai/resources/profiles/presets.json'),'utf8'));
+  const fixed=catalog.templates.flatMap(t=>t.variants.map(v=>({
+    profile_id:`preset-${t.id}-${v.id}`,display_name:`${t.display_name} · ${v.label}`,
+    source:'preset',access_mode:'preset',preset_id:t.id,preset_variant:v.id,
+    preset_contract_version:t.contract_version,model:t.connection.model,runtime_type:t.connection.provider_kind,
+    default_reasoning_mode:v.thinking,default_response_mode:'normal',
+    preset_is_default:t.defaults.thinking===v.thinking,preset_response_modes:v.response_modes})));
+  return threeModePage(async(url)=>url==='/api/config'
+    ?r2Reply({profiles:fixed,presets:[],scenarios:['normal'],default_preset_id:catalog.default_preset_id}):null,fixed);
+}
+
+test('published three exact models retain Qwen default and exclude the v4 pro candidate',async()=>{
+  const page=releasedModelsPage();await vm.runInContext('init()',page.context);
+  assert.deepEqual(page.element('profile').children.map(x=>x.textContent),
+    ['请选择模型','Qwen 3.8 Flash','DeepSeek Flash','Ollama Qwen3.5 4B']);
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'preset-dashscope-qwen38-flash-r1-off');
+  assert.equal(vm.runInContext('profiles.some(p=>p.model==="deepseek-v4-pro")',page.context),false);
+});
+
+test('published DeepSeek and Ollama expose only maintained combinations without research fields',async()=>{
+  const page=releasedModelsPage();await vm.runInContext('init()',page.context);
+  for(const id of ['deepseek-flash-r1','ollama-qwen35-4b-r1']){
+    page.element('profile').value=`preset-${id}-off`;await page.element('profile').dispatch('change');
+    assert.equal(vm.runInContext('selectedProfile().preset_id',page.context),id);
+    assert.equal(page.element('preset-response-mode').children.find(x=>x.value==='streaming').disabled,true);
+    assert.deepEqual(page.element('preset-variant').children.map(x=>x.textContent),['Thinking OFF','Thinking ON']);
+    page.element('preset-variant').value=`preset-${id}-on`;await page.element('preset-variant').dispatch('change');
+    assert.equal(page.element('preset-response-mode').children.find(x=>x.value==='streaming').disabled,false);
+    page.element('preset-response-mode').value='streaming';await page.element('preset-response-mode').dispatch('change');
+    assert.equal(page.element('response-mode').value,'streaming');
+    for(const field of ['capability-panel','credential-manager','profile-meta','profile-summary','selected-secret-status'])
+      assert.equal(page.element(field).hidden,true,field);
+  }
+  assert.equal(page.calls.some(x=>x.url.startsWith('/api/profiles/')||x.url==='/api/secret-status'),false);
+});
+
+test('published Preset uses developer default and hides every research / connection control',async()=>{
+  const page=publicationPage();await vm.runInContext('init()',page.context);
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'preset-fresh-off');
+  assert.equal(page.element('preset-response-mode').value,'normal');
+  for(const id of ['capability-panel','credential-manager','profile-meta','profile-summary','custom-editor',
+    'selected-secret-status'])assert.equal(page.element(id).hidden,true,id);
+  assert.equal(page.calls.some(x=>x.url.startsWith('/api/profiles/')||x.url==='/api/secret-status'),false);
+  assert.deepEqual(page.element('preset-variant').children.map(x=>x.textContent),['Thinking OFF','Thinking ON']);
+});
+
+test('published Preset without developer default requires explicit selection',async()=>{
+  const page=publicationPage(null);await vm.runInContext('init()',page.context);
+  assert.equal(page.element('profile').value,'');
+  assert.equal(page.element('analyze').disabled,true);
+  assert.equal(page.element('profile').children[0].textContent,'请选择模型');
+  page.element('profile').value='preset-fresh-off';await page.element('profile').dispatch('change');
+  assert.equal(page.element('analyze').disabled,false);
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'preset-fresh-off');
+});
+
+test('published Preset combinations control Response Mode independently of Thinking',async()=>{
+  const page=publicationPage();await vm.runInContext('init()',page.context);
+  const streaming=()=>page.element('preset-response-mode').children.find(x=>x.value==='streaming');
+  assert.equal(streaming().disabled,true);assert.match(streaming().textContent,/此 Preset 未提供该模式/);
+  page.element('preset-variant').value='preset-fresh-on';await page.element('preset-variant').dispatch('change');
+  assert.equal(streaming().disabled,false);assert.equal(page.element('preset-response-mode').value,'normal');
+  page.element('preset-response-mode').value='streaming';await page.element('preset-response-mode').dispatch('change');
+  assert.equal(page.element('response-mode').value,'streaming');
+  page.element('preset-variant').value='preset-fresh-off';await page.element('preset-variant').dispatch('change');
+  assert.equal(page.element('response-mode').value,'normal');assert.equal(streaming().disabled,true);
+});
+
+test('published Preset sends selected fixed variant through existing analysis endpoint',async()=>{
+  const page=publicationPage();await vm.runInContext('(async()=>{await init();credentialCsrf="fictional-csrf";})()',page.context);
+  page.element('confirm-network').checked=true;page.element('question').value='OK';page.element('scenario').value='normal';
+  await vm.runInContext('analyze()',page.context);
+  const sent=page.calls.find(x=>x.url==='/api/analyze');
+  assert.equal(sent.body.profile_id,'preset-fresh-off');assert.equal(sent.body.reasoning_mode,'off');
+  assert.equal(Object.hasOwn(sent.body,'base_url'),false);assert.equal(Object.hasOwn(sent.body,'credential_ref'),false);
+});
+
+test('Manual V1 reads Preset connection only in its developer view without enriching catalog',async()=>{
+  const page=publicationPage('fresh-release',async(url)=>url.startsWith('/api/profiles/')
+    ?r2Reply({fields:{service_id:'dashscope',base_url:'https://example.invalid/v1',model:'exact-model',
+        secret_env:'TEST_FAKE_KEY',auth_spec:'REQUIRED_BEARER'}}):null);
+  await vm.runInContext('init()',page.context);
+  await vm.runInContext('setAccessMode("manual_expert")',page.context);
+  await new Promise(setImmediate);
+  assert.match(page.element('manual-connection').children.map(x=>x.textContent).join(' '),/TEST_FAKE_KEY/);
+  assert.equal(vm.runInContext('profiles.some(p=>p.base_url || p.credential_ref || p.capabilities)',page.context),false);
+  assert.equal(JSON.parse(page.element('manual-body').value).model,'exact-model');
+});
 
 test('three-mode initial UI shows Qwen once, DeepSeek once, and hides legacy Built-in choices',async()=>{
   const page=threeModePage();

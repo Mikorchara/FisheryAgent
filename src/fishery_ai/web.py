@@ -22,7 +22,7 @@ from .official_capabilities import apply_official_capabilities
 from .contracts import AnalysisRequest, Mode, Status
 from .custom_profiles import CustomProfileStore, ProfileFieldError
 from .credentials import CredentialFileError, CredentialStore
-from .credential_paths import CredentialLocationError, private_project_location
+from .credential_paths import CredentialLocationError, private_project_location, private_manual_location
 from .project_env import EnvWriteError, ProjectEnvWriter
 from .web_security import install_local_security
 from .providers import AuthSpec, PROVIDERS
@@ -35,9 +35,12 @@ from .model_options import (CapabilitySource, GenerationOptions, OptionValidatio
 from .observability import JsonlTraceSink
 from .openai_compatible_adapter import OpenAICompatibleAdapter
 from .repositories import MockRepository
-from .presets import preset_profiles
+from .presets import preset_profiles, default_preset_id
+from .model_gateway import validate_preset_response
 from .execution import RequestRegistry, request_scope
 from .manual import ManualRequest
+from .manual_experiments import (ManualExperimentStore, validate_experiment, experiment_runtime,
+                                 prepare_experiment_request)
 
 
 RESOURCE_ROOT = files("fishery_ai").joinpath("resources")
@@ -49,6 +52,16 @@ TEST_TTL_S = 600
 _effective_runtime_defaults = effective_runtime_defaults
 
 def _profile_public(profile: ModelProfile, source: str) -> dict:
+    if profile.access_mode == "preset" and profile.preset_response_modes:
+        return {"profile_id": profile.profile_id, "display_name": profile.display_name,
+                "access_mode": "preset", "source": source, "model": profile.model,
+                "runtime_type": profile.provider_kind, "preset_id": profile.preset_id,
+                "preset_variant": profile.preset_variant,
+                "preset_contract_version": profile.preset_contract_version,
+                "default_reasoning_mode": profile.default_reasoning.mode.value,
+                "default_response_mode": profile.default_response_mode,
+                "preset_response_modes": list(profile.preset_response_modes),
+                "preset_is_default": profile.preset_is_default}
     capability_scope_matches = (
         profile.capabilities.service_id == profile.service_id
         and profile.capabilities.model_id == profile.model
@@ -145,6 +158,9 @@ def create_app(*, trace_path: Path | None = None,
                capability_evidence_dir: Path | None = None,
                credential_store: CredentialStore | None = None,
                credential_writer: ProjectEnvWriter | None = None,
+               manual_experiments_dir: Path | None = None,
+               manual_credential_store: CredentialStore | None = None,
+               manual_credential_writer: ProjectEnvWriter | None = None,
                allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1"),
                real_gateway_factory: Callable[[], ModelGateway] = OpenAICompatibleAdapter) -> Flask:
     """Construct without loading .env or making a network request."""
@@ -153,6 +169,14 @@ def create_app(*, trace_path: Path | None = None,
     credentials = credential_store if credential_store is not None else CredentialStore()
     if credential_writer is not None and credential_writer.credentials is not credentials:
         raise ValueError("Credential writer must share the app CredentialStore")
+    manual_credentials = manual_credential_store if manual_credential_store is not None else CredentialStore(process_env={})
+    if manual_credentials is credentials or (manual_credentials.project_env_path is not None
+            and manual_credentials.project_env_path == credentials.project_env_path):
+        raise ValueError("Manual V2 credentials must be isolated")
+    if manual_credential_writer is not None and manual_credential_writer.credentials is not manual_credentials:
+        raise ValueError("Manual writer must share its isolated CredentialStore")
+    experiments = ManualExperimentStore(manual_experiments_dir or Path.cwd() / "outputs/manual-experiments")
+    manual_credential_revisions = {}
     credential_gate, credential_origin_gate = install_local_security(app, allowed_hosts)
     executions = RequestRegistry()
     store = CustomProfileStore(custom_profiles_dir or Path.cwd() / "outputs/custom_profiles")
@@ -183,7 +207,7 @@ def create_app(*, trace_path: Path | None = None,
     @app.after_request
     def close_rejected_execution(response):
         # Prepared handles that fail preflight must not consume active slots until TTL.
-        if request.path in ("/api/analyze", "/api/analyze/stream", "/api/manual") and response.status_code >= 400:
+        if request.path in ("/api/analyze", "/api/analyze/stream", "/api/manual", "/api/manual-v2") and response.status_code >= 400:
             payload = request.get_json(silent=True)
             if isinstance(payload, dict) and "request_id" in payload:
                 try:
@@ -396,6 +420,7 @@ def create_app(*, trace_path: Path | None = None,
             "profiles": [_profile_public(profile, sources[profile.profile_id])
                          for profile in profiles.values()],
             "presets": presets,
+            "default_preset_id": default_preset_id(),
             "providers": [{"service_id": spec.service_id, "display_name": spec.display_name,
                 "adapter_id": spec.adapter_id, "protocol_spec_id": spec.protocol_spec_id,
                 "default_base_url": spec.default_base_url, "auth_spec": spec.auth_spec.value,
@@ -768,6 +793,10 @@ def create_app(*, trace_path: Path | None = None,
         if real and payload.get("confirm_network") is not True:
             return error("NETWORK_CONFIRMATION_REQUIRED", 403)
         profile = profiles[profile_id]
+        try:
+            validate_preset_response(profile, streaming=False)
+        except GatewayError as exc:
+            return error(exc.code, 400)
         reasoning, reasoning_error = analysis_reasoning(payload, profile)
         if reasoning_error:
             return error(reasoning_error, 400)
@@ -826,6 +855,10 @@ def create_app(*, trace_path: Path | None = None,
         if real and payload.get("confirm_network") is not True:
             return error("NETWORK_CONFIRMATION_REQUIRED", 403)
         profile = profiles[profile_id]
+        try:
+            validate_preset_response(profile, streaming=True)
+        except GatewayError as exc:
+            return error(exc.code, 400)
         reasoning, reasoning_error = analysis_reasoning(payload, profile)
         if reasoning_error:
             return error(reasoning_error, 400)
@@ -900,6 +933,10 @@ def create_app(*, trace_path: Path | None = None,
             manual = ManualRequest.from_dict(payload.get("body"), model=runtime.model)
         except GatewayError as exc:
             return error(exc.code, 400)
+        return execute_manual(manual, runtime, payload)
+
+    def execute_manual(manual, runtime, payload):
+        # Shared V1/V2 SDK, cancellation and raw response path; no Fishery analysis.
         handle, failure = claim_execution(payload, required=True)
         if failure is not None:
             return failure
@@ -907,10 +944,21 @@ def create_app(*, trace_path: Path | None = None,
         started = time.monotonic()
         def public_response(item):
             from .application import _public_data
-            return {"raw_response": item.raw, "usage": _public_data(item.usage),
+            data = {"raw_response": item.raw, "usage": _public_data(item.usage),
                     "runtime": _public_data(runtime.public_info()),
                     "request_id": handle.request_id,
                     "total_latency_ms": round((time.monotonic() - started) * 1000, 3)}
+            # Defense in depth even for an alternate Gateway returning an echoed key.
+            secret = runtime.credential._for_adapter()
+            def redact(value):
+                if isinstance(value, str):
+                    return value.replace(secret, "[REDACTED]") if secret else value
+                if isinstance(value, dict):
+                    return {redact(key): redact(item) for key, item in value.items()}
+                if isinstance(value, list):
+                    return [redact(item) for item in value]
+                return value
+            return redact(data)
         if not manual.streaming:
             try:
                 with request_scope(handle):
@@ -948,6 +996,130 @@ def create_app(*, trace_path: Path | None = None,
         response.headers["X-Accel-Buffering"] = "no"
         return response
 
+    def manual_ref(payload, allowed):
+        if not isinstance(payload, dict) or set(payload) - allowed:
+            raise GatewayError("INVALID_REQUEST")
+        ref = payload.get("credential_ref")
+        if not isinstance(ref, str) or not re.fullmatch(r"[A-Z_][A-Z0-9_]{0,127}", ref):
+            raise GatewayError("INVALID_CREDENTIAL_REF")
+        return ref
+
+    def manual_credential_view(ref):
+        status = manual_credentials.status(ref).public_info()
+        info = {**status, "credential_ref": ref, "storage": "MANUAL_PRIVATE",
+                "editable": False, "revision": None, "exists": False}
+        if status["source"] == "PROCESS_ENV":
+            return info
+        if manual_credential_writer is not None:
+            state = manual_credential_writer.inspect(ref, AuthSpec.REQUIRED_BEARER)
+            binding = manual_credential_revisions.get(ref)
+            if binding is None or binding[0] != state["revision"]:
+                binding = (state["revision"], uuid.uuid4().hex)
+                manual_credential_revisions[ref] = binding
+            info.update(state, editable=True, revision=binding[1])
+        return info
+
+    @app.post("/api/manual-v2/credentials/status")
+    def manual_credential_status():
+        failure = credential_origin_gate(required=False)
+        if failure is not None:
+            return failure
+        try:
+            ref = manual_ref(request.get_json(silent=True), {"credential_ref"})
+            with manual_credentials._lock:
+                return jsonify(manual_credential_view(ref))
+        except (GatewayError, EnvWriteError) as exc:
+            return error(exc.code, 400)
+        except CredentialFileError:
+            return error("CREDENTIAL_FILE_ERROR", 503)
+
+    @app.route("/api/manual-v2/credentials", methods=["POST", "PUT", "DELETE"])
+    def manual_credential_mutation():
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        try:
+            payload = request.get_json(silent=True)
+            ref = manual_ref(payload, {"credential_ref", "revision", "secret"})
+            if manual_credential_writer is None:
+                return error("CREDENTIAL_WRITER_DISABLED", 403)
+            action = {"POST": "create", "PUT": "replace", "DELETE": "remove"}[request.method]
+            if action == "remove" and "secret" in payload:
+                return error("INVALID_REQUEST", 400)
+            with manual_credentials._lock:
+                binding = manual_credential_revisions.get(ref)
+                if binding is None or payload.get("revision") != binding[1]:
+                    return error("ENV_REVISION_CONFLICT", 409)
+                manual_credential_writer.mutate(ref, AuthSpec.REQUIRED_BEARER, action=action,
+                    expected_revision=binding[0], secret=payload.get("secret"))
+                manual_credential_revisions.pop(ref, None)
+                return jsonify(manual_credential_view(ref))
+        except (GatewayError, EnvWriteError) as exc:
+            return error(exc.code, 409 if exc.code == "ENV_REVISION_CONFLICT" else 400)
+        except CredentialFileError:
+            return error("CREDENTIAL_FILE_ERROR", 503)
+
+    def safe_experiment(data):
+        values = validate_experiment(data)
+        # Never persist a currently resolved key even when pasted into free text.
+        snapshot = manual_credentials.resolve(values["credential_ref"] or None,
+            AuthSpec.REQUIRED_BEARER if values["credential_ref"] else AuthSpec.NONE)
+        secret = snapshot._for_adapter()
+        def contains_secret(value):
+            if isinstance(value, str):
+                return secret in value
+            if isinstance(value, dict):
+                return any(contains_secret(key) or contains_secret(item) for key, item in value.items())
+            if isinstance(value, list):
+                return any(contains_secret(item) for item in value)
+            return False
+        if secret and contains_secret(values):
+            raise GatewayError("MANUAL_SECRET_IN_BODY")
+        return values
+
+    @app.route("/api/manual-v2/experiments", methods=["GET", "POST"])
+    @app.route("/api/manual-v2/experiments/<identifier>", methods=["GET", "PUT", "DELETE"])
+    def manual_experiment_crud(identifier=None):
+        failure = credential_origin_gate(required=False) if request.method == "GET" else credential_gate()
+        if failure is not None:
+            return failure
+        try:
+            if request.method == "GET":
+                entries = [experiments.get(identifier)] if identifier else experiments.list()
+                for entry in entries:
+                    safe_experiment({key: value for key, value in entry.items()
+                                     if key not in ("id", "created_at", "updated_at")})
+                return jsonify({"experiment": entries[0]} if identifier else {"experiments": entries})
+            if request.method == "DELETE":
+                experiments.delete(identifier)
+                return jsonify(status="success")
+            values = safe_experiment(request.get_json(silent=True))
+            return jsonify(experiment=experiments.save(values, identifier)), 200
+        except GatewayError as exc:
+            return error(exc.code, 404 if exc.code == "EXPERIMENT_NOT_FOUND" else 400)
+        except CredentialFileError:
+            return error("CREDENTIAL_FILE_ERROR", 503)
+
+    @app.post("/api/manual-v2")
+    def manual_v2_execution():
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or set(payload) - {"experiment", "confirm_network", "request_id", "control_token"}:
+            return error("INVALID_REQUEST", 400)
+        if payload.get("confirm_network") is not True:
+            return error("NETWORK_CONFIRMATION_REQUIRED", 403)
+        try:
+            values = safe_experiment(payload.get("experiment"))
+            runtime = experiment_runtime(values, manual_credentials)
+            manual = prepare_experiment_request(values["raw_request_body"], model=runtime.model)
+        except GatewayError as exc:
+            return error(exc.code, 503 if exc.code == "SECRET_MISSING" else 400)
+        except CredentialFileError:
+            return error("CREDENTIAL_FILE_ERROR", 503)
+        return execute_manual(manual, runtime, payload)
+
     return app
 
 
@@ -959,9 +1131,14 @@ def run_web(*, port: int = 8765) -> None:
         print("CREDENTIAL_STORAGE_UNAVAILABLE", flush=True)
         return
     credentials = CredentialStore(location.env_path, private_location=location)
+    manual_location = private_manual_location(Path.cwd())
+    manual_credentials = CredentialStore(manual_location.env_path, process_env={}, private_location=manual_location)
     app = create_app(credential_store=credentials,
                      credential_writer=ProjectEnvWriter(location.env_path.parent, credentials,
                                                         require_git_ignored=False),
+                     manual_credential_store=manual_credentials,
+                     manual_credential_writer=ProjectEnvWriter(manual_location.env_path.parent, manual_credentials,
+                         require_git_ignored=False, filename="manual.env"),
                      allowed_hosts=(f"127.0.0.1:{port}", f"localhost:{port}"))
     print(f"Developer Validation Web UI: http://127.0.0.1:{port}", flush=True)
     print(f"Project credentials (user-private): {location.env_path}", flush=True)

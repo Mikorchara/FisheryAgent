@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 let profiles = [];
 let presets = [];
+let defaultPresetId;
 let editingId = null;
 let editDraft = null;
 let createReturnState = null;
@@ -17,6 +18,12 @@ let credentialCsrf = null;
 let activeExecution = null;
 let accessMode = "";
 let manualTargetId = null;
+let manualVersion = "v1";
+let manualExperiments = [];
+let experimentId = null;
+let manualKeyState = null;
+let manualKeyBusy = false;
+let manualKeyRevision = 0;
 
 function setAccessMode(mode, selectedId) {
   if (activeExecution) return;
@@ -64,7 +71,7 @@ function renderPresetVariants(selectedId) {
   for (const variant of variants) appendChoice($("preset-variant"), variant.profile_id,
     variant.preset_variant === "auto" ? "Provider Default (AUTO)" : `Thinking ${variant.preset_variant.toUpperCase()}`);
   $("preset-variant").value = variants.some(item => item.profile_id === selectedId) ? selectedId
-    : (variants.find(item => item.preset_variant === "auto") || variants[0])?.profile_id || "";
+    : (variants.find(item => item.preset_is_default) || variants.find(item => item.preset_variant === "auto") || variants[0])?.profile_id || "";
   $("preset-variant").disabled = variants.length <= 1;
 }
 
@@ -76,15 +83,15 @@ function updateModeView() {
   $("custom-editor").hidden = !custom;
   $("development-entry").hidden = manual;
   $("new-profile").hidden = !custom;
-  $("credential-manager").hidden = manual;
-  $("capability-panel").hidden = manual;
+  $("credential-manager").hidden = manual || fixed;
+  $("capability-panel").hidden = manual || fixed;
   $("managed-thinking-field").hidden = fixed;
   $("analysis-inputs").hidden = manual;
   $("analyze").hidden = manual;
   $("manual-expert").hidden = !manual;
-  $("profile-meta").hidden = manual;
-  $("profile-summary").hidden = manual;
-  $("selected-secret-status").hidden = manual;
+  $("profile-meta").hidden = manual || fixed;
+  $("profile-summary").hidden = manual || fixed;
+  $("selected-secret-status").hidden = manual || fixed;
   $("results").hidden = true;
   $("empty-state").hidden = manual;
   $("profile-label").textContent = manual ? "Connection / Target（已保存连接）" : fixed ? "Model" : "模型连接";
@@ -98,12 +105,22 @@ function updateModeView() {
     $("credential-value").value = "";
     $("credential-manager").open = false;
   }
+  updateManualVersionView();
 }
 
-function updateManualTarget(profile) {
+async function updateManualTarget(profile) {
   ++formRevision; // Ignore pending Managed profile form responses.
   editingId = null;
   setFormMode("view");
+  if (profile.source === "preset" && profile.preset_response_modes) {
+    try {
+      const response = await fetch(`/api/profiles/${encodeURIComponent(profile.profile_id)}`);
+      if (!response.ok) throw new Error("PROFILE_READ_FAILED");
+      const data = await response.json();
+      if (accessMode !== "manual_expert" || selectedProfile()?.profile_id !== profile.profile_id) return;
+      profile = {...profile, ...data.fields, credential_ref: data.fields.secret_env}; // Developer view only.
+    } catch (_) { setStatus("PROFILE_READ_FAILED", true); return; }
+  }
   addPairs("manual-connection", [["Service", profile.service_id], ["Base URL", profile.base_url],
     ["Model", profile.model], ["Credential", profile.auth_spec === "NONE" ? "NONE_REQUIRED" : profile.credential_ref]]);
   if (manualTargetId !== profile.profile_id) {
@@ -126,8 +143,12 @@ function bindAccessModeControls() {
     const response = $("response-mode").value;
     updateProfile();
     const profile = selectedProfile();
+    if (profile?.preset_response_modes) { renderPresetResponse(profile, response); return; }
     if (profile) updateRuntimeOptionControls(profile, {reasoning: profile.default_reasoning_mode,
       response, effort: ""});
+  });
+  $("preset-response-mode").addEventListener("change", () => {
+    $("response-mode").value = $("preset-response-mode").value;
   });
   $("use-development").addEventListener("click", () => setAccessMode("development", $("development-target").value));
 }
@@ -149,19 +170,24 @@ async function beginExecution() {
   if (!response.ok || !data.control_token || !data.request_id) throw new Error(safeCredentialCode(data, "REQUEST_PREPARE_FAILED"));
   activeExecution = {...data, headers, controller: new AbortController(), cancelled: false};
   $("stop-generation").disabled = false;
+  $("manual-stop").disabled = false;
   $("manual-send").disabled = true;
+  $("manual-version").disabled = true;
   $("profile").disabled = true;
-  for (const id of ["access-mode", "preset-variant", "use-development", "development-target"]) $(id).disabled = true;
+  for (const id of ["access-mode", "preset-variant", "preset-response-mode", "use-development", "development-target"]) $(id).disabled = true;
   return activeExecution;
 }
 
 function finishExecution() {
   activeExecution = null;
   $("stop-generation").disabled = true;
+  $("manual-stop").disabled = true;
+  $("manual-version").disabled = false;
   $("manual-send").disabled = false;
   $("profile").disabled = false;
   for (const id of ["access-mode", "use-development", "development-target"]) $(id).disabled = false;
   $("preset-variant").disabled = $("preset-variant").children.length <= 1;
+  $("preset-response-mode").disabled = false;
 }
 
 async function stopGeneration() {
@@ -416,7 +442,14 @@ function renderProfiles(selectedId) {
   }
   const representative = visible.find(item => item.profile_id === selectedId
     || (accessMode === "preset" && selected?.preset_id && item.preset_id === selected.preset_id));
-  $("profile").value = (representative || visible[0])?.profile_id || "";
+  const developerDefault = accessMode === "preset" && defaultPresetId !== undefined
+    ? visible.find(item => item.preset_id === defaultPresetId) : visible[0];
+  $("profile").value = (representative || developerDefault)?.profile_id || "";
+  if (accessMode === "preset" && visible.length && defaultPresetId !== undefined) {
+    const value = $("profile").value;
+    const option = document.createElement("option"); option.value = ""; option.textContent = "请选择模型";
+    $("profile").prepend(option); $("profile").value = value;
+  }
   if (!visible.length) appendChoice($("profile"), "", emptyProfileMessage(), true);
   renderPresetVariants(selectedId);
   $("development-target").replaceChildren();
@@ -425,8 +458,8 @@ function renderProfiles(selectedId) {
   $("development-target").value = developmentProfiles()[0]?.profile_id || "";
   $("use-development").disabled = !developmentProfiles().length;
   updateModeView();
-  $("manual-send").disabled = !visible.length;
-  $("analyze").disabled = !visible.length;
+  $("manual-send").disabled = !visible.length && !(accessMode === "manual_expert" && manualVersion === "v2");
+  $("analyze").disabled = !$("profile").value;
   return updateProfile();
 }
 
@@ -547,8 +580,27 @@ function emptyProfileMessage() {
       : "尚无自定义连接，请点击新建";
 }
 
+function renderPresetResponse(profile, preferred) {
+  const allowed = profile.preset_response_modes;
+  $("preset-response-mode").replaceChildren();
+  for (const [value, label] of [["normal", "Normal"], ["streaming", "Streaming"]]) {
+    appendChoice($("preset-response-mode"), value,
+      allowed.includes(value) ? label : `${label}（此 Preset 未提供该模式）`, !allowed.includes(value));
+  }
+  const value = allowed.includes(preferred) ? preferred : profile.default_response_mode;
+  $("preset-response-mode").value = value;
+  $("response-mode").value = value;
+  $("reasoning-mode").value = profile.default_reasoning_mode;
+  $("reasoning-effort").value = "";
+}
+
 function updateProfile() {
+  if (accessMode === "manual_expert" && manualVersion === "v2") {
+    updateManualVersionView();
+    return;
+  }
   const profile = selectedProfile();
+  $("analyze").disabled = !profile;
   if (!profile) {
     ++formRevision;
     resetCredentialManager();
@@ -567,7 +619,22 @@ function updateProfile() {
     $("manual-status").textContent = accessMode === "manual_expert" ? emptyProfileMessage() : "";
     return;
   }
-  if (accessMode === "manual_expert") { updateManualTarget(profile); return; }
+  if (accessMode === "manual_expert") return updateManualTarget(profile);
+  $("analyze").disabled = !profile;
+  if (profile.preset_response_modes) {
+    ++formRevision;
+    resetCredentialManager();
+    editingId = null;
+    setFormMode("view");
+    renderPresetResponse(profile);
+    $("edit-profile").hidden = true;
+    $("delete-profile").hidden = true;
+    $("runtime-default-notice").textContent = "";
+    $("confirm-network").checked = false;
+    $("real-warning").hidden = profile.runtime_type === "mock";
+    setStatus("已选择发布方案；开始分析前请确认真实网络请求。", false);
+    return;
+  }
   const defaults = resolveRuntimeDefaults(profile);
   updateRuntimeOptionControls(profile, {reasoning: defaults.thinking, response: defaults.response,
     effort: ""});
@@ -1556,15 +1623,189 @@ async function analyze() {
   }
 }
 
+function updateManualVersionView() {
+  const v2 = manualVersion === "v2";
+  $("manual-v1-fields").hidden = v2;
+  $("manual-v2-fields").hidden = !v2;
+  $("manual-version").value = manualVersion;
+  $("profile").hidden = accessMode === "manual_expert" && v2;
+  $("profile-label").hidden = accessMode === "manual_expert" && v2;
+  if (accessMode === "manual_expert" && !activeExecution) {
+    $("manual-send").disabled = !v2 && (!selectedProfile() || selectedProfile()?.runtime_type === "mock");
+  }
+}
+
+function collectExperiment() {
+  return {name: $("experiment-name").value.trim(), service_name: $("experiment-service").value.trim(),
+    transport: "openai_chat", base_url: $("experiment-url").value.trim(), model: $("experiment-model").value.trim(),
+    credential_ref: $("experiment-ref").value.trim(), timeout: Number($("experiment-timeout").value),
+    raw_request_body: JSON.parse($("experiment-body").value), notes: $("experiment-notes").value};
+}
+
+function resetManualKeyState() {
+  ++manualKeyRevision;
+  manualKeyState = null;
+  $("manual-key-value").value = "";
+  $("manual-key-status").textContent = $("experiment-ref").value.trim() ? "MISSING · 尚未检查" : "NONE_REQUIRED · 不需要凭据";
+  updateManualKeyButtons();
+}
+
+function updateManualKeyButtons() {
+  const writable = manualKeyState?.editable === true && !manualKeyBusy;
+  $("manual-key-create").disabled = !writable || manualKeyState.exists;
+  $("manual-key-replace").disabled = !writable || !manualKeyState.exists;
+  $("manual-key-delete").disabled = !writable || !manualKeyState.exists;
+  $("manual-key-refresh").disabled = manualKeyBusy;
+}
+
+function fillExperiment(data) {
+  experimentId = data?.id || null;
+  for (const [id, key] of [["experiment-name", "name"], ["experiment-service", "service_name"],
+    ["experiment-url", "base_url"], ["experiment-model", "model"], ["experiment-ref", "credential_ref"],
+    ["experiment-notes", "notes"]]) $(id).value = data?.[key] || "";
+  $("experiment-timeout").value = String(data?.timeout ?? 120);
+  $("experiment-body").value = JSON.stringify(data?.raw_request_body ?? {messages: [{role: "user", content: "只回复 OK"}], max_tokens: 32}, null, 2);
+  $("experiment-select").value = experimentId || "";
+  $("experiment-delete").disabled = !experimentId;
+  resetManualKeyState();
+}
+
+async function refreshExperiments(selectedId = experimentId) {
+  const response = await fetch("/api/manual-v2/experiments", {credentials: "same-origin"});
+  const data = await response.json();
+  if (!response.ok) throw new Error(safeCredentialCode(data));
+  manualExperiments = data.experiments;
+  $("experiment-select").replaceChildren();
+  appendChoice($("experiment-select"), "", "未保存草稿");
+  for (const item of manualExperiments) appendChoice($("experiment-select"), item.id, item.name);
+  $("experiment-select").value = selectedId || "";
+}
+
+async function setManualVersion(version) {
+  if (activeExecution) return;
+  manualVersion = version === "v2" ? "v2" : "v1";
+  $("manual-key-value").value = "";
+  updateManualVersionView();
+  if (manualVersion === "v1") updateProfile();
+  if (manualVersion === "v2") {
+    if (!$("experiment-body").value) fillExperiment(null);
+    try { await refreshExperiments(); }
+    catch (exc) { $("experiment-status").textContent = `加载失败：${manualSafeCode(exc)}`; }
+  }
+}
+
+function manualSafeCode(exc) {
+  return /^[A-Z][A-Z0-9_]{0,40}$/.test(exc.message) ? exc.message : "NETWORK_ERROR";
+}
+
+async function saveExperiment(asCopy = false) {
+  if (activeExecution) return;
+  try {
+    const values = collectExperiment();
+    const identifier = asCopy ? null : experimentId;
+    const headers = await executionHeaders();
+    const response = await fetch("/api/manual-v2/experiments" + (identifier ? `/${identifier}` : ""), {
+      method: identifier ? "PUT" : "POST", headers, body: JSON.stringify(values)});
+    const data = await response.json();
+    if (!response.ok) throw new Error(safeCredentialCode(data));
+    fillExperiment(data.experiment);
+    await refreshExperiments();
+    $("experiment-status").textContent = asCopy ? "已另存为独立 Experiment。" : "Experiment 已保存；未产生 Capability / Evidence。";
+  } catch (exc) {
+    $("experiment-status").textContent = `保存失败：${exc instanceof SyntaxError ? "INVALID_REQUEST（Raw JSON 格式错误）" : manualSafeCode(exc)}`;
+  }
+}
+
+async function deleteExperiment() {
+  if (activeExecution || !experimentId || !window.confirm("删除所选 Experiment？不会删除 credential。")) return;
+  try {
+    const response = await fetch(`/api/manual-v2/experiments/${experimentId}`, {method: "DELETE", headers: await executionHeaders()});
+    const data = await response.json();
+    if (!response.ok) throw new Error(safeCredentialCode(data));
+    fillExperiment(null);
+    await refreshExperiments();
+    $("experiment-status").textContent = "Experiment 已删除；凭据保持不变。";
+  } catch (exc) { $("experiment-status").textContent = `删除失败：${manualSafeCode(exc)}`; }
+}
+
+async function refreshManualCredential() {
+  if (manualKeyBusy) return;
+  const ref = $("experiment-ref").value.trim();
+  if (!ref) { resetManualKeyState(); return; }
+  const revision = ++manualKeyRevision;
+  $("manual-key-value").value = "";
+  manualKeyState = null;
+  updateManualKeyButtons();
+  try {
+    const response = await fetch("/api/manual-v2/credentials/status", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({credential_ref: ref})});
+    const data = await response.json();
+    if (!response.ok) throw new Error(safeCredentialCode(data));
+    if (revision !== manualKeyRevision || ref !== $("experiment-ref").value.trim()) return;
+    manualKeyState = data;
+    $("manual-key-status").textContent = `${ref}: ${data.availability} · 独立用户私有 manual.env${data.editable ? "" : " · 写入不可用"}`;
+  } catch (exc) { if (revision === manualKeyRevision) $("manual-key-status").textContent = `检查失败：${manualSafeCode(exc)}`; }
+  finally { updateManualKeyButtons(); }
+}
+
+async function changeManualCredential(action) {
+  if (manualKeyBusy) return;
+  let secret = $("manual-key-value").value;
+  $("manual-key-value").value = "";
+  const ref = $("experiment-ref").value.trim(), state = manualKeyState;
+  if (!state?.editable || state.credential_ref !== ref) { secret = null; $("manual-key-status").textContent = "请先刷新可编辑凭据状态。"; return; }
+  if (action !== "remove" && !secret) { $("manual-key-status").textContent = "请填写新 Key。"; return; }
+  if (action === "remove" && !window.confirm("删除此实验凭据？Experiment 保留，但新请求将返回 SECRET_MISSING。")) { secret = null; return; }
+  const revision = manualKeyRevision;
+  manualKeyBusy = true;
+  updateManualKeyButtons();
+  try {
+    const headers = await executionHeaders();
+    if (revision !== manualKeyRevision) return;
+    let body = JSON.stringify({credential_ref: ref, revision: state.revision, ...(action === "remove" ? {} : {secret})});
+    secret = null;
+    const pending = fetch("/api/manual-v2/credentials", {method: {create: "POST", replace: "PUT", remove: "DELETE"}[action], headers, body});
+    body = null;
+    const response = await pending;
+    const data = await response.json();
+    if (!response.ok) throw new Error(safeCredentialCode(data));
+    if (revision === manualKeyRevision) {
+      manualKeyState = data;
+      $("manual-key-status").textContent = `${ref}: ${data.availability} · manual.env · 新请求立即生效`;
+    }
+  } catch (exc) { if (revision === manualKeyRevision) $("manual-key-status").textContent = `修改失败：${manualSafeCode(exc)}；请刷新状态后重试。`; }
+  finally { secret = null; manualKeyBusy = false; $("manual-key-value").value = ""; updateManualKeyButtons(); }
+}
+
+function bindManualV2Controls() {
+  $("manual-version").addEventListener("change", () => setManualVersion($("manual-version").value));
+  $("manual-stop").addEventListener("click", stopGeneration);
+  $("experiment-new").addEventListener("click", () => { if (!activeExecution) { fillExperiment(null); $("experiment-status").textContent = "新 Experiment 尚未保存。"; } });
+  $("experiment-select").addEventListener("change", () => { if (!activeExecution) fillExperiment(manualExperiments.find(item => item.id === $("experiment-select").value)); });
+  $("experiment-save").addEventListener("click", () => saveExperiment());
+  $("experiment-save-as").addEventListener("click", () => saveExperiment(true));
+  $("experiment-delete").addEventListener("click", deleteExperiment);
+  $("experiment-ref").addEventListener("input", resetManualKeyState);
+  $("manual-key-refresh").addEventListener("click", refreshManualCredential);
+  $("manual-key-create").addEventListener("click", () => changeManualCredential("create"));
+  $("manual-key-replace").addEventListener("click", () => changeManualCredential("replace"));
+  $("manual-key-delete").addEventListener("click", () => changeManualCredential("remove"));
+  resetManualKeyState();
+}
+
 async function sendManual() {
   if (activeExecution) return;
   const profile = selectedProfile();
-  if (!profile || profile.runtime_type === "mock") {
+  const v2 = manualVersion === "v2";
+  if (!v2 && (!profile || profile.runtime_type === "mock")) {
     $("manual-status").textContent = "请先选择已保存的 Cloud / Local 连接。";
     return;
   }
   let body;
-  try { body = JSON.parse($("manual-body").value); }
+  let experiment;
+  try {
+    if (v2) { experiment = collectExperiment(); body = experiment.raw_request_body; }
+    else body = JSON.parse($("manual-body").value);
+  }
   catch (_) { $("manual-status").textContent = "INVALID_REQUEST：请求体必须是 JSON。"; return; }
   if (!window.confirm("REAL NETWORK REQUEST：发送专家请求，可能产生费用。系统不会判断高级参数能力，不会执行返回的 tool_calls。继续？")) return;
   $("analyze").disabled = true;
@@ -1573,9 +1814,9 @@ async function sendManual() {
   let execution = null;
   try {
     execution = await beginExecution();
-    const response = await fetch("/api/manual", {method: "POST", headers: execution.headers,
+    const response = await fetch(v2 ? "/api/manual-v2" : "/api/manual", {method: "POST", headers: execution.headers,
       signal: execution.controller.signal,
-      body: JSON.stringify({profile_id: profile.profile_id, confirm_network: true, body,
+      body: JSON.stringify({...(v2 ? {experiment} : {profile_id: profile.profile_id, body}), confirm_network: true,
         request_id: execution.request_id, control_token: execution.control_token})});
     if (!response.ok) {
       const data = await response.json();
@@ -1622,6 +1863,7 @@ async function init() {
     const config = await response.json();
     profiles = config.profiles;
     presets = config.presets;
+    defaultPresetId = config.default_preset_id;
     for (const preset of presets) {
       const option = document.createElement("option");
       option.value = preset.id;
@@ -1649,6 +1891,7 @@ async function init() {
     $("analyze").addEventListener("click", analyze);
     $("stop-generation").addEventListener("click", stopGeneration);
     $("manual-send").addEventListener("click", sendManual);
+    bindManualV2Controls();
     $("provider-preset").addEventListener("change", selectPreset);
     $("new-profile").addEventListener("click", newProfile);
     $("exit-new").addEventListener("click", exitNewProfile);
