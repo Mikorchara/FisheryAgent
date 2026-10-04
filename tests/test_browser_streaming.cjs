@@ -27,6 +27,24 @@ function scenarioPage(fetch) {
   return page;
 }
 
+test('Current query display keeps evaluated_at separate from retrieved_at without changing facts', () => {
+  const page = makePage(async () => { throw new Error('no network'); });
+  const facts = {water_quality: {temperature_c:28, ph:7.5, dissolved_oxygen_mg_l:2.2,
+    quality:'valid', freshness:'stale', observed_at:'2026-10-05T02:00:00Z',
+    retrieved_at:'2026-10-05T02:00:00Z', source:'fake:sensor'},
+    evaluated_at:'2026-10-05T03:00:00Z'};
+  const original = JSON.stringify(facts);
+  vm.runInContext(`render(${JSON.stringify({observed_facts:facts, rule_results:[
+    {code:'SENSOR_STALE',severity:'warning',message:'过期'}], structured_parse_ok:true})}, 1)`, page.context);
+  const rows = page.element('scenario-snapshot').children;
+  const values = Object.fromEntries(rows.filter((_, i) => i % 2 === 0)
+    .map((row, i) => [row.textContent, rows[i * 2 + 1].textContent]));
+  assert.equal(values.retrieved_at, facts.water_quality.retrieved_at);
+  assert.equal(values.evaluated_at, facts.evaluated_at);
+  assert.equal(values.Freshness, 'stale');
+  assert.equal(JSON.stringify(facts), original);
+});
+
 test('Scenario custom entry is first and builtin/user templates have separate groups',()=>{
   const page=scenarioPage(async()=>{throw new Error('no network');});
   const choices=page.element('scenario').children;

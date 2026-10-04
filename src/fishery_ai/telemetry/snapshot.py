@@ -6,6 +6,7 @@ from ..contracts import WaterQualityReading
 
 
 class CurrentSnapshotStore:
+    """Last ingested canonical reading; latest does not imply fresh."""
     def __init__(self) -> None:
         self._current: WaterQualityReading | None = None
 

@@ -124,7 +124,8 @@ class Orchestrator:
                                      retrieved_at=started_at, intent_text=request.question)
 
     def analyze(self, request: AnalysisRequest, *, scenario: str = "normal",
-                reading: WaterQualityReading | None = None) -> AnalysisResult:
+                reading: WaterQualityReading | None = None,
+                evaluated_at: datetime | None = None) -> AnalysisResult:
         started_at = self.clock()
         start_tick = time.monotonic()
         request_id, trace_id = self.id_factory(), self.id_factory()
@@ -144,7 +145,7 @@ class Orchestrator:
             inference, recommendations, uncertainty, parse_ok = _parse_model_text(response.text)
             result = AnalysisResult(
                 request_id=request_id, trace_id=trace_id, status=Status.COMPLETED,
-                runtime=runtime.public_info(), observed_facts=ObservedFacts(reading),
+                runtime=runtime.public_info(), observed_facts=ObservedFacts(reading, evaluated_at=evaluated_at),
                 rule_results=findings, evidence=evidence, inference=inference,
                 recommendations=recommendations, uncertainty=uncertainty,
                 generated_text=response.text, structured_parse_ok=parse_ok,
@@ -155,7 +156,7 @@ class Orchestrator:
             result = AnalysisResult(
                 request_id=request_id, trace_id=trace_id,
                 status=Status.CANCELLED if exc.code == "USER_CANCELLED" else Status.FAILED,
-                runtime=runtime.public_info(), observed_facts=ObservedFacts(reading),
+                runtime=runtime.public_info(), observed_facts=ObservedFacts(reading, evaluated_at=evaluated_at),
                 rule_results=findings, evidence=evidence, inference="",
                 recommendations=(), uncertainty=("模型调用失败；规则和证据仍可检查。",),
                 generated_text="", structured_parse_ok=False, error_code=exc.code,
@@ -167,7 +168,8 @@ class Orchestrator:
         return result
 
     def analyze_stream(self, request: AnalysisRequest, *, scenario: str = "normal",
-                       reading: WaterQualityReading | None = None
+                        reading: WaterQualityReading | None = None,
+                        evaluated_at: datetime | None = None
                        ) -> Iterator[AnalysisStreamEvent]:
         """Stream the same fixed analysis; only model transport differs from analyze()."""
         started_at = self.clock()
@@ -191,7 +193,7 @@ class Orchestrator:
                                              environ=None if self.resolve_secrets else {})
             reading = reading if reading is not None else self.repository.water_quality(scenario)
             yield AnalysisStreamEvent("facts_ready", {"observed_facts":
-                _public_data(ObservedFacts(reading)), "runtime": _public_data(runtime.public_info())})
+                _public_data(ObservedFacts(reading, evaluated_at=evaluated_at)), "runtime": _public_data(runtime.public_info())})
             findings = self.diagnosis.diagnose(reading)
             yield AnalysisStreamEvent("rules_ready", {"rule_results": _public_data(findings)})
             evidence = self._retrieve_evidence(request, reading, findings, started_at)
@@ -224,7 +226,7 @@ class Orchestrator:
             inference, recommendations, uncertainty, parse_ok = _parse_model_text(raw_text)
             result = AnalysisResult(
                 request_id=request_id, trace_id=trace_id, status=Status.COMPLETED,
-                runtime=runtime.public_info(), observed_facts=ObservedFacts(reading),
+                runtime=runtime.public_info(), observed_facts=ObservedFacts(reading, evaluated_at=evaluated_at),
                 rule_results=findings, evidence=evidence, inference=inference,
                 recommendations=recommendations, uncertainty=uncertainty,
                 generated_text=raw_text, structured_parse_ok=parse_ok, usage=usage,
@@ -249,7 +251,7 @@ class Orchestrator:
             result = AnalysisResult(
                 request_id=request_id, trace_id=trace_id,
                 status=Status.CANCELLED if code == "USER_CANCELLED" else Status.FAILED,
-                runtime=runtime.public_info(), observed_facts=ObservedFacts(reading),
+                runtime=runtime.public_info(), observed_facts=ObservedFacts(reading, evaluated_at=evaluated_at),
                 rule_results=findings, evidence=evidence, inference="",
                 recommendations=(), uncertainty=("模型调用失败；规则和证据仍可检查。",),
                 generated_text="".join(chunks), structured_parse_ok=False,

@@ -36,6 +36,19 @@ class Freshness(str, Enum):
     STALE = "stale"
 
 
+def evaluate_freshness(observed_at: datetime, evaluated_at: datetime,
+                       stale_after_s: float) -> Freshness:
+    """Shared domain age policy, for ingestion and current-state queries."""
+    try:
+        valid = type(stale_after_s) in (int, float) and math.isfinite(stale_after_s) and stale_after_s >= 0
+    except OverflowError:
+        valid = False
+    if not valid:
+        raise ValueError("stale_after_s must be finite and nonnegative")
+    age_s = (aware(evaluated_at) - aware(observed_at)).total_seconds()
+    return Freshness.STALE if age_s > stale_after_s else Freshness.FRESH
+
+
 class Mode(str, Enum):
     CHAT = "chat"
     ADVICE = "advice"
@@ -107,8 +120,6 @@ class WaterQualityReading:
         source: str,
         stale_after_s: float,
     ) -> WaterQualityReading:
-        if stale_after_s < 0:
-            raise ValueError("stale_after_s must be nonnegative")
         temp, bad_temp = _number(raw.get("temp"), -50, 100)
         ph, bad_ph = _number(raw.get("ph"), 0, 14)
         oxygen, bad_oxygen = _number(raw.get("oxygen"), 0, 100)
@@ -119,8 +130,7 @@ class WaterQualityReading:
             quality = Quality.PARTIAL
         else:
             quality = Quality.VALID
-        freshness = (Freshness.STALE if (aware(retrieved_at) - aware(observed_at)).total_seconds()
-                     > stale_after_s else Freshness.FRESH)
+        freshness = evaluate_freshness(observed_at, retrieved_at, stale_after_s)
         return cls(temp, ph, oxygen, observed_at, retrieved_at, source, quality, freshness)
 
 
@@ -183,6 +193,11 @@ class DetectionSummary:
 class ObservedFacts:
     water_quality: WaterQualityReading
     detection_summary: DetectionSummary | None = None
+    evaluated_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if self.evaluated_at is not None:
+            aware(self.evaluated_at)
 
 
 @dataclass(frozen=True)

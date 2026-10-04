@@ -18,12 +18,26 @@ class MockRepository:
         self.templates = ScenarioTemplateStore(resource_root.joinpath("water_quality"))
         self.detection_root = resource_root.joinpath("detection")
         self.adapter = SimulationAdapter(stale_after_s=stale_after_s)
-        self.snapshots = CurrentSnapshotStore()
+        # Only scenario generation uses this lazy, private demo state. Web current
+        # facts are composed separately and never read through this repository.
+        self._demo_snapshots: CurrentSnapshotStore | None = None
         self.clock = clock
 
+    @property
+    def demo_snapshots(self) -> CurrentSnapshotStore:
+        if self._demo_snapshots is None:
+            self._demo_snapshots = CurrentSnapshotStore()
+        return self._demo_snapshots
+
+    @property
+    def snapshots(self) -> CurrentSnapshotStore:
+        """Legacy demo alias; not the Web current-state store."""
+        return self.demo_snapshots
+
     def water_quality(self, scenario: str) -> WaterQualityReading:
+        """Generate a scenario for demo compatibility, never read current facts."""
         template = self.templates.get_template(scenario).template
-        return apply_scenario_template(template, snapshot_store=self.snapshots,
+        return apply_scenario_template(template, snapshot_store=self.demo_snapshots,
                                        adapter=self.adapter, now=self.clock())
 
     def detection(self, scenario: str) -> DetectionEvent:

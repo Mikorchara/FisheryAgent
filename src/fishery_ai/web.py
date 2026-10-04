@@ -41,7 +41,7 @@ from .execution import RequestRegistry, request_scope
 from .manual import ManualRequest
 from .manual_experiments import (ManualExperimentStore, validate_experiment, experiment_runtime,
                                  prepare_experiment_request)
-from .telemetry import CurrentSnapshotStore, SimulationAdapter
+from .telemetry import CurrentSnapshotStore, CurrentWaterQualityReader, SimulationAdapter
 from .telemetry.scenario_templates import (
     ScenarioError, ScenarioTemplate, ScenarioTemplateStore, apply_scenario_template,
 )
@@ -209,7 +209,10 @@ def create_app(*, trace_path: Path | None = None,
         Path.cwd() / "outputs/scenario_templates/water_quality")
     snapshots = CurrentSnapshotStore()
     simulation_adapter = SimulationAdapter(stale_after_s=stale_after_s)
+    current_reader = CurrentWaterQualityReader(snapshots, stale_after_s=stale_after_s,
+                                               clock=scenario_clock)
     app.extensions["fishery_snapshot_store"] = snapshots
+    app.extensions["fishery_current_water_quality_reader"] = current_reader
     app.extensions["fishery_scenario_templates"] = scenario_store
     diagnosis = DiagnosisService()
     knowledge = KnowledgeService(RESOURCE_ROOT.joinpath("knowledge/eel_knowledge.json"))
@@ -227,10 +230,12 @@ def create_app(*, trace_path: Path | None = None,
         return apply_scenario_template(template, snapshot_store=snapshots,
             adapter=simulation_adapter, now=scenario_clock())
 
-    def snapshot_public(reading):
+    def snapshot_public(view):
+        reading = view.reading if view is not None else None
         return {"snapshot": _public_data(reading),
                 "rule_results": _public_data(diagnosis.diagnose(reading)) if reading else [],
-                "status": "ready" if reading else "NO_DATA"}
+                "status": "ready" if reading else "NO_DATA",
+                **({"evaluated_at": view.evaluated_at.isoformat()} if view else {})}
 
     @app.get("/api/scenario-templates")
     def list_scenarios():
@@ -296,7 +301,7 @@ def create_app(*, trace_path: Path | None = None,
 
     @app.get("/api/water-quality/current")
     def current_water_quality():
-        return jsonify(snapshot_public(snapshots.get_current()))
+        return jsonify(snapshot_public(current_reader.query()))
 
     @app.post("/api/water-quality/apply")
     def apply_water_quality():
@@ -309,8 +314,8 @@ def create_app(*, trace_path: Path | None = None,
                 return error("INVALID_REQUEST", 400)
             template = (scenario_store.get_template(payload["template_id"]).template
                         if "template_id" in payload else ScenarioTemplate.from_dict(payload["template"]))
-            reading = apply_template(template)
-            return jsonify(snapshot_public(reading))
+            apply_template(template)
+            return jsonify(snapshot_public(current_reader.query()))
         except ScenarioError as exc:
             return scenario_failure(exc)
 
@@ -318,11 +323,11 @@ def create_app(*, trace_path: Path | None = None,
         # Legacy scenario clients also use telemetry, never the removed JSON path.
         if payload.get("scenario") is not None:
             try:
-                return apply_template(scenario_store.get_template(payload["scenario"]).template), None
+                apply_template(scenario_store.get_template(payload["scenario"]).template)
             except ScenarioError as exc:
                 return None, scenario_failure(exc)
-        reading = snapshots.get_current()
-        return reading, None if reading is not None else error("NO_DATA", 409)
+        view = current_reader.query()
+        return view, None if view is not None else error("NO_DATA", 409)
 
     def valid_scenario(payload):
         if payload.get("scenario") is None:
@@ -937,7 +942,7 @@ def create_app(*, trace_path: Path | None = None,
         runtime, failure = request_runtime(runtime_profile)
         if failure is not None:
             return failure
-        reading, failure = analysis_snapshot(payload)
+        view, failure = analysis_snapshot(payload)
         if failure is not None:
             return failure
         gateway = real_gateway_factory() if real else MockGateway()
@@ -954,7 +959,7 @@ def create_app(*, trace_path: Path | None = None,
             with request_scope(handle) if handle else nullcontext():
                 result = orchestrator.analyze(
                     AnalysisRequest(Mode.CHAT, profile_id, question.strip(), reasoning=reasoning),
-                    reading=reading)
+                    reading=view.reading, evaluated_at=view.evaluated_at)
             if handle:
                 handle.finish(result.error_code)
         except GatewayError as exc:
@@ -1002,7 +1007,7 @@ def create_app(*, trace_path: Path | None = None,
         runtime, failure = request_runtime(runtime_profile)
         if failure is not None:
             return failure
-        reading, failure = analysis_snapshot(payload)
+        view, failure = analysis_snapshot(payload)
         if failure is not None:
             return failure
         gateway = real_gateway_factory() if real else MockGateway()
@@ -1018,7 +1023,8 @@ def create_app(*, trace_path: Path | None = None,
             return failure
 
         def events():
-            iterator = orchestrator.analyze_stream(analysis_request, reading=reading)
+            iterator = orchestrator.analyze_stream(analysis_request, reading=view.reading,
+                                                  evaluated_at=view.evaluated_at)
             try:
                 with request_scope(handle) if handle else nullcontext():
                     for item in iterator:

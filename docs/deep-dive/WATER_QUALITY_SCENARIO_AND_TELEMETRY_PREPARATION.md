@@ -5,7 +5,8 @@
 ```text
 Scenario Template → TelemetrySimulator → SimulationPacket（sim-v1）
   → SimulationAdapter → WaterQualityReading → CurrentSnapshotStore
-  → DiagnosisService → 现有分析流程
+  → CurrentWaterQualityReader → Query-time View
+  → DiagnosisService → Normal / Streaming / 未来只读 Tool
 ```
 
 WaterQualityReading 仍是 canonical Domain 合同。两种 schema 都只用于模拟，不是计算板协议；Domain 不依赖 Telemetry。
@@ -54,6 +55,10 @@ ID 为小写字母开头，允许数字、下划线、连字符，最长 64 字�
 
 Apply 使用当前 UTC retrieved_at，observed_at = retrieved_at - observed_age_s。Template 不存水质固定时间戳或 freshness；现有 canonical 合同按 stale_after_s 计算。默认 300 秒，可在 composition / create_app 配置；300 秒 fresh、301 秒 stale。测试注入固定 clock。
 
+Store 保存 Apply 时的原始 reading；查询不修改它。CurrentWaterQualityReader.query() 返回 CurrentWaterQualityView 或 None，按查询时间重新计算 Freshness，始终生成新的冻结 reading view。共享领域函数在 contracts.py：evaluate_freshness(observed_at, evaluated_at, stale_after_s)。Apply / from_raw 与 Reader 复用它，Reader 不写死阈值。
+
+observed_at = 观测时间；retrieved_at = 程序取得数据的原始时间；evaluated_at = 本次查询时间。查询只更新 freshness，不改变数值、Quality、source 或原始时间。**Latest != Fresh；evaluated_at != retrieved_at。** 一小时后查询会返回 STALE，Diagnosis 对该视图产生 SENSOR_STALE，而 Store 中原 reading 仍保持 Apply 时的字段。
+
 | 模板 | 温度 °C | pH | DO mg/L | 年龄秒 | Quality / Freshness | 程序 Findings |
 | --- | ---: | ---: | ---: | ---: | --- | --- |
 | normal | 28 | 7.5 | 6.4 | 0 | valid / fresh | 无 |
@@ -70,6 +75,7 @@ Apply 使用当前 UTC retrieved_at，observed_at = retrieved_at - observed_age_
 - simulator.py：baseline 28 / 7.5 / 6.4，加 set_temperature / set_ph / set_do / missing / invalid；后写覆盖，显式时间，sequence 从 1 递增，仅辨认模拟输出。
 - adapter.py：版本、字段、类型、时间与来源校验；复用 WaterQualityReading.from_raw 归一，不判断养殖异常。
 - snapshot.py：进程内最后一次明确写入的 immutable reading；初始 None。
+- current.py：只读 CurrentWaterQualityReader，捕获 Store 一次并生成查询视图；不读取模板、Packet 或 MockRepository，不 fallback 到 normal。
 - scenario_templates.py：模板合同、来源与 CRUD、统一 apply_scenario_template。
 
 Simulator 没有业务阈值，Adapter 不调用模型、RAG 或 Tool。底层 sim-v1 非数字（含 bool / 数字字符串）为 invalid，不转换成有效观测。
@@ -80,9 +86,9 @@ Simulator 没有业务阈值，Adapter 不调用模型、RAG 或 Tool。底层 s
 
 Apply 不调用模型或硬件。页面显示 canonical 数值、Quality、Freshness、两个时间戳、source 和程序 Findings，前端不计算诊断。新增写入 / Apply API 复用本地 Host / Origin / CSRF 门禁。
 
-已 Apply 的情景由 Analyze 读取当前 Store；选择已保存模板但尚未 Apply 时，分析 API 的兼容 scenario 参数也通过同一 Telemetry 管线应用后分析。CLI / Demo 的 MockRepository 同样使用模板转换，不保留旧混合资源路径。
+已 Apply 的情景由 Analyze 通过 CurrentWaterQualityReader 读取；选择已保存模板但尚未 Apply 时，分析 API 的兼容 scenario 参数先通过同一 Telemetry 管线应用，再调用 Reader。**Scenario generation != Current state read。** CLI / Demo 的 MockRepository 仍提供显式场景生成；demo_snapshots 惰性创建，snapshots 是旧兼容别名，不是 Web current state。
 
-Normal / Streaming 都向 Orchestrator 注入请求开始时捕获的 reading；后续 Apply 不改变进行中的请求。RAG、Grounding、模型、Preset、Credential 未修改。
+Normal / Streaming 都向 Orchestrator 注入请求开始时捕获的 query view.reading 与 evaluated_at；后续 Apply 或时间推移不改变进行中的请求。AnalysisResult 的 observed_facts.evaluated_at 单独记录查询时间；旧 Demo 未提供该时间时为 null。Current API / Apply 预览也返回单独 evaluated_at；NO_DATA 空响应保持原合同。前端显示三种时间，不自行判断过期或规则。RAG、Grounding、模型、Preset、Credential 未修改。
 
 每个 Web app 共享一个 CurrentSnapshotStore，跨请求保留，重启为空。没有快照且未指定模板时返回 NO_DATA，不自动制造 normal。删除模板不删除已应用快照；Store 不自动刷新保存的 Freshness，不提供跨进程共享、History 或数据库。多个标签页共享当前状态，各分析持有自己的 reading。
 

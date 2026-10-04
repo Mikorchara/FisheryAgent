@@ -1478,7 +1478,8 @@ function render(data, latency, ttft = null) {
   renderFacts(data.observed_facts);
   renderRules(data.rule_results);
   if (data.observed_facts?.water_quality)
-    showScenarioSnapshot({status:"ready", snapshot:data.observed_facts.water_quality, rule_results:data.rule_results});
+    showScenarioSnapshot({status:"ready", snapshot:data.observed_facts.water_quality,
+      evaluated_at:data.observed_facts.evaluated_at, rule_results:data.rule_results});
   renderEvidence(data.evidence);
   addPairs("structured", [
     ["Inference", inference], ["解析成功", data.structured_parse_ok ? "是" : "否"],
@@ -2098,7 +2099,7 @@ function showScenarioSnapshot(data) {
   addPairs("scenario-snapshot", [["Temperature °C", reading.temperature_c], ["pH", reading.ph],
     ["DO mg/L", reading.dissolved_oxygen_mg_l], ["Quality", reading.quality],
     ["Freshness", reading.freshness], ["observed_at", reading.observed_at],
-    ["retrieved_at", reading.retrieved_at], ["source", reading.source]]);
+    ["retrieved_at", reading.retrieved_at], ["evaluated_at", data.evaluated_at], ["source", reading.source]]);
   addList("scenario-findings", data.rule_results || [], (li, item) => { li.textContent = `${item.code} · ${item.severity} · ${item.message}`; });
   $("scenario-status").textContent = data.status === "NO_DATA" ? "NO_DATA · 尚未应用水质快照。" : "快照已应用 · 规则结果由程序生成。";
 }
