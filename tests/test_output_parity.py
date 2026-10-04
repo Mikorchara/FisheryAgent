@@ -59,7 +59,7 @@ class OutputParityTests(unittest.TestCase):
 
         profile = next(p for p in _builtin_profiles() if p.profile_id == "mock-demo")
         fixed = datetime(2026, 10, 1, tzinfo=timezone.utc)
-        app = Orchestrator(MockRepository(RESOURCE_ROOT.joinpath("mock/scenarios.json")),
+        app = Orchestrator(MockRepository(RESOURCE_ROOT.joinpath("scenarios"), clock=lambda: fixed),
             DiagnosisService(), KnowledgeService(RESOURCE_ROOT.joinpath("knowledge/eel_knowledge.json")),
             ProfileRegistry([profile]), Gateway(), JsonlTraceSink(Path(self.temp.name) / "trace.jsonl"),
             clock=lambda: fixed, resolve_secrets=False)

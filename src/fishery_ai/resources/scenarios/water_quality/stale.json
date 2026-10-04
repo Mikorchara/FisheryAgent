@@ -1,0 +1,22 @@
+{
+  "schema_version": "scenario-template-v1",
+  "id": "stale",
+  "display_name": "stale",
+  "description": "内置模拟水质情景",
+  "device_id": "sensor-stale",
+  "water_quality": {
+    "temperature_c": {
+      "state": "NORMAL",
+      "value": 28
+    },
+    "ph": {
+      "state": "NORMAL",
+      "value": 7.5
+    },
+    "dissolved_oxygen_mg_l": {
+      "state": "NORMAL",
+      "value": 6.4
+    }
+  },
+  "observed_age_s": 301
+}

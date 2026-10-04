@@ -181,7 +181,18 @@
 
         <label for="scenario">水质场景</label>
         <select id="scenario"></select>
-        <p class="helper">场景直接读取项目中已有的固定 Mock 数据。</p>
+        <div class="manager-actions">
+          <button id="scenario-apply" class="secondary" type="button">应用</button>
+          <button id="scenario-view" class="secondary" type="button">查看</button>
+          <button id="scenario-edit" class="secondary" type="button" hidden>编辑</button>
+          <button id="scenario-copy" class="secondary" type="button">另存</button>
+          <button id="scenario-delete" class="danger" type="button" hidden>删除</button>
+        </div>
+        <p id="scenario-status" class="helper" role="status">尚未应用水质快照。情景仅生成模拟数据。</p>
+        <details class="advanced-settings"><summary>当前 Canonical Snapshot / 程序诊断</summary>
+          <dl id="scenario-snapshot" class="profile-summary"></dl>
+          <ul id="scenario-findings"></ul>
+        </details>
 
         <label for="question">问题</label>
         <textarea id="question" rows="4" maxlength="500">当前水质情况怎么样？</textarea>
@@ -314,6 +325,32 @@
         <p>先选择运行方式、模型与场景，再查看确定性事实、检索证据和模型解释。</p>
       </div>
     </div>
+    <dialog id="scenario-modal" class="scenario-modal" hidden aria-labelledby="scenario-modal-title">
+      <h2 id="scenario-modal-title">自定义情景</h2>
+      <p class="helper">Simulation · 只生成一次模拟快照，不连接硬件或模型。</p>
+      <label for="scenario-name">情景名称（必填）</label><input id="scenario-name" type="text" maxlength="80">
+      <div class="scenario-grid">
+        <div><label for="scenario-temperature_c-state">Temperature · °C</label>
+          <select id="scenario-temperature_c-state"><option value="NORMAL">Normal</option><option value="MISSING">Missing</option><option value="INVALID">Invalid</option></select>
+          <label for="scenario-temperature_c-value">Value</label><input id="scenario-temperature_c-value" type="number" step="any"></div>
+        <div><label for="scenario-ph-state">pH</label>
+          <select id="scenario-ph-state"><option value="NORMAL">Normal</option><option value="MISSING">Missing</option><option value="INVALID">Invalid</option></select>
+          <label for="scenario-ph-value">Value</label><input id="scenario-ph-value" type="number" step="any"></div>
+        <div><label for="scenario-dissolved_oxygen_mg_l-state">Dissolved Oxygen · mg/L</label>
+          <select id="scenario-dissolved_oxygen_mg_l-state"><option value="NORMAL">Normal</option><option value="MISSING">Missing</option><option value="INVALID">Invalid</option></select>
+          <label for="scenario-dissolved_oxygen_mg_l-value">Value</label><input id="scenario-dissolved_oxygen_mg_l-value" type="number" step="any"></div>
+      </div>
+      <label for="scenario-age">Observed Age · 秒（≥ 0）</label><input id="scenario-age" type="number" min="0" step="any" value="0">
+      <label for="scenario-device">Device ID（可选）</label><input id="scenario-device" type="text" maxlength="128" placeholder="留空使用 sim-device-001">
+      <p class="helper">Missing / Invalid 不要求 Value；Freshness 由观测年龄和程序策略计算。</p>
+      <p id="scenario-modal-status" class="status" role="status"></p>
+      <div class="manager-actions">
+        <button id="scenario-cancel" class="secondary" type="button">取消</button>
+        <button id="scenario-only-apply" class="secondary" type="button">仅应用</button>
+        <button id="scenario-save-apply" type="button">保存模板并应用</button>
+        <button id="scenario-view-copy" class="secondary" type="button" hidden>Save As · 另存为我的模板</button>
+      </div>
+    </dialog>
     <footer>本页面仅用于开发验证。传感器事实和规则结果由程序提供；Cloud 结果需人工核查。</footer>
   </div>
 </body>

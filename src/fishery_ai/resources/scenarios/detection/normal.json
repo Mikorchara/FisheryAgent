@@ -1,0 +1,31 @@
+{
+  "event_id": "mock-detection-001",
+  "observed_at": "2026-09-27T00:00:00Z",
+  "source": "mock:camera-1",
+  "model_id": "mock-detector-v1",
+  "frame_id": "frame-001",
+  "detections": [
+    {
+      "label": "eel",
+      "confidence": 0.93,
+      "bbox": [
+        10,
+        20,
+        40,
+        60
+      ],
+      "track_id": "1"
+    },
+    {
+      "label": "eel",
+      "confidence": 0.88,
+      "bbox": [
+        60,
+        20,
+        90,
+        55
+      ],
+      "track_id": "2"
+    }
+  ]
+}

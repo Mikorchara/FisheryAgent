@@ -15,11 +15,11 @@ from contextlib import nullcontext
 
 from flask import Flask, Response, jsonify, request, stream_with_context
 
-from .application import Orchestrator, result_to_dict
+from .application import Orchestrator, result_to_dict, _public_data
 from .capability_store import CapabilityStore
 from .capability_probe import run_capability_probe
 from .official_capabilities import apply_official_capabilities
-from .contracts import AnalysisRequest, Mode, Status
+from .contracts import AnalysisRequest, Mode, Status, utcnow
 from .custom_profiles import CustomProfileStore, ProfileFieldError
 from .credentials import CredentialFileError, CredentialStore
 from .credential_paths import CredentialLocationError, private_project_location, private_manual_location
@@ -41,6 +41,10 @@ from .execution import RequestRegistry, request_scope
 from .manual import ManualRequest
 from .manual_experiments import (ManualExperimentStore, validate_experiment, experiment_runtime,
                                  prepare_experiment_request)
+from .telemetry import CurrentSnapshotStore, SimulationAdapter
+from .telemetry.scenario_templates import (
+    ScenarioError, ScenarioTemplate, ScenarioTemplateStore, apply_scenario_template,
+)
 
 
 RESOURCE_ROOT = files("fishery_ai").joinpath("resources")
@@ -162,6 +166,9 @@ def create_app(*, trace_path: Path | None = None,
                manual_experiments_dir: Path | None = None,
                manual_credential_store: CredentialStore | None = None,
                manual_credential_writer: ProjectEnvWriter | None = None,
+               scenario_templates_dir: Path | None = None,
+               scenario_clock: Callable[[], datetime] = utcnow,
+               stale_after_s: float = 300,
                allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1"),
                real_gateway_factory: Callable[[], ModelGateway] = OpenAICompatibleAdapter) -> Flask:
     """Construct without loading .env or making a network request."""
@@ -196,14 +203,135 @@ def create_app(*, trace_path: Path | None = None,
     sources.update({profile_id: "user_custom" for profile_id in profiles if profile_id not in sources})
     successful_tests: dict[str, tuple[tuple[str, ...], float, str | None]] = {}
     credential_revisions: dict[tuple[str, str], tuple[str, str]] = {}
-    repository = MockRepository(RESOURCE_ROOT.joinpath("mock/scenarios.json"))
-    scenarios = tuple(repository.data["water_quality"])
+    repository = MockRepository(RESOURCE_ROOT.joinpath("scenarios"))
+    scenario_store = ScenarioTemplateStore(RESOURCE_ROOT.joinpath("scenarios/water_quality"),
+        scenario_templates_dir if scenario_templates_dir is not None else
+        Path.cwd() / "outputs/scenario_templates/water_quality")
+    snapshots = CurrentSnapshotStore()
+    simulation_adapter = SimulationAdapter(stale_after_s=stale_after_s)
+    app.extensions["fishery_snapshot_store"] = snapshots
+    app.extensions["fishery_scenario_templates"] = scenario_store
     diagnosis = DiagnosisService()
     knowledge = KnowledgeService(RESOURCE_ROOT.joinpath("knowledge/eel_knowledge.json"))
     traces = JsonlTraceSink(trace_path or Path.cwd() / "outputs/web-traces.jsonl")
 
     def error(code: str, status: int):
         return jsonify({"status": "failed", "error_code": code}), status
+
+    def scenario_failure(exc):
+        status = 404 if exc.code == "SCENARIO_NOT_FOUND" else 403 if exc.code == "SCENARIO_READ_ONLY" else (
+            409 if exc.code == "SCENARIO_ID_EXISTS" else 503 if exc.code == "SCENARIO_STORAGE_ERROR" else 400)
+        return jsonify(status="failed", error_code=exc.code, field=exc.field), status
+
+    def apply_template(template):
+        return apply_scenario_template(template, snapshot_store=snapshots,
+            adapter=simulation_adapter, now=scenario_clock())
+
+    def snapshot_public(reading):
+        return {"snapshot": _public_data(reading),
+                "rule_results": _public_data(diagnosis.diagnose(reading)) if reading else [],
+                "status": "ready" if reading else "NO_DATA"}
+
+    @app.get("/api/scenario-templates")
+    def list_scenarios():
+        try:
+            return jsonify(templates=[item.public_info() for item in scenario_store.list_templates()])
+        except ScenarioError as exc:
+            return scenario_failure(exc)
+
+    @app.post("/api/scenario-templates")
+    def create_scenario():
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict) or set(payload) != {"template"} or not isinstance(payload["template"], dict):
+                return error("INVALID_REQUEST", 400)
+            template = ScenarioTemplate.from_dict({**payload["template"], "id": "user-" + uuid.uuid4().hex})
+            item = scenario_store.create_user_template(template)
+            return jsonify(template=item.public_info()), 201
+        except ScenarioError as exc:
+            return scenario_failure(exc)
+
+    @app.put("/api/scenario-templates/<identifier>")
+    def update_scenario(identifier):
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict) or set(payload) != {"template"}:
+                return error("INVALID_REQUEST", 400)
+            template = ScenarioTemplate.from_dict(payload["template"])
+            item = scenario_store.update_user_template(identifier, template)
+            return jsonify(template=item.public_info())
+        except ScenarioError as exc:
+            return scenario_failure(exc)
+
+    @app.delete("/api/scenario-templates/<identifier>")
+    def delete_scenario(identifier):
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        try:
+            scenario_store.delete_user_template(identifier)
+            return jsonify(status="deleted")
+        except ScenarioError as exc:
+            return scenario_failure(exc)
+
+    @app.post("/api/scenario-templates/<identifier>/copy")
+    def copy_scenario(identifier):
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or set(payload) != {"display_name"}:
+            return error("INVALID_REQUEST", 400)
+        try:
+            item = scenario_store.save_as_user_template(identifier, display_name=payload["display_name"])
+            return jsonify(template=item.public_info()), 201
+        except ScenarioError as exc:
+            return scenario_failure(exc)
+
+    @app.get("/api/water-quality/current")
+    def current_water_quality():
+        return jsonify(snapshot_public(snapshots.get_current()))
+
+    @app.post("/api/water-quality/apply")
+    def apply_water_quality():
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict) or set(payload) not in ({"template_id"}, {"template"}):
+                return error("INVALID_REQUEST", 400)
+            template = (scenario_store.get_template(payload["template_id"]).template
+                        if "template_id" in payload else ScenarioTemplate.from_dict(payload["template"]))
+            reading = apply_template(template)
+            return jsonify(snapshot_public(reading))
+        except ScenarioError as exc:
+            return scenario_failure(exc)
+
+    def analysis_snapshot(payload):
+        # Legacy scenario clients also use telemetry, never the removed JSON path.
+        if payload.get("scenario") is not None:
+            try:
+                return apply_template(scenario_store.get_template(payload["scenario"]).template), None
+            except ScenarioError as exc:
+                return None, scenario_failure(exc)
+        reading = snapshots.get_current()
+        return reading, None if reading is not None else error("NO_DATA", 409)
+
+    def valid_scenario(payload):
+        if payload.get("scenario") is None:
+            return True
+        try:
+            scenario_store.get_template(payload["scenario"])
+            return True
+        except ScenarioError:
+            return False
 
     @app.after_request
     def close_rejected_execution(response):
@@ -428,7 +556,8 @@ def create_app(*, trace_path: Path | None = None,
                 "expected_credential_name": spec.expected_credential_name,
                 "metadata_method": spec.metadata_method, "default_deployment": spec.default_deployment}
                 for spec in PROVIDERS.all()],
-            "scenarios": scenarios,
+            "scenarios": [item.template.id for item in scenario_store.list_templates()],
+            "scenario_templates": [item.public_info() for item in scenario_store.list_templates()],
         })
 
     @app.post("/api/secret-status")
@@ -787,7 +916,7 @@ def create_app(*, trace_path: Path | None = None,
         scenario = payload.get("scenario")
         question = payload.get("question")
         if (not isinstance(profile_id, str) or profile_id not in profiles
-                or not isinstance(scenario, str) or scenario not in scenarios
+                or not valid_scenario(payload)
                 or not isinstance(question, str) or not question.strip()
                 or len(question) > 500):
             return error("INVALID_REQUEST", 400)
@@ -808,6 +937,9 @@ def create_app(*, trace_path: Path | None = None,
         runtime, failure = request_runtime(runtime_profile)
         if failure is not None:
             return failure
+        reading, failure = analysis_snapshot(payload)
+        if failure is not None:
+            return failure
         gateway = real_gateway_factory() if real else MockGateway()
         orchestrator = Orchestrator(
             repository, diagnosis, knowledge, ProfileRegistry([runtime_profile], credentials,
@@ -822,7 +954,7 @@ def create_app(*, trace_path: Path | None = None,
             with request_scope(handle) if handle else nullcontext():
                 result = orchestrator.analyze(
                     AnalysisRequest(Mode.CHAT, profile_id, question.strip(), reasoning=reasoning),
-                    scenario=scenario)
+                    reading=reading)
             if handle:
                 handle.finish(result.error_code)
         except GatewayError as exc:
@@ -849,7 +981,7 @@ def create_app(*, trace_path: Path | None = None,
         profile_id, scenario, question = (payload.get("profile_id"), payload.get("scenario"),
                                           payload.get("question"))
         if (not isinstance(profile_id, str) or profile_id not in profiles
-                or not isinstance(scenario, str) or scenario not in scenarios
+                or not valid_scenario(payload)
                 or not isinstance(question, str) or not question.strip()
                 or len(question) > 500):
             return error("INVALID_REQUEST", 400)
@@ -870,6 +1002,9 @@ def create_app(*, trace_path: Path | None = None,
         runtime, failure = request_runtime(runtime_profile)
         if failure is not None:
             return failure
+        reading, failure = analysis_snapshot(payload)
+        if failure is not None:
+            return failure
         gateway = real_gateway_factory() if real else MockGateway()
         orchestrator = Orchestrator(
             repository, diagnosis, knowledge, ProfileRegistry([runtime_profile], credentials,
@@ -883,7 +1018,7 @@ def create_app(*, trace_path: Path | None = None,
             return failure
 
         def events():
-            iterator = orchestrator.analyze_stream(analysis_request, scenario=scenario)
+            iterator = orchestrator.analyze_stream(analysis_request, reading=reading)
             try:
                 with request_scope(handle) if handle else nullcontext():
                     for item in iterator:

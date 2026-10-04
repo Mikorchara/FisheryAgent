@@ -16,14 +16,16 @@ pyproject.toml 定义安装包、Python 版本、依赖和包资源。README.md 
 ## src/fishery_ai/
 
 - contracts.py、domain.py、repositories.py：领域合同、确定性诊断与 Mock 数据访问。
-- telemetry/：动态模拟数据入口；sim-v1 Packet 经 SimulationAdapter 转成既有 WaterQualityReading，再明确写入进程内 CurrentSnapshotStore。不是硬件协议，也不自动替换 Web / Demo 的固定 Mock。
+- telemetry/：内置 / 用户情景模板管理与动态模拟入口；Template 经 Simulator、SimulationAdapter 转成既有 WaterQualityReading，再写入进程内 CurrentSnapshotStore。Web 与 CLI 水质入口统一使用这条管线。
 - application.py、model_gateway.py、openai_compatible_adapter.py：固定分析流程和模型传输。
 - presets.py、protocol_specs.py、providers.py：固定 Preset、协议编码和 Provider 元信息。
 - capability_store.py、evidence_resolver.py、capability_probe.py：Managed Custom 的能力证据与显式验证。
 - credentials.py、credential_paths.py、project_env.py：凭据读取、用户私有路径和受控写入。
 - manual.py、manual_experiments.py：Manual V1/V2 Raw 请求与实验存储。
 - web.py、resources/web/：本地开发者界面。
-- resources/mock/、resources/knowledge/、resources/profiles/：随包发布的 Mock、知识和固定连接/方案数据。
+- resources/scenarios/water_quality/：五个只读内置水质情景模板，保存输入意图与观测年龄。
+- resources/scenarios/detection/：normal / count_jump 固定检测事件，未增加 Detection Simulator。
+- resources/mock/、resources/knowledge/、resources/profiles/：Mock 模型 Profile、知识和固定连接/方案数据。
 
 telemetry/ 的最小结构：
 
@@ -33,7 +35,8 @@ telemetry/
 ├─ models.py     SimulationPacket / SimulationRecipe
 ├─ simulator.py  baseline + 数值覆盖 / missing / invalid
 ├─ adapter.py    sim-v1 校验与 canonical 合同转换
-└─ snapshot.py   当前水质快照；未写入时返回 None
+├─ snapshot.py   当前水质快照；未写入时返回 None
+└─ scenario_templates.py  Template 合同、Builtin / User CRUD 与统一 Apply 管线
 ```
 
 依赖方向：Telemetry → WaterQualityReading → Domain / Diagnosis。WaterQualityReading、ObservedFacts、DiagnosisService 保留原位置，Domain 不依赖 Telemetry。详细用法见[水质与 telemetry](deep-dive/WATER_QUALITY_SCENARIO_AND_TELEMETRY_PREPARATION.md)。
@@ -48,4 +51,6 @@ telemetry/
 
 ## docs/ 与 outputs/
 
-docs/ 顶层只保留构建运行、路线图、故障排查、评审和结构说明；deep-dive/ 放无法在结构概览中讲清的当前专题。outputs/ 中的自定义 Profile、Evidence、Experiment、Trace 和资格摘要可能包含用户维护数据；不要由清理脚本一概删除。
+docs/ 顶层只保留构建运行、路线图、故障排查、评审和结构说明；deep-dive/ 放无法在结构概览中讲清的当前专题。outputs/ 中的自定义 Profile、Evidence、Experiment、scenario_templates/water_quality/、Trace 和资格摘要可能包含用户维护数据；不要由清理脚本一概删除。
+
+Web application 创建一个共享 CurrentSnapshotStore；应用情景后各请求读取它，分析开始时捕获不可变 reading。重启为空；没有当前快照的请求返回 NO_DATA。原有 scenario 参数兼容调用也走统一模板管线，不读取旧混合资源。

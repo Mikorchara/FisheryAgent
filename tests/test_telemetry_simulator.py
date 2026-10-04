@@ -178,9 +178,9 @@ class TelemetrySimulatorTests(unittest.TestCase):
             store.set_current(self.simulator.generate(observed_at=self.now))
 
     def test_existing_mock_catalog_is_not_expanded_or_replaced(self):
-        path = files("fishery_ai").joinpath("resources/mock/scenarios.json")
+        path = files("fishery_ai").joinpath("resources/scenarios")
         repository = MockRepository(path)
-        self.assertEqual(set(repository.data["water_quality"]),
+        self.assertEqual({item.template.id for item in repository.templates.list_templates()},
                          {"normal", "low_oxygen", "partial", "stale", "partial_stale"})
         self.assertEqual(self.codes(repository.water_quality("low_oxygen")),
                          ("OXYGEN_CRITICAL_LOW",))

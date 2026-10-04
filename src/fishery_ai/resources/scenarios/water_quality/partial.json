@@ -1,0 +1,21 @@
+{
+  "schema_version": "scenario-template-v1",
+  "id": "partial",
+  "display_name": "partial",
+  "description": "内置模拟水质情景",
+  "device_id": "sensor-partial",
+  "water_quality": {
+    "temperature_c": {
+      "state": "NORMAL",
+      "value": 28
+    },
+    "ph": {
+      "state": "MISSING"
+    },
+    "dissolved_oxygen_mg_l": {
+      "state": "NORMAL",
+      "value": 6.4
+    }
+  },
+  "observed_age_s": 0
+}

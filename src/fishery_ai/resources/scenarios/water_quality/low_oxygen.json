@@ -1,0 +1,22 @@
+{
+  "schema_version": "scenario-template-v1",
+  "id": "low_oxygen",
+  "display_name": "low_oxygen",
+  "description": "内置模拟水质情景",
+  "device_id": "sensor-low-oxygen",
+  "water_quality": {
+    "temperature_c": {
+      "state": "NORMAL",
+      "value": 28
+    },
+    "ph": {
+      "state": "NORMAL",
+      "value": 7.5
+    },
+    "dissolved_oxygen_mg_l": {
+      "state": "NORMAL",
+      "value": 2.2
+    }
+  },
+  "observed_age_s": 0
+}

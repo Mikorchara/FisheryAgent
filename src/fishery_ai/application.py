@@ -123,7 +123,8 @@ class Orchestrator:
         return self.knowledge.search(query, top_k=5 if request.mode == Mode.CHAT else 4,
                                      retrieved_at=started_at, intent_text=request.question)
 
-    def analyze(self, request: AnalysisRequest, *, scenario: str = "normal") -> AnalysisResult:
+    def analyze(self, request: AnalysisRequest, *, scenario: str = "normal",
+                reading: WaterQualityReading | None = None) -> AnalysisResult:
         started_at = self.clock()
         start_tick = time.monotonic()
         request_id, trace_id = self.id_factory(), self.id_factory()
@@ -131,7 +132,7 @@ class Orchestrator:
             request_id = current_handle().request_id
         runtime = self.profiles.snapshot(request.profile_id,
                                          environ=None if self.resolve_secrets else {})
-        reading = self.repository.water_quality(scenario)
+        reading = reading if reading is not None else self.repository.water_quality(scenario)
         findings = self.diagnosis.diagnose(reading)  # Always runs, including Advice.
         evidence = self._retrieve_evidence(request, reading, findings, started_at)
         context = AnalysisContext(request.mode, request.question, reading, findings, evidence)
@@ -165,7 +166,8 @@ class Orchestrator:
                            finished_at=finished_at, total_ms=(time.monotonic() - start_tick) * 1000)
         return result
 
-    def analyze_stream(self, request: AnalysisRequest, *, scenario: str = "normal"
+    def analyze_stream(self, request: AnalysisRequest, *, scenario: str = "normal",
+                       reading: WaterQualityReading | None = None
                        ) -> Iterator[AnalysisStreamEvent]:
         """Stream the same fixed analysis; only model transport differs from analyze()."""
         started_at = self.clock()
@@ -176,7 +178,6 @@ class Orchestrator:
         yield AnalysisStreamEvent("analysis_started", {"request_id": request_id,
                                                        "trace_id": trace_id})
         runtime = None
-        reading = None
         findings: tuple[RuleFinding, ...] = ()
         evidence: tuple[KnowledgeEvidence, ...] = ()
         chunks: list[str] = []
@@ -188,7 +189,7 @@ class Orchestrator:
             check_cancelled()
             runtime = self.profiles.snapshot(request.profile_id,
                                              environ=None if self.resolve_secrets else {})
-            reading = self.repository.water_quality(scenario)
+            reading = reading if reading is not None else self.repository.water_quality(scenario)
             yield AnalysisStreamEvent("facts_ready", {"observed_facts":
                 _public_data(ObservedFacts(reading)), "runtime": _public_data(runtime.public_info())})
             findings = self.diagnosis.diagnose(reading)

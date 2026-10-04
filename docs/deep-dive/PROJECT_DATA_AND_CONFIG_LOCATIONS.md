@@ -5,9 +5,12 @@
 | 名称 | 作用 | 实际路径 | Git 跟踪 | 用户私有 | 运行时需要 | 可安全删除 / 重建 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 水质诊断规则 / 阈值 | 温度、pH、DO 与 Quality/Freshness Finding | src/fishery_ai/domain.py | 是 | 否 | 是 | 否；源码合同 |
-| 动态水质模拟入口 | sim-v1 合同、baseline / overrides、canonical Adapter | src/fishery_ai/telemetry/{models,simulator,adapter}.py；公共入口 __init__.py | 源码，本轮新增待提交 | 否 | 使用动态模拟时需要；现有 Web / Demo 不自动读取 | 不删除源码；模拟样本可重新生成，不产生本地数据文件 |
-| 当前水质 Snapshot | 最后一次明确写入的 WaterQualityReading；未写入为 None | src/fishery_ai/telemetry/snapshot.py；实例数据仅在进程内存 | Store 源码待提交；内存数据不跟踪 | 否 | 新模拟入口 / 未来 current Tool 的共享数据源 | 进程退出即丢失；需再次明确写入，无自动 normal fallback |
-| 水质 / Detection Mock Scenario | 固定演示数据与独立检测事件 | src/fishery_ai/resources/mock/scenarios.json | 是 | 否 | Demo / Web 测试需要 | 否；随包 fixture |
+| 动态水质模拟入口 | sim-v1、baseline / overrides、canonical Adapter | src/fishery_ai/telemetry/{models,simulator,adapter}.py；公共入口 __init__.py | 是 | 否 | Web / Demo 水质输入需要 | 不删除源码；Packet 可重新生成，不保存原始包文件 |
+| 情景模板管理 | scenario-template-v1 合同、Builtin / User CRUD 与 Apply | src/fishery_ai/telemetry/scenario_templates.py | 源码，待提交 | 否 | Web / Demo 水质入口需要 | 不删除；可从源码恢复 |
+| 当前水质 Snapshot | 最后一次明确写入的 WaterQualityReading；未写入为 None | src/fishery_ai/telemetry/snapshot.py；Web app 共享实例，数据仅在内存 | Store 源码跟踪；内存数据不跟踪 | 否 | Web 分析 / 未来 current Tool 的数据源 | 进程退出即丢失；需再次明确写入，无自动 normal fallback |
+| 内置水质情景 | 只读输入模板，不保存固定水质时间戳 | src/fishery_ai/resources/scenarios/water_quality/{normal,low_oxygen,partial,stale,partial_stale}.json | 源码资源，待提交 | 否 | Demo / Web 需要 | 不删除；随包模板 |
+| 用户水质情景 | 用户创建 / 编辑 / 另存的情景输入 | outputs/scenario_templates/water_quality/<safe-id>.json | 否，Git 忽略 | 否；工作区本地数据 | 选择该模板时需要 | 删除会丢失用户内容；先备份。仅应用的临时情景不写文件 |
+| Detection Mock | 独立固定检测事件；保持时间、模型、bbox 等原值 | src/fishery_ai/resources/scenarios/detection/{normal,count_jump}.json | 源码资源，待提交 | 否 | Detection 演示 / 回归需要 | 不删除；随包 fixture |
 | Mock Profile 目录 | Mock / 开发连接定义 | src/fishery_ai/resources/mock/profiles.json；Composition 读取 | 是 | 否 | 离线 Demo 需要 | 否；源码资源 |
 | RAG 检索实现 | TF-IDF baseline 与证据排序 | src/fishery_ai/knowledge.py | 是 | 否 | 是 | 否 |
 | RAG / Knowledge 数据 | 知识条目和规则背景 | src/fishery_ai/resources/knowledge/eel_knowledge.json；来源缺口 src/fishery_ai/resources/knowledge/SOURCE.md | 是 | 否 | 是 | 否；无自动权威重建来源 |

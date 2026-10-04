@@ -54,7 +54,7 @@ class WaterQualityMatrixTests(unittest.TestCase):
             self.addCleanup(blocker.stop)
         self.service = DiagnosisService()
         self.observed = parse_time('2026-09-27T00:00:00Z')
-        self.repository = MockRepository(RESOURCE_ROOT.joinpath('mock/scenarios.json'))
+        self.repository = MockRepository(RESOURCE_ROOT.joinpath('scenarios'), clock=lambda: self.observed)
 
     def reading(self, temp=28, ph=7.5, oxygen=6.4, *, age=20, stale_after=300):
         return WaterQualityReading.from_raw({'temp': temp, 'ph': ph, 'oxygen': oxygen},
@@ -66,21 +66,21 @@ class WaterQualityMatrixTests(unittest.TestCase):
 
     def test_current_packaged_catalog_values_times_sources_and_quality(self):
         expected = {
-            'normal': (7.5, 20, Quality.VALID, (), 6.4),
-            'low_oxygen': (7.5, 20, Quality.VALID, ('OXYGEN_CRITICAL_LOW',), 2.2),
-            'partial': (None, 20, Quality.PARTIAL, ('SENSOR_PARTIAL',), 6.4),
-            'stale': (7.5, 3620, Quality.VALID, ('SENSOR_STALE',), 6.4),
-            'partial_stale': (None, 3620, Quality.PARTIAL, ('SENSOR_PARTIAL', 'SENSOR_STALE'), 6.4),
+            'normal': (7.5, 0, Quality.VALID, (), 6.4),
+            'low_oxygen': (7.5, 0, Quality.VALID, ('OXYGEN_CRITICAL_LOW',), 2.2),
+            'partial': (None, 0, Quality.PARTIAL, ('SENSOR_PARTIAL',), 6.4),
+            'stale': (7.5, 301, Quality.VALID, ('SENSOR_STALE',), 6.4),
+            'partial_stale': (None, 301, Quality.PARTIAL, ('SENSOR_PARTIAL', 'SENSOR_STALE'), 6.4),
         }
-        self.assertEqual(set(self.repository.data['water_quality']), set(expected))
+        self.assertEqual({item.template.id for item in self.repository.templates.list_templates()}, set(expected))
         for name, (ph, age, quality, codes, oxygen) in expected.items():
             with self.subTest(name=name):
                 reading = self.repository.water_quality(name)
                 self.assertEqual((reading.temperature_c, reading.ph, reading.dissolved_oxygen_mg_l),
                                  (28, ph, oxygen))
                 self.assertEqual((reading.retrieved_at-reading.observed_at).total_seconds(), age)
-                self.assertEqual(reading.retrieved_at, parse_time('2026-09-27T00:00:20Z'))
-                self.assertEqual(reading.source, self.repository.data['water_quality'][name]['source'])
+                self.assertEqual(reading.retrieved_at, self.observed)
+                self.assertEqual(reading.source, 'simulation:' + self.repository.templates.get_template(name).template.device_id)
                 self.assertEqual(reading.quality, quality)
                 self.assertEqual(reading.freshness, Freshness.STALE if age > 300 else Freshness.FRESH)
                 self.assertEqual(self.codes(reading), codes)

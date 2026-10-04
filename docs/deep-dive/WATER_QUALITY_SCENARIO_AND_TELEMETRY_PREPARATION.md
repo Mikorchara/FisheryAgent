@@ -1,111 +1,116 @@
-# 水质数据与 telemetry 准备
+# 水质情景模板与 Telemetry
 
-本文只记录当前原型事实及接入传感器前的必要问题。生产 Fishery_Project 保持只读，本文不定义硬件协议。
-
-## 当前 Mock 水质场景
-
-包内文件：src/fishery_ai/resources/mock/scenarios.json。时间戳是固定 UTC fixture，不是实时数据。
-
-| 场景 | 温度 °C | pH | 溶氧 mg/L | Quality / Freshness | 当前规则结果 |
-| --- | ---: | ---: | ---: | --- | --- |
-| normal | 28 | 7.5 | 6.4 | valid / fresh | 无 Finding |
-| low_oxygen | 28 | 7.5 | 2.2 | valid / fresh | OXYGEN_CRITICAL_LOW |
-| partial | 28 | 缺失 | 6.4 | partial / fresh | SENSOR_PARTIAL |
-| stale | 28 | 7.5 | 6.4 | valid / stale | SENSOR_STALE |
-| partial_stale | 28 | 缺失 | 6.4 | partial / stale | 两项 Quality / Freshness Finding |
-
-同一资源含独立 Detection Mock：normal 与 count_jump。水质流程不会自动把检测数量变化并入诊断；没有 YOLO 或数量变化诊断规则。
-
-## 动态 Telemetry Simulator
-
-新增 src/fishery_ai/telemetry/，只使用标准库。固定 Mock 是回归样本；Simulator 是可组合的模拟数据源，两者独立。scenarios.json 的五个场景、现有 Web 和 Demo 均保留；未增加模拟器 Web 面板。
+当前统一数据流：
 
 ```text
-SimulationRecipe（baseline） + 按顺序覆盖数值 / 故障
-  → TelemetrySimulator → SimulationPacket（sim-v1）
-  → SimulationAdapter → 既有 WaterQualityReading
-  → CurrentSnapshotStore
+Scenario Template → TelemetrySimulator → SimulationPacket（sim-v1）
+  → SimulationAdapter → WaterQualityReading → CurrentSnapshotStore
+  → DiagnosisService → 现有分析流程
 ```
 
-文件职责：models.py 定义模拟合同；simulator.py 生成数值与事件；adapter.py 校验协议并归一到领域合同；snapshot.py 保存当前快照；__init__.py 只导出这五个公共类。
+WaterQualityReading 仍是 canonical Domain 合同。两种 schema 都只用于模拟，不是计算板协议；Domain 不依赖 Telemetry。
 
-### Simulation Packet v1
+## 资源与来源
 
-sim-v1 是内部模拟协议，**不是计算板协议**。Packet 为不可变数据类，readings 会复制为只读映射；合法模拟值为数字、null 或字符串标记 `invalid`。没有实现 HTTP/MQTT 接收或硬件 JSON parser。
-
-| 字段 | 表达 / 约束 |
-| --- | --- |
-| schema_version | 固定 sim-v1；Adapter 拒绝其他版本 |
-| device_id | 非空模拟设备 ID；canonical source 为 simulation:&lt;device_id&gt; |
-| sequence | 非负整数；Simulator 每次 generate 从 1 递增，仅用于辨认模拟输出，不进入业务诊断或排序 |
-| observed_at | 带时区的 datetime；序列化说明对应 ISO 8601；调用方显式提供，旧时间可模拟 stale |
-| readings.temperature_c | 温度 °C；JSON 数字 / null / invalid |
-| readings.ph | pH；JSON 数字 / null / invalid |
-| readings.dissolved_oxygen_mg_l | DO mg/L；JSON 数字 / null / invalid |
-
-读数键缺失或 null 表示 missing。其他非数字值（包括 bool、数字字符串、空字符串）均视为 invalid，不将其转换成有效数值。非有限数和超出 canonical 物理范围的值也归为 invalid。未知读数键拒绝，避免拼写错误被忽略。无效字段变为 None，其余有效读数保留；全部缺失时沿用领域合同的 Quality.INVALID。
-
-### 最小用法
-
-```python
-from datetime import datetime, timedelta, timezone
-from fishery_ai.domain import DiagnosisService
-from fishery_ai.telemetry import (
-    CurrentSnapshotStore, SimulationAdapter, TelemetrySimulator,
-)
-
-now = datetime(2026, 10, 4, tzinfo=timezone.utc)
-simulator = TelemetrySimulator(device_id="sim-tank-01")
-simulator.set_temperature(34).set_do(2.2)
-packet = simulator.generate(observed_at=now)
-reading = SimulationAdapter(stale_after_s=300).to_reading(packet, retrieved_at=now)
-store = CurrentSnapshotStore()
-store.set_current(reading)
-findings = DiagnosisService().diagnose(store.get_current())
-# TEMP_CRITICAL_HIGH + OXYGEN_CRITICAL_LOW，由 Domain 判断
-
-simulator.missing("ph")  # 或 invalid("ph")
-old_packet = simulator.generate(observed_at=now - timedelta(seconds=301))
-partial_stale = SimulationAdapter(stale_after_s=300).to_reading(
-    old_packet, retrieved_at=now,
-)
+```text
+src/fishery_ai/resources/scenarios/
+├─ water_quality/
+│  ├─ normal.json
+│  ├─ low_oxygen.json
+│  ├─ partial.json
+│  ├─ stale.json
+│  └─ partial_stale.json
+└─ detection/
+   ├─ normal.json
+   └─ count_jump.json
 ```
 
-默认 baseline 为 28 / 7.5 / 6.4；可用 SimulationRecipe 替换。set_temperature / set_ph / set_do、missing(field)、invalid(field) 按调用顺序覆盖，后写值生效；已经发出的 Packet 不被后续覆盖改变。field 使用表中的 canonical 字段名。旧 observed_at 和可配置 stale_after_s 共同决定 Freshness，超过阈值才 stale；Quality 与 Freshness 仍独立。
+内置水质模板为 BUILTIN，只读，可应用、查看、Save As。USER 模板保存在 Git ignored 的 outputs/scenario_templates/water_quality/，可创建、编辑、另存、删除、重启后加载；临时“仅应用”不写文件。
 
-Simulator 不判断异常、不包含养殖阈值。SimulationAdapter 只做版本、字段类型、时间和来源校验，并复用 WaterQualityReading.from_raw 的物理范围 / Quality / Freshness 归一；不调用 Diagnosis、模型或 RAG。
+Detection 只拆分资源，保留原事件 ID、时间、source、model、confidence、bbox、track_id。没有 Detection Simulator / CRUD / 新规则，不自动绑定水质。
 
-### Current Snapshot Store 与未来 Tool
+## Scenario Template v1
 
-CurrentSnapshotStore 只保存最后一次 set_current(reading) 的 immutable WaterQualityReading。未写入返回 None，不自动生成 normal，不判断时间顺序，不自动刷新 retrieved_at / Freshness。服务调用方持有并共享同一 Store 实例；重启即空，不是跨进程存储，也没有 History / retention / receiver / 后台线程。
+```json
+{
+  "schema_version": "scenario-template-v1",
+  "id": "hot_low_oxygen",
+  "display_name": "高温低氧",
+  "device_id": "sim-device-001",
+  "observed_age_s": 0,
+  "water_quality": {
+    "temperature_c": {"state": "NORMAL", "value": 34},
+    "ph": {"state": "NORMAL", "value": 7.5},
+    "dissolved_oxygen_mg_l": {"state": "NORMAL", "value": 2.2}
+  }
+}
+```
 
-本轮只提供模块和测试，不把新 Store 接入现有 Orchestrator。下一阶段的只读 get_current_water_quality() 应读取 Store，空状态明确返回 NO_DATA；不得直接读 Packet、固定 Mock 或硬件 JSON。未来真机接入只增加 Hardware Receiver / Hardware Adapter，再写入相同 canonical Store，Tool 的数据边界不需要改变。
+可选 description；device_id 留空使用 sim-device-001。state 只允许 NORMAL / MISSING / INVALID。NORMAL 必须有有限数值；MISSING / INVALID 不保存 value。模板描述输入意图，不直接创建 reading。温度 °C、DO mg/L。
+
+ID 为小写字母开头，允许数字、下划线、连字符，最长 64 字符；拒绝目录跳转、绝对路径、Windows 保留文件名。Web 新建 / 另存由后端生成 user-<uuid>，不接受任意文件路径。Store 保留 BUILTIN / USER 来源，禁止覆盖内置 ID；用户写入使用同目录 staging、原子发布 / 替换，重复 ID 不覆盖原文件，拒绝 symlink / reparse / hardlink。它是本地模板 Store，不提供跨进程编辑 revision。
+
+## 时间与内置模板
+
+Apply 使用当前 UTC retrieved_at，observed_at = retrieved_at - observed_age_s。Template 不存水质固定时间戳或 freshness；现有 canonical 合同按 stale_after_s 计算。默认 300 秒，可在 composition / create_app 配置；300 秒 fresh、301 秒 stale。测试注入固定 clock。
+
+| 模板 | 温度 °C | pH | DO mg/L | 年龄秒 | Quality / Freshness | 程序 Findings |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| normal | 28 | 7.5 | 6.4 | 0 | valid / fresh | 无 |
+| low_oxygen | 28 | 7.5 | 2.2 | 0 | valid / fresh | OXYGEN_CRITICAL_LOW |
+| partial | 28 | Missing | 6.4 | 0 | partial / fresh | SENSOR_PARTIAL |
+| stale | 28 | 7.5 | 6.4 | 301 | valid / stale | SENSOR_STALE |
+| partial_stale | 28 | Missing | 6.4 | 301 | partial / stale | SENSOR_PARTIAL + SENSOR_STALE |
+
+五场景的数值、质量、新鲜度和诊断语义保持一致；时间改为每次 Apply 生成，来源为 simulation:<device_id>。全部缺失仍按现有领域合同标记 INVALID。
+
+## Telemetry 职责
+
+- models.py：SimulationRecipe / sim-v1 Packet；readings 只读，数值、null、invalid 故障标记。
+- simulator.py：baseline 28 / 7.5 / 6.4，加 set_temperature / set_ph / set_do / missing / invalid；后写覆盖，显式时间，sequence 从 1 递增，仅辨认模拟输出。
+- adapter.py：版本、字段、类型、时间与来源校验；复用 WaterQualityReading.from_raw 归一，不判断养殖异常。
+- snapshot.py：进程内最后一次明确写入的 immutable reading；初始 None。
+- scenario_templates.py：模板合同、来源与 CRUD、统一 apply_scenario_template。
+
+Simulator 没有业务阈值，Adapter 不调用模型、RAG 或 Tool。底层 sim-v1 非数字（含 bool / 数字字符串）为 invalid，不转换成有效观测。
+
+## Web 与 Orchestrator
+
+下拉顶部“+ 自定义情景...”，下方分组“内置模板 / 我的模板”。Modal 提供名称、三项 State / Value、Observed Age、Device ID；Missing / Invalid 禁用 Value。取消丢弃草稿；仅应用只更新内存；保存模板并应用先保存，再生成快照。内置查看只读，Save As 新建用户模板；User 可编辑、保存、另存、删除。
+
+Apply 不调用模型或硬件。页面显示 canonical 数值、Quality、Freshness、两个时间戳、source 和程序 Findings，前端不计算诊断。新增写入 / Apply API 复用本地 Host / Origin / CSRF 门禁。
+
+已 Apply 的情景由 Analyze 读取当前 Store；选择已保存模板但尚未 Apply 时，分析 API 的兼容 scenario 参数也通过同一 Telemetry 管线应用后分析。CLI / Demo 的 MockRepository 同样使用模板转换，不保留旧混合资源路径。
+
+Normal / Streaming 都向 Orchestrator 注入请求开始时捕获的 reading；后续 Apply 不改变进行中的请求。RAG、Grounding、模型、Preset、Credential 未修改。
+
+每个 Web app 共享一个 CurrentSnapshotStore，跨请求保留，重启为空。没有快照且未指定模板时返回 NO_DATA，不自动制造 normal。删除模板不删除已应用快照；Store 不自动刷新保存的 Freshness，不提供跨进程共享、History 或数据库。多个标签页共享当前状态，各分析持有自己的 reading。
+
+## 未来 Tool 与硬件
+
+未来 get_current_water_quality() 只读 CurrentSnapshotStore，空状态返回 NO_DATA；不得直接读 Template、SimulationPacket 或原始资源。本轮没有 Tool Calling / Agent。
+
+```text
+未来 Hardware Receiver → Hardware Adapter → WaterQualityReading
+  → 同一个 CurrentSnapshotStore → 未来只读 Tool Boundary
+```
+
+硬件团队需提供成功 / 缺失 / 错误 packet、单位、校准、时钟、设备 ID、采样频率与乱序规则；拿到样例后才实施真实 parser / receiver。sim-v1 不作为硬件协议。
 
 ## 确定性阈值
 
-实现位置：src/fishery_ai/domain.py。边界由代码与 tests/test_water_quality_matrix.py 覆盖。
+仍在 src/fishery_ai/domain.py，tests/test_water_quality_matrix.py 覆盖边界，本轮未修改。
 
-| 指标 | 当前程序规则 |
+| 指标 | 当前规则 |
 | --- | --- |
 | 温度 | <15 critical low；15–<20 warning low；20–30 无 Finding；>30–33 warning high；>33 critical high |
 | pH | <6.5 critical low；6.5–<7 warning low；7–8.5 无 Finding；>8.5–9 warning high；>9 critical high |
 | DO | <1 extreme critical；1–<3 critical low；3–<5 warning low；≥5 无低氧 Finding |
 
-“无 Finding”不等同养殖最适或专业诊断。Quality INVALID / PARTIAL 与 Freshness STALE 是不同维度；过期可与缺失、数值异常并存。
-
-## 接入真实传感器前需确认
-
-当前 WaterQualityReading 仍是 canonical 水质领域合同；Hardware Adapter 应负责字段、单位、范围、时间、设备状态和来源校验。获得实际设备样例前，不实现硬件 parser 或选择 HTTP/MQTT 等传输。
-
-需要硬件团队提供：成功/缺失/错误 packet 样例；单位、精度和校准状态；设备时间与服务接收时间；设备/传感器 ID；采样频率、乱序/重发规则；认证、最大 packet 尺寸与数据保留要求。
-
-    实际 Packet → Hardware Adapter 校验与归一 → WaterQualityReading
-                 → CurrentSnapshotStore → Diagnosis / 未来只读 Tool
-
-不把原始 packet 直接交给模型或写进 Trace。历史查询要等真实历史数据源存在之后再定义。
+无 Finding 不等同专业诊断。Quality / Freshness 为独立维度。
 
 ## 离线验证
 
-2026-10-04 验证：telemetry 专项 `.venv/Scripts/python.exe -m unittest discover -s tests -p 'test_telemetry_simulator.py' -v`，18 项通过；现有水质矩阵 `-p 'test_water_quality_matrix.py' -v`，9 项通过；完整 `.venv/Scripts/python.exe -m unittest discover -s tests`，389 项通过。
+2026-10-04：Scenario / Web 专项 19 项、Telemetry 专项 18 项、现有水质矩阵 9 项、输出 parity 4 项、Scenario Browser 专项 7 项通过；完整 Python 408 项、完整 Browser 113 项通过，app.js 语法检查通过。
 
-测试固定时间、虚构设备和模拟读数，阻断 socket 网络；覆盖组合异常、partial / invalid / stale、协议校验、快照空状态与最后写入、旧 Mock 兼容性。未修改 Web，因此按本轮范围没有运行 Browser / JS 检查；没有真实模型请求。
+使用临时文件、固定时间、虚构设备，阻断外部网络。覆盖五模板、来源与只读保护、User CRUD / 重载、路径安全、状态和时间边界、完整转换、共享 Snapshot、临时 Apply、Streaming 捕获 reading、Detection 和 Browser Modal。没有真实模型或硬件请求。

@@ -13,6 +13,141 @@ const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'fishery_ai',
   'resources', 'web', 'app.css'), 'utf8');
 const knownIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
 
+function scenarioFixture(id='normal', source='BUILTIN') {
+  return {schema_version:'scenario-template-v1',id,display_name:id,source,
+    device_id:'sim-test',observed_age_s:0,water_quality:{
+      temperature_c:{state:'NORMAL',value:28},ph:{state:'NORMAL',value:7.5},
+      dissolved_oxygen_mg_l:{state:'NORMAL',value:6.4}}};
+}
+
+function scenarioPage(fetch) {
+  const page=makePage(fetch);
+  vm.runInContext(`scenarioTemplates=${JSON.stringify([scenarioFixture(),scenarioFixture('low_oxygen'),scenarioFixture('user-test','USER')])};
+    credentialCsrf='offline-csrf';renderScenarioTemplates('normal');bindScenarioControls()`,page.context);
+  return page;
+}
+
+test('Scenario custom entry is first and builtin/user templates have separate groups',()=>{
+  const page=scenarioPage(async()=>{throw new Error('no network');});
+  const choices=page.element('scenario').children;
+  assert.equal(choices[0].textContent,'+ 自定义情景...');
+  assert.equal(choices[0].value,'__custom__');
+  assert.deepEqual(choices.slice(1).map(x=>x.label),['内置模板','我的模板']);
+  assert.equal(choices[2].children[0].value,'user-test');
+  assert.equal(page.element('scenario-edit').hidden,true);
+  assert.equal(page.element('scenario-delete').hidden,true);
+});
+
+test('Scenario custom modal cancels without file writes and restores previous selection',async()=>{
+  const page=scenarioPage(async()=>{assert.fail('cancel must not fetch');});
+  page.element('scenario').value='__custom__';await page.element('scenario').dispatch('change');
+  assert.equal(page.element('scenario-modal').open,true);
+  assert.equal(page.element('scenario').value,'normal');
+  page.element('scenario-name').value='unsaved';
+  await page.element('scenario-cancel').dispatch('click');
+  assert.equal(page.element('scenario-modal').hidden,true);
+  assert.equal(page.element('scenario').value,'normal');
+  assert.equal(vm.runInContext('appliedScenarioId',page.context),null);
+});
+
+test('Scenario Missing/Invalid disables Value and Only Apply sends a temporary template',async()=>{
+  const calls=[];
+  const page=scenarioPage(async(url,options)=>{
+    calls.push({url,body:JSON.parse(options.body),headers:options.headers});
+    return r2Reply({status:'ready',snapshot:{temperature_c:34,ph:null,dissolved_oxygen_mg_l:2.2,quality:'partial',freshness:'stale'},
+      rule_results:[{code:'TEMP_CRITICAL_HIGH',severity:'critical',message:'程序结果'}]});
+  });
+  vm.runInContext('openScenarioModal("create")',page.context);
+  page.element('scenario-name').value='临时高温低氧';
+  page.element('scenario-temperature_c-value').value='34';
+  page.element('scenario-dissolved_oxygen_mg_l-value').value='2.2';
+  page.element('scenario-ph-state').value='MISSING';await page.element('scenario-ph-state').dispatch('change');
+  assert.equal(page.element('scenario-ph-value').disabled,true);
+  page.element('scenario-age').value='301';
+  await page.element('scenario-only-apply').dispatch('click');
+  assert.deepEqual(calls.map(x=>x.url),['/api/water-quality/apply']);
+  assert.deepEqual(calls[0].body.template.water_quality.ph,{state:'MISSING'});
+  assert.equal(calls[0].headers['X-CSRF-Token'],'offline-csrf');
+  assert.equal(page.element('scenario').value,'__temporary__');
+  assert.equal(vm.runInContext('appliedScenarioId',page.context),'__temporary__');
+  assert.match(page.element('scenario-findings').children.map(x=>x.textContent).join(' '),/TEMP_CRITICAL_HIGH/);
+  assert.equal(page.element('scenario-modal').hidden,true);
+});
+
+test('Scenario Save persists then applies server ID; edits retain ID and Save As creates a new one',async()=>{
+  const calls=[];
+  let saved=scenarioFixture('user-new','USER');
+  const page=scenarioPage(async(url,options={})=>{
+    const body=options.body ? JSON.parse(options.body):null;
+    calls.push({url,method:options.method,body});
+    if(options.method==='POST'&&url==='/api/scenario-templates') {
+      saved={...body.template,id:'user-new',source:'USER'};return r2Reply({template:saved});
+    }
+    if(options.method==='PUT') {saved={...body.template,source:'USER'};return r2Reply({template:saved});}
+    if(url==='/api/scenario-templates') return r2Reply({templates:[scenarioFixture(),saved]});
+    return r2Reply({status:'ready',snapshot:{},rule_results:[]});
+  });
+  vm.runInContext('openScenarioModal("create")',page.context);page.element('scenario-name').value='保存情景';
+  await page.element('scenario-save-apply').dispatch('click');
+  assert.deepEqual(calls.slice(0,3).map(x=>x.method),['POST','GET','POST']);
+  assert.deepEqual(calls[2].body,{template_id:'user-new'});
+  assert.equal(page.element('scenario-edit').hidden,false);
+  await page.element('scenario-edit').dispatch('click');page.element('scenario-name').value='修改情景';
+  await page.element('scenario-save-apply').dispatch('click');
+  const update=calls.find(x=>x.method==='PUT');
+  assert.equal(update.url,'/api/scenario-templates/user-new');assert.equal(update.body.template.id,'user-new');
+  await page.element('scenario-copy').dispatch('click');
+  assert.equal(vm.runInContext('scenarioEditingId',page.context),null);
+  assert.match(page.element('scenario-name').value,/副本/);
+});
+
+test('Scenario builtin view is readonly with Save As and user deletion retains snapshot',async()=>{
+  const calls=[];
+  const page=scenarioPage(async(url,options)=>{
+    calls.push({url,method:options.method});
+    return r2Reply(options.method==='DELETE'?{status:'deleted'}:{templates:[scenarioFixture()]});
+  });
+  await page.element('scenario-view').dispatch('click');
+  assert.equal(page.element('scenario-name').disabled,true);
+  assert.equal(page.element('scenario-save-apply').hidden,true);
+  assert.equal(page.element('scenario-view-copy').hidden,false);
+  await page.element('scenario-view-copy').dispatch('click');
+  assert.equal(page.element('scenario-name').disabled,false);
+  assert.equal(vm.runInContext('scenarioModalMode',page.context),'copy');
+  await page.element('scenario-cancel').dispatch('click');
+  page.element('scenario').value='user-test';await page.element('scenario').dispatch('change');
+  assert.equal(page.element('scenario-delete').hidden,false);
+  vm.runInContext('appliedScenarioId="user-test"',page.context);
+  await page.element('scenario-delete').dispatch('click');
+  assert.equal(calls[0].url,'/api/scenario-templates/user-test');assert.equal(calls[0].method,'DELETE');
+  assert.equal(vm.runInContext('appliedScenarioId',page.context),'user-test');
+  assert.match(page.element('scenario-status').textContent,/当前快照未被删除/);
+});
+
+test('Scenario Normal requires numeric value and malformed/network errors are visible safely',async()=>{
+  let calls=0;
+  const page=scenarioPage(async()=>{calls++;throw new Error('fictional private exception');});
+  vm.runInContext('openScenarioModal("create")',page.context);page.element('scenario-name').value='test';
+  page.element('scenario-ph-value').value='';
+  await page.element('scenario-only-apply').dispatch('click');
+  assert.equal(calls,0);assert.match(page.element('scenario-modal-status').textContent,/SCENARIO_VALUE_REQUIRED:ph/);
+  page.element('scenario-ph-state').value='INVALID';await page.element('scenario-ph-state').dispatch('change');
+  await page.element('scenario-only-apply').dispatch('click');
+  assert.match(page.element('scenario-modal-status').textContent,/NETWORK_ERROR/);
+  assert.doesNotMatch(page.element('scenario-modal-status').textContent,/fictional private exception/);
+  assert.equal(page.element('scenario-only-apply').disabled,false);
+});
+
+test('Scenario already applied temporary snapshot is analyzed without resending template or scenario',async()=>{
+  let sent;
+  const page=makePage(async(_url,options)=>{sent=JSON.parse(options.body);return r2Reply({error_code:'OFFLINE_FIXTURE'});});
+  setProfile(page);page.element('response-mode').value='normal';page.element('scenario').value='__temporary__';
+  vm.runInContext('appliedScenarioId="__temporary__"',page.context);
+  await vm.runInContext('analyze()',page.context);
+  assert.equal(Object.hasOwn(sent,'scenario'),false);
+  assert.equal(Object.hasOwn(sent,'template'),false);
+});
+
 function manualV2Draft(overrides={}) {
   return {id:'experiment-'+'a'.repeat(32), name:'Offline V2', service_name:'unregistered label', transport:'openai_chat',
     base_url:'http://127.0.0.1:11434/v1', model:'free-model',credential_ref:'',timeout:30,
@@ -792,6 +927,8 @@ function makePage(fetch, {ownExecutionRoutes = false} = {}) {
     removeAttribute() {}
     setAttribute() {}
     focus() {}
+    showModal() { this.open = true; }
+    close() { this.open = false; }
     checkValidity() { return true; }
   }
   const element = (id) => {

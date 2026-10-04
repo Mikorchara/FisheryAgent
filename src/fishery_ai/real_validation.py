@@ -198,7 +198,7 @@ def run_real_validation(*, check: str, scenario: str, confirm_network: bool,
     result_data: dict = {"check": check}
     try:
         if check == "full-chain":
-            repository = MockRepository(RESOURCE_ROOT.joinpath("mock/scenarios.json"))
+            repository = MockRepository(RESOURCE_ROOT.joinpath("scenarios"))
             knowledge = KnowledgeService(RESOURCE_ROOT.joinpath("knowledge/eel_knowledge.json"))
             trace_path = Path.cwd() / "outputs/real-validation-traces.jsonl"
             app = Orchestrator(repository, DiagnosisService(), knowledge,

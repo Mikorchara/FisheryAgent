@@ -24,6 +24,14 @@ let experimentId = null;
 let manualKeyState = null;
 let manualKeyBusy = false;
 let manualKeyRevision = 0;
+let scenarioTemplates = [];
+let scenarioSelectionId = "";
+let appliedScenarioId = null;
+let temporaryScenario = null;
+let scenarioModalMode = "create";
+let scenarioEditingId = null;
+let scenarioBusy = false;
+const scenarioFields = ["temperature_c", "ph", "dissolved_oxygen_mg_l"];
 
 function setAccessMode(mode, selectedId) {
   if (activeExecution) return;
@@ -175,6 +183,7 @@ async function beginExecution() {
   $("manual-version").disabled = true;
   $("profile").disabled = true;
   for (const id of ["access-mode", "preset-variant", "preset-response-mode", "use-development", "development-target"]) $(id).disabled = true;
+  updateScenarioActions();
   return activeExecution;
 }
 
@@ -188,6 +197,7 @@ function finishExecution() {
   for (const id of ["access-mode", "use-development", "development-target"]) $(id).disabled = false;
   $("preset-variant").disabled = $("preset-variant").children.length <= 1;
   $("preset-response-mode").disabled = false;
+  updateScenarioActions();
 }
 
 async function stopGeneration() {
@@ -1467,6 +1477,8 @@ function render(data, latency, ttft = null) {
   $("raw-model-debug").open = false;
   renderFacts(data.observed_facts);
   renderRules(data.rule_results);
+  if (data.observed_facts?.water_quality)
+    showScenarioSnapshot({status:"ready", snapshot:data.observed_facts.water_quality, rule_results:data.rule_results});
   renderEvidence(data.evidence);
   addPairs("structured", [
     ["Inference", inference], ["解析成功", data.structured_parse_ok ? "是" : "否"],
@@ -1562,6 +1574,7 @@ async function analyzeStreaming(body, execution = null) {
       if (kind === "facts_ready") {
         runtime = data.runtime || {};
         renderFacts(data.observed_facts);
+        if (body.scenario) appliedScenarioId = body.scenario;
         setStatus("事实已就绪，正在计算规则…");
       }
       if (kind === "rules_ready") renderRules(data.rule_results);
@@ -1611,10 +1624,13 @@ async function analyze() {
     const body = {
       request_id: execution.request_id, control_token: execution.control_token,
       profile_id: profile.profile_id,
-      scenario: $("scenario").value,
       question: $("question").value,
       confirm_network: real && $("confirm-network").checked,
     };
+    // Already-applied drafts use the canonical Store. A newly selected saved
+    // template is applied by the server through the same telemetry pipeline.
+    if ($("scenario").value && $("scenario").value !== appliedScenarioId)
+      body.scenario = $("scenario").value;
     if ($("reasoning-mode").value !== "auto" || (profile.default_reasoning_mode || "auto") !== "auto")
       body.reasoning_mode = $("reasoning-mode").value;
     if (!$("effort-control").hidden && $("reasoning-effort").value)
@@ -1632,6 +1648,7 @@ async function analyze() {
     const payload = await response.json();
     if (execution.cancelled) return;
     if (payload.result) {
+      if (body.scenario) appliedScenarioId = body.scenario;
       render(payload.result, payload.total_latency_ms);
       setStatus(payload.result.status === "completed" ? "分析完成。" : `分析失败：${show(payload.result.error_code)}`, payload.result.status !== "completed");
     } else {
@@ -1901,13 +1918,9 @@ async function init() {
     $("provider-preset").prepend(placeholder);
     accessMode = "preset";
     renderProfiles();
-    for (const scenario of config.scenarios) {
-      const option = document.createElement("option");
-      option.value = scenario;
-      option.textContent = scenario;
-      $("scenario").append(option);
-    }
-    $("scenario").value = "low_oxygen";
+    scenarioTemplates = config.scenario_templates || (config.scenarios || []).map(id => ({id, display_name:id, source:"BUILTIN"}));
+    renderScenarioTemplates("low_oxygen");
+    bindScenarioControls();
     bindAccessModeControls();
     $("reasoning-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
     $("response-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
@@ -1957,6 +1970,228 @@ async function init() {
   } catch (_) {
     setStatus("页面配置加载失败：CONFIG_ERROR", true);
   }
+}
+
+function renderScenarioTemplates(selectedId = scenarioSelectionId) {
+  const select = $("scenario");
+  select.replaceChildren();
+  const custom = document.createElement("option");
+  custom.value = "__custom__";
+  custom.textContent = "+ 自定义情景...";
+  select.append(custom);
+  for (const [source, label] of [["BUILTIN", "内置模板"], ["USER", "我的模板"]]) {
+    const group = document.createElement("optgroup");
+    group.label = label;
+    for (const template of scenarioTemplates.filter(item => item.source === source)) {
+      const option = document.createElement("option");
+      option.value = template.id;
+      option.textContent = template.display_name;
+      group.append(option);
+    }
+    select.append(group);
+  }
+  if (temporaryScenario) {
+    const option = document.createElement("option");
+    option.value = "__temporary__";
+    option.textContent = `临时情景 · ${temporaryScenario.display_name}（未保存）`;
+    select.append(option);
+  }
+  const available = scenarioTemplates.some(t => t.id === selectedId) ||
+    (selectedId === "__temporary__" && temporaryScenario);
+  scenarioSelectionId = available ? selectedId : (scenarioTemplates.find(t => t.id === "normal")?.id || "");
+  select.value = scenarioSelectionId;
+  updateScenarioActions();
+}
+
+function selectedScenarioTemplate() {
+  return $("scenario").value === "__temporary__" ? temporaryScenario
+    : scenarioTemplates.find(t => t.id === $("scenario").value);
+}
+
+function updateScenarioActions() {
+  const template = selectedScenarioTemplate();
+  $("scenario-edit").hidden = template?.source !== "USER";
+  $("scenario-delete").hidden = template?.source !== "USER";
+  for (const id of ["scenario-apply", "scenario-view", "scenario-edit", "scenario-copy", "scenario-delete"])
+    $(id).disabled = !template || scenarioBusy || !!activeExecution;
+  $("scenario").disabled = scenarioBusy || !!activeExecution;
+}
+
+function scenarioStateChanged(field) {
+  $( `scenario-${field}-value`).disabled = scenarioModalMode === "view" ||
+    $( `scenario-${field}-state`).value !== "NORMAL";
+}
+
+function openScenarioModal(mode) {
+  if (activeExecution || scenarioBusy) return;
+  const original = mode === "create" ? null : selectedScenarioTemplate();
+  if (mode !== "create" && !original) return;
+  if (mode === "edit" && original.source !== "USER") return;
+  scenarioModalMode = mode;
+  scenarioEditingId = mode === "edit" ? original.id : null;
+  $("scenario-modal-title").textContent = ({create:"自定义情景", edit:"编辑我的模板", copy:"另存为我的模板", view:"查看情景模板"})[mode];
+  $("scenario-name").value = mode === "copy" ? `${original.display_name}（副本）` : original?.display_name || "";
+  $("scenario-age").value = String(original?.observed_age_s ?? 0);
+  $("scenario-device").value = original?.device_id || "";
+  for (const [index, field] of scenarioFields.entries()) {
+    const reading = original?.water_quality?.[field] || {state:"NORMAL", value:[28, 7.5, 6.4][index]};
+    $(`scenario-${field}-state`).value = reading.state;
+    $(`scenario-${field}-value`).value = reading.state === "NORMAL" ? String(reading.value) : "";
+    $(`scenario-${field}-state`).disabled = mode === "view";
+    scenarioStateChanged(field);
+  }
+  for (const id of ["scenario-name", "scenario-age", "scenario-device"]) $(id).disabled = mode === "view";
+  $("scenario-save-apply").hidden = mode === "view";
+  $("scenario-save-apply").textContent = mode === "edit" ? "保存修改并应用" : "保存模板并应用";
+  $("scenario-view-copy").hidden = mode !== "view";
+  $("scenario-modal-status").textContent = mode === "view" ? `${original.source === "BUILTIN" ? "内置只读" : "用户模板"} · ${original.id}` : "";
+  $("scenario-modal").hidden = false;
+  $("scenario-modal").showModal();
+  $("scenario-name").focus();
+}
+
+function closeScenarioModal() {
+  if (scenarioBusy) return;
+  $("scenario-modal").close();
+  $("scenario-modal").hidden = true;
+  $("scenario").value = scenarioSelectionId;
+}
+
+function collectScenarioTemplate() {
+  const display_name = $("scenario-name").value.trim();
+  if (!display_name) throw new Error("SCENARIO_NAME_REQUIRED");
+  const water_quality = {};
+  for (const field of scenarioFields) {
+    const state = $(`scenario-${field}-state`).value;
+    water_quality[field] = {state};
+    if (state === "NORMAL") {
+      const raw = $(`scenario-${field}-value`).value.trim();
+      if (!raw || !Number.isFinite(Number(raw))) throw new Error(`SCENARIO_VALUE_REQUIRED:${field}`);
+      water_quality[field].value = Number(raw);
+    }
+  }
+  const age = $("scenario-age").value.trim();
+  if (!age || !Number.isFinite(Number(age)) || Number(age) < 0) throw new Error("SCENARIO_INVALID_FIELD:observed_age_s");
+  return {schema_version:"scenario-template-v1", id:scenarioEditingId || "temporary",
+    display_name, device_id:$("scenario-device").value.trim() || "sim-device-001",
+    observed_age_s:Number(age), water_quality};
+}
+
+async function scenarioApi(url, method = "GET", body = undefined) {
+  const options = {method, credentials:"same-origin"};
+  if (method !== "GET") {
+    options.headers = await executionHeaders();
+    options.body = JSON.stringify(body || {});
+  }
+  const response = await fetch(url, options);
+  const data = await response.json();
+  if (!response.ok) throw new Error(safeCredentialCode(data, "SCENARIO_STORAGE_ERROR") + (data.field ? `:${data.field}` : ""));
+  return data;
+}
+
+function scenarioErrorText(exc) {
+  return /^[A-Z][A-Z0-9_]{0,40}(:[a-z_]+)?$/.test(exc.message) ? exc.message : "NETWORK_ERROR";
+}
+
+function showScenarioSnapshot(data) {
+  const reading = data.snapshot || {};
+  addPairs("scenario-snapshot", [["Temperature °C", reading.temperature_c], ["pH", reading.ph],
+    ["DO mg/L", reading.dissolved_oxygen_mg_l], ["Quality", reading.quality],
+    ["Freshness", reading.freshness], ["observed_at", reading.observed_at],
+    ["retrieved_at", reading.retrieved_at], ["source", reading.source]]);
+  addList("scenario-findings", data.rule_results || [], (li, item) => { li.textContent = `${item.code} · ${item.severity} · ${item.message}`; });
+  $("scenario-status").textContent = data.status === "NO_DATA" ? "NO_DATA · 尚未应用水质快照。" : "快照已应用 · 规则结果由程序生成。";
+}
+
+async function refreshScenarioTemplates(selectedId) {
+  const data = await scenarioApi("/api/scenario-templates");
+  scenarioTemplates = data.templates;
+  renderScenarioTemplates(selectedId);
+}
+
+async function applySelectedScenario() {
+  if (scenarioBusy || activeExecution || !selectedScenarioTemplate()) return;
+  const id = $("scenario").value;
+  scenarioBusy = true;
+  updateScenarioActions();
+  $("scenario-status").textContent = "正在应用模拟情景…";
+  try {
+    const data = await scenarioApi("/api/water-quality/apply", "POST", id === "__temporary__"
+      ? {template:temporaryScenario} : {template_id:id});
+    appliedScenarioId = id;
+    showScenarioSnapshot(data);
+  } catch (exc) { $("scenario-status").textContent = `应用失败：${scenarioErrorText(exc)}`; }
+  finally { scenarioBusy = false; updateScenarioActions(); }
+}
+
+async function submitScenario(save) {
+  if (scenarioBusy || activeExecution) return;
+  const status = $("scenario-modal-status");
+  let template;
+  try { template = collectScenarioTemplate(); }
+  catch (exc) { status.textContent = `请检查情景输入：${scenarioErrorText(exc)}`; return; }
+  scenarioBusy = true;
+  for (const id of ["scenario-only-apply", "scenario-save-apply", "scenario-cancel", "scenario-view-copy"]) $(id).disabled = true;
+  status.textContent = save ? "正在保存并应用…" : "正在应用临时情景…";
+  try {
+    let id = "__temporary__";
+    if (save) {
+      const editing = scenarioModalMode === "edit";
+      const result = await scenarioApi(editing ? `/api/scenario-templates/${encodeURIComponent(scenarioEditingId)}` : "/api/scenario-templates",
+        editing ? "PUT" : "POST", {template});
+      template = result.template;
+      id = template.id;
+      await refreshScenarioTemplates(id);
+    } else if (scenarioModalMode === "view") {
+      id = $("scenario").value;
+    } else {
+      temporaryScenario = template;
+      renderScenarioTemplates(id);
+    }
+    const data = await scenarioApi("/api/water-quality/apply", "POST", id === "__temporary__"
+      ? {template} : {template_id:id});
+    appliedScenarioId = id;
+    showScenarioSnapshot(data);
+    scenarioBusy = false;
+    closeScenarioModal();
+  } catch (exc) { status.textContent = `情景操作失败：${scenarioErrorText(exc)}`; }
+  finally {
+    scenarioBusy = false;
+    for (const id of ["scenario-only-apply", "scenario-save-apply", "scenario-cancel", "scenario-view-copy"]) $(id).disabled = false;
+    updateScenarioActions();
+  }
+}
+
+async function deleteScenarioTemplate() {
+  const template = selectedScenarioTemplate();
+  if (scenarioBusy || activeExecution || template?.source !== "USER" || !window.confirm("删除这个用户情景模板？当前已应用的快照仍保留。")) return;
+  scenarioBusy = true;
+  try {
+    await scenarioApi(`/api/scenario-templates/${encodeURIComponent(template.id)}`, "DELETE");
+    await refreshScenarioTemplates("normal");
+    $("scenario-status").textContent = "模板已删除；当前快照未被删除。";
+  } catch (exc) { $("scenario-status").textContent = `删除失败：${scenarioErrorText(exc)}`; }
+  finally { scenarioBusy = false; updateScenarioActions(); }
+}
+
+function bindScenarioControls() {
+  $("scenario").addEventListener("change", () => {
+    if ($("scenario").value === "__custom__") {
+      $("scenario").value = scenarioSelectionId;
+      openScenarioModal("create");
+    } else { scenarioSelectionId = $("scenario").value; updateScenarioActions(); }
+  });
+  $("scenario-apply").addEventListener("click", applySelectedScenario);
+  $("scenario-view").addEventListener("click", () => openScenarioModal("view"));
+  $("scenario-edit").addEventListener("click", () => openScenarioModal("edit"));
+  $("scenario-copy").addEventListener("click", () => openScenarioModal("copy"));
+  $("scenario-delete").addEventListener("click", deleteScenarioTemplate);
+  $("scenario-cancel").addEventListener("click", closeScenarioModal);
+  $("scenario-modal").addEventListener("cancel", event => { if (scenarioBusy) event.preventDefault(); else closeScenarioModal(); });
+  $("scenario-only-apply").addEventListener("click", () => submitScenario(false));
+  $("scenario-save-apply").addEventListener("click", () => submitScenario(true));
+  $("scenario-view-copy").addEventListener("click", () => { closeScenarioModal(); openScenarioModal("copy"); });
+  for (const field of scenarioFields) $(`scenario-${field}-state`).addEventListener("change", () => scenarioStateChanged(field));
 }
 
 init();

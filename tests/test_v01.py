@@ -63,7 +63,7 @@ from fishery_ai.repositories import MockRepository
 
 class ContractTests(unittest.TestCase):
     def setUp(self):
-        self.repository = MockRepository(RESOURCE_ROOT.joinpath("mock/scenarios.json"))
+        self.repository = MockRepository(RESOURCE_ROOT.joinpath("scenarios"))
 
     def test_water_quality_scenarios(self):
         expected = {"normal": (Quality.VALID, Freshness.FRESH),
@@ -85,7 +85,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(reading.quality, Quality.INVALID)
         self.assertEqual(reading.freshness, Freshness.FRESH)
         old = self.repository.water_quality("stale")
-        relaxed = MockRepository(RESOURCE_ROOT.joinpath("mock/scenarios.json"), stale_after_s=4000)
+        relaxed = MockRepository(RESOURCE_ROOT.joinpath("scenarios"), stale_after_s=4000)
         self.assertEqual(old.freshness, Freshness.STALE)
         self.assertEqual(relaxed.water_quality("stale").freshness, Freshness.FRESH)
         with self.assertRaises(ValueError):
@@ -107,7 +107,7 @@ class ContractTests(unittest.TestCase):
 
 class DiagnosisTests(unittest.TestCase):
     def setUp(self):
-        self.repository = MockRepository(RESOURCE_ROOT.joinpath("mock/scenarios.json"))
+        self.repository = MockRepository(RESOURCE_ROOT.joinpath("scenarios"))
         self.service = DiagnosisService()
 
     def test_fixed_rules_and_quality_findings(self):
@@ -168,7 +168,8 @@ class KnowledgeTests(unittest.TestCase):
         for relative in ("resources/knowledge/eel_knowledge.json",
                          "resources/knowledge/SOURCE.md",
                          "resources/mock/profiles.json",
-                         "resources/mock/scenarios.json",
+                         "resources/scenarios/water_quality/normal.json",
+                         "resources/scenarios/detection/normal.json",
                          "resources/profiles/deepseek_experimental.json"):
             self.assertTrue(package.joinpath(relative).is_file(), relative)
 
@@ -370,7 +371,7 @@ class OrchestratorAndTraceTests(unittest.TestCase):
 
             gateway = SwitchingGateway()
             app = Orchestrator(
-                MockRepository(RESOURCE_ROOT.joinpath("mock/scenarios.json")), DiagnosisService(),
+                MockRepository(RESOURCE_ROOT.joinpath("scenarios")), DiagnosisService(),
                 KnowledgeService(RESOURCE_ROOT.joinpath("knowledge/eel_knowledge.json")), registry,
                 gateway, JsonlTraceSink(Path(tmp) / "trace.jsonl"), resolve_secrets=False,
             )
@@ -420,7 +421,7 @@ class OrchestratorAndTraceTests(unittest.TestCase):
 
             mock = MockGateway()
             app = Orchestrator(
-                MockRepository(RESOURCE_ROOT.joinpath("mock/scenarios.json")), DiagnosisService(),
+                MockRepository(RESOURCE_ROOT.joinpath("scenarios")), DiagnosisService(),
                 KnowledgeService(RESOURCE_ROOT.joinpath("knowledge/eel_knowledge.json")),
                 InjectedRegistry(), mock, JsonlTraceSink(path),
             )

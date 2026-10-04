@@ -3,28 +3,32 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
+from datetime import datetime
 import json
 
-from .contracts import Detection, DetectionEvent, WaterQualityReading, parse_time
+from .contracts import Detection, DetectionEvent, WaterQualityReading, parse_time, utcnow
+from .telemetry import CurrentSnapshotStore, SimulationAdapter
+from .telemetry.scenario_templates import ScenarioTemplateStore, apply_scenario_template, validate_id
 
 
 class MockRepository:
-    def __init__(self, fixture_path: Path, *, stale_after_s: float = 300):
-        self.data = json.loads(fixture_path.read_text(encoding="utf-8"))
-        self.stale_after_s = stale_after_s
+    def __init__(self, resource_root: Path, *, stale_after_s: float = 300,
+                 clock: Callable[[], datetime] = utcnow):
+        self.templates = ScenarioTemplateStore(resource_root.joinpath("water_quality"))
+        self.detection_root = resource_root.joinpath("detection")
+        self.adapter = SimulationAdapter(stale_after_s=stale_after_s)
+        self.snapshots = CurrentSnapshotStore()
+        self.clock = clock
 
     def water_quality(self, scenario: str) -> WaterQualityReading:
-        fixture = self.data["water_quality"][scenario]
-        return WaterQualityReading.from_raw(
-            fixture["values"],
-            observed_at=parse_time(fixture["observed_at"]),
-            retrieved_at=parse_time(fixture["retrieved_at"]),
-            source=fixture["source"],
-            stale_after_s=self.stale_after_s,
-        )
+        template = self.templates.get_template(scenario).template
+        return apply_scenario_template(template, snapshot_store=self.snapshots,
+                                       adapter=self.adapter, now=self.clock())
 
     def detection(self, scenario: str) -> DetectionEvent:
-        fixture = self.data["detection"][scenario]
+        validate_id(scenario)
+        fixture = json.loads(self.detection_root.joinpath(scenario + ".json").read_text(encoding="utf-8"))
         detections = tuple(
             Detection(
                 label=d["label"], confidence=d["confidence"],
