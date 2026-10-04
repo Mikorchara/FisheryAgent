@@ -5,6 +5,8 @@
 | 名称 | 作用 | 实际路径 | Git 跟踪 | 用户私有 | 运行时需要 | 可安全删除 / 重建 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 水质诊断规则 / 阈值 | 温度、pH、DO 与 Quality/Freshness Finding | src/fishery_ai/domain.py | 是 | 否 | 是 | 否；源码合同 |
+| 动态水质模拟入口 | sim-v1 合同、baseline / overrides、canonical Adapter | src/fishery_ai/telemetry/{models,simulator,adapter}.py；公共入口 __init__.py | 源码，本轮新增待提交 | 否 | 使用动态模拟时需要；现有 Web / Demo 不自动读取 | 不删除源码；模拟样本可重新生成，不产生本地数据文件 |
+| 当前水质 Snapshot | 最后一次明确写入的 WaterQualityReading；未写入为 None | src/fishery_ai/telemetry/snapshot.py；实例数据仅在进程内存 | Store 源码待提交；内存数据不跟踪 | 否 | 新模拟入口 / 未来 current Tool 的共享数据源 | 进程退出即丢失；需再次明确写入，无自动 normal fallback |
 | 水质 / Detection Mock Scenario | 固定演示数据与独立检测事件 | src/fishery_ai/resources/mock/scenarios.json | 是 | 否 | Demo / Web 测试需要 | 否；随包 fixture |
 | Mock Profile 目录 | Mock / 开发连接定义 | src/fishery_ai/resources/mock/profiles.json；Composition 读取 | 是 | 否 | 离线 Demo 需要 | 否；源码资源 |
 | RAG 检索实现 | TF-IDF baseline 与证据排序 | src/fishery_ai/knowledge.py | 是 | 否 | 是 | 否 |

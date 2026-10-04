@@ -16,6 +16,7 @@ pyproject.toml 定义安装包、Python 版本、依赖和包资源。README.md 
 ## src/fishery_ai/
 
 - contracts.py、domain.py、repositories.py：领域合同、确定性诊断与 Mock 数据访问。
+- telemetry/：动态模拟数据入口；sim-v1 Packet 经 SimulationAdapter 转成既有 WaterQualityReading，再明确写入进程内 CurrentSnapshotStore。不是硬件协议，也不自动替换 Web / Demo 的固定 Mock。
 - application.py、model_gateway.py、openai_compatible_adapter.py：固定分析流程和模型传输。
 - presets.py、protocol_specs.py、providers.py：固定 Preset、协议编码和 Provider 元信息。
 - capability_store.py、evidence_resolver.py、capability_probe.py：Managed Custom 的能力证据与显式验证。
@@ -23,6 +24,19 @@ pyproject.toml 定义安装包、Python 版本、依赖和包资源。README.md 
 - manual.py、manual_experiments.py：Manual V1/V2 Raw 请求与实验存储。
 - web.py、resources/web/：本地开发者界面。
 - resources/mock/、resources/knowledge/、resources/profiles/：随包发布的 Mock、知识和固定连接/方案数据。
+
+telemetry/ 的最小结构：
+
+```text
+telemetry/
+├─ __init__.py   对外入口
+├─ models.py     SimulationPacket / SimulationRecipe
+├─ simulator.py  baseline + 数值覆盖 / missing / invalid
+├─ adapter.py    sim-v1 校验与 canonical 合同转换
+└─ snapshot.py   当前水质快照；未写入时返回 None
+```
+
+依赖方向：Telemetry → WaterQualityReading → Domain / Diagnosis。WaterQualityReading、ObservedFacts、DiagnosisService 保留原位置，Domain 不依赖 Telemetry。详细用法见[水质与 telemetry](deep-dive/WATER_QUALITY_SCENARIO_AND_TELEMETRY_PREPARATION.md)。
 
 ## tests/
 
