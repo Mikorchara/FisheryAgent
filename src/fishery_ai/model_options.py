@@ -23,6 +23,7 @@ class Support(str, Enum):
 
 
 class CapabilitySource(str, Enum):
+    EXPLICIT_PROBE = "explicit_probe"
     MODEL_METADATA = "MODEL_METADATA"
     OFFICIAL_DOCS = "OFFICIAL_DOCS"
     USER_VERIFIED = "USER_VERIFIED"

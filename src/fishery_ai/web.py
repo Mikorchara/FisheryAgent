@@ -39,6 +39,7 @@ from .presets import preset_profiles, default_preset_id
 from .model_gateway import validate_preset_response
 from .execution import RequestRegistry, request_scope
 from .tool_conversation import ToolCallingService, MockToolGateway
+from .tool_capability_probe import run_tool_calling_probe
 from .tools import ToolRegistry
 from .manual import ManualRequest
 from .manual_experiments import (ManualExperimentStore, validate_experiment, experiment_runtime,
@@ -350,7 +351,8 @@ def create_app(*, trace_path: Path | None = None,
     @app.after_request
     def close_rejected_execution(response):
         # Prepared handles that fail preflight must not consume active slots until TTL.
-        if request.path in ("/api/analyze", "/api/analyze/stream", "/api/manual", "/api/manual-v2", "/api/tool-conversation") and response.status_code >= 400:
+        if (request.path in ("/api/analyze", "/api/analyze/stream", "/api/manual", "/api/manual-v2", "/api/tool-conversation")
+                or request.path.endswith("/tool-probe")) and response.status_code >= 400:
             payload = request.get_json(silent=True)
             if isinstance(payload, dict) and "request_id" in payload:
                 try:
@@ -920,6 +922,50 @@ def create_app(*, trace_path: Path | None = None,
         profiles.pop(profile_id, None)
         sources.pop(profile_id, None)
         return jsonify({"status": "deleted", "profile_id": profile_id})
+
+    @app.post("/api/profiles/<profile_id>/tool-probe")
+    def probe_tool_calling(profile_id: str):
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or set(payload) - {"confirm_network", "request_id", "control_token"}:
+            return error("INVALID_REQUEST", 400)
+        if payload.get("confirm_network") is not True:
+            return error("NETWORK_CONFIRMATION_REQUIRED", 403)
+        profile = profiles.get(profile_id)
+        if profile is None:
+            return error("PROFILE_NOT_FOUND", 404)
+        if sources.get(profile_id) != "user_custom" or profile.access_mode != "managed_custom":
+            return error("CAPABILITY_PROBE_UNSUPPORTED", 403)
+        runtime, failure = request_runtime(profile)
+        if failure is not None:
+            return failure
+        handle, failure = claim_execution(payload, required=True)
+        if failure is not None:
+            return failure
+        try:
+            with request_scope(handle):
+                result = run_tool_calling_probe(real_gateway_factory(), profile, tool_registry,
+                                               traces, runtime=runtime)
+                if result["verdict"] in ("SUPPORTED", "UNSUPPORTED"):
+                    handle.check()
+                    current = profiles.get(profile_id)
+                    if current is None or CapabilityStore._identity(current) != CapabilityStore._identity(profile):
+                        raise GatewayError("PROFILE_IDENTITY_CHANGED")
+                    profiles[profile_id] = capability_store.save_probe(current, "tool_calling",
+                        Support(result["verdict"].lower()), datetime.now(timezone.utc).isoformat(), result)
+                    result["evidence_written"] = True
+            handle.finish(result["error_code"])
+            # Only scalar diagnostic outcomes and Usage; no generated text or raw SDK data.
+            result["profile"] = _profile_public(profiles[profile_id], sources[profile_id])
+            return jsonify(result), 200 if result["status"] != "failure" else 502
+        except GatewayError as exc:
+            handle.finish(exc.code)
+            return error(exc.code, 409)
+        except Exception:
+            handle.finish("CAPABILITY_PROBE_FAILED")
+            return error("CAPABILITY_PROBE_FAILED", 502)
 
     @app.post("/api/tool-conversation")
     def tool_conversation():

@@ -2495,6 +2495,85 @@ function developmentUxPage(extraFetch=null) {
   },items);
 }
 
+test('T5 explicit Tool Probe unlocks exact origin UNKNOWN only after successful evidence',async()=>{
+  let sent;
+  const page=developmentUxPage(async(url,options)=>{
+    if(url==='/api/profiles/user-local/tool-probe') {
+      sent=JSON.parse(options.body);
+      const profile={...page.items.find(p=>p.profile_id==='user-local'),capabilities:{tool_calling:{status:'supported',source:'explicit_probe'}}};
+      return r2Reply({verdict:'SUPPORTED',evidence_written:true,request_1:'tool_calls',request_2:'final_answer',
+        model_requests:2,tool_result_status:'NO_DATA',profile});
+    }
+    return null;
+  });
+  page.items.find(p=>p.profile_id==='user-local').capabilities.tool_calling={status:'unknown'};
+  await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
+  await page.element('use-development').dispatch('click');
+  page.element('tool-target').value='selected';await page.element('tool-target').dispatch('change');
+  assert.equal(page.element('tool-run').disabled,true);
+  assert.equal(page.element('tool-probe').hidden,false);
+  await page.element('tool-probe').dispatch('click');
+  assert.equal(sent,undefined);
+  assert.match(page.element('tool-probe-result').textContent,/REAL NETWORK REQUEST/);
+  page.element('tool-confirm-network').checked=true;
+  vm.runInContext("credentialCsrf='offline-csrf'",page.context);
+  await page.element('tool-probe').dispatch('click');
+  assert.equal(sent.confirm_network,true);
+  assert.equal(Object.hasOwn(sent,'question'),false);
+  assert.equal(page.element('tool-run').disabled,false);
+  assert.match(page.element('tool-probe-result').textContent,/SUPPORTED.*已写入/);
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'mock-demo');
+  assert.equal(vm.runInContext('originToolProfile().capabilities.tool_calling.source',page.context),'explicit_probe');
+});
+
+test('T5 explicit Probe failures remain visible and leave UNKNOWN ordinary gate locked',async()=>{
+  for(const failure of ['CONNECT_TIMEOUT','HTTP_401','HTTP_429','NO_TOOL_CALL']) {
+    const page=developmentUxPage(async(url)=>url.endsWith('/tool-probe')?
+      r2Reply({verdict:'UNKNOWN',evidence_written:false,error_code:failure,model_requests:1},false,502):null);
+    page.items.find(p=>p.profile_id==='user-local').capabilities.tool_calling={status:'unknown'};
+    await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
+    await page.element('use-development').dispatch('click');
+    page.element('tool-target').value='selected';await page.element('tool-target').dispatch('change');
+    page.element('tool-confirm-network').checked=true;vm.runInContext("credentialCsrf='offline-csrf'",page.context);
+    await page.element('tool-probe').dispatch('click');
+    assert.match(page.element('tool-probe-result').textContent,new RegExp(failure));
+    assert.match(page.element('tool-probe-result').textContent,/未写入/);
+    assert.equal(page.element('tool-run').disabled,true);
+    assert.equal(page.element('tool-probe').disabled,false);
+  }
+});
+
+test('T5 Probe is hidden for Mock Preset and normal page',async()=>{
+  const page=developmentUxPage();await vm.runInContext('init()',page.context);
+  assert.equal(page.element('tool-probe').hidden,true);
+  await page.element('use-development').dispatch('click');
+  assert.equal(page.element('tool-probe').hidden,true);
+  await page.element('return-normal').dispatch('click');
+  await page.element('use-development').dispatch('click');
+  page.element('tool-target').value='selected';await page.element('tool-target').dispatch('change');
+  assert.equal(page.element('tool-probe').hidden,true);
+});
+
+test('T5 malformed JSON or fetch failure never silently succeeds',async()=>{
+  for(const bad of ['json','fetch']) {
+    const page=developmentUxPage(async(url)=>{
+      if(!url.endsWith('/tool-probe'))return null;
+      if(bad==='fetch')throw new Error('private fake transport exception');
+      return {ok:false,json:async()=>{throw new SyntaxError('fake invalid JSON');}};
+    });
+    page.items.find(p=>p.profile_id==='user-local').capabilities.tool_calling={status:'unknown'};
+    await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
+    await page.element('use-development').dispatch('click');
+    page.element('tool-target').value='selected';await page.element('tool-target').dispatch('change');
+    page.element('tool-confirm-network').checked=true;vm.runInContext("credentialCsrf='offline-csrf'",page.context);
+    await page.element('tool-probe').dispatch('click');
+    assert.match(page.element('tool-probe-result').textContent,/NETWORK_ERROR/);
+    assert.doesNotMatch(page.element('tool-probe-result').textContent,/private|fake/);
+    assert.equal(page.element('tool-run').disabled,true);
+    assert.equal(vm.runInContext('activeExecution',page.context),null);
+  }
+});
+
 test('Development UX normal Preset Managed and Manual expose only entry without experimental controls',async()=>{
   const page=developmentUxPage();
   await vm.runInContext('init()',page.context);

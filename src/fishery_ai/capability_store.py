@@ -67,7 +67,8 @@ class CapabilityStore:
                     and type(record.get("default")) is bool and record["default"] in values)
             else:
                 valid = (record.get("status") in ("supported", "unsupported")
-                         and record.get("source") == CapabilitySource.USER_VERIFIED.value)
+                         and record.get("source") in ((CapabilitySource.EXPLICIT_PROBE.value,)
+                             if capability == "tool_calling" else (CapabilitySource.USER_VERIFIED.value,)))
             if valid:
                 records.append(record)
         return records
@@ -77,10 +78,11 @@ class CapabilityStore:
             return profile
         identity = CapabilityIdentity.for_profile(profile)
         claims = project_evidence(profile)
-        for name in ("streaming", "reasoning_on", "reasoning_off", "thinking_streaming_combination", "thinking_off_streaming_combination"):
+        for name in ("streaming", "reasoning_on", "reasoning_off", "thinking_streaming_combination", "thinking_off_streaming_combination", "tool_calling"):
             for record in self._read_records(profile, name):
                 claims.append(CapabilityEvidence(identity, name, Support(record["status"]),
-                    CapabilitySource.USER_VERIFIED, record.get("verified_at"), "local_probe"))
+                    CapabilitySource.parse(record["source"]), record.get("verified_at"),
+                    "explicit_probe" if name == "tool_calling" else "local_probe"))
         for metadata in self._read_records(profile, "thinking"):
             values = metadata["values"]
             source = CapabilitySource.parse(metadata["source"])
@@ -129,16 +131,18 @@ class CapabilityStore:
         if profile.access_mode == "preset":
             raise ValueError("preset contract is read-only")
         if (capability not in ("streaming", "reasoning_on", "reasoning_off",
-                               "thinking_streaming_combination", "thinking_off_streaming_combination")
+                               "thinking_streaming_combination", "thinking_off_streaming_combination", "tool_calling")
                 or status not in (Support.SUPPORTED, Support.UNSUPPORTED)):
             raise ValueError("invalid probe result")
         record = {**self._identity(profile), "capability": capability,
-                  "status": status.value, "source": CapabilitySource.USER_VERIFIED.value,
+                  "status": status.value, "source": (CapabilitySource.EXPLICIT_PROBE.value
+                    if capability == "tool_calling" else CapabilitySource.USER_VERIFIED.value),
                   "verified_at": verified_at}
         if metrics:
             record["metrics"] = {key: value for key, value in metrics.items() if key in (
                 "delta_count", "reasoning_delta_count", "ttft_ms", "content_ttft_ms",
-                "latency_ms", "usage", "returned_model", "error_code", "finish_reason")}
+                "latency_ms", "usage", "returned_model", "error_code", "finish_reason",
+                "model_requests", "request_1", "request_2", "valid_tool_call", "tool_result_status")}
         self.directory.mkdir(parents=True, exist_ok=True)
         path = self._path(profile, capability)
         temporary = path.with_suffix(".tmp")

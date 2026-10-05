@@ -196,6 +196,18 @@ T4 未新增 Web 自动 Probe、第二个 Tool、Agent 或真实联网测试。�
 
 额外人工验收：在 DS_1 选择运行选项 → 进入开发验证 → 确认顶部 Mock、真实目标 DS_1 → 切换开发目标 → 返回 → 确认 DS_1 与原运行选项恢复。再分别检查 Preset Variant 和 Manual 草稿。Freshness 的既有人工验收保留；本轮没有真实联网。
 
+## T5：显式真实 Tool Calling 能力验证
+
+Development / Test 中选择进入前的 Managed Custom 真实 Runtime，确认 REAL NETWORK REQUEST，再点击“验证 Tool Calling 能力”。普通 UNKNOWN 请求仍在联网前禁止；Probe 只临时构造不可变诊断 Runtime，复用 T3、Registry / Executor、CurrentWaterQualityReader 和 RequestHandle。凭据仍由现有私有 CredentialStore 解析；没有源码根 .env 回退。
+
+`tool_capability_probe.py` 仅进行一次单轮验证，最多两次模型请求，SDK / Gateway retry=0，每次最多 256 输出 token；不继承保存的 Thinking / Streaming 运行偏好。首轮不得预注入水质值，NO_DATA 也作为正常 Tool Result 交给第二轮解释。
+
+只有合法唯一 Tool Call、执行 OK / NO_DATA、第二轮非空正文且没有新 Tool Call，才写精确 Identity 的 `SUPPORTED · explicit_probe`。由 CapabilityStore 写入，再由 R4 Resolver 解析；Preset 合同不变。明确的 Provider Tool Calling 不支持响应可写 UNSUPPORTED；无 Tool、网络、鉴权、限流、取消、解析或本地执行失败不写负面证据。已有证据不会因网络失败被删除。
+
+页面显示当前精确连接、两次请求结果、Tool 状态、Usage、耗时、verdict 与 Evidence 是否写入；不显示完整 Prompt、Secret、私有凭据路径或 traceback。成功后无需刷新页面即可解锁该 Profile 的普通 Tool Conversation。Probe 支持既有 Stop；不增加 Agent / Streaming Tool Calling / 第二个 Tool。
+
+DS_1 实际验证与本轮测试结果见 [T5 验证记录](T5_DS_1_TOOL_CALLING_VALIDATION.md)。
+
 ## 验证
 
 自动测试完全离线。T1 使用假 SDK / MockTransport；T2/T3 使用虚构 canonical Snapshot，通过实际只读 Handler 执行。T3 同时通过官方 SDK + HTTPX MockTransport 验证完整两次请求、tool_choice、ID、finish_reason 和 Usage；不访问真实凭据或模型。

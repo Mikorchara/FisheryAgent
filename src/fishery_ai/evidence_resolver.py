@@ -89,7 +89,7 @@ def resolve_capabilities(profile, evidence):
     updates = {}
     primary, history, explanations = [], [], []
     rank = {CapabilitySource.OFFICIAL_DOCS: 1, CapabilitySource.MODEL_METADATA: 2,
-            CapabilitySource.USER_VERIFIED: 3}
+            CapabilitySource.USER_VERIFIED: 3, CapabilitySource.EXPLICIT_PROBE: 3}
     for name in FIELDS:
         items = [item for item in claims if item.capability == name and item.status != Support.UNKNOWN]
         conclusions = {(item.status, item.value) for item in items}
@@ -111,5 +111,6 @@ def resolve_capabilities(profile, evidence):
         service_id=identity.service_id, adapter_id=identity.adapter_id, base_url=identity.base_url,
         model_id=identity.model, evidence=tuple(primary), evidence_sources=tuple(history),
         resolution_details=tuple(explanations), verified_at=max(
-            (item.observed_at for item in claims if item.observed_at and item.source == CapabilitySource.USER_VERIFIED), default=None))
+            (item.observed_at for item in claims if item.observed_at and item.source in
+             (CapabilitySource.USER_VERIFIED, CapabilitySource.EXPLICIT_PROBE)), default=None))
     return replace(profile, capabilities=cap, capability_evidence=claims)

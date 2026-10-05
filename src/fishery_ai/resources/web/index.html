@@ -231,6 +231,8 @@
             <textarea id="tool-question" rows="3" maxlength="500">现在水质怎么样？</textarea>
             <p class="helper">Mock 示例：“现在水质怎么样？”会调用 Tool；“什么是溶氧？”直接概念回答。响应固定为 Normal，与主分析 Response Mode 独立。</p>
             <button id="tool-run" type="button">运行 Tool Calling</button>
+            <button id="tool-probe" type="button" class="secondary" hidden>验证 Tool Calling 能力</button>
+            <p id="tool-probe-result" class="helper" role="status" aria-live="polite"></p>
             <button id="tool-stop" type="button" class="secondary" disabled>停止生成</button>
             <p id="tool-status" class="status" role="status" aria-live="polite">等待离线测试。</p>
             <h3>最终回答</h3><pre id="tool-answer" class="model-output"></pre>

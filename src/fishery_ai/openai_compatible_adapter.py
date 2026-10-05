@@ -177,6 +177,9 @@ class OpenAICompatibleAdapter:
                     except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
                         handle.check()
                         error = self._map_error(exc)
+                        if (not manual and kwargs.get("tools") and isinstance(exc, APIStatusError)
+                                and self._is_explicit_tool_unsupported(exc)):
+                            raise GatewayError("TOOL_UNSUPPORTED") from None
                         if isinstance(exc, APIStatusError) and stream and self._is_explicit_streaming_unsupported(exc):
                             error = GatewayError("STREAM_UNSUPPORTED")
                         elif isinstance(exc, APIStatusError) and self._is_explicit_thinking_unsupported(exc):
@@ -477,6 +480,22 @@ class OpenAICompatibleAdapter:
                 client.close()
 
     @staticmethod
+    def _is_explicit_tool_unsupported(exc: APIStatusError) -> bool:
+        if exc.status_code not in {400, 422, 501}:
+            return False
+        body = getattr(exc, "body", None)
+        error = body.get("error", body) if isinstance(body, dict) else None
+        if not isinstance(error, dict):
+            return False
+        message = error.get("message")
+        if not isinstance(message, str):
+            return False
+        # Never infer lack of support from auth, rate limits or malformed arguments.
+        return bool(re.search(r"\b(?:tools|tool calling|function calling)\s+"
+                              r"(?:(?:is|are)\s+)?(?:not supported|unsupported)"
+                              r"(?:\s+(?:by|for|on)\b|[.!]|$)", message[:2048].casefold()))
+
+    @staticmethod
     def _is_explicit_thinking_unsupported(exc: APIStatusError) -> bool:
         if exc.status_code not in {400, 405, 406, 422, 501}:
             return False
@@ -521,6 +540,9 @@ class OpenAICompatibleAdapter:
             except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
                 error = (RetryableGatewayError("TOTAL_TIMEOUT") if time.monotonic() >= deadline
                          else self._map_error(exc))
+                if (kwargs.get("tools") and isinstance(exc, APIStatusError)
+                        and self._is_explicit_tool_unsupported(exc)):
+                    raise GatewayError("TOOL_UNSUPPORTED") from None
                 if (isinstance(exc, APIStatusError) and
                         self._is_explicit_thinking_unsupported(exc)):
                     error = GatewayError("THINKING_UNSUPPORTED")

@@ -832,6 +832,7 @@ function capabilityText(item) {
     ? `证据冲突（UNKNOWN）· ${(item.sources || []).join(" + ")}${records}` : "未验证（UNKNOWN）";
   const label = source === "MODEL_METADATA" ? "模型 metadata"
     : source === "USER_VERIFIED" ? "本机已验证"
+      : source === "explicit_probe" ? "显式 Tool Probe 已验证"
       : source === "OFFICIAL_DOCS" ? "官方文档" : "来源未知";
   const sources = item?.sources?.length ? item.sources.join(" + ") : source;
   return `${status === "supported" ? "支持" : "不支持"}（${status.toUpperCase()}）· ${label} · ${sources}${records}`;
@@ -2290,8 +2291,12 @@ function updateToolConversationControls() {
   $("tool-target-status").textContent = selected
     ? `真实 Runtime · ${profile?.display_name || "未选择已保存连接"}；受 Tool Calling 能力门禁保护 · ${support === "supported" ? "SUPPORTED" : support === "unsupported" ? "OPTION_UNSUPPORTED · 不支持" : "OPTION_UNKNOWN · 未验证"}`
     : "Mock Tool Calling · 完全离线；固定示例模拟模型选 Tool，不代表真实模型已验证。";
+  if (selected && profile?.source === "user_custom") $("tool-target-status").textContent +=
+    `；精确 Identity：${profile.service_id} / ${profile.adapter_id} / ${profile.base_url} / ${profile.model}`;
   $("tool-real-warning").hidden = !selected;
   $("tool-run").disabled = !development || busy || (selected && (!profile || support !== "supported"));
+  $("tool-probe").hidden = !development || !selected || profile?.source !== "user_custom" || profile?.access_mode === "preset";
+  $("tool-probe").disabled = busy || !profile;
   $("return-normal").disabled = busy;
   $("tool-stop").disabled = !activeExecution || activeExecution.kind !== "tool_conversation" || activeExecution.cancelled;
   for (const id of ["tool-target", "tool-question", "tool-confirm-network", "tool-refresh-snapshot"]) $(id).disabled = busy;
@@ -2376,7 +2381,47 @@ async function runToolConversation() {
   }
 }
 
+async function probeToolCalling() {
+  if (toolConversationBusy || activeExecution || accessMode !== "development") return;
+  const profile = originToolProfile();
+  if (!profile || profile.source !== "user_custom" || $("tool-target").value !== "selected") return;
+  if (!$("tool-confirm-network").checked) {
+    $("tool-probe-result").textContent = "请先确认 REAL NETWORK REQUEST：一次 Probe，最多两次模型请求，retry=0。"; return;
+  }
+  toolConversationBusy = true;
+  $("tool-probe-result").textContent = "正在验证 Tool Calling 能力…";
+  updateToolConversationControls();
+  let execution = null;
+  try {
+    execution = await beginExecution();
+    execution.kind = "tool_conversation";
+    updateToolConversationControls();
+    const response = await fetch(`/api/profiles/${encodeURIComponent(profile.profile_id)}/tool-probe`, {
+      method:"POST", headers:execution.headers, signal:execution.controller.signal,
+      body:JSON.stringify({confirm_network:true, request_id:execution.request_id, control_token:execution.control_token})});
+    const data = await response.json();
+    if (execution.cancelled) { $("tool-probe-result").textContent = "USER_CANCELLED · 未写入能力证据。"; return; }
+    if (!data.verdict) throw new Error(safeCredentialCode(data, "CAPABILITY_PROBE_FAILED"));
+    $("tool-probe-result").textContent = `验证结果：${data.verdict} · Evidence ${data.evidence_written ? "已写入" : "未写入"}${data.error_code ? ` · ${data.error_code}` : ""}`;
+    $("tool-trace").textContent = `Request #1: ${data.request_1}\nTool Result: ${data.tool_result_status || "未执行"}\nRequest #2: ${data.request_2}\n模型请求次数: ${data.model_requests}\nlatency: ${data.latency_ms} ms\nUsage: ${JSON.stringify(data.usage || {})}`;
+    if (data.profile && data.profile.profile_id === profile.profile_id) {
+      profiles = profiles.map(item => item.profile_id === profile.profile_id ? data.profile : item);
+      const resolved = data.profile.capabilities?.tool_calling;
+      $("tool-probe-result").textContent += ` · 当前解析状态：${typeof resolved === "string" ? resolved : resolved?.status || "unknown"}${resolved?.resolution === "EVIDENCE_CONFLICT" ? " · 证据冲突" : ""}`;
+    }
+  } catch (exc) {
+    $("tool-probe-result").textContent = execution?.cancelled ? "USER_CANCELLED · 未写入能力证据。"
+      : `验证失败：${/^[A-Z][A-Z0-9_]{0,63}$/.test(exc.message) ? exc.message : "NETWORK_ERROR"} · 未写入能力证据。`;
+  } finally {
+    if (activeExecution === execution && !execution?.cancelled) finishExecution();
+    toolConversationBusy = false;
+    $("tool-confirm-network").checked = false;
+    updateToolConversationControls();
+  }
+}
+
 function bindToolConversationControls() {
+  $("tool-probe").addEventListener("click", probeToolCalling);
   $("tool-run").addEventListener("click", runToolConversation);
   $("tool-stop").addEventListener("click", stopGeneration);
   $("tool-refresh-snapshot").addEventListener("click", refreshToolSnapshot);
