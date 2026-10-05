@@ -297,6 +297,7 @@ async function stopGeneration() {
       $("tool-status").textContent = $("status").textContent;
       $("tool-trace").textContent = `取消结果：${$("status").textContent}\n未收到完整最终 Tool Trace。`;
     }
+    if (running.kind === "tool_probe") $("tool-probe-result").textContent = $("status").textContent;
   } catch (exc) {
     running.controller.abort();
     setStatus(`取消未确认：${/^[A-Z][A-Z0-9_]{0,40}$/.test(exc.message) ? exc.message : "NETWORK_ERROR"}；仅停止浏览器显示，后端状态未知。`, true);
@@ -304,6 +305,7 @@ async function stopGeneration() {
       $("tool-status").textContent = $("status").textContent;
       $("tool-trace").textContent = `取消结果：${$("status").textContent}\n未收到完整最终 Tool Trace。`;
     }
+    if (running.kind === "tool_probe") $("tool-probe-result").textContent = $("status").textContent;
   } finally {
     // Keep the run locked until the stop acknowledgement is resolved.
     if (activeExecution === running) finishExecution();
@@ -685,6 +687,7 @@ function renderPresetResponse(profile, preferred) {
 }
 
 function updateProfile() {
+  updateToolCapabilityControls();
   updateToolConversationControls();
   if (accessMode === "manual_expert" && manualVersion === "v2") {
     updateManualVersionView();
@@ -793,6 +796,8 @@ function updateProfile() {
   $("metadata-status").textContent = "";
   $("thinking-probe-status").textContent = "";
   $("capability-probe-status").textContent = "";
+  $("tool-probe-result").textContent = "";
+  updateToolCapabilityControls(profile);
   const real = profile.runtime_type !== "mock";
   $("real-warning").hidden = !real;
   $("confirm-network").checked = false;
@@ -1272,6 +1277,7 @@ async function runExplicitProbe(capability, mode = null, reverify = false) {
   let stage = "confirmation";
   probeInProgress = true;
   button.disabled = true;
+  updateToolCapabilityControls();
   status.textContent = `正在验证 ${label}...`;
   try {
     if (!window.confirm(`REAL NETWORK REQUEST：验证 ${label}，仅一次最小生成请求，Cloud 可能收费，retry=0。继续吗？`)) {
@@ -1318,6 +1324,7 @@ async function runExplicitProbe(capability, mode = null, reverify = false) {
   } finally {
     probeInProgress = false;
     button.disabled = mode ? selectedProfile()?.thinking_probe_available !== true : false;
+    updateToolCapabilityControls();
   }
 }
 
@@ -2002,6 +2009,7 @@ async function init() {
     bindScenarioControls();
     bindAccessModeControls();
     bindToolConversationControls();
+    bindToolManagerControls();
     await refreshToolSnapshot();
     $("reasoning-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
     $("response-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
@@ -2295,8 +2303,10 @@ function updateToolConversationControls() {
     `；精确 Identity：${profile.service_id} / ${profile.adapter_id} / ${profile.base_url} / ${profile.model}`;
   $("tool-real-warning").hidden = !selected;
   $("tool-run").disabled = !development || busy || (selected && (!profile || support !== "supported"));
-  $("tool-probe").hidden = !development || !selected || profile?.source !== "user_custom" || profile?.access_mode === "preset";
-  $("tool-probe").disabled = busy || !profile;
+  if (selected && support !== "supported") $("tool-target-status").textContent += profile?.access_mode === "preset"
+    ? "；此 Preset 未发布 Tool Calling，Managed Custom 验证不会升级该合同。"
+    : "；请先在 Managed Custom → 模型能力中验证 Tool Calling。";
+  updateToolCapabilityControls();
   $("return-normal").disabled = busy;
   $("tool-stop").disabled = !activeExecution || activeExecution.kind !== "tool_conversation" || activeExecution.cancelled;
   for (const id of ["tool-target", "tool-question", "tool-confirm-network", "tool-refresh-snapshot"]) $(id).disabled = busy;
@@ -2381,53 +2391,196 @@ async function runToolConversation() {
   }
 }
 
-async function probeToolCalling() {
-  if (toolConversationBusy || activeExecution || accessMode !== "development") return;
-  const profile = originToolProfile();
-  if (!profile || profile.source !== "user_custom" || $("tool-target").value !== "selected") return;
-  if (!$("tool-confirm-network").checked) {
-    $("tool-probe-result").textContent = "请先确认 REAL NETWORK REQUEST：一次 Probe，最多两次模型请求，retry=0。"; return;
+function updateToolCapabilityControls(profile = selectedProfile()) {
+  const eligible = accessMode === "managed_custom" && profile?.source === "user_custom"
+    && profile.access_mode !== "preset" && profile.runtime_type !== "mock";
+  const cap = profile?.capabilities?.tool_calling;
+  const verified = [cap?.source, ...(cap?.sources || [])].some(source => ["explicit_probe", "USER_VERIFIED"].includes(source));
+  $("tool-probe").hidden = !eligible || verified;
+  $("tool-reprobe").hidden = !eligible || !verified;
+  for (const id of ["tool-probe", "tool-reprobe"]) $(id).disabled = !eligible || probeInProgress || !!activeExecution;
+}
+
+async function probeToolCalling(reverify = false) {
+  if (toolConversationBusy || probeInProgress || activeExecution || accessMode !== "managed_custom") return;
+  const profile = selectedProfile();
+  if (!profile || profile.source !== "user_custom" || profile.access_mode === "preset" || profile.runtime_type === "mock") return;
+  const status = $("tool-probe-result");
+  if (!window.confirm(`REAL NETWORK REQUEST：${reverify ? "重新验证" : "验证"} Tool Calling，最多两次模型请求，retry=0；Cloud 可能收费。继续吗？`)) {
+    status.textContent = "已取消；未发送请求。"; return;
   }
-  toolConversationBusy = true;
+  probeInProgress = true;
   $("tool-probe-result").textContent = "正在验证 Tool Calling 能力…";
   updateToolConversationControls();
   let execution = null;
   try {
     execution = await beginExecution();
-    execution.kind = "tool_conversation";
+    execution.kind = "tool_probe";
     updateToolConversationControls();
     const response = await fetch(`/api/profiles/${encodeURIComponent(profile.profile_id)}/tool-probe`, {
       method:"POST", headers:execution.headers, signal:execution.controller.signal,
       body:JSON.stringify({confirm_network:true, request_id:execution.request_id, control_token:execution.control_token})});
     const data = await response.json();
-    if (execution.cancelled) { $("tool-probe-result").textContent = "USER_CANCELLED · 未写入能力证据。"; return; }
+    if (execution.cancelled) { $("tool-probe-result").textContent = "USER_CANCELLED · 能力证据状态以重新读取后的结果为准。"; return; }
     if (!data.verdict) throw new Error(safeCredentialCode(data, "CAPABILITY_PROBE_FAILED"));
-    $("tool-probe-result").textContent = `验证结果：${data.verdict} · Evidence ${data.evidence_written ? "已写入" : "未写入"}${data.error_code ? ` · ${data.error_code}` : ""}`;
-    $("tool-trace").textContent = `Request #1: ${data.request_1}\nTool Result: ${data.tool_result_status || "未执行"}\nRequest #2: ${data.request_2}\n模型请求次数: ${data.model_requests}\nlatency: ${data.latency_ms} ms\nUsage: ${JSON.stringify(data.usage || {})}`;
-    if (data.profile && data.profile.profile_id === profile.profile_id) {
+    if (!["SUPPORTED", "UNKNOWN", "UNSUPPORTED"].includes(data.verdict)) throw new Error("INVALID_RESPONSE");
+    if (data.profile?.profile_id === profile.profile_id) {
       profiles = profiles.map(item => item.profile_id === profile.profile_id ? data.profile : item);
+      if (selectedProfile()?.profile_id === profile.profile_id) {
+        renderCapabilities(selectedProfile());
+        refreshDraftPreferenceGate();
+      }
+    }
+    // A late result must not replace another Profile's capability status.
+    if (selectedProfile()?.profile_id !== profile.profile_id) return;
+    const code = typeof data.error_code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(data.error_code) ? data.error_code : null;
+    status.textContent = `验证结果：${data.verdict} · Evidence ${data.evidence_written ? "已写入" : "未写入"}${code ? ` · ${code}` : ""} · Request #1 ${data.request_1 || "未发送"} → Tool ${data.tool_result_status || "未执行"} → Request #2 ${data.request_2 || "未发送"} · 模型请求 ${show(data.model_requests)} 次 · ${show(data.latency_ms)} ms · Usage=${JSON.stringify(data.usage || {})}`;
+    if (data.profile && data.profile.profile_id === profile.profile_id) {
       const resolved = data.profile.capabilities?.tool_calling;
       $("tool-probe-result").textContent += ` · 当前解析状态：${typeof resolved === "string" ? resolved : resolved?.status || "unknown"}${resolved?.resolution === "EVIDENCE_CONFLICT" ? " · 证据冲突" : ""}`;
     }
   } catch (exc) {
-    $("tool-probe-result").textContent = execution?.cancelled ? "USER_CANCELLED · 未写入能力证据。"
+    $("tool-probe-result").textContent = execution?.cancelled ? "USER_CANCELLED · 能力证据状态以重新读取后的结果为准。"
       : `验证失败：${/^[A-Z][A-Z0-9_]{0,63}$/.test(exc.message) ? exc.message : "NETWORK_ERROR"} · 未写入能力证据。`;
   } finally {
-    if (activeExecution === execution && !execution?.cancelled) finishExecution();
-    toolConversationBusy = false;
-    $("tool-confirm-network").checked = false;
+    if (execution && activeExecution === execution && !execution.cancelled) finishExecution();
+    probeInProgress = false;
+    if (!activeExecution) $("analyze").disabled = !selectedProfile();
     updateToolConversationControls();
   }
 }
 
 function bindToolConversationControls() {
-  $("tool-probe").addEventListener("click", probeToolCalling);
+  $("tool-probe").addEventListener("click", () => probeToolCalling(false));
+  $("tool-reprobe").addEventListener("click", () => probeToolCalling(true));
   $("tool-run").addEventListener("click", runToolConversation);
   $("tool-stop").addEventListener("click", stopGeneration);
   $("tool-refresh-snapshot").addEventListener("click", refreshToolSnapshot);
   $("tool-target").addEventListener("change", () => { $("tool-confirm-network").checked = false; updateToolConversationControls(); });
   $("tool-conversation-panel").addEventListener("toggle", () => { if ($("tool-conversation-panel").open) refreshToolSnapshot(); });
   updateToolConversationControls();
+}
+
+// Policy draft is application-level and never attached to a selected Profile.
+let toolManagerData = null;
+let toolPolicyDraft = null;
+let toolPolicyMode = "analysis";
+let toolPolicyDirty = false;
+let toolPolicyBusy = false;
+
+function toolManagerLock(busy) {
+  toolPolicyBusy = busy;
+  for (const id of ["tool-policy-save", "tool-policy-reset", "tool-policy-close",
+    "tool-policy-analysis", "tool-policy-assistant", "open-tool-manager"]) $(id).disabled = busy;
+  for (const row of $("tool-catalog-list").children) {
+    const input = row.children[0]?.children[0];
+    if (input) input.disabled = busy || input.toolUnavailable === true;
+  }
+}
+
+async function toolPolicyApi(method = "GET", body = undefined) {
+  const options = {method, credentials:"same-origin"};
+  if (method !== "GET") { options.headers = await executionHeaders(); options.body = JSON.stringify(body || {}); }
+  const response = await fetch("/api/tool-policies", options);
+  const data = await response.json();
+  if (!response.ok) throw new Error(safeCredentialCode(data, "TOOL_POLICY_STORAGE_ERROR"));
+  if (!Array.isArray(data.catalog) || !data.policy?.modes?.analysis || !data.policy?.modes?.assistant
+    || !["analysis", "assistant"].every(mode => Array.isArray(data.policy.modes[mode].selected_tools))) throw new Error("INVALID_RESPONSE");
+  return data;
+}
+
+function setToolManagerData(data) {
+  toolManagerData = data;
+  toolPolicyDraft = JSON.parse(JSON.stringify({schema_version:1, modes:data.policy.modes}));
+  toolPolicyDirty = false;
+  renderToolCatalog();
+}
+
+function renderToolCatalog() {
+  if (!toolManagerData || !toolPolicyDraft) return;
+  const analysis = toolPolicyMode === "analysis";
+  $("tool-manager-title").textContent = `${analysis ? "Analysis" : "Assistant"} Model · Tool 管理`;
+  $("tool-policy-analysis").setAttribute("aria-pressed", String(analysis));
+  $("tool-policy-assistant").setAttribute("aria-pressed", String(!analysis));
+  $("tool-policy-note").textContent = analysis
+    ? "架构准备：可以保存工具选择，但尚未启用到正式 Analysis LLM 请求；实际暴露 0 个 Tool。"
+    : "允许的工具用于现有单轮开发对话；仍须模型 tool_calling 能力支持。Assistant 主界面尚未实现。";
+  const selected = toolPolicyDraft.modes[toolPolicyMode].selected_tools;
+  const list = $("tool-catalog-list"); list.replaceChildren();
+  for (const item of toolManagerData.catalog) {
+    const article = document.createElement("section"); article.classList.add("tool-catalog-item");
+    const row = document.createElement("div"); row.classList.add("tool-catalog-row");
+    const check = document.createElement("input"); check.type = "checkbox"; check.id = `tool-choice-${item.name}`;
+    check.toolUnavailable = item.dev_only || !item.registered || !item.executable;
+    check.disabled = toolPolicyBusy || check.toolUnavailable; check.checked = !check.toolUnavailable && selected.includes(item.name);
+    const label = document.createElement("label"); label.htmlFor = check.id; label.textContent = item.display_name;
+    const badge = document.createElement("span"); badge.classList.add("tool-catalog-badge");
+    badge.textContent = item.dev_only ? "DEV ONLY · NOT EXECUTABLE · UI PLACEHOLDER" : `${item.access_type} · Registered / Executable`;
+    const expand = document.createElement("button"); expand.type = "button"; expand.classList.add("secondary", "compact-action"); expand.textContent = "展开";
+    const detail = document.createElement("dl"); detail.classList.add("tool-catalog-detail"); detail.hidden = true;
+    detail.id = `tool-detail-${item.name}`; expand.setAttribute("aria-controls", detail.id); expand.setAttribute("aria-expanded", "false");
+    for (const [key, value] of [["用途",item.short_description],["说明",item.detailed_description],
+      ["类型",item.access_type],["执行状态",`${item.registered ? "Registered" : "Not Registered"} / ${item.executable ? "Executable" : "NOT EXECUTABLE"}`],
+      ["参数",item.parameter_summary],["适用模式","Analysis（准备） / Assistant"],
+      ["来源",item.dev_only ? "DEV ONLY · UI PLACEHOLDER" : "Built-in"],["规划状态",item.planned ? "Planned" : "非规划 Tool"]]) {
+      const dt=document.createElement("dt"), dd=document.createElement("dd"); dt.textContent=key; dd.textContent=value; detail.append(dt,dd);
+    }
+    expand.addEventListener("click", () => { detail.hidden = !detail.hidden; expand.textContent = detail.hidden ? "展开" : "收起"; expand.setAttribute("aria-expanded", String(!detail.hidden)); });
+    check.addEventListener("change", () => {
+      if (toolPolicyBusy || check.toolUnavailable) return;
+      const names = toolPolicyDraft.modes[toolPolicyMode].selected_tools;
+      toolPolicyDraft.modes[toolPolicyMode].selected_tools = check.checked
+        ? [...new Set([...names,item.name])] : names.filter(name => name !== item.name);
+      toolPolicyDirty = true; $("tool-policy-status").textContent = "有未保存修改；当前运行策略未改变。"; updateToolPolicyCount();
+    });
+    row.append(check,label,badge,expand); article.append(row,detail); list.append(article);
+  }
+  updateToolPolicyCount();
+}
+
+function updateToolPolicyCount() {
+  const count = toolPolicyDraft.modes[toolPolicyMode].selected_tools.length;
+  $("tool-policy-count").textContent = `${toolPolicyMode === "analysis" ? "准备选择" : "当前启用"}：${count} / ${toolManagerData.catalog.length} · 可执行工具 ${toolManagerData.catalog.filter(item => item.executable).length} 个 · ${toolManagerData.policy.source}`;
+}
+
+async function openToolManager(mode = "analysis") {
+  if (toolPolicyBusy) return;
+  toolPolicyMode = mode;
+  $("tool-manager").hidden = false; $("tool-manager").showModal();
+  $("tool-policy-status").textContent = "正在读取 Tool Policy…";
+  toolManagerLock(true);
+  try { setToolManagerData(await toolPolicyApi()); $("tool-policy-status").textContent = ""; }
+  catch (exc) { toolManagerData=null; toolPolicyDraft=null; $("tool-catalog-list").replaceChildren(); $("tool-policy-count").textContent=""; $("tool-policy-status").textContent = `读取失败：${scenarioErrorText(exc)}`; }
+  finally { toolManagerLock(false); if (!toolManagerData) for (const id of ["tool-policy-save","tool-policy-reset"]) $(id).disabled=true; }
+}
+
+function closeToolManager() {
+  if (toolPolicyBusy || (toolPolicyDirty && !window.confirm("有未保存的 Tool 设置，关闭将丢弃修改。继续吗？"))) return;
+  toolPolicyDirty=false; toolPolicyDraft=null; $("tool-manager").close(); $("tool-manager").hidden=true; $("open-tool-manager").focus();
+}
+
+async function saveToolPolicy(reset = false) {
+  if (toolPolicyBusy || !toolPolicyDraft) return;
+  if (reset && !window.confirm("恢复两份内置默认 Policy，并删除用户 Override？")) return;
+  toolManagerLock(true); $("tool-policy-status").textContent = reset ? "正在恢复默认…" : "正在保存…";
+  try {
+    setToolManagerData(await toolPolicyApi(reset ? "DELETE" : "PUT", reset ? {} : toolPolicyDraft));
+    $("tool-policy-status").textContent = reset ? "已恢复内置默认；新请求使用默认策略。" : "已保存；新 Assistant 请求生效。Analysis 仍不开放 LLM Tool。";
+  } catch (exc) { $("tool-policy-status").textContent = `操作失败：${scenarioErrorText(exc)}；草稿保留，请重新读取确认实际状态。`; }
+  finally { toolManagerLock(false); }
+}
+
+function bindToolManagerControls() {
+  $("open-tool-manager").addEventListener("click", () => openToolManager("analysis"));
+  for (const mode of ["analysis", "assistant"]) $("tool-policy-"+mode).addEventListener("click", () => {
+    if (!toolPolicyBusy && toolManagerData) { toolPolicyMode=mode; renderToolCatalog(); }
+  });
+  $("tool-policy-save").addEventListener("click", () => saveToolPolicy());
+  $("tool-policy-reset").addEventListener("click", () => saveToolPolicy(true));
+  $("tool-policy-close").addEventListener("click", closeToolManager);
+  $("tool-manager").addEventListener("cancel", event => { event.preventDefault?.(); closeToolManager(); });
+  $("assistant-mode-entry").addEventListener("click", () => { $("application-mode-status").textContent="Assistant Model 界面尚未实现；当前运行方式和模型保持不变。"; });
+  $("analysis-mode-entry").addEventListener("click", () => { $("application-mode-status").textContent="当前页面仍为 Analysis / 开发验证台；未切换模型连接。"; });
 }
 
 init();

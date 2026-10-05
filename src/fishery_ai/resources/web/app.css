@@ -36,6 +36,20 @@ label:not(.confirm) { display: block; margin: 19px 0 8px; font-size: 13px; font-
 select, textarea, input[type="text"], input[type="url"], input[type="password"], input[type="number"] { width: 100%; border: 1px solid #cddbd4; border-radius: 9px; background: #fff; color: #173437; padding: 11px 12px; font: inherit; font-size: 14px; }
 .scenario-modal { width: min(680px, 92vw); max-height: 90vh; overflow: auto; border: 1px solid #cddbd4; border-radius: 16px; padding: 24px; color: #173437; }
 .scenario-modal::backdrop { background: rgba(15, 40, 33, .35); }
+.tool-entry { margin-left: auto; flex-shrink: 0; }
+.application-mode-switch { text-align: right; max-width: 400px; }
+.application-mode-switch button { width: auto; margin: 0 0 6px 6px; }
+#assistant-mode-entry { opacity: .6; }
+.tool-catalog-list { display: grid; gap: 10px; }
+.tool-catalog-item { border: 1px solid #d6e2dc; border-radius: 10px; padding: 12px; }
+.tool-catalog-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.tool-catalog-row input[type=checkbox] { width: auto; margin: 0; }
+.tool-catalog-row label { margin: 0; overflow-wrap: anywhere; }
+.tool-catalog-row button { width: auto; margin: 0 0 0 auto; }
+.tool-catalog-badge { font-size: 11px; color: #49665f; }
+.tool-catalog-detail { margin-top: 12px; border-top: 1px solid #e0e9e4; padding-top: 8px; }
+.tool-catalog-detail dt { font-weight: 600; margin-top: 8px; }
+.tool-catalog-detail dd { margin: 3px 0; font-size: 13px; overflow-wrap: anywhere; }
 .scenario-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 @media (max-width: 600px) { .scenario-grid { grid-template-columns: 1fr; } }
 select option:disabled { color: #89958e; }

@@ -1,6 +1,6 @@
-# 只读 Tool Calling：T1 / T2 / T3 / T4
+# 只读 Tool Calling：T1–T5
 
-日期：2026-10-05。**T1 = non-streaming Gateway Contract；T2 = 只读 Registry / Executor / Handler；T3 = 单轮 Model → Tool → Model；T4 = Web 开发测试入口。Tool Calling ≠ Agent。当前闭环和 Web 完成离线验证，未验证真实模型工具能力。**
+日期：2026-10-05。**T1 = non-streaming Gateway Contract；T2 = 只读 Registry / Executor / Handler；T3 = 单轮 Model → Tool → Model；T4 = Web 开发测试入口。Tool Calling ≠ Agent。T5 已提供显式精确 Identity Probe；用户已报告 QW_2 真实验证成功。本轮仅离线整理 Policy / UI，Preset 合同未变。**
 
 ## 合同
 
@@ -91,7 +91,7 @@ runtime 是调用者在请求开始时通过现有机制捕获的 RuntimeSnapsho
 2. 无 tool_calls：直接返回正文，Reader / Executor 不执行。问题是否需要事实由模型判断，没有按水质状态硬编码触发条件。
 3. 一个 tool_call：经正式 ToolExecutor 执行；多于一个返回 TOOL_CALL_LIMIT，全部不执行。Executor 每次对话新建，max_calls=1。
 4. NO_DATA / OK：追加 assistant(tool_calls) 和 tool(tool_call_id, JSON)，保持原 system / user。结果中的文本不会变成 system instruction；也不会作为代码执行。
-5. Request #2：保留 Registry tools，tool_choice=none。继续返回调用时 TOOL_ROUND_LIMIT，绝不发第三次请求或再执行 Tool。
+5. Request #2：保留 Policy-filtered Registry tools，tool_choice=none。继续返回调用时 TOOL_ROUND_LIMIT，绝不发第三次请求或再执行 Tool。
 6. 只返回 ToolConversationResult，不生成 AnalysisResult，不经过 Scenario、RAG 或固定 Orchestrator。
 
 固定 max_tool_rounds=1 由两个显式请求分支落实，没有可增长的循环。Tool 执行 ERROR 时安全结束，不让第二轮编造数据：UNKNOWN_TOOL、INVALID_TOOL_ARGUMENTS、TOOL_EXECUTION_ERROR 等 T2 错误码保留。Adapter 的 INVALID_TOOL_CALL 在 T3 归一为 MODEL_TOOL_CALL_MALFORMED；T1 自身错误语义不变。没有 normal fallback 或自动 Apply。
@@ -142,9 +142,9 @@ RequestHandle / AsyncOpenAI Task 取消机制继续复用，取消返回 USER_CA
 
 普通正文 / reasoning / Usage Streaming 保持现有行为。正式 stream() 收到 tools 或工具历史消息时，在发送前返回 TOOL_STREAMING_NOT_IMPLEMENTED；Provider 意外返回工具 delta 时也明确失败，不忽略、不聚合、不执行。Manual Raw Streaming 不受该归一限制。
 
-尚未实现：tool_calls delta、arguments delta 汇聚、Streaming Tool Execution、Agent、多轮自主循环、真实 Provider Tool 验证。
+尚未实现：tool_calls delta、arguments delta 汇聚、Streaming Tool Execution、Agent、多轮自主循环。T5 显式真实验证已经有入口，成功结果仍只授权对应 Managed Identity。
 
-**可以进入 T5 能力验证准备：** T4 已注入共享 Reader，并沿用现有 Credential / Runtime / RequestHandle 边界。真实模型工具能力与联网人工验证仍需要单独依据和当轮授权，不能从 Thinking / Streaming 组合推导。T1–T4 未真实联网或发布模型工具能力。
+**历史 T4 结论（T5 现已完成实现）：** T4 已注入共享 Reader，并沿用现有 Credential / Runtime / RequestHandle 边界。真实模型工具能力与联网人工验证仍需要单独依据和当轮授权，不能从 Thinking / Streaming 组合推导。T1–T4 未真实联网或发布模型工具能力。
 
 ## T4 Web 开发测试入口
 
@@ -152,7 +152,7 @@ RequestHandle / AsyncOpenAI Task 取消机制继续复用，取消返回 USER_CA
 
 页面显示当前 Snapshot 的 AVAILABLE / NO_DATA、最终回答、请求状态与 Tool Trace；Trace 包括 Request #1 outcome、调用名、通过校验的空参数、Tool Result、Tool 耗时、Request #2 outcome、finish_reason、Usage 和总耗时。完整 Trace 在 non-streaming 请求结束后显示，不是实时流式事件。失败显示安全错误码；取消后不保留等待状态或部分最终回答。
 
-`web.py` 的 `/api/tool-conversation` 只负责请求校验、不可变 Runtime 捕获、RequestHandle 和结果白名单；调用 `ToolCallingService.converse()`，不实现模型循环。Registry 在应用创建时注入现有共享 Reader / Diagnosis；每个对话仍创建自己的 Executor。首轮仅含 system / user / Registry tools，浏览器不传 Scenario、模板、传感器值或 Findings。
+`web.py` 的 `/api/tool-conversation` 只负责请求校验、不可变 Runtime 捕获、RequestHandle 和结果白名单；调用 `ToolCallingService.converse()`，不实现模型循环。Registry 在应用创建时注入现有共享 Reader / Diagnosis；每个对话仍创建自己的 Executor。首轮仅含 system / user / Policy-filtered Registry tools，浏览器不传 Scenario、模板、传感器值或 Findings。
 
 专用 `MockToolGateway` 只用确定性示例模拟模型选择：含“现在/当前/目前/现场”的问题请求 Registry 中的当前水质 Tool；“什么是溶氧？”直接概念回答。第二轮解释只使用 role=tool JSON，不自行读取 Store、诊断或生成场景。它不是实际模型的意图策略，也不代表真实模型 Tool 能力。UI 中每次模拟模型调用有约 0.5 秒的可取消等待，便于人工检查 Stop；自动测试关闭该等待。
 
@@ -181,7 +181,7 @@ Web API 复用 Host / Origin / CSRF 与现有请求控制令牌。输出只包�
 
 Stop 复用同一 `/api/requests/.../cancel` 和 RequestHandle：先要求后端取消，再中止浏览器 fetch，并等待现有状态确认。T3 在第一轮后、Tool 前后、第二轮前后检查取消；没有第二套取消机制。开发界面只陈述本地 I/O 状态，不宣称远端计算或计费停止。失败的 preflight 会关闭未开始的请求句柄，避免占用活动名额。
 
-T4 未新增 Web 自动 Probe、第二个 Tool、Agent 或真实联网测试。可以开始以上离线人工验收；进入 T5 时需再选择精确身份、设计单次受控真实 Tool 验证并明确授权，不能绕过当前 UNKNOWN gate。
+T4 未新增 Web 自动 Probe、第二个 Tool、Agent 或真实联网测试。以上保留 T4 离线人工验收方式；当前 T5 入口已移到 Managed Custom 能力区，普通 UNKNOWN gate 保持，必须显式 Probe。
 
 ### T4 UI 模式隔离整理
 
@@ -198,7 +198,7 @@ T4 未新增 Web 自动 Probe、第二个 Tool、Agent 或真实联网测试。�
 
 ## T5：显式真实 Tool Calling 能力验证
 
-Development / Test 中选择进入前的 Managed Custom 真实 Runtime，确认 REAL NETWORK REQUEST，再点击“验证 Tool Calling 能力”。普通 UNKNOWN 请求仍在联网前禁止；Probe 只临时构造不可变诊断 Runtime，复用 T3、Registry / Executor、CurrentWaterQualityReader 和 RequestHandle。凭据仍由现有私有 CredentialStore 解析；没有源码根 .env 回退。
+当前入口：Managed Custom 选择已保存连接 → 02 · 模型能力 → 高级验证操作 → “验证 Tool Calling” / “重新验证 Tool Calling” → 确认 REAL NETWORK REQUEST。Development / Test 只进行已有能力的对话测试；未验证真实目标提示先到 Managed Custom 验证。普通 UNKNOWN 请求仍在联网前禁止；Probe 只临时构造不可变诊断 Runtime，复用 T3、Registry / Executor、CurrentWaterQualityReader 和 RequestHandle。凭据仍由现有私有 CredentialStore 解析；没有源码根 .env 回退。
 
 `tool_capability_probe.py` 仅进行一次单轮验证，最多两次模型请求，SDK / Gateway retry=0，每次最多 256 输出 token；不继承保存的 Thinking / Streaming 运行偏好。首轮不得预注入水质值，NO_DATA 也作为正常 Tool Result 交给第二轮解释。
 
@@ -208,7 +208,21 @@ Development / Test 中选择进入前的 Managed Custom 真实 Runtime，确认 
 
 DS_1 实际验证与本轮测试结果见 [T5 验证记录](T5_DS_1_TOOL_CALLING_VALIDATION.md)。
 
-## 验证
+## 当前 Tool Policy / 应用模式
+
+Tool 管理入口位于左侧 **01 · Analysis Model** 标题右侧，不绑定具体模型。Catalog 只负责展示；Registry 决定固定 Handler；Policy 限制授权子集。Modal 提供 Analysis / Assistant 标签、默认折叠详情、计数、保存、恢复默认与关闭。三个 testTool 占位仅用于布局，不注册、不发送、不执行。
+
+用户选择保存到 Git ignored 的 outputs/tool-policies/tool_policies.json。启动与请求校验，原子写入；Assistant 新请求捕获冻结策略，进行中的请求不因新保存而改变。Analysis 的 selected_tools 仅作未来架构准备，实际 ModelRequest.tools 始终为空。恢复默认只删除 Override，不修改源码、Profile、Credential、Evidence 或 Snapshot。
+
+请求定义须同时满足 Registry 注册、当前 Policy 允许、固定 Handler 可执行及精确 Runtime 能力 SUPPORTED。普通请求仍不可绕过能力门禁；显式 T5 Probe 只临时绕过 UNKNOWN 能力，不能越过用户 Policy。若已关闭水质 Tool，先在 Tool 管理的 Assistant 标签重新允许；Probe 返回 TOOL_NOT_ALLOWED，不联网。
+
+Analysis Model 是程序控制的 Snapshot → Diagnosis → RAG → LLM；固定 tools 为空，不持有执行器，意外调用继续拒绝。Assistant 当前是 T3 单轮实验路径，不预注入事实；tool_policy.py 从 resources/tools/tool_policies.json 加载冻结策略，过滤 Registry 定义，Executor 再检查注册与授权，未知 Policy 名称启动失败。没有新增 Tool 或 Agent。
+
+Managed 的验证结果在能力面板显示，成功后即时刷新；Development 只显示对话 Trace。Preset 固定合同不被 Evidence 覆盖。完整边界、QW_2 用户验收与未来实验评分规划见[Analysis / Assistant 架构](ASSISTANT_MODEL_ARCHITECTURE.md)。
+
+## 历史 T1–T4 验证记录
+
+以下数量和工作树描述属于对应历史实施阶段；当前回归结果见上述架构文档，不代表当前未提交状态。
 
 自动测试完全离线。T1 使用假 SDK / MockTransport；T2/T3 使用虚构 canonical Snapshot，通过实际只读 Handler 执行。T3 同时通过官方 SDK + HTTPX MockTransport 验证完整两次请求、tool_choice、ID、finish_reason 和 Usage；不访问真实凭据或模型。
 

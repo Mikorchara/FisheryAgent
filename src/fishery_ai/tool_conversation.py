@@ -15,6 +15,7 @@ from .model_gateway import (GatewayError, ModelGateway, ModelMessage, ModelReque
 from .model_gateway import MockGateway
 from .observability import JsonlTraceSink
 from .tools import ToolExecutionResult, ToolExecutor, ToolRegistry, ToolStatus
+from .tool_policy import ToolPolicy, ToolPolicyError, load_tool_policies
 
 
 SYSTEM_INSTRUCTION = (
@@ -55,6 +56,8 @@ class MockToolGateway(MockGateway):
             return ModelResponse(text, finish_reason="stop")
         question = request.messages[-1].content
         if re.search(r"现在|当前|目前|现场", question):
+            if not request.tools:
+                return ModelResponse("离线 Mock：当前 Policy 未允许水质 Tool，无法读取当前事实。", finish_reason="stop")
             return ModelResponse(None, tool_calls=(ModelToolCall("mock_current_water_quality",
                 request.tools[0].name, "{}"),), finish_reason="tool_calls")
         text = ("离线 Mock：溶氧是水中溶解的氧气，通常以 mg/L 表示；本回答未读取当前水质。"
@@ -132,9 +135,14 @@ class ToolCallingService:
 
     def __init__(self, gateway: ModelGateway, registry: ToolRegistry, traces: JsonlTraceSink,
                  *, clock: Callable[[], datetime] = utcnow,
-                 id_factory: Callable[[], str] = lambda: uuid.uuid4().hex):
+                 id_factory: Callable[[], str] = lambda: uuid.uuid4().hex,
+                 policy: ToolPolicy | None = None):
         self.gateway, self.registry, self.traces = gateway, registry, traces
         self.clock, self.id_factory = clock, id_factory
+        self.policy = policy if policy is not None else load_tool_policies()["assistant"]
+        if self.policy.mode != "assistant":
+            raise ToolPolicyError("ASSISTANT_TOOL_POLICY_REQUIRED")
+        self.policy.validate_registry(registry)
 
     def converse(self, question: str, runtime: RuntimeSnapshot) -> ToolConversationResult:
         if not isinstance(question, str) or not question.strip():
@@ -188,9 +196,10 @@ class ToolCallingService:
 
         try:
             check_cancelled()
+            definitions = self.policy.model_definitions(self.registry)
             request = ModelRequest(Mode.CHAT, (ModelMessage("system", SYSTEM_INSTRUCTION),
                                    ModelMessage("user", question)),
-                                   tools=self.registry.model_definitions(), tool_choice="auto")
+                                   tools=definitions, tool_choice="auto" if definitions else None)
             first, calls = complete(request, 0)
             if not calls:
                 text, finish_reason = first.text, _finish_reason(first.finish_reason)
@@ -202,7 +211,7 @@ class ToolCallingService:
                 check_cancelled()
                 tool_tick = time.monotonic()
                 try:
-                    tool_result = ToolExecutor(self.registry, max_calls=1).execute(calls[0])
+                    tool_result = ToolExecutor(self.registry, max_calls=1, policy=self.policy).execute(calls[0])
                 finally:
                     tool_duration_ms = (time.monotonic() - tool_tick) * 1000
                 check_cancelled()

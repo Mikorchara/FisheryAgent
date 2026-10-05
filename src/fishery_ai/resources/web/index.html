@@ -15,12 +15,17 @@
         <h1>开发验证台</h1>
         <p class="lede">Preset 固定方案、Managed Custom 连接管理、Manual Expert 原始请求实验。</p>
       </div>
-      <span class="header-tag">LOCAL · DEVELOPER ONLY</span>
+      <div class="application-mode-switch" aria-label="应用模式">
+        <button id="analysis-mode-entry" class="secondary compact-action" type="button" aria-current="page">Analysis Model</button>
+        <button id="assistant-mode-entry" class="secondary compact-action" type="button" aria-disabled="true">Assistant Model · Coming Soon</button>
+        <p id="application-mode-status" class="helper" role="status"></p>
+        <span class="header-tag">LOCAL · DEVELOPER ONLY</span>
+      </div>
     </header>
 
     <div class="layout">
       <aside class="controls panel">
-        <div class="panel-heading"><span class="step">01</span><h2>基础模型配置</h2></div>
+        <div class="panel-heading"><span class="step">01</span><h2>Analysis Model</h2><button id="open-tool-manager" class="secondary compact-action tool-entry" type="button">Tool</button></div>
         <label for="access-mode">运行方式</label>
         <select id="access-mode">
           <option value="preset">Preset · 固定模型</option>
@@ -158,6 +163,10 @@
             <button id="reprobe-combination" class="secondary compact-action" type="button" hidden>重新验证 Streaming + Thinking ON</button>
             <button id="reprobe-combination-off" class="secondary compact-action" type="button" hidden>重新验证 Streaming + Thinking OFF</button>
             <button id="reprobe-streaming" class="secondary compact-action" type="button" hidden>重新验证 Streaming</button>
+            <p class="helper">Tool Calling 验证需确认 REAL NETWORK REQUEST：一次单轮 Probe，最多两次模型请求，retry=0。不运行固定 Analysis。</p>
+            <button id="tool-probe" class="secondary compact-action" type="button" hidden>验证 Tool Calling</button>
+            <button id="tool-reprobe" class="secondary compact-action" type="button" hidden>重新验证 Tool Calling</button>
+            <p id="tool-probe-result" class="status" role="status" aria-live="polite"></p>
           </details>
           <h3 class="runtime-options-heading">本次运行选择</h3>
           <p class="helper">这些选项只影响下一次请求，不会修改 Preset 固定合同或已记录的 Capability。</p>
@@ -177,7 +186,8 @@
         </details>
 
         <div id="analysis-inputs">
-        <h3 class="control-section-heading">03 · 本次分析输入</h3>
+        <h3 class="control-section-heading">03 · Analysis Model 输入</h3>
+        <p class="helper">程序固定执行 Snapshot → Diagnosis → RAG → LLM；不向模型开放 Tool。Assistant Model 的单轮验证在 Development / Test 中进行。</p>
 
         <label for="scenario">水质场景</label>
         <select id="scenario"></select>
@@ -216,7 +226,7 @@
           <label for="development-target">开发目标</label>
           <select id="development-target"></select>
           <details id="tool-conversation-panel" class="advanced-settings" hidden>
-            <summary>Read-only Tool Calling · 单轮开发测试</summary>
+            <summary>Assistant Model · Read-only Tool Calling · 单轮开发测试</summary>
             <p class="helper">先在上方显式应用情景，再提问。本入口不会自动 Apply 或回退 normal；不是 Agent，仅支持 Normal。</p>
             <label for="tool-target">测试目标</label>
             <select id="tool-target"><option value="mock">Mock Tool Calling · 完全离线</option><option id="tool-origin-target" value="selected">真实 Runtime · 未选择</option></select>
@@ -231,8 +241,6 @@
             <textarea id="tool-question" rows="3" maxlength="500">现在水质怎么样？</textarea>
             <p class="helper">Mock 示例：“现在水质怎么样？”会调用 Tool；“什么是溶氧？”直接概念回答。响应固定为 Normal，与主分析 Response Mode 独立。</p>
             <button id="tool-run" type="button">运行 Tool Calling</button>
-            <button id="tool-probe" type="button" class="secondary" hidden>验证 Tool Calling 能力</button>
-            <p id="tool-probe-result" class="helper" role="status" aria-live="polite"></p>
             <button id="tool-stop" type="button" class="secondary" disabled>停止生成</button>
             <p id="tool-status" class="status" role="status" aria-live="polite">等待离线测试。</p>
             <h3>最终回答</h3><pre id="tool-answer" class="model-output"></pre>
@@ -352,6 +360,25 @@
         <p>先选择运行方式、模型与场景，再查看确定性事实、检索证据和模型解释。</p>
       </div>
     </div>
+    <dialog id="tool-manager" class="scenario-modal tool-manager" hidden aria-labelledby="tool-manager-title">
+      <h2 id="tool-manager-title">Analysis Model · Tool 管理</h2>
+      <p class="helper">Tool Policy 属于应用模式，不属于 Profile 或 Provider。配置不会改变模型的 Capability。</p>
+      <div class="manager-actions" role="group" aria-label="Tool Policy 模式">
+        <button id="tool-policy-analysis" class="secondary compact-action" type="button" aria-pressed="true">Analysis Model</button>
+        <button id="tool-policy-assistant" class="secondary compact-action" type="button" aria-pressed="false">Assistant Model</button>
+      </div>
+      <p id="tool-policy-note" class="helper"></p>
+      <p id="tool-policy-count" class="helper"></p>
+      <div id="tool-catalog-list" class="tool-catalog-list"></div>
+      <p class="helper">DEV ONLY 占位项仅用于开发界面预览，不会发送给模型；勾选已禁用。</p>
+      <p id="tool-policy-status" class="status" role="status" aria-live="polite"></p>
+      <div class="manager-actions">
+        <button id="tool-policy-reset" class="secondary" type="button">恢复默认</button>
+        <button id="tool-policy-save" type="button">保存</button>
+        <button id="tool-policy-close" class="secondary" type="button">关闭</button>
+      </div>
+      <p class="helper">恢复默认会立即删除用户 Override。保存仅更新 outputs/tool-policies/，不修改源码默认值。Analysis 设置当前只作架构准备。</p>
+    </dialog>
     <dialog id="scenario-modal" class="scenario-modal" hidden aria-labelledby="scenario-modal-title">
       <h2 id="scenario-modal-title">自定义情景</h2>
       <p class="helper">Simulation · 只生成一次模拟快照，不连接硬件或模型。</p>

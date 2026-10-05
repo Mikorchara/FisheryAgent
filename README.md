@@ -35,4 +35,4 @@ Python 3.11+，在 PowerShell 项目根目录运行：
 - [维护者文件位置地图](docs/deep-dive/PROJECT_DATA_AND_CONFIG_LOCATIONS.md)
 - [Preset 发布合同](docs/deep-dive/PRESET_PUBLICATION.md)
 
-只读 Tool Calling T1–T4 已提供单轮闭环和 Web 离线开发入口；下一阶段验证真实模型工具能力。当前不是 Agent，不支持 Streaming Tool Calling，不得直接操作设备、修改数据库或改变诊断阈值。
+只读 Tool Calling T1–T5 已提供单轮闭环、Web 开发入口和 Managed 显式能力验证。Analysis 固定流程不调用 Tool；Assistant 当前为 Policy 限制的单轮实验。见[应用模式架构](docs/deep-dive/ASSISTANT_MODEL_ARCHITECTURE.md)。当前不是 Agent，不支持 Streaming Tool Calling，不得直接操作设备、修改数据库或改变诊断阈值。

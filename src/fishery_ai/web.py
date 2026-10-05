@@ -40,6 +40,8 @@ from .model_gateway import validate_preset_response
 from .execution import RequestRegistry, request_scope
 from .tool_conversation import ToolCallingService, MockToolGateway
 from .tool_capability_probe import run_tool_calling_probe
+from .tool_policy import load_tool_policies, UserToolPolicyStore, ToolPolicyError
+from .tools.catalog import tool_catalog
 from .tools import ToolRegistry
 from .manual import ManualRequest
 from .manual_experiments import (ManualExperimentStore, validate_experiment, experiment_runtime,
@@ -172,6 +174,7 @@ def create_app(*, trace_path: Path | None = None,
                manual_credential_store: CredentialStore | None = None,
                manual_credential_writer: ProjectEnvWriter | None = None,
                scenario_templates_dir: Path | None = None,
+               tool_policy_dir: Path | None = None,
                scenario_clock: Callable[[], datetime] = utcnow,
                stale_after_s: float = 300,
                allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1"),
@@ -223,6 +226,13 @@ def create_app(*, trace_path: Path | None = None,
     knowledge = KnowledgeService(RESOURCE_ROOT.joinpath("knowledge/eel_knowledge.json"))
     traces = JsonlTraceSink(trace_path or Path.cwd() / "outputs/web-traces.jsonl")
     tool_registry = ToolRegistry(current_reader, diagnosis)
+    tool_policies = load_tool_policies()
+    for policy in tool_policies.values():
+        policy.validate_registry(tool_registry)  # Fail closed during app construction.
+    policy_store = UserToolPolicyStore(tool_policy_dir if tool_policy_dir is not None else
+        ((Path(custom_profiles_dir).parent if custom_profiles_dir is not None else Path.cwd() / "outputs")
+         / "tool-policies"), tool_registry)
+    app.extensions["fishery_tool_policy_store"] = policy_store
     tool_mock_profile = ModelProfile("tool-mock", "Tool Mock · 离线", "mock",
         "http://mock.invalid/v1", "offline-tool-model", auth_spec=AuthSpec.NONE, max_retries=0,
         capabilities=ModelCapabilities(tool_calling=Support.SUPPORTED, service_id="custom",
@@ -230,6 +240,23 @@ def create_app(*, trace_path: Path | None = None,
 
     def error(code: str, status: int):
         return jsonify({"status": "failed", "error_code": code}), status
+
+    @app.route("/api/tool-policies", methods=["GET", "PUT", "DELETE"])
+    def manage_tool_policies():
+        failure = credential_origin_gate(required=False) if request.method == "GET" else credential_gate()
+        if failure is not None:
+            return failure
+        try:
+            if request.method == "PUT":
+                policy_store.save(request.get_json(silent=True))
+            elif request.method == "DELETE":
+                payload = request.get_json(silent=True)
+                if payload != {}:
+                    return error("INVALID_REQUEST", 400)
+                policy_store.reset()
+            return jsonify({"catalog": tool_catalog(tool_registry), "policy": policy_store.public()})
+        except ToolPolicyError as exc:
+            return error(exc.code, 503 if exc.code == "TOOL_POLICY_STORAGE_ERROR" else 400)
 
     def scenario_failure(exc):
         status = 404 if exc.code == "SCENARIO_NOT_FOUND" else 403 if exc.code == "SCENARIO_READ_ONLY" else (
@@ -938,6 +965,12 @@ def create_app(*, trace_path: Path | None = None,
             return error("PROFILE_NOT_FOUND", 404)
         if sources.get(profile_id) != "user_custom" or profile.access_mode != "managed_custom":
             return error("CAPABILITY_PROBE_UNSUPPORTED", 403)
+        try:
+            assistant_policy = policy_store.effective()["assistant"]
+        except ToolPolicyError as exc:
+            return error(exc.code, 503)
+        if not assistant_policy.allows("get_current_water_quality"):
+            return error("TOOL_NOT_ALLOWED", 400)
         runtime, failure = request_runtime(profile)
         if failure is not None:
             return failure
@@ -947,7 +980,7 @@ def create_app(*, trace_path: Path | None = None,
         try:
             with request_scope(handle):
                 result = run_tool_calling_probe(real_gateway_factory(), profile, tool_registry,
-                                               traces, runtime=runtime)
+                                               traces, runtime=runtime, policy=assistant_policy)
                 if result["verdict"] in ("SUPPORTED", "UNSUPPORTED"):
                     handle.check()
                     current = profiles.get(profile_id)
@@ -1004,13 +1037,17 @@ def create_app(*, trace_path: Path | None = None,
             return failure
         started = time.monotonic()
         try:
+            assistant_policy = policy_store.effective()["assistant"]
             gateway = MockToolGateway(delay_steps=10) if target == "mock" else real_gateway_factory()
             with request_scope(handle):
-                result = ToolCallingService(gateway, tool_registry, traces).converse(question.strip(), runtime)
+                result = ToolCallingService(gateway, tool_registry, traces, policy=assistant_policy).converse(question.strip(), runtime)
             handle.finish(result.error_code)
         except GatewayError as exc:
             handle.finish(exc.code)
             return error(exc.code, 409)
+        except ToolPolicyError as exc:
+            handle.finish(exc.code)
+            return error(exc.code, 503)
         except Exception:
             handle.finish("INTERNAL_ERROR")
             return error("INTERNAL_ERROR", 500)

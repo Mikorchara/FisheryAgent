@@ -45,6 +45,6 @@
 
 ## 人工入口
 
-Managed Custom 选择 DS_1 → 进入开发验证 → 真实 Runtime · DS_1 → 确认 REAL NETWORK REQUEST → 验证 Tool Calling 能力。此按钮是新的显式真实请求，切勿将重复点击当成本轮自动验证的一部分。普通 UNKNOWN 请求继续禁止。
+当前 UI 入口已迁移：Managed Custom 选择 DS_1 → 02 · 模型能力 → 高级验证操作 → 验证 / 重新验证 Tool Calling → 确认 REAL NETWORK REQUEST。Development / Test 仅用于已有能力的 Tool Conversation。此次迁移不改变上述历史 DS_1 环境阻塞结果。此按钮是新的显式真实请求，切勿将重复点击当成本轮自动验证的一部分。普通 UNKNOWN 请求继续禁止。
 
 下一步建议：由用户在已能正常读取凭据的 Web 进程中进行一次显式人工验证；确认两次请求、Tool Result、最终正文与精确 Identity Evidence。不要为完成验证降低 R2 安全策略。网络失败保持现有证据不变，界面同时显示 Probe verdict 与 R4 当前解析状态，冲突时普通门禁仍关闭。

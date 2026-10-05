@@ -1,16 +1,16 @@
 # 项目数据与配置位置地图
 
-面向维护者的路径索引。Git 状态按仓库忽略规则与当前源码职责说明；outputs/ 和用户私有凭据的实际文件内容没有被读取。路径以项目根为基准，除明确标为用户私有路径外。
+面向维护者的路径索引。Git 状态按仓库忽略规则与当前源码职责说明；本文不读取凭据值，也不将本地运行数据内容写入位置地图。路径以项目根为基准，除明确标为用户私有路径外。
 
 | 名称 | 作用 | 实际路径 | Git 跟踪 | 用户私有 | 运行时需要 | 可安全删除 / 重建 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 水质诊断规则 / 阈值 | 温度、pH、DO 与 Quality/Freshness Finding | src/fishery_ai/domain.py | 是 | 否 | 是 | 否；源码合同 |
 | 动态水质模拟入口 | sim-v1、baseline / overrides、canonical Adapter | src/fishery_ai/telemetry/{models,simulator,adapter}.py；公共入口 __init__.py | 是 | 否 | Web / Demo 水质输入需要 | 不删除源码；Packet 可重新生成，不保存原始包文件 |
-| 情景模板管理 | scenario-template-v1 合同、Builtin / User CRUD 与 Apply | src/fishery_ai/telemetry/scenario_templates.py | 源码，待提交 | 否 | Web / Demo 水质入口需要 | 不删除；可从源码恢复 |
+| 情景模板管理 | scenario-template-v1 合同、Builtin / User CRUD 与 Apply | src/fishery_ai/telemetry/scenario_templates.py | 是；源码 | 否 | Web / Demo 水质入口需要 | 不删除；可从源码恢复 |
 | 当前水质 Snapshot | 最后一次明确写入的 WaterQualityReading；未写入为 None | src/fishery_ai/telemetry/snapshot.py；Web app 共享实例，数据仅在内存 | Store 源码跟踪；内存数据不跟踪 | 否 | Web 分析 / 未来 current Tool 的数据源 | 进程退出即丢失；需再次明确写入，无自动 normal fallback |
-| 内置水质情景 | 只读输入模板，不保存固定水质时间戳 | src/fishery_ai/resources/scenarios/water_quality/{normal,low_oxygen,partial,stale,partial_stale}.json | 源码资源，待提交 | 否 | Demo / Web 需要 | 不删除；随包模板 |
+| 内置水质情景 | 只读输入模板，不保存固定水质时间戳 | src/fishery_ai/resources/scenarios/water_quality/{normal,low_oxygen,partial,stale,partial_stale}.json | 是；源码资源 | 否 | Demo / Web 需要 | 不删除；随包模板 |
 | 用户水质情景 | 用户创建 / 编辑 / 另存的情景输入 | outputs/scenario_templates/water_quality/<safe-id>.json | 否，Git 忽略 | 否；工作区本地数据 | 选择该模板时需要 | 删除会丢失用户内容；先备份。仅应用的临时情景不写文件 |
-| Detection Mock | 独立固定检测事件；保持时间、模型、bbox 等原值 | src/fishery_ai/resources/scenarios/detection/{normal,count_jump}.json | 源码资源，待提交 | 否 | Detection 演示 / 回归需要 | 不删除；随包 fixture |
+| Detection Mock | 独立固定检测事件；保持时间、模型、bbox 等原值 | src/fishery_ai/resources/scenarios/detection/{normal,count_jump}.json | 是；源码资源 | 否 | Detection 演示 / 回归需要 | 不删除；随包 fixture |
 | Mock Profile 目录 | Mock / 开发连接定义 | src/fishery_ai/resources/mock/profiles.json；Composition 读取 | 是 | 否 | 离线 Demo 需要 | 否；源码资源 |
 | RAG 检索实现 | TF-IDF baseline 与证据排序 | src/fishery_ai/knowledge.py | 是 | 否 | 是 | 否 |
 | RAG / Knowledge 数据 | 知识条目和规则背景 | src/fishery_ai/resources/knowledge/eel_knowledge.json；来源缺口 src/fishery_ai/resources/knowledge/SOURCE.md | 是 | 否 | 是 | 否；无自动权威重建来源 |
@@ -18,6 +18,9 @@
 | Provider 配置 | Provider / Auth / adapter 元信息 | src/fishery_ai/providers.py | 是 | 否 | Managed / Preset 连接校验需要 | 否 |
 | 内置实验连接 | 开发 / Managed 兼容使用的 Qwen、DeepSeek、Ollama 连接模板 | src/fishery_ai/resources/profiles/qwen_experimental.json、deepseek_experimental.json、ollama_qwen35_local.json | 是 | 否 | 开发配置路径需要 | 否；不等同 Preset 发布合同 |
 | ProtocolSpec | OpenAI-compatible 参数编码定义 | src/fishery_ai/protocol_specs.py | 是 | 否 | Managed 与 Preset 请求需要 | 否 |
+| Tool Policy | analysis / assistant 对静态 Registry 的授权子集；不能注册 Handler | src/fishery_ai/resources/tools/tool_policies.json；loader src/fishery_ai/tool_policy.py | 是；包资源 | 否 | Analysis / Assistant 创建时校验 | 不删除；由维护者修改并补测试 |
+| Tool Catalog | 展示说明和三个不可执行的 DEV ONLY 占位；不注册工具 | src/fishery_ai/tools/catalog.py | 是；源码 | 否 | Tool 管理界面需要 | 不删除源码；没有本地 Handler 文件 |
+| User Tool Policy Override | 两份模式的用户选择；Analysis 仅准备，Assistant 新请求使用 | outputs/tool-policies/tool_policies.json；schema_version=1 | 否；Git 忽略 | 否；工作区设置，不含 Secret | 有 Override 时加载；不存在用包内默认 | Web 恢复默认只删除该文件；删除前确认愿意丢弃两份自定义设置 |
 | Managed Custom Profile | 用户连接参数、credential_ref 与运行偏好 | outputs/custom_profiles/custom-*.json | 否，Git 忽略 | 否；仅工作区本地数据 | 有已保存连接时需要 | 手动备份后可删除；不能由程序自动恢复 |
 | Capability / Evidence | 精确 Identity 的 Probe / Metadata 证据 | outputs/capability-evidence/*.json | 否，Git 忽略 | 否；不含 Secret，但属本地验证数据 | Managed 高级选项解析需要 | 删除会丢失证据并锁定选项；不建议清理 |
 | Runtime defaults | Custom 用户偏好；Preset 开发者默认值 | Custom：outputs/custom_profiles/*.json；Preset：src/fishery_ai/resources/profiles/presets.json 的 defaults | 分别否 / 是 | Custom 文件不是 ACL 私有凭据 | 有对应 Profile 时读取 | 删除 Custom Profile 会一起丢失偏好；谨慎 |

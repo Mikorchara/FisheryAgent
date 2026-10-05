@@ -18,6 +18,7 @@ from .model_gateway import (GatewayError, ModelGateway, ModelMessage, ModelReque
                             ModelResponse, ProfileRegistry)
 from .observability import JsonlTraceSink
 from .execution import check_cancelled, current_handle
+from .tool_policy import load_tool_policies
 
 
 class WaterQualityRepository(Protocol):
@@ -71,7 +72,8 @@ def _build_model_request(context: AnalysisContext, request: AnalysisRequest) -> 
     user = (f"Observed Facts（当前观测）：{facts}\nRule Results（程序判断）：\n{rules}"
             f"\nRAG Evidence（仅供参考的背景知识）：\n{evidence}\n任务：{task}")
     return ModelRequest(context.mode, (ModelMessage("system", system), ModelMessage("user", user)),
-                        generation=request.generation, reasoning=request.reasoning)
+                        generation=request.generation, reasoning=request.reasoning,
+                        tools=(), tool_choice=None)  # Analysis never delegates flow to LLM tools.
 
 
 def _parse_model_text(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...], bool]:
@@ -110,6 +112,8 @@ class Orchestrator:
         self.clock = clock
         self.id_factory = id_factory
         self.resolve_secrets = resolve_secrets
+        # Analysis has no Registry/Executor: its policy can never expose LLM tools.
+        self.tool_policy = load_tool_policies()["analysis"]
 
     def _retrieve_evidence(self, request: AnalysisRequest, reading: WaterQualityReading,
                            findings: tuple[RuleFinding, ...], started_at: datetime

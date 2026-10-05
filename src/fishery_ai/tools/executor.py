@@ -13,7 +13,10 @@ class ToolExecutor:
     """Create once per request. Attempts consume budget; call IDs cannot be replayed."""
 
     def __init__(self, registry: ToolRegistry, *, max_calls: int = 1,
-                 max_result_bytes: int = 32768):
+                 max_result_bytes: int = 32768, policy=None):
+        from ..tool_policy import load_tool_policies
+        self._policy = policy if policy is not None else load_tool_policies()["assistant"]
+        self._policy.validate_registry(registry)
         if type(max_calls) is not int or not 1 <= max_calls <= 8:
             raise ValueError("max_calls must be between 1 and 8")
         if type(max_result_bytes) is not int or not 256 <= max_result_bytes <= 262144:
@@ -36,6 +39,8 @@ class ToolExecutor:
                     raise ToolError(ToolErrorCode.TOOL_CALL_LIMIT)
                 self._seen.add(call.id)
             definition = self._registry.lookup(call.function_name)
+            if not self._policy.allows(call.function_name):
+                raise ToolError(ToolErrorCode.TOOL_NOT_ALLOWED)
             try:
                 if len(call.arguments_json.encode("utf-8")) > 4096:
                     raise ValueError

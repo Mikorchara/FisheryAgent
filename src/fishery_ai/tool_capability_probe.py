@@ -11,7 +11,7 @@ from .tool_conversation import ToolCallingService
 from .tools import ToolStatus
 
 
-def run_tool_calling_probe(gateway, profile, registry, traces, *, runtime):
+def run_tool_calling_probe(gateway, profile, registry, traces, *, runtime, policy=None):
     if profile.access_mode != "managed_custom" or profile.provider_kind == "mock":
         raise GatewayError("CAPABILITY_PROBE_UNSUPPORTED")
     if (runtime.profile_id != profile.profile_id
@@ -26,7 +26,7 @@ def run_tool_calling_probe(gateway, profile, registry, traces, *, runtime):
             max_output_tokens=Support.SUPPORTED, service_id=profile.service_id,
             adapter_id=profile.adapter_id, base_url=profile.base_url, model_id=profile.model))
     started = time.monotonic()
-    result = ToolCallingService(gateway, registry, traces).converse("现在水质怎么样？请简短回答。", diagnostic)
+    result = ToolCallingService(gateway, registry, traces, policy=policy).converse("现在水质怎么样？请简短回答。", diagnostic)
     tool_status = result.tool_result.status.value if result.tool_result else None
     success = (result.status == Status.COMPLETED and result.error_code is None
         and result.request_1.outcome == "tool_calls"

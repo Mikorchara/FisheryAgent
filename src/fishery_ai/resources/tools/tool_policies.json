@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "modes": {
+    "analysis": {
+      "llm_tool_calling": false,
+      "exposed_tools": []
+    },
+    "assistant": {
+      "llm_tool_calling": true,
+      "exposed_tools": ["get_current_water_quality"]
+    }
+  }
+}

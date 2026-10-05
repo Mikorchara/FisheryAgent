@@ -918,6 +918,155 @@ test('reasoning deltas remain in folded debug area and never in final inference'
   assert.equal(page.element('reasoning-debug').open,false);
 });
 
+function toolManagerFixture(analysis=[], assistant=['get_current_water_quality'], source='BUILTIN_DEFAULT') {
+  return {catalog:[{name:'get_current_water_quality',display_name:'get_current_water_quality',
+    short_description:'读取当前水质',detailed_description:'canonical Snapshot 与确定性 Findings',
+    access_type:'READ ONLY',registered:true,executable:true,dev_only:false,planned:false,parameter_summary:'无；{}'},
+    ...[1,2,3].map(n=>({name:`testTool_${n}`,display_name:`testTool_${n}`,short_description:'占位',
+      detailed_description:'UI PLACEHOLDER',access_type:'READ ONLY',registered:false,executable:false,dev_only:true,
+      planned:false,parameter_summary:'不适用'}))],policy:{schema_version:1,source,
+      modes:{analysis:{selected_tools:analysis},assistant:{selected_tools:assistant}},
+      defaults:{analysis:{selected_tools:[]},assistant:{selected_tools:['get_current_water_quality']}},
+      runtime_consumed:{analysis:false,assistant:true}}};
+}
+
+function toolManagerPage(fetch=async()=>r2Reply(toolManagerFixture())) {
+  const page=makePage(fetch);
+  vm.runInContext('credentialCsrf="offline-csrf"; bindToolManagerControls()',page.context);
+  return page;
+}
+
+test('Tool Manager title and Tool entry are application level not Profile controls',()=>{
+  assert.match(html,/<h2>Analysis Model<\/h2><button id="open-tool-manager"/);
+  assert.doesNotMatch(html,/基础模型配置/);
+  assert.ok(html.indexOf('id="open-tool-manager"')<html.indexOf('id="profile"'));
+  assert.match(html,/id="tool-manager"[^>]*hidden/);
+});
+
+test('Tool Manager opens Analysis tab with collapsed entries and closes without writes',async()=>{
+  const calls=[];const page=toolManagerPage(async(url,options)=>{calls.push({url,method:options.method});return r2Reply(toolManagerFixture());});
+  await page.element('open-tool-manager').dispatch('click');
+  assert.equal(page.element('tool-manager').open,true);
+  assert.match(page.element('tool-manager-title').textContent,/Analysis/);
+  assert.equal(page.element('tool-catalog-list').children.length,4);
+  for(const row of page.element('tool-catalog-list').children)assert.equal(row.children[1].hidden,true);
+  await page.element('tool-policy-close').dispatch('click');
+  assert.equal(page.element('tool-manager').hidden,true);
+  assert.deepEqual(calls,[{url:'/api/tool-policies',method:'GET'}]);
+});
+
+test('Tool Manager expands details and collapses again without saving or fetching',async()=>{
+  let calls=0;const page=toolManagerPage(async()=>{calls++;return r2Reply(toolManagerFixture());});
+  await page.element('open-tool-manager').dispatch('click');
+  const item=page.element('tool-catalog-list').children[0],button=item.children[0].children[3],detail=item.children[1];
+  await button.dispatch('click');assert.equal(detail.hidden,false);assert.equal(button.textContent,'收起');
+  assert.match(detail.children.map(x=>x.textContent).join(' '),/用途.*参数.*适用模式.*Built-in/);
+  await button.dispatch('click');assert.equal(detail.hidden,true);assert.equal(button.textContent,'展开');
+  assert.equal(calls,1);
+});
+
+test('Tool Manager both tabs retain independent drafts and mark Analysis preparation',async()=>{
+  const page=toolManagerPage();await page.element('open-tool-manager').dispatch('click');
+  assert.match(page.element('tool-policy-note').textContent,/实际暴露 0 个 Tool/);
+  assert.match(page.element('tool-policy-count').textContent,/0 \/ 4/);
+  let checkbox=page.element('tool-catalog-list').children[0].children[0].children[0];
+  checkbox.checked=true;await checkbox.dispatch('change');
+  assert.match(page.element('tool-policy-count').textContent,/1 \/ 4/);
+  assert.match(page.element('tool-policy-status').textContent,/未保存/);
+  await page.element('tool-policy-assistant').dispatch('click');
+  checkbox=page.element('tool-catalog-list').children[0].children[0].children[0];assert.equal(checkbox.checked,true);
+  checkbox.checked=false;await checkbox.dispatch('change');
+  assert.match(page.element('tool-policy-count').textContent,/0 \/ 4/);
+  await page.element('tool-policy-analysis').dispatch('click');
+  assert.equal(page.element('tool-catalog-list').children[0].children[0].children[0].checked,true);
+});
+
+test('Tool Manager placeholders are disabled but expandable and never enter draft',async()=>{
+  const page=toolManagerPage();await page.element('open-tool-manager').dispatch('click');
+  const rows=page.element('tool-catalog-list').children;
+  for(const item of rows.slice(1)) {
+    const controls=item.children[0].children;assert.equal(controls[0].disabled,true);
+    assert.match(controls[2].textContent,/DEV ONLY.*NOT EXECUTABLE.*UI PLACEHOLDER/);
+    controls[0].checked=true;await controls[0].dispatch('change');
+    await controls[3].dispatch('click');assert.equal(item.children[1].hidden,false);
+  }
+  assert.equal(vm.runInContext('JSON.stringify(toolPolicyDraft)',page.context).includes('testTool'),false);
+});
+
+test('Tool Manager Save persists both drafts with CSRF and reopening reads override',async()=>{
+  let state=toolManagerFixture();const calls=[];
+  const page=toolManagerPage(async(url,options)=>{
+    calls.push({url,...options});
+    if(options.method==='PUT') {const draft=JSON.parse(options.body);state={...state,policy:{...state.policy,...draft,source:'USER_OVERRIDE'}};}
+    return r2Reply(state);
+  });
+  await page.element('open-tool-manager').dispatch('click');await page.element('tool-policy-assistant').dispatch('click');
+  const checkbox=page.element('tool-catalog-list').children[0].children[0].children[0];checkbox.checked=false;await checkbox.dispatch('change');
+  await page.element('tool-policy-save').dispatch('click');
+  const write=calls.find(x=>x.method==='PUT');assert.equal(write.headers['X-CSRF-Token'],'offline-csrf');
+  assert.deepEqual(JSON.parse(write.body),{schema_version:1,modes:{analysis:{selected_tools:[]},assistant:{selected_tools:[]}}});
+  assert.match(page.element('tool-policy-status').textContent,/已保存/);
+  await page.element('tool-policy-close').dispatch('click');await page.element('open-tool-manager').dispatch('click');
+  await page.element('tool-policy-assistant').dispatch('click');
+  assert.equal(page.element('tool-catalog-list').children[0].children[0].children[0].checked,false);
+  assert.match(page.element('tool-policy-count').textContent,/USER_OVERRIDE/);
+});
+
+test('Tool Manager Restore defaults deletes only override and resets both modes',async()=>{
+  let state=toolManagerFixture(['get_current_water_quality'],[],'USER_OVERRIDE');const calls=[];
+  const page=toolManagerPage(async(url,options)=>{calls.push({url,...options});if(options.method==='DELETE')state=toolManagerFixture();return r2Reply(state);});
+  await page.element('open-tool-manager').dispatch('click');await page.element('tool-policy-reset').dispatch('click');
+  const reset=calls.find(x=>x.method==='DELETE');assert.deepEqual(JSON.parse(reset.body),{});
+  assert.match(page.element('tool-policy-status').textContent,/已恢复内置默认/);
+  assert.equal(page.element('tool-catalog-list').children[0].children[0].children[0].checked,false);
+  await page.element('tool-policy-assistant').dispatch('click');assert.equal(page.element('tool-catalog-list').children[0].children[0].children[0].checked,true);
+});
+
+test('Tool Manager Cancel close retains draft until confirmed discard and reopening resets it',async()=>{
+  const page=toolManagerPage();await page.element('open-tool-manager').dispatch('click');
+  const checkbox=page.element('tool-catalog-list').children[0].children[0].children[0];checkbox.checked=true;await checkbox.dispatch('change');
+  page.context.window.confirm=()=>false;await page.element('tool-policy-close').dispatch('click');assert.equal(page.element('tool-manager').open,true);
+  page.context.window.confirm=()=>true;await page.element('tool-policy-close').dispatch('click');
+  await page.element('open-tool-manager').dispatch('click');assert.equal(page.element('tool-catalog-list').children[0].children[0].children[0].checked,false);
+});
+
+test('Tool Manager save failure is safe, keeps draft and unlocks controls',async()=>{
+  const page=toolManagerPage(async(_url,options)=>options.method==='PUT'?{ok:false,status:503,json:async()=>({error_code:'TOOL_POLICY_STORAGE_ERROR'})}:r2Reply(toolManagerFixture()));
+  await page.element('open-tool-manager').dispatch('click');
+  const checkbox=page.element('tool-catalog-list').children[0].children[0].children[0];checkbox.checked=true;await checkbox.dispatch('change');
+  await page.element('tool-policy-save').dispatch('click');
+  assert.match(page.element('tool-policy-status').textContent,/TOOL_POLICY_STORAGE_ERROR.*草稿保留/);
+  assert.equal(vm.runInContext('toolPolicyDirty',page.context),true);assert.equal(page.element('tool-policy-save').disabled,false);
+});
+
+test('Tool Manager read JSON or network failure cannot display editable stale policy',async()=>{
+  for(const fetch of [async()=>{throw new Error('private unexpected error');},async()=>({ok:true,json:async()=>({})})]) {
+    const page=toolManagerPage(fetch);await page.element('open-tool-manager').dispatch('click');
+    assert.match(page.element('tool-policy-status').textContent,/读取失败/);
+    assert.doesNotMatch(page.element('tool-policy-status').textContent,/private/);
+    assert.equal(page.element('tool-catalog-list').children.length,0);assert.equal(page.element('tool-policy-save').disabled,true);
+    await page.element('tool-policy-close').dispatch('click');assert.equal(page.element('tool-manager').hidden,true);
+  }
+});
+
+test('Tool Manager pending save locks duplicate operations and mode switching',async()=>{
+  let resolve;const page=toolManagerPage(async(_url,options)=>options.method==='PUT'?new Promise(r=>{resolve=r;}):r2Reply(toolManagerFixture()));
+  await page.element('open-tool-manager').dispatch('click');const pending=page.element('tool-policy-save').dispatch('click');
+  await new Promise(setImmediate);assert.equal(page.element('tool-policy-save').disabled,true);
+  await page.element('tool-policy-assistant').dispatch('click');assert.equal(vm.runInContext('toolPolicyMode',page.context),'analysis');
+  await page.element('tool-policy-close').dispatch('click');assert.equal(page.element('tool-manager').open,true);
+  resolve(r2Reply(toolManagerFixture([],[],'USER_OVERRIDE')));await pending;
+  assert.equal(page.element('tool-policy-save').disabled,false);
+});
+
+test('Tool Manager Assistant entry Coming Soon never switches access mode Runtime or Profile',async()=>{
+  const page=toolManagerPage(async()=>assert.fail('entry must not fetch'));
+  vm.runInContext('accessMode="managed_custom";profiles=[{profile_id:"origin"}]',page.context);page.element('profile').value='origin';
+  await page.element('assistant-mode-entry').dispatch('click');
+  assert.match(page.element('application-mode-status').textContent,/界面尚未实现/);
+  assert.equal(vm.runInContext('accessMode',page.context),'managed_custom');assert.equal(page.element('profile').value,'origin');
+});
+
 function makePage(fetch, {ownExecutionRoutes = false} = {}) {
   const controls = new Map();
   class Element {
@@ -1302,7 +1451,7 @@ test('reasoning mode is sent only for a Profile exposing the exact supported con
 });
 
 test('left settings have three layers, desktop independent scroll, and local default Normal OFF', async () => {
-  assert.match(html, /基础模型配置/);
+  assert.match(html, /<h2>Analysis Model<\/h2>/);
   assert.match(html, /id="capability-panel"/);
   assert.match(html, /本次运行选择/);
   const capStart = html.indexOf('id="capability-panel"');
@@ -2495,7 +2644,7 @@ function developmentUxPage(extraFetch=null) {
   },items);
 }
 
-test('T5 explicit Tool Probe unlocks exact origin UNKNOWN only after successful evidence',async()=>{
+test('Tool Capability UI T5 Probe unlocks Managed exact Profile only after successful evidence',async()=>{
   let sent;
   const page=developmentUxPage(async(url,options)=>{
     if(url==='/api/profiles/user-local/tool-probe') {
@@ -2508,53 +2657,63 @@ test('T5 explicit Tool Probe unlocks exact origin UNKNOWN only after successful 
   });
   page.items.find(p=>p.profile_id==='user-local').capabilities.tool_calling={status:'unknown'};
   await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
-  await page.element('use-development').dispatch('click');
-  page.element('tool-target').value='selected';await page.element('tool-target').dispatch('change');
-  assert.equal(page.element('tool-run').disabled,true);
   assert.equal(page.element('tool-probe').hidden,false);
+  assert.equal(page.element('tool-reprobe').hidden,true);
+  vm.runInContext('window.confirm=()=>false',page.context);
   await page.element('tool-probe').dispatch('click');
   assert.equal(sent,undefined);
-  assert.match(page.element('tool-probe-result').textContent,/REAL NETWORK REQUEST/);
-  page.element('tool-confirm-network').checked=true;
-  vm.runInContext("credentialCsrf='offline-csrf'",page.context);
+  assert.match(page.element('tool-probe-result').textContent,/已取消/);
+  vm.runInContext("credentialCsrf='offline-csrf';window.confirm=()=>true",page.context);
   await page.element('tool-probe').dispatch('click');
   assert.equal(sent.confirm_network,true);
   assert.equal(Object.hasOwn(sent,'question'),false);
-  assert.equal(page.element('tool-run').disabled,false);
   assert.match(page.element('tool-probe-result').textContent,/SUPPORTED.*已写入/);
-  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'mock-demo');
-  assert.equal(vm.runInContext('originToolProfile().capabilities.tool_calling.source',page.context),'explicit_probe');
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'user-local');
+  assert.equal(vm.runInContext('selectedProfile().capabilities.tool_calling.source',page.context),'explicit_probe');
+  assert.equal(page.element('tool-probe').hidden,true);
+  assert.equal(page.element('tool-reprobe').hidden,false);
+  assert.match(page.element('capability-list').children.map(x=>x.textContent).join(' '),/Tool Calling 支持/);
+  await page.element('use-development').dispatch('click');
+  page.element('tool-target').value='selected';await page.element('tool-target').dispatch('change');
+  assert.equal(page.element('tool-run').disabled,false);
 });
 
-test('T5 explicit Probe failures remain visible and leave UNKNOWN ordinary gate locked',async()=>{
+test('Tool Capability UI T5 failures remain visible without granting UNKNOWN runtime',async()=>{
   for(const failure of ['CONNECT_TIMEOUT','HTTP_401','HTTP_429','NO_TOOL_CALL']) {
     const page=developmentUxPage(async(url)=>url.endsWith('/tool-probe')?
       r2Reply({verdict:'UNKNOWN',evidence_written:false,error_code:failure,model_requests:1},false,502):null);
     page.items.find(p=>p.profile_id==='user-local').capabilities.tool_calling={status:'unknown'};
     await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
-    await page.element('use-development').dispatch('click');
-    page.element('tool-target').value='selected';await page.element('tool-target').dispatch('change');
-    page.element('tool-confirm-network').checked=true;vm.runInContext("credentialCsrf='offline-csrf'",page.context);
+    vm.runInContext("credentialCsrf='offline-csrf'",page.context);
     await page.element('tool-probe').dispatch('click');
     assert.match(page.element('tool-probe-result').textContent,new RegExp(failure));
     assert.match(page.element('tool-probe-result').textContent,/未写入/);
-    assert.equal(page.element('tool-run').disabled,true);
+    assert.equal(vm.runInContext('selectedProfile().capabilities.tool_calling.status',page.context),'unknown');
     assert.equal(page.element('tool-probe').disabled,false);
   }
 });
 
-test('T5 Probe is hidden for Mock Preset and normal page',async()=>{
+test('Tool Capability UI Probe is hidden for Mock Preset Manual and Development',async()=>{
   const page=developmentUxPage();await vm.runInContext('init()',page.context);
   assert.equal(page.element('tool-probe').hidden,true);
+  assert.equal(page.element('tool-reprobe').hidden,true);
   await page.element('use-development').dispatch('click');
   assert.equal(page.element('tool-probe').hidden,true);
   await page.element('return-normal').dispatch('click');
   await page.element('use-development').dispatch('click');
   page.element('tool-target').value='selected';await page.element('tool-target').dispatch('change');
   assert.equal(page.element('tool-probe').hidden,true);
+  const dev=html.slice(html.indexOf('id="development-workspace"'),html.indexOf('id="manual-expert"'));
+  assert.equal(dev.includes('id="tool-probe"'),false);
+  const advanced=html.slice(html.indexOf('id="advanced-capability-actions"'),html.indexOf('runtime-options-heading'));
+  assert.match(advanced,/id="tool-probe"/);
+  assert.match(advanced,/id="tool-reprobe"/);
+  await page.element('return-normal').dispatch('click');
+  await vm.runInContext('setAccessMode("manual_expert","user-local")',page.context);
+  assert.equal(page.element('tool-probe').hidden,true);
 });
 
-test('T5 malformed JSON or fetch failure never silently succeeds',async()=>{
+test('Tool Capability UI T5 malformed JSON or fetch failure never silently succeeds',async()=>{
   for(const bad of ['json','fetch']) {
     const page=developmentUxPage(async(url)=>{
       if(!url.endsWith('/tool-probe'))return null;
@@ -2563,15 +2722,84 @@ test('T5 malformed JSON or fetch failure never silently succeeds',async()=>{
     });
     page.items.find(p=>p.profile_id==='user-local').capabilities.tool_calling={status:'unknown'};
     await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
-    await page.element('use-development').dispatch('click');
-    page.element('tool-target').value='selected';await page.element('tool-target').dispatch('change');
-    page.element('tool-confirm-network').checked=true;vm.runInContext("credentialCsrf='offline-csrf'",page.context);
+    vm.runInContext("credentialCsrf='offline-csrf'",page.context);
     await page.element('tool-probe').dispatch('click');
     assert.match(page.element('tool-probe-result').textContent,/NETWORK_ERROR/);
     assert.doesNotMatch(page.element('tool-probe-result').textContent,/private|fake/);
-    assert.equal(page.element('tool-run').disabled,true);
+    assert.equal(vm.runInContext('selectedProfile().capabilities.tool_calling.status',page.context),'unknown');
     assert.equal(vm.runInContext('activeExecution',page.context),null);
   }
+});
+
+test('Tool Capability UI Development UNKNOWN explains management path and never auto Probes',async()=>{
+  const page=developmentUxPage();
+  page.items.find(p=>p.profile_id==='user-local').capabilities.tool_calling={status:'unknown'};
+  await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
+  await page.element('use-development').dispatch('click');
+  page.element('tool-target').value='selected';await page.element('tool-target').dispatch('change');
+  assert.match(page.element('tool-target-status').textContent,/请先在 Managed Custom → 模型能力中验证 Tool Calling/);
+  const count=page.calls.length;
+  await vm.runInContext('probeToolCalling()',page.context);
+  assert.equal(page.calls.length,count);
+  assert.equal(page.element('tool-probe').hidden,true);
+  assert.equal(page.element('tool-run').disabled,true);
+  await page.element('return-normal').dispatch('click');
+  assert.equal(page.element('tool-probe').hidden,false);
+});
+
+test('Tool Capability UI verified Profile has reverify and switching identity recomputes buttons',async()=>{
+  const page=developmentUxPage();
+  page.items.find(p=>p.profile_id==='user-local').capabilities.tool_calling={status:'supported',source:'explicit_probe'};
+  await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
+  assert.equal(page.element('tool-probe').hidden,true);
+  assert.equal(page.element('tool-reprobe').hidden,false);
+  const other=page.items.find(p=>p.profile_id==='user-local');
+  other.capabilities.tool_calling={status:'unknown'};
+  await vm.runInContext('updateProfile()',page.context);
+  assert.equal(page.element('tool-probe').hidden,false);
+  assert.equal(page.element('tool-reprobe').hidden,true);
+});
+
+test('Tool Capability UI duplicate Probe blocked and common Stop cancels without touching conversation Trace',async()=>{
+  let release;let count=0;
+  const page=developmentUxPage(async(url)=>{
+    if(url.endsWith('/tool-probe')){count++;return await new Promise(resolve=>{release=resolve;});}
+    return null;
+  });
+  page.items.find(p=>p.profile_id==='user-local').capabilities.tool_calling={status:'unknown'};
+  await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
+  vm.runInContext("credentialCsrf='offline-csrf'",page.context);
+  page.element('tool-trace').textContent='previous conversation trace';
+  const running=page.element('tool-probe').dispatch('click');
+  for(let i=0;i<10&&!release;i++)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(page.element('tool-probe').disabled,true);
+  assert.equal(vm.runInContext('activeExecution.kind',page.context),'tool_probe');
+  await vm.runInContext('probeToolCalling()',page.context);
+  assert.equal(count,1);
+  await page.element('stop-generation').dispatch('click');
+  release(r2Reply({verdict:'UNKNOWN',evidence_written:false,error_code:'USER_CANCELLED'}));
+  await running;
+  assert.match(page.element('tool-probe-result').textContent,/USER_CANCELLED/);
+  assert.equal(page.element('tool-trace').textContent,'previous conversation trace');
+  assert.equal(vm.runInContext('activeExecution',page.context),null);
+  assert.equal(page.element('tool-probe').disabled,false);
+});
+
+test('Tool Capability UI probes persisted Profile rather than edited Identity draft',async()=>{
+  let target;
+  const page=developmentUxPage(async(url)=>{
+    if(url.endsWith('/tool-probe')){target=url;return r2Reply({verdict:'UNKNOWN',evidence_written:false,error_code:'NO_TOOL_CALL'});}
+    return null;
+  });
+  await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
+  await page.element('edit-profile').dispatch('click');
+  page.element('custom-model').value='unsaved-different-model';
+  page.element('custom-url').value='https://draft.invalid/v1';
+  vm.runInContext("credentialCsrf='offline-csrf'",page.context);
+  await page.element('tool-probe').dispatch('click');
+  assert.equal(target,'/api/profiles/user-local/tool-probe');
+  assert.equal(page.element('custom-model').value,'unsaved-different-model');
+  assert.equal(vm.runInContext('selectedProfile().model',page.context),'local-model');
 });
 
 test('Development UX normal Preset Managed and Manual expose only entry without experimental controls',async()=>{

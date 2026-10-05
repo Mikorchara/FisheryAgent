@@ -10,11 +10,13 @@
 - Preset、Managed Custom、Manual Expert V1/V2 三条模型接入路径。
 - R2 用户私有凭据、R3 ProtocolSpec、R4 Capability Evidence Resolver、R5 显式单项 Probe。
 - Usage、JSONL Trace、请求取消及离线 Python / Browser 测试。
-- 只读 Tool Calling T1–T4：Gateway 合同、静态 Registry / Executor、get_current_water_quality、单轮 Model → Tool → Model 和 Web 离线开发入口。当前事实只经共享 CurrentWaterQualityReader 读取，首次请求不预载水质；固定 Analysis 保留。
+- 只读 Tool Calling T1–T5：Gateway 合同、静态 Registry / Executor、get_current_water_quality、单轮 Model → Tool → Model 和 Web 离线开发入口。当前事实只经共享 CurrentWaterQualityReader 读取，首次请求不预载水质；固定 Analysis 保留。
 
-## 下一阶段：T5 真实模型工具能力验证
+## 当前整理与下一步
 
-先完成人工离线验收，再对选定精确 Runtime 的 Tool capability 单独验证。T4 不会提升 Qwen / DeepSeek / Ollama 或 Preset 的权限；真实请求必须另有明确授权。
+Managed Custom 已有 T5 显式 Tool Probe，入口在模型能力的高级验证操作；用户已报告 QW_2 实际验证成功，证据只授权精确 Identity。Development / Test 负责已有能力的对话验证，不自动管理能力。
+
+Analysis Model 保留固定分析，不向模型暴露 Tool；Assistant Model 当前为 Policy 限制的单轮实验路径。见[架构与 Tool Policy](deep-dive/ASSISTANT_MODEL_ARCHITECTURE.md)。下一步可单独评审实验评分 Tool 的程序 / 模型触发方式，以及 Preset Tool Calling Qualification；当前没有实现评分或升级 Preset。真实请求仍需当轮明确授权。
 
 第一阶段仍只有 get_current_water_quality，NO_DATA 明确返回。工具不读取 Scenario Template、SimulationPacket、场景资源或硬件原始 JSON，不改变规则、Snapshot 或数据库。保留已有 allowlist、单轮限制、Trace 和取消；不增加 Streaming Tool Calling 或 Agent。Manual 返回的 tool_calls 继续只展示、不执行。
 
