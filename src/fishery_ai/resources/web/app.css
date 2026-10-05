@@ -81,6 +81,7 @@ button.secondary:hover { background: #d0e7d7; }
 .manual-panel h2 { margin: 0 0 14px; font-size: 20px; }
 .manual-panel textarea, .manual-panel pre { font-family: Consolas, monospace; }
 .manual-panel pre { max-height: 65vh; overflow: auto; }
+.tool-trace { max-height: 45vh; overflow: auto; font-family: Consolas, monospace; }
 .result-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .facts-grid { display: grid; grid-template-columns: minmax(110px, 42%) minmax(0, 1fr); gap: 10px 12px; margin: 0; font-size: 13px; }
 .facts-grid dt { color: #748782; }

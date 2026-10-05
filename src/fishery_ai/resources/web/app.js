@@ -16,7 +16,9 @@ let credentialBusy = false;
 let credentialEpoch = 0;
 let credentialCsrf = null;
 let activeExecution = null;
+let toolConversationBusy = false;
 let accessMode = "";
+let developmentReturnState = null; // UI bookmark only: IDs/options/drafts, never CredentialSnapshot.
 let manualTargetId = null;
 let manualVersion = "v1";
 let manualExperiments = [];
@@ -34,10 +36,59 @@ let scenarioBusy = false;
 const scenarioFields = ["temperature_c", "ph", "dissolved_oxygen_mg_l"];
 
 function setAccessMode(mode, selectedId) {
-  if (activeExecution) return;
+  if (activeExecution || toolConversationBusy) return;
+  if (mode === "development" && accessMode !== "development") {
+    developmentReturnState = Object.freeze({
+      mode: accessMode || "preset", profileId: selectedProfile()?.profile_id || "",
+      originRuntimeId: accessMode === "manual_expert" && manualVersion === "v2" ? null
+        : selectedProfile()?.runtime_type !== "mock" ? selectedProfile()?.profile_id || null : null,
+      runtime: Object.freeze({reasoning: $("reasoning-mode").value, response: $("response-mode").value,
+        effort: $("reasoning-effort").value}),
+      manualVersion, formMode, editingId, editDraft, createReturnState,
+      fields: formMode !== "view" ? Object.freeze(collectFields()) : null,
+      providerPreset: $("provider-preset").value, formOpen: $("custom-editor").open,
+    });
+    $("tool-target").value = "mock";
+    $("tool-confirm-network").checked = false;
+  }
   accessMode = mode;
   $("access-mode").value = mode;
-  renderProfiles(selectedId ?? (mode === "manual_expert" ? manualTargetId : undefined));
+  return renderProfiles(selectedId ?? (mode === "manual_expert" ? manualTargetId : undefined));
+}
+
+async function returnNormalMode() {
+  if (activeExecution || toolConversationBusy || accessMode !== "development") return;
+  const state = developmentReturnState;
+  manualVersion = state?.manualVersion || manualVersion;
+  $("manual-version").value = manualVersion;
+  await setAccessMode(state?.mode || "preset", state?.profileId || "");
+  if (state && (!state.profileId || !profiles.some(item => item.profile_id === state.profileId))) {
+    $("profile").value = "";
+    $("preset-variant").value = "";
+    await updateProfile();
+  }
+  const profile = selectedProfile();
+  if (profile && accessMode !== "manual_expert") {
+    if (profile.preset_response_modes) renderPresetResponse(profile, state?.runtime.response);
+    else updateRuntimeOptionControls(profile, state?.runtime);
+  }
+  if (state?.fields && accessMode === "managed_custom") {
+    for (const [field, id] of Object.entries(customFields)) $(id).value = state.fields[field];
+    $("provider-preset").value = state.providerPreset;
+    setFormMode(state.formMode);
+    editingId = state.editingId;
+    editDraft = state.editDraft;
+    createReturnState = state.createReturnState;
+    updateSecretRequirement();
+    if (state.formMode === "edit") refreshDraftPreferenceGate();
+  }
+  if (state) $("custom-editor").open = state.formOpen;
+  developmentReturnState = null;
+  updateToolConversationControls();
+}
+
+function originToolProfile() {
+  return profiles.find(item => item.profile_id === developmentReturnState?.originRuntimeId);
 }
 
 function developmentProfiles() {
@@ -89,7 +140,15 @@ function updateModeView() {
   const fixed = accessMode === "preset";
   $("preset-variant-field").hidden = !fixed;
   $("custom-editor").hidden = !custom;
-  $("development-entry").hidden = manual;
+  const development = accessMode === "development";
+  $("development-entry").hidden = false;
+  $("development-entry").open = development;
+  $("development-intro").hidden = development;
+  $("use-development").hidden = development;
+  $("development-workspace").hidden = !development;
+  $("return-normal").hidden = !development;
+  $("tool-conversation-panel").hidden = !development;
+  $("tool-conversation-panel").open = development;
   $("new-profile").hidden = !custom;
   $("credential-manager").hidden = manual || fixed;
   $("capability-panel").hidden = manual || fixed;
@@ -158,7 +217,12 @@ function bindAccessModeControls() {
   $("preset-response-mode").addEventListener("change", () => {
     $("response-mode").value = $("preset-response-mode").value;
   });
-  $("use-development").addEventListener("click", () => setAccessMode("development", $("development-target").value));
+  $("use-development").addEventListener("click", () => setAccessMode("development",
+    (developmentProfiles().find(item => item.runtime_type === "mock") || developmentProfiles()[0])?.profile_id));
+  $("return-normal").addEventListener("click", returnNormalMode);
+  $("development-target").addEventListener("change", () => {
+    if (accessMode === "development") return setAccessMode("development", $("development-target").value);
+  });
 }
 
 async function executionHeaders() {
@@ -182,8 +246,9 @@ async function beginExecution() {
   $("manual-send").disabled = true;
   $("manual-version").disabled = true;
   $("profile").disabled = true;
-  for (const id of ["access-mode", "preset-variant", "preset-response-mode", "use-development", "development-target"]) $(id).disabled = true;
+  for (const id of ["access-mode", "preset-variant", "preset-response-mode", "use-development", "development-target", "return-normal"]) $(id).disabled = true;
   updateScenarioActions();
+  updateToolConversationControls();
   return activeExecution;
 }
 
@@ -194,10 +259,11 @@ function finishExecution() {
   $("manual-version").disabled = false;
   $("manual-send").disabled = false;
   $("profile").disabled = false;
-  for (const id of ["access-mode", "use-development", "development-target"]) $(id).disabled = false;
+  for (const id of ["access-mode", "use-development", "development-target", "return-normal"]) $(id).disabled = false;
   $("preset-variant").disabled = $("preset-variant").children.length <= 1;
   $("preset-response-mode").disabled = false;
   updateScenarioActions();
+  updateToolConversationControls();
 }
 
 async function stopGeneration() {
@@ -206,6 +272,7 @@ async function stopGeneration() {
   running.cancelled = true;
   $("stop-generation").disabled = true;
   setStatus("正在请求后端停止生成…");
+  if (running.kind === "tool_conversation") $("tool-status").textContent = "正在请求后端停止生成…";
   try {
     const post = async (action) => {
       const response = await fetch(`/api/requests/${running.request_id}/${action}`, {
@@ -226,13 +293,22 @@ async function stopGeneration() {
     const outcome = state.state === "COMPLETED" ? "请求已经完成" : state.state === "CANCELLED" ? "USER_CANCELLED" : state.state;
     setStatus(`${outcome}；${closed}；远端计算 / 计费是否停止：UNKNOWN。`);
     $("manual-status").textContent = $("status").textContent;
+    if (running.kind === "tool_conversation") {
+      $("tool-status").textContent = $("status").textContent;
+      $("tool-trace").textContent = `取消结果：${$("status").textContent}\n未收到完整最终 Tool Trace。`;
+    }
   } catch (exc) {
     running.controller.abort();
     setStatus(`取消未确认：${/^[A-Z][A-Z0-9_]{0,40}$/.test(exc.message) ? exc.message : "NETWORK_ERROR"}；仅停止浏览器显示，后端状态未知。`, true);
+    if (running.kind === "tool_conversation") {
+      $("tool-status").textContent = $("status").textContent;
+      $("tool-trace").textContent = `取消结果：${$("status").textContent}\n未收到完整最终 Tool Trace。`;
+    }
   } finally {
     // Keep the run locked until the stop acknowledgement is resolved.
     if (activeExecution === running) finishExecution();
     $("analyze").disabled = false;
+    if (running.kind === "tool_conversation") { toolConversationBusy = false; updateToolConversationControls(); }
   }
 }
 
@@ -465,7 +541,7 @@ function renderProfiles(selectedId) {
   $("development-target").replaceChildren();
   for (const item of developmentProfiles()) appendChoice($("development-target"), item.profile_id,
     item.runtime_type === "mock" ? "Mock · 完全离线" : `${item.display_name} · Local Experimental`);
-  $("development-target").value = developmentProfiles()[0]?.profile_id || "";
+  $("development-target").value = accessMode === "development" ? $("profile").value : developmentProfiles()[0]?.profile_id || "";
   $("use-development").disabled = !developmentProfiles().length;
   updateModeView();
   $("manual-send").disabled = !visible.length && !(accessMode === "manual_expert" && manualVersion === "v2");
@@ -609,6 +685,7 @@ function renderPresetResponse(profile, preferred) {
 }
 
 function updateProfile() {
+  updateToolConversationControls();
   if (accessMode === "manual_expert" && manualVersion === "v2") {
     updateManualVersionView();
     return;
@@ -1923,6 +2000,8 @@ async function init() {
     renderScenarioTemplates("low_oxygen");
     bindScenarioControls();
     bindAccessModeControls();
+    bindToolConversationControls();
+    await refreshToolSnapshot();
     $("reasoning-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
     $("response-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
     $("custom-default-thinking").addEventListener("change", updateDefaultPreferenceSummary);
@@ -2095,6 +2174,7 @@ function scenarioErrorText(exc) {
 }
 
 function showScenarioSnapshot(data) {
+  $("tool-snapshot-status").textContent = `当前 Snapshot：${data.snapshot ? "AVAILABLE" : "NO_DATA"}`;
   const reading = data.snapshot || {};
   addPairs("scenario-snapshot", [["Temperature °C", reading.temperature_c], ["pH", reading.ph],
     ["DO mg/L", reading.dissolved_oxygen_mg_l], ["Quality", reading.quality],
@@ -2193,6 +2273,116 @@ function bindScenarioControls() {
   $("scenario-save-apply").addEventListener("click", () => submitScenario(true));
   $("scenario-view-copy").addEventListener("click", () => { closeScenarioModal(); openScenarioModal("copy"); });
   for (const field of scenarioFields) $(`scenario-${field}-state`).addEventListener("change", () => scenarioStateChanged(field));
+}
+
+function updateToolConversationControls() {
+  const busy = toolConversationBusy || !!activeExecution;
+  const development = accessMode === "development";
+  const selected = $("tool-target").value === "selected";
+  const profile = originToolProfile();
+  const realChoice = $("tool-origin-target");
+  if (realChoice) {
+    realChoice.textContent = `真实 Runtime · ${profile?.display_name || "未选择已保存连接"}`;
+    realChoice.disabled = !profile;
+  }
+  const capability = profile?.capabilities?.tool_calling;
+  const support = typeof capability === "string" ? capability : capability?.status || "unknown";
+  $("tool-target-status").textContent = selected
+    ? `真实 Runtime · ${profile?.display_name || "未选择已保存连接"}；受 Tool Calling 能力门禁保护 · ${support === "supported" ? "SUPPORTED" : support === "unsupported" ? "OPTION_UNSUPPORTED · 不支持" : "OPTION_UNKNOWN · 未验证"}`
+    : "Mock Tool Calling · 完全离线；固定示例模拟模型选 Tool，不代表真实模型已验证。";
+  $("tool-real-warning").hidden = !selected;
+  $("tool-run").disabled = !development || busy || (selected && (!profile || support !== "supported"));
+  $("return-normal").disabled = busy;
+  $("tool-stop").disabled = !activeExecution || activeExecution.kind !== "tool_conversation" || activeExecution.cancelled;
+  for (const id of ["tool-target", "tool-question", "tool-confirm-network", "tool-refresh-snapshot"]) $(id).disabled = busy;
+}
+
+async function refreshToolSnapshot() {
+  try {
+    const response = await fetch("/api/water-quality/current", {credentials:"same-origin"});
+    const data = await response.json();
+    if (!response.ok) throw new Error(safeCredentialCode(data, "INVALID_RESPONSE"));
+    $("tool-snapshot-status").textContent = `当前 Snapshot：${data.snapshot ? "AVAILABLE" : "NO_DATA"}`;
+  } catch (exc) {
+    $("tool-snapshot-status").textContent = `快照状态读取失败：${/^[A-Z][A-Z0-9_]{0,40}$/.test(exc.message) ? exc.message : "NETWORK_ERROR"}`;
+  }
+}
+
+function renderToolConversation(result, latency) {
+  $("tool-answer").textContent = result.generated_text || "";
+  $("tool-snapshot-status").textContent = `当前 Snapshot：${result.snapshot_status}`;
+  const lines = [`Request #1 → ${result.request_1?.outcome || "not_started"}`];
+  if (result.tool_call) {
+    lines.push(`→ Tool Call: ${result.tool_call.name}`,
+      `  arguments: ${result.tool_call.arguments === null ? "未展示" : JSON.stringify(result.tool_call.arguments)}`);
+  } else lines.push("→ 未执行 Tool");
+  if (result.tool_result) lines.push("→ Tool Result:", JSON.stringify(result.tool_result, null, 2));
+  if (result.tool_duration_ms !== null && result.tool_duration_ms !== undefined)
+    lines.push(`tool duration: ${result.tool_duration_ms} ms`);
+  lines.push(`→ Request #2: ${result.request_2?.outcome || "not_started"}`,
+    `→ Final Answer: ${result.status}`, `finish_reason: ${show(result.final_finish_reason)}`,
+    `total latency: ${show(latency)} ms`, `Usage: ${JSON.stringify(result.usage || {})}`);
+  if (result.error_code) lines.push(`error code: ${result.error_code}`);
+  $("tool-trace").textContent = lines.join("\n");
+  $("tool-status").textContent = result.status === "completed" ? "Tool Conversation 完成。"
+    : `Tool Conversation ${result.status}：${show(result.error_code)}`;
+}
+
+async function runToolConversation() {
+  if (toolConversationBusy || activeExecution) return;
+  if (accessMode !== "development") { $("tool-status").textContent = "请先进入开发验证。"; return; }
+  const target = $("tool-target").value || "mock";
+  const profile = originToolProfile();
+  if (target === "selected" && !$("tool-confirm-network").checked) {
+    $("tool-status").textContent = "请先确认 REAL NETWORK REQUEST。"; return;
+  }
+  toolConversationBusy = true;
+  $("analyze").disabled = true;
+  $("tool-answer").textContent = "";
+  $("tool-trace").textContent = "Request #1 → 正在等待；完整 Tool Trace 将在结束后显示。";
+  $("tool-status").textContent = target === "mock" ? "正在执行离线单轮 Tool Conversation…" : "正在等待真实模型…";
+  updateToolConversationControls();
+  let execution = null;
+  try {
+    execution = await beginExecution();
+    execution.kind = "tool_conversation";
+    updateToolConversationControls();
+    const body = {target, question:$("tool-question").value, response_mode:"normal",
+      request_id:execution.request_id, control_token:execution.control_token};
+    if (target === "selected") { body.profile_id = profile?.profile_id; body.confirm_network = true; }
+    // Never send scenario/template/facts or inherit Analysis Response Mode.
+    const response = await fetch("/api/tool-conversation", {method:"POST", headers:execution.headers,
+      signal:execution.controller.signal, body:JSON.stringify(body)});
+    const data = await response.json();
+    if (execution.cancelled) return;
+    if (data.result) renderToolConversation(data.result, data.total_latency_ms);
+    else {
+      const code = safeCredentialCode(data, "INVALID_RESPONSE");
+      $("tool-status").textContent = `Tool Conversation 未执行：${code}`;
+      $("tool-trace").textContent = `error code: ${code}`;
+    }
+  } catch (exc) {
+    if (!execution?.cancelled) {
+      const code = /^[A-Z][A-Z0-9_]{0,40}$/.test(exc.message) ? exc.message : "NETWORK_ERROR";
+      $("tool-status").textContent = `Tool Conversation 失败：${code}`;
+      $("tool-trace").textContent = `error code: ${code}`;
+    }
+  } finally {
+    if (activeExecution === execution && !execution?.cancelled) finishExecution();
+    toolConversationBusy = false;
+    if (!activeExecution) $("analyze").disabled = !selectedProfile();
+    if (target === "selected") $("tool-confirm-network").checked = false;
+    updateToolConversationControls();
+  }
+}
+
+function bindToolConversationControls() {
+  $("tool-run").addEventListener("click", runToolConversation);
+  $("tool-stop").addEventListener("click", stopGeneration);
+  $("tool-refresh-snapshot").addEventListener("click", refreshToolSnapshot);
+  $("tool-target").addEventListener("change", () => { $("tool-confirm-network").checked = false; updateToolConversationControls(); });
+  $("tool-conversation-panel").addEventListener("toggle", () => { if ($("tool-conversation-panel").open) refreshToolSnapshot(); });
+  updateToolConversationControls();
 }
 
 init();

@@ -142,6 +142,8 @@ class Orchestrator:
             check_cancelled()
             response: ModelResponse = self.gateway.complete(model_request, runtime)
             check_cancelled()
+            if response.tool_calls:
+                raise GatewayError("UNEXPECTED_TOOL_CALL")  # Fixed Analysis never executes tools.
             inference, recommendations, uncertainty, parse_ok = _parse_model_text(response.text)
             result = AnalysisResult(
                 request_id=request_id, trace_id=trace_id, status=Status.COMPLETED,

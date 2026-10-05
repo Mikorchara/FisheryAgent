@@ -38,6 +38,8 @@ from .repositories import MockRepository
 from .presets import preset_profiles, default_preset_id
 from .model_gateway import validate_preset_response
 from .execution import RequestRegistry, request_scope
+from .tool_conversation import ToolCallingService, MockToolGateway
+from .tools import ToolRegistry
 from .manual import ManualRequest
 from .manual_experiments import (ManualExperimentStore, validate_experiment, experiment_runtime,
                                  prepare_experiment_request)
@@ -55,6 +57,13 @@ TEST_TTL_S = 600
 # Public import retained for existing callers/tests.
 _effective_runtime_defaults = effective_runtime_defaults
 
+def _capability_scope_matches(profile: ModelProfile) -> bool:
+    return (profile.capabilities.service_id == profile.service_id
+            and profile.capabilities.model_id == profile.model
+            and profile.capabilities.base_url == profile.base_url
+            and profile.capabilities.adapter_id == profile.adapter_id)
+
+
 def _profile_public(profile: ModelProfile, source: str) -> dict:
     if profile.access_mode == "preset" and profile.preset_response_modes:
         return {"profile_id": profile.profile_id, "display_name": profile.display_name,
@@ -66,12 +75,7 @@ def _profile_public(profile: ModelProfile, source: str) -> dict:
                 "default_response_mode": profile.default_response_mode,
                 "preset_response_modes": list(profile.preset_response_modes),
                 "preset_is_default": profile.preset_is_default}
-    capability_scope_matches = (
-        profile.capabilities.service_id == profile.service_id
-        and profile.capabilities.model_id == profile.model
-        and profile.capabilities.base_url == profile.base_url
-        and profile.capabilities.adapter_id == profile.adapter_id
-    )
+    capability_scope_matches = _capability_scope_matches(profile)
     capabilities = profile.capabilities
     def capability(name: str) -> dict:
         status = getattr(capabilities, name).value if capability_scope_matches else Support.UNKNOWN.value
@@ -217,6 +221,11 @@ def create_app(*, trace_path: Path | None = None,
     diagnosis = DiagnosisService()
     knowledge = KnowledgeService(RESOURCE_ROOT.joinpath("knowledge/eel_knowledge.json"))
     traces = JsonlTraceSink(trace_path or Path.cwd() / "outputs/web-traces.jsonl")
+    tool_registry = ToolRegistry(current_reader, diagnosis)
+    tool_mock_profile = ModelProfile("tool-mock", "Tool Mock · 离线", "mock",
+        "http://mock.invalid/v1", "offline-tool-model", auth_spec=AuthSpec.NONE, max_retries=0,
+        capabilities=ModelCapabilities(tool_calling=Support.SUPPORTED, service_id="custom",
+            adapter_id="generic_openai_chat", base_url="http://mock.invalid/v1", model_id="offline-tool-model"))
 
     def error(code: str, status: int):
         return jsonify({"status": "failed", "error_code": code}), status
@@ -341,7 +350,7 @@ def create_app(*, trace_path: Path | None = None,
     @app.after_request
     def close_rejected_execution(response):
         # Prepared handles that fail preflight must not consume active slots until TTL.
-        if request.path in ("/api/analyze", "/api/analyze/stream", "/api/manual", "/api/manual-v2") and response.status_code >= 400:
+        if request.path in ("/api/analyze", "/api/analyze/stream", "/api/manual", "/api/manual-v2", "/api/tool-conversation") and response.status_code >= 400:
             payload = request.get_json(silent=True)
             if isinstance(payload, dict) and "request_id" in payload:
                 try:
@@ -911,6 +920,85 @@ def create_app(*, trace_path: Path | None = None,
         profiles.pop(profile_id, None)
         sources.pop(profile_id, None)
         return jsonify({"status": "deleted", "profile_id": profile_id})
+
+    @app.post("/api/tool-conversation")
+    def tool_conversation():
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        payload = request.get_json(silent=True)
+        allowed = {"target", "profile_id", "question", "response_mode", "confirm_network",
+                   "request_id", "control_token"}
+        if not isinstance(payload, dict) or set(payload) - allowed:
+            return error("INVALID_REQUEST", 400)
+        if payload.get("response_mode", "normal") == "streaming":
+            return error("TOOL_STREAMING_NOT_IMPLEMENTED", 400)
+        question, target = payload.get("question"), payload.get("target", "mock")
+        if (not isinstance(question, str) or not question.strip() or len(question) > 500
+                or target not in ("mock", "selected") or payload.get("response_mode", "normal") != "normal"):
+            return error("INVALID_REQUEST", 400)
+        if target == "mock":
+            profile = tool_mock_profile
+        else:
+            profile_id = payload.get("profile_id")
+            if not isinstance(profile_id, str) or profile_id not in profiles:
+                return error("INVALID_REQUEST", 400)
+            profile = profiles[profile_id]
+            # Block before resolving credentials or creating any real client.
+            support = profile.capabilities.tool_calling if _capability_scope_matches(profile) else Support.UNKNOWN
+            if support != Support.SUPPORTED:
+                return error("OPTION_UNKNOWN" if support == Support.UNKNOWN else "OPTION_UNSUPPORTED", 400)
+            if payload.get("confirm_network") is not True:
+                return error("NETWORK_CONFIRMATION_REQUIRED", 403)
+        runtime, failure = request_runtime(profile)
+        if failure is not None:
+            return failure
+        handle, failure = claim_execution(payload, required=True)
+        if failure is not None:
+            return failure
+        started = time.monotonic()
+        try:
+            gateway = MockToolGateway(delay_steps=10) if target == "mock" else real_gateway_factory()
+            with request_scope(handle):
+                result = ToolCallingService(gateway, tool_registry, traces).converse(question.strip(), runtime)
+            handle.finish(result.error_code)
+        except GatewayError as exc:
+            handle.finish(exc.code)
+            return error(exc.code, 409)
+        except Exception:
+            handle.finish("INTERNAL_ERROR")
+            return error("INTERNAL_ERROR", 500)
+        tool = result.tool_result
+        body = tool.payload if tool else None
+        # Deliberate browser allowlist: no RuntimeSnapshot, credential or internal messages.
+        if body and body.get("water_quality"):
+            body["water_quality"].pop("source", None)
+        public = {
+            "status": result.status.value, "error_code": result.error_code,
+            "request_id": result.request_id, "trace_id": result.trace_id,
+            "generated_text": result.generated_text,
+            "snapshot_status": "AVAILABLE" if snapshots.get_current() is not None else "NO_DATA",
+            "request_1": _public_data(result.request_1), "request_2": _public_data(result.request_2),
+            "tool_call": ({"id": result.tool_call_id if re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", result.tool_call_id) else "unavailable",
+                           "name": result.tool_name if result.tool_name in {item.name for item in tool_registry.model_definitions()} else "unknown_tool",
+                           "arguments": {} if tool and tool.status.value in ("OK", "NO_DATA") else None}
+                          if result.tool_call_id else None),
+            "tool_result": body, "tool_duration_ms": result.tool_duration_ms,
+            "final_finish_reason": result.final_finish_reason, "usage": _public_data(result.usage),
+            "trace_recorded": result.trace_recorded,
+        }
+        # Alternate test/extension Gateways must not echo the request credential to the browser.
+        secret = runtime.credential._for_adapter()
+        def redact(value):
+            if isinstance(value, str):
+                return value.replace(secret, "[REDACTED]") if secret else value
+            if isinstance(value, dict):
+                return {redact(key): redact(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [redact(item) for item in value]
+            return value
+        return jsonify(result=redact(public), total_latency_ms=round((time.monotonic() - started) * 1000, 3)), (
+            200 if result.status == Status.COMPLETED else 409 if result.status == Status.CANCELLED else 502)
 
     @app.post("/api/analyze")
     def analyze():

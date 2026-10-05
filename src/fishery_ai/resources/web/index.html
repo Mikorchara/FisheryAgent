@@ -208,10 +208,35 @@
         <button id="stop-generation" class="danger" type="button" disabled>停止生成</button>
         <details id="development-entry" class="advanced-settings">
           <summary>Development / Test · 开发测试入口</summary>
+          <p id="development-intro" class="helper">进入独立开发模式，测试 Scenario、Snapshot 和只读 Tool Calling；普通模式不会运行这些实验。</p>
+          <button id="use-development" class="secondary" type="button">进入开发验证</button>
+          <div id="development-workspace" hidden>
+          <button id="return-normal" class="secondary" type="button">返回正常模式</button>
           <p class="helper">Mock 仅用于离线测试。Local Experimental 尚未发布为稳定 Preset。</p>
           <label for="development-target">开发目标</label>
           <select id="development-target"></select>
-          <button id="use-development" class="secondary" type="button">进入开发验证</button>
+          <details id="tool-conversation-panel" class="advanced-settings" hidden>
+            <summary>Read-only Tool Calling · 单轮开发测试</summary>
+            <p class="helper">先在上方显式应用情景，再提问。本入口不会自动 Apply 或回退 normal；不是 Agent，仅支持 Normal。</p>
+            <label for="tool-target">测试目标</label>
+            <select id="tool-target"><option value="mock">Mock Tool Calling · 完全离线</option><option id="tool-origin-target" value="selected">真实 Runtime · 未选择</option></select>
+            <p id="tool-target-status" class="helper">默认离线 Mock，不调用真实 Provider。</p>
+            <div id="tool-real-warning" class="real-warning" hidden>
+              <strong>REAL NETWORK REQUEST</strong>
+              <label class="confirm"><input id="tool-confirm-network" type="checkbox"> 我确认发送真实 Tool Conversation 请求（最多两次模型请求）</label>
+            </div>
+            <p id="tool-snapshot-status" class="helper">当前 Snapshot：NO_DATA</p>
+            <button id="tool-refresh-snapshot" type="button" class="secondary">更新快照状态显示</button>
+            <label for="tool-question">Tool Conversation 问题</label>
+            <textarea id="tool-question" rows="3" maxlength="500">现在水质怎么样？</textarea>
+            <p class="helper">Mock 示例：“现在水质怎么样？”会调用 Tool；“什么是溶氧？”直接概念回答。响应固定为 Normal，与主分析 Response Mode 独立。</p>
+            <button id="tool-run" type="button">运行 Tool Calling</button>
+            <button id="tool-stop" type="button" class="secondary" disabled>停止生成</button>
+            <p id="tool-status" class="status" role="status" aria-live="polite">等待离线测试。</p>
+            <h3>最终回答</h3><pre id="tool-answer" class="model-output"></pre>
+            <h3>Tool Trace</h3><pre id="tool-trace" class="model-output tool-trace"></pre>
+          </details>
+          </div>
         </details>
         <p id="status" class="status" role="status" aria-live="polite">选择配置后开始。Mock 模式始终离线。</p>
       </aside>

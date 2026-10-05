@@ -17,7 +17,9 @@ pyproject.toml 定义安装包、Python 版本、依赖和包资源。README.md 
 
 - contracts.py、domain.py、repositories.py：领域合同（含共享 Freshness 判断）、确定性诊断与 Mock / Demo 场景生成。
 - telemetry/：内置 / 用户情景模板管理与动态模拟入口；Template 经 Simulator、SimulationAdapter 转成既有 WaterQualityReading，再写入进程内 CurrentSnapshotStore。Web 与 CLI 水质入口统一使用这条管线。
-- application.py、model_gateway.py、openai_compatible_adapter.py：固定分析流程和模型传输。
+- application.py、model_gateway.py、openai_compatible_adapter.py：固定分析流程和模型传输；T1 增加 non-streaming tools / tool_calls / tool_call_id 消息合同与 SDK 编码归一，不执行工具。
+- tools/：T2 显式静态 allowlist、有限执行器和当前水质只读 Handler。
+- tool_conversation.py：T3 独立应用层 ToolCallingService；最多一次 Tool 和一次 follow-up；T4 增加离线 MockToolGateway 示例，不替代固定 Analysis。observability.py 为其记录单独的 JSONL Trace。
 - presets.py、protocol_specs.py、providers.py：固定 Preset、协议编码和 Provider 元信息。
 - capability_store.py、evidence_resolver.py、capability_probe.py：Managed Custom 的能力证据与显式验证。
 - credentials.py、credential_paths.py、project_env.py：凭据读取、用户私有路径和受控写入。
@@ -42,6 +44,25 @@ telemetry/
 
 依赖方向：Telemetry → WaterQualityReading → Domain / Diagnosis。WaterQualityReading、ObservedFacts、DiagnosisService 保留原位置，Domain 不依赖 Telemetry。详细用法见[水质与 telemetry](deep-dive/WATER_QUALITY_SCENARIO_AND_TELEMETRY_PREPARATION.md)。
 
+tools/ 的最小结构：
+
+```text
+tools/
+├─ __init__.py      对外入口
+├─ contracts.py     ToolDefinition / ToolExecutionResult / 安全错误码
+├─ registry.py      仅 get_current_water_quality 的固定 allowlist
+├─ executor.py      显式执行、空参数校验、次数/结果大小限制、取消检查
+└─ water_quality.py CurrentWaterQualityReader → DiagnosisService → JSON 数据
+```
+
+ModelToolDefinition / ModelToolCall 仍属于 T1 模型协议，T2 复用它们。Registry 由调用者注入 Reader / Diagnosis，Handler 只读取查询视图；不读取 Scenario、MockRepository、文件或硬件包，不修改 Snapshot。Executor 按请求创建，默认最多一次调用，不自动向模型发 Request #2。T4 Web API 通过 T3 发起单轮对话；没有 Agent 或 Streaming Tool Calling。
+
+T3 单轮路径为：system / user / Registry tools → Model Request #1 → 一个 assistant.tool_calls → T2 Executor → role=tool JSON → Model Request #2（tool_choice=none）→ 最终正文。首次请求不提前读取或注入当前水质。无 Tool Call 时直接结束；第二轮继续调用 Tool 返回 TOOL_ROUND_LIMIT。Tool Calling ≠ Agent。
+
+ToolCallingService 接受调用者已经捕获的不可变 RuntimeSnapshot，两次请求共用它和现有 RequestHandle；不增加凭据读取或隐藏水质来源。T4 在独立 Development / Test 模式的 Read-only Tool Calling 区域调用 `/api/tool-conversation`，注入同一个 Web Reader / Diagnosis，复用凭据解析和 Stop。普通模式仅显示进入按钮；前端保存原模式 / Profile ID / 运行选项，返回时恢复，不复制凭据或构建第二套 Runtime。真实测试目标按原 Profile ID 从现有列表查找；开发顶部 Mock 与真实目标明确区分。默认使用独立的离线 Tool Mock，不注册成普通 Profile、不修改 Evidence。CLI 尚无专用 Tool Conversation 入口。
+
+正式 Gateway 工具请求仍受精确 runtime 的能力门禁限制；Preset / Evidence 合同不因 T1/T2/T3/T4 改变。Web 选择当前 Runtime 时，未验证能力在创建 Gateway 前拒绝；服务和 Gateway 继续校验。普通固定 Analysis、Streaming 与 Manual Raw 保留原路径。见[T1–T4 只读工具说明](deep-dive/READ_ONLY_TOOL_CALLING.md)。
+
 ## tests/
 
 使用虚构数据、临时存储和 Mock Transport；默认禁止真实网络。tests/fixtures/ 保存少量兼容性测试资产。测试保护运行边界，目录简洁不能替代回归覆盖。
@@ -60,4 +81,4 @@ observed_at 是观测时间；retrieved_at 是程序当时取得数据的时间�
 
 Current API、Apply 后预览、Normal / Streaming 都经同一 Reader；Diagnosis 使用查询视图。分析开始时固定视图，进行中的请求不受后续 Apply 影响。重启为空；没有当前快照时返回 NO_DATA，Reader 不自动生成 normal。
 
-**Scenario generation != Current state read**：显式 scenario 兼容调用仍先走模板生成 / Apply，再查询。CLI / Demo 的 Orchestrator 后备保留，用来生成模拟输入。MockRepository.demo_snapshots 惰性创建，旧 snapshots 属性仅是兼容别名；Web current Reader 不依赖该 Store。未来 Tool 只能注入 Web 的 CurrentWaterQualityReader，不能通过 Repository 场景生成获取“当前状态”。
+**Scenario generation != Current state read**：显式 scenario 兼容调用仍先走模板生成 / Apply，再查询。CLI / Demo 的 Orchestrator 后备保留，用来生成模拟输入。MockRepository.demo_snapshots 惰性创建，旧 snapshots 属性仅是兼容别名；Web current Reader 不依赖该 Store。T2 Handler 只接受 CurrentWaterQualityReader；T4 已注入这个共享 Reader，Tool API 不接受 scenario/template 或水质值。没有 Snapshot 时 Tool 返回 NO_DATA，再由第二轮解释；不会 Apply normal。

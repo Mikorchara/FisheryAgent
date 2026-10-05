@@ -10,12 +10,13 @@
 - Preset、Managed Custom、Manual Expert V1/V2 三条模型接入路径。
 - R2 用户私有凭据、R3 ProtocolSpec、R4 Capability Evidence Resolver、R5 显式单项 Probe。
 - Usage、JSONL Trace、请求取消及离线 Python / Browser 测试。
+- 只读 Tool Calling T1–T4：Gateway 合同、静态 Registry / Executor、get_current_water_quality、单轮 Model → Tool → Model 和 Web 离线开发入口。当前事实只经共享 CurrentWaterQualityReader 读取，首次请求不预载水质；固定 Analysis 保留。
 
-## 下一阶段：只读 Tool Calling
+## 下一阶段：T5 真实模型工具能力验证
 
-先定义少量只读工具及参数/返回合同，例如 get_current_water_quality() 从 telemetry/ 的 CurrentSnapshotStore 读取 canonical 水质快照；没有快照时明确返回 NO_DATA。工具不能直接读取 Scenario Template、SimulationPacket、场景资源或硬件原始 JSON，也不能改变诊断规则或写入数据库。缺少传感器历史存储时，不提供伪造的“历史查询”。
+先完成人工离线验收，再对选定精确 Runtime 的 Tool capability 单独验证。T4 不会提升 Qwen / DeepSeek / Ollama 或 Preset 的权限；真实请求必须另有明确授权。
 
-实现前需要明确只读 allowlist、授权数据范围、审计、超时和取消边界。Manual 返回的 tool_calls 继续只展示、不执行。
+第一阶段仍只有 get_current_water_quality，NO_DATA 明确返回。工具不读取 Scenario Template、SimulationPacket、场景资源或硬件原始 JSON，不改变规则、Snapshot 或数据库。保留已有 allowlist、单轮限制、Trace 和取消；不增加 Streaming Tool Calling 或 Agent。Manual 返回的 tool_calls 继续只展示、不执行。
 
 ## 暂缓
 

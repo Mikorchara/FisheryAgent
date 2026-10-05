@@ -18,8 +18,8 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI, 
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from .contracts import Usage, UsageSource
-from .model_gateway import (GatewayError, ModelEvent, ModelRequest, ModelResponse,
-                            RetryableGatewayError, RuntimeSnapshot, effective_options)
+from .model_gateway import (GatewayError, ModelEvent, ModelRequest, ModelResponse, ModelToolCall,
+                            RetryableGatewayError, RuntimeSnapshot, effective_options, validate_tool_request)
 from .model_options import (OptionValidationError, ReasoningMode,
                             Support, validate_options)
 from .providers import AuthSpec
@@ -64,17 +64,36 @@ class OpenAICompatibleAdapter:
 
     @staticmethod
     def _response(response):
-        message = response.choices[0].message
-        if not isinstance(message.content, str):
-            raise GatewayError("INVALID_RESPONSE")
-        reasoning = getattr(message, "reasoning_content", None)
-        if reasoning is not None and not isinstance(reasoning, str):
-            raise GatewayError("INVALID_RESPONSE")
-        return ModelResponse(message.content, _usage(getattr(response, "usage", None)),
-            getattr(response, "model", None), bool(reasoning), reasoning)
+        try:
+            message = response.choices[0].message
+            if getattr(message, "role", "assistant") != "assistant":
+                raise GatewayError("INVALID_RESPONSE")
+            raw_calls = getattr(message, "tool_calls", None)
+            calls = ()
+            if raw_calls is not None:
+                if not isinstance(raw_calls, (list, tuple)):
+                    raise GatewayError("INVALID_TOOL_CALL")
+                try:
+                    calls = tuple(ModelToolCall(id=call.id, type=call.type,
+                        function_name=call.function.name, arguments_json=call.function.arguments)
+                        for call in raw_calls)
+                    if len({call.id for call in calls}) != len(calls):
+                        raise ValueError("duplicate call ID")
+                except (AttributeError, TypeError, ValueError, RecursionError):
+                    raise GatewayError("INVALID_TOOL_CALL") from None
+            reasoning = getattr(message, "reasoning_content", None)
+            if reasoning is not None and not isinstance(reasoning, str):
+                raise GatewayError("INVALID_RESPONSE")
+            return ModelResponse(message.content, _usage(getattr(response, "usage", None)),
+                getattr(response, "model", None), bool(reasoning), reasoning, tool_calls=calls,
+                finish_reason=getattr(response.choices[0], "finish_reason", None))
+        except (IndexError, AttributeError, TypeError, ValueError, RecursionError):
+            raise GatewayError("INVALID_RESPONSE") from None
 
     @staticmethod
     def _event(chunk):
+        if chunk.choices and getattr(chunk.choices[0].delta, "tool_calls", None):
+            raise GatewayError("TOOL_STREAMING_NOT_IMPLEMENTED")
         delta = chunk.choices[0].delta.content if chunk.choices else None
         reasoning = getattr(chunk.choices[0].delta, "reasoning_content", None) if chunk.choices else None
         if any(value is not None and not isinstance(value, str) for value in (delta, reasoning)):
@@ -149,7 +168,11 @@ class OpenAICompatibleAdapter:
                                 await put(("item", event))
                         else:
                             handle.check()
-                            await put(("item", self._manual_response(response, runtime) if manual else self._response(response)))
+                            normalized = self._manual_response(response, runtime) if manual else self._response(response)
+                            # A complete response (including tool calls with null
+                            # content) is observable before queuing or cleanup.
+                            emitted = True
+                            await put(("item", normalized))
                         return
                     except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
                         handle.check()
@@ -184,6 +207,8 @@ class OpenAICompatibleAdapter:
                 await put(("error", GatewayError("TOTAL_TIMEOUT")))
             except GatewayError as exc:
                 await put(("error", exc))
+            except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
+                await put(("error", self._map_error(exc)))  # Cleanup failures do not restart operation.
             except Exception:
                 await put(("error", GatewayError("SDK_ERROR")))
             finally:
@@ -324,15 +349,32 @@ class OpenAICompatibleAdapter:
     @staticmethod
     def _kwargs(request: ModelRequest, runtime: RuntimeSnapshot, *, stream: bool) -> dict:
         from .model_gateway import validate_preset_response
+        validate_tool_request(request, runtime, streaming=stream)
         validate_preset_response(runtime, streaming=stream)
         generation, reasoning = effective_options(request, runtime)
         try:
             validate_options(generation, reasoning, runtime.capabilities, streaming=stream)
         except OptionValidationError as exc:
             raise GatewayError(exc.code, option=exc.option) from exc
-        kwargs = {"model": runtime.model,
-                  "messages": [{"role": message.role, "content": message.content}
-                               for message in request.messages]}
+        def encode_call(call):
+            return {"id": call.id, "type": call.type,
+                    "function": {"name": call.function_name, "arguments": call.arguments_json}}
+
+        messages = []
+        for message in request.messages:
+            encoded = {"role": message.role, "content": message.content}
+            if message.tool_calls:
+                encoded["tool_calls"] = [encode_call(call) for call in message.tool_calls]
+            if message.tool_call_id is not None:
+                encoded["tool_call_id"] = message.tool_call_id
+            messages.append(encoded)
+        kwargs = {"model": runtime.model, "messages": messages}
+        if request.tools:
+            kwargs["tools"] = [{"type": tool.type, "function": {"name": tool.name,
+                "description": tool.description, "parameters": tool.parameters_dict()}}
+                for tool in request.tools]
+        if request.tool_choice is not None:
+            kwargs["tool_choice"] = request.tool_choice
         from .protocol_specs import ProtocolEncodingError
         try:
             kwargs.update(runtime.protocol_spec.encode(generation, reasoning, streaming=stream,
@@ -466,40 +508,36 @@ class OpenAICompatibleAdapter:
                 events.close()
         self._check_secret(runtime)
         deadline = time.monotonic() + runtime.total_timeout_s
+        emitted = False
         for attempt in range(runtime.max_retries + 1):
             client = None
             try:
                 client = self._client_factory(runtime, self._remaining(deadline))
                 self.request_attempts += 1
                 response = client.chat.completions.create(**kwargs)
-                content = response.choices[0].message.content
-                if not isinstance(content, str):
-                    raise GatewayError("INVALID_RESPONSE")
-                reasoning_content = getattr(response.choices[0].message, "reasoning_content", None)
-                if reasoning_content is not None and not isinstance(reasoning_content, str):
-                    raise GatewayError("INVALID_RESPONSE")
-                return ModelResponse(
-                    content, _usage(getattr(response, "usage", None)),
-                    returned_model=getattr(response, "model", None),
-                    reasoning_present=bool(reasoning_content),
-                    reasoning_content=reasoning_content,
-                )
+                normalized = self._response(response)
+                emitted = True
+                return normalized
             except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
                 error = (RetryableGatewayError("TOTAL_TIMEOUT") if time.monotonic() >= deadline
                          else self._map_error(exc))
                 if (isinstance(exc, APIStatusError) and
                         self._is_explicit_thinking_unsupported(exc)):
                     error = GatewayError("THINKING_UNSUPPORTED")
-                if not isinstance(error, RetryableGatewayError) or attempt >= runtime.max_retries:
+                if emitted or not isinstance(error, RetryableGatewayError) or attempt >= runtime.max_retries:
                     raise error from exc
             except RetryableGatewayError:
-                if attempt >= runtime.max_retries:
+                if emitted or attempt >= runtime.max_retries:
                     raise
             except (IndexError, AttributeError, TypeError) as exc:
                 raise GatewayError("INVALID_RESPONSE") from exc
             finally:
                 if client is not None:
-                    client.close()
+                    try:
+                        client.close()
+                    except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
+                        # Cleanup after an accepted call must not regenerate it.
+                        raise self._map_error(exc) from None
         raise GatewayError("UNREACHABLE")
 
     def stream(self, request: ModelRequest, runtime: RuntimeSnapshot) -> Iterator[ModelEvent]:
@@ -519,19 +557,11 @@ class OpenAICompatibleAdapter:
                 sdk_stream = client.chat.completions.create(**kwargs)
                 for chunk in sdk_stream:
                     self._remaining(deadline)
-                    delta = chunk.choices[0].delta.content if chunk.choices else None
-                    reasoning_delta = (getattr(chunk.choices[0].delta, "reasoning_content", None)
-                                       if chunk.choices else None)
-                    if ((delta is not None and not isinstance(delta, str)) or
-                            (reasoning_delta is not None and not isinstance(reasoning_delta, str))):
-                        raise GatewayError("INVALID_STREAM_EVENT")
-                    usage = _usage(getattr(chunk, "usage", None))
-                    if delta or reasoning_delta:
+                    event = self._event(chunk)
+                    if event.delta or event.reasoning_delta:
                         emitted = True
-                    finish = getattr(chunk.choices[0], "finish_reason", None) if chunk.choices else None
-                    if delta or reasoning_delta or finish or usage.source != UsageSource.UNAVAILABLE:
-                        yield ModelEvent(delta=delta or "", usage=usage if usage.source != UsageSource.UNAVAILABLE
-                                         else None, reasoning_delta=reasoning_delta, finish_reason=finish)
+                    if event.delta or event.reasoning_delta or event.finish_reason or event.usage is not None:
+                        yield event
                 return
             except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
                 error = (RetryableGatewayError("TOTAL_TIMEOUT") if time.monotonic() >= deadline

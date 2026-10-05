@@ -1877,7 +1877,9 @@ test('three-mode Manual is an independent panel and hides every managed / busine
   const page=threeModePage();await vm.runInContext('(async()=>{await init();setAccessMode("manual_expert");})()',page.context);
   assert.equal(page.element('manual-expert').hidden,false);
   for(const id of ['custom-editor','credential-manager','capability-panel','analysis-inputs',
-    'analyze','results','empty-state','preset-variant-field','development-entry'])assert.equal(page.element(id).hidden,true,id);
+    'analyze','results','empty-state','preset-variant-field','development-workspace','tool-conversation-panel'])assert.equal(page.element(id).hidden,true,id);
+  assert.equal(page.element('development-entry').hidden,false);
+  assert.equal(page.element('use-development').hidden,false);
   const choices=page.element('profile').children;
   assert.equal(choices.filter(x=>x.textContent==='Qwen Plus').length,1);
   assert.equal(choices.some(x=>/Legacy|Mock|Manual Expert/.test(x.textContent)),false);
@@ -2307,4 +2309,378 @@ test('OFF combination default preference follows resolved conflict and latest su
     assert.equal(option.disabled,status!=='supported');
     if(resolution==='EVIDENCE_CONFLICT') assert.match(option.textContent,/冲突/);
   }
+});
+
+function toolConversationFixture(overrides={}) {
+  return {status:'completed',error_code:null,snapshot_status:'AVAILABLE',generated_text:'当前溶氧 2.2 mg/L，请优先增氧。',
+    request_1:{outcome:'tool_calls'},request_2:{outcome:'final_answer'},
+    tool_call:{id:'offline-call',name:'get_current_water_quality',arguments:{}},
+    tool_result:{status:'OK',water_quality:{temperature_c:28,ph:7.5,dissolved_oxygen_mg_l:2.2,
+      quality:'valid',freshness:'fresh'},findings:[{code:'OXYGEN_CRITICAL_LOW',message:'低氧'}]},
+    final_finish_reason:'stop',usage:{total_tokens:null},...overrides};
+}
+
+function toolPage(fetch, options) {
+  const page=makePage(fetch, options);
+  page.element('tool-target').value='mock';
+  page.element('tool-question').value='现在水质怎么样？';
+  vm.runInContext("accessMode='development';credentialCsrf='offline-csrf';bindToolConversationControls()",page.context);
+  return page;
+}
+
+test('T4 Tool Conversation button runs the shared endpoint independently of main Streaming and Scenario',async()=>{
+  const calls=[];
+  const page=toolPage(async(url,options)=>{
+    calls.push({url,body:JSON.parse(options.body)});
+    return r2Reply({result:toolConversationFixture(),total_latency_ms:12});
+  });
+  page.element('response-mode').value='streaming';
+  page.element('scenario').value='normal';
+  await page.element('tool-run').dispatch('click');
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].url,'/api/tool-conversation');
+  assert.deepEqual(Object.keys(calls[0].body).sort(),['control_token','question','request_id','response_mode','target']);
+  assert.equal(calls[0].body.response_mode,'normal');
+  assert.equal(calls[0].body.target,'mock');
+  assert.match(page.element('tool-answer').textContent,/2.2/);
+  assert.match(page.element('tool-trace').textContent,/Request #1.*tool_calls/);
+  assert.match(page.element('tool-trace').textContent,/get_current_water_quality/);
+  assert.match(page.element('tool-trace').textContent,/arguments: \{\}/);
+  assert.match(page.element('tool-trace').textContent,/Tool Result/);
+  assert.match(page.element('tool-trace').textContent,/OXYGEN_CRITICAL_LOW/);
+  assert.match(page.element('tool-trace').textContent,/Request #2: final_answer/);
+  assert.equal(page.element('tool-run').disabled,false);
+  assert.equal(page.element('tool-stop').disabled,true);
+});
+
+test('T4 Tool Conversation refreshes only snapshot availability and Apply preview updates it',async()=>{
+  let snapshot=null;
+  const page=toolPage(async(url)=>{assert.equal(url,'/api/water-quality/current');return r2Reply({snapshot});});
+  await page.element('tool-refresh-snapshot').dispatch('click');
+  assert.match(page.element('tool-snapshot-status').textContent,/NO_DATA/);
+  snapshot={water_quality:{temperature_c:28},evaluated_at:'test'};
+  await page.element('tool-refresh-snapshot').dispatch('click');
+  assert.match(page.element('tool-snapshot-status').textContent,/AVAILABLE/);
+  vm.runInContext('showScenarioSnapshot({snapshot:null,status:"NO_DATA"})',page.context);
+  assert.match(page.element('tool-snapshot-status').textContent,/NO_DATA/);
+});
+
+test('T4 Tool Conversation NO_DATA is a normal tool result followed by a final explanation',async()=>{
+  const page=toolPage(async()=>r2Reply({result:toolConversationFixture({snapshot_status:'NO_DATA',
+    generated_text:'没有当前数据',tool_result:{status:'NO_DATA',water_quality:null,findings:[]}})}));
+  await page.element('tool-run').dispatch('click');
+  assert.match(page.element('tool-snapshot-status').textContent,/NO_DATA/);
+  assert.match(page.element('tool-trace').textContent,/NO_DATA/);
+  assert.match(page.element('tool-trace').textContent,/Request #2: final_answer/);
+  assert.equal(page.element('tool-answer').textContent,'没有当前数据');
+});
+
+test('T4 Tool Conversation concept question ends without a tool and preserves user text',async()=>{
+  let body;
+  const page=toolPage(async(_,options)=>{body=JSON.parse(options.body);return r2Reply({result:toolConversationFixture({
+    generated_text:'溶氧是水中溶解的氧气',tool_call:null,tool_result:null,
+    request_1:{outcome:'final_answer'},request_2:{outcome:'not_started'}})});});
+  page.element('tool-question').value='什么是溶氧？';
+  await page.element('tool-run').dispatch('click');
+  assert.equal(body.question,'什么是溶氧？');
+  assert.match(page.element('tool-trace').textContent,/未执行 Tool/);
+  assert.match(page.element('tool-trace').textContent,/Request #2: not_started/);
+});
+
+test('T4 Tool Conversation displays stale and invalid facts rather than turning them into NO_DATA',async()=>{
+  for(const [quality,freshness,code] of [['valid','stale','SENSOR_STALE'],['invalid','fresh','SENSOR_INVALID']]) {
+    const result=toolConversationFixture();
+    result.tool_result.water_quality.quality=quality;
+    result.tool_result.water_quality.freshness=freshness;
+    result.tool_result.findings=[{code,message:code}];
+    const page=toolPage(async()=>r2Reply({result}));
+    await page.element('tool-run').dispatch('click');
+    assert.match(page.element('tool-trace').textContent,new RegExp(code));
+    assert.match(page.element('tool-trace').textContent,new RegExp(freshness));
+    assert.match(page.element('tool-snapshot-status').textContent,/AVAILABLE/);
+  }
+});
+
+test('T4 Tool Conversation renders safe execution errors including the explicit Streaming rejection',async()=>{
+  for(const code of ['UNKNOWN_TOOL','INVALID_TOOL_ARGUMENTS','TOOL_EXECUTION_ERROR','TOOL_CALL_LIMIT','TOOL_ROUND_LIMIT','USER_CANCELLED','TOOL_STREAMING_NOT_IMPLEMENTED','OPTION_UNKNOWN']) {
+    const page=toolPage(async()=>r2Reply({status:'failed',error_code:code},false));
+    await page.element('tool-run').dispatch('click');
+    assert.match(page.element('tool-status').textContent,new RegExp(code));
+    assert.match(page.element('tool-trace').textContent,new RegExp(code));
+    assert.equal(page.element('tool-run').disabled,false);
+    assert.equal(vm.runInContext('activeExecution',page.context),null);
+  }
+  const page=toolPage(async()=>r2Reply({result:toolConversationFixture({status:'failed',error_code:'TOOL_ROUND_LIMIT',generated_text:''})},false,502));
+  await page.element('tool-run').dispatch('click');
+  assert.match(page.element('tool-status').textContent,/TOOL_ROUND_LIMIT/);
+});
+
+test('T4 Tool Conversation fetch and JSON errors are visible without private exception text',async()=>{
+  for(const fetch of [async()=>{throw new Error('fake-secret-and-private-path');},async()=>({ok:false,json:async()=>{throw new SyntaxError('fake-private-response');}})]) {
+    const page=toolPage(fetch);
+    await page.element('tool-run').dispatch('click');
+    assert.match(page.element('tool-status').textContent,/NETWORK_ERROR/);
+    assert.doesNotMatch(page.element('tool-status').textContent,/fake-/);
+    assert.equal(page.element('tool-run').disabled,false);
+  }
+});
+
+test('T4 Tool Conversation selected runtime remains gated and requires its own explicit confirmation',async()=>{
+  const calls=[];
+  const page=toolPage(async(url)=>{calls.push(url);return r2Reply({error_code:'OPTION_UNKNOWN'},false);});
+  setProfile(page);
+  vm.runInContext("developmentReturnState=Object.freeze({originRuntimeId:'mock-demo'})",page.context);
+  page.element('tool-target').value='selected';
+  await page.element('tool-target').dispatch('change');
+  assert.equal(page.element('tool-run').disabled,true);
+  assert.match(page.element('tool-target-status').textContent,/OPTION_UNKNOWN/);
+  assert.equal(page.element('tool-real-warning').hidden,false);
+  await vm.runInContext('runToolConversation()',page.context);
+  assert.match(page.element('tool-status').textContent,/REAL NETWORK REQUEST/);
+  assert.deepEqual(calls,[]);
+  page.element('tool-confirm-network').checked=true;
+  page.element('tool-target').value='mock';
+  await page.element('tool-target').dispatch('change');
+  assert.equal(page.element('tool-confirm-network').checked,false);
+  assert.equal(page.element('tool-run').disabled,false);
+});
+
+test('T4 Tool Conversation blocks duplicate submissions and Stop uses existing cancellation',async()=>{
+  const calls=[];
+  const page=toolPage(async(url,options)=>{
+    calls.push(url);
+    if(url==='/api/requests') return r2Reply({request_id:'t4',control_token:'offline-control'});
+    if(url.endsWith('/cancel')) return r2Reply({state:'CANCELLED',backend_io_closed:true});
+    assert.equal(url,'/api/tool-conversation');
+    return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(new Error('AbortError'))));
+  },{ownExecutionRoutes:true});
+  const running=page.element('tool-run').dispatch('click');
+  await new Promise(setImmediate);
+  assert.equal(page.element('tool-run').disabled,true);
+  assert.equal(page.element('tool-stop').disabled,false);
+  await vm.runInContext('runToolConversation()',page.context);
+  assert.equal(calls.filter(x=>x==='/api/tool-conversation').length,1);
+  await page.element('tool-stop').dispatch('click');
+  await running;
+  assert.match(page.element('tool-status').textContent,/USER_CANCELLED/);
+  assert.doesNotMatch(page.element('tool-trace').textContent,/正在等待/);
+  assert.equal(page.element('tool-answer').textContent,'');
+  assert.equal(page.element('tool-run').disabled,false);
+  assert.equal(page.element('tool-stop').disabled,true);
+  assert.equal(vm.runInContext('activeExecution',page.context),null);
+  assert.deepEqual(calls,['/api/requests','/api/tool-conversation','/api/requests/t4/cancel']);
+});
+
+test('T4 Tool Conversation shares execution locking with existing analysis and renders final text safely',async()=>{
+  const page=toolPage(async()=>{assert.fail('no real network');});
+  await vm.runInContext('beginExecution()',page.context);
+  assert.equal(page.element('tool-run').disabled,true);
+  assert.equal(page.element('tool-stop').disabled,true);
+  vm.runInContext('finishExecution()',page.context);
+  assert.equal(page.element('tool-run').disabled,false);
+  vm.runInContext(`renderToolConversation(${JSON.stringify(toolConversationFixture({generated_text:'<script>private()</script>'}))},3)`,page.context);
+  assert.equal(page.element('tool-answer').textContent,'<script>private()</script>');
+  assert.equal(html.includes('id="tool-conversation-panel"'),true);
+});
+
+function developmentUxPage(extraFetch=null) {
+  const items=threeModeFixtures();
+  const origin=items.find(item=>item.profile_id==='user-local');
+  origin.display_name='DS_1';
+  origin.capabilities={...origin.capabilities,tool_calling:{status:'supported'}};
+  return threeModePage(async(url,options)=>{
+    if(url==='/api/water-quality/current')return r2Reply({snapshot:null});
+    if(extraFetch){const response=await extraFetch(url,options);if(response)return response;}
+    return null;
+  },items);
+}
+
+test('Development UX normal Preset Managed and Manual expose only entry without experimental controls',async()=>{
+  const page=developmentUxPage();
+  await vm.runInContext('init()',page.context);
+  for(const mode of ['preset','managed_custom','manual_expert']) {
+    await vm.runInContext(`setAccessMode('${mode}')`,page.context);
+    assert.equal(page.element('development-entry').hidden,false);
+    assert.equal(page.element('development-intro').hidden,false);
+    assert.equal(page.element('use-development').hidden,false);
+    assert.equal(page.element('development-workspace').hidden,true);
+    assert.equal(page.element('tool-conversation-panel').hidden,true);
+    assert.equal(page.element('return-normal').hidden,true);
+    assert.equal(page.element('tool-run').disabled,true);
+  }
+  const count=page.calls.length;
+  await vm.runInContext('runToolConversation()',page.context);
+  assert.match(page.element('tool-status').textContent,/请先进入开发验证/);
+  assert.equal(page.calls.length,count);
+});
+
+test('Development UX enter opens experiments with Mock while retaining exact origin DS_1',async()=>{
+  const page=developmentUxPage();
+  await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
+  await page.element('use-development').dispatch('click');
+  assert.equal(vm.runInContext('accessMode',page.context),'development');
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'mock-demo');
+  assert.equal(vm.runInContext('developmentReturnState.mode',page.context),'managed_custom');
+  assert.equal(vm.runInContext('developmentReturnState.originRuntimeId',page.context),'user-local');
+  assert.equal(page.element('use-development').hidden,true);
+  for(const id of ['development-workspace','tool-conversation-panel','return-normal'])assert.equal(page.element(id).hidden,false);
+  assert.equal(page.element('tool-conversation-panel').open,true);
+  assert.equal(page.element('tool-target').value,'mock');
+  assert.equal(page.element('tool-origin-target').textContent,'真实 Runtime · DS_1');
+  assert.match(page.element('tool-target-status').textContent,/Mock Tool Calling.*完全离线/);
+  page.element('tool-target').value='selected';
+  await page.element('tool-target').dispatch('change');
+  assert.match(page.element('tool-target-status').textContent,/真实 Runtime · DS_1.*能力门禁保护/);
+  assert.equal(page.element('tool-run').disabled,false);
+  assert.equal(page.element('tool-real-warning').hidden,false);
+});
+
+test('Development UX real Tool request uses origin id rather than top Mock and requires confirmation',async()=>{
+  let body;
+  const page=developmentUxPage(async(url,options)=>{
+    if(url==='/api/tool-conversation'){body=JSON.parse(options.body);return r2Reply({result:toolConversationFixture()});}
+    return null;
+  });
+  await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
+  await page.element('use-development').dispatch('click');
+  page.element('tool-target').value='selected';await page.element('tool-target').dispatch('change');
+  await page.element('tool-run').dispatch('click');
+  assert.equal(body,undefined);
+  assert.match(page.element('tool-status').textContent,/REAL NETWORK REQUEST/);
+  page.element('tool-confirm-network').checked=true;
+  vm.runInContext("credentialCsrf='offline-csrf'",page.context);
+  await page.element('tool-run').dispatch('click');
+  assert.equal(body.profile_id,'user-local');
+  assert.equal(body.target,'selected');
+  assert.equal(body.confirm_network,true);
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'mock-demo');
+  assert.equal(page.element('tool-confirm-network').checked,false);
+});
+
+test('Development UX changing experimental target cannot overwrite origin or grant unknown real capability',async()=>{
+  const page=developmentUxPage();
+  page.items.find(x=>x.profile_id==='user-local').capabilities.tool_calling={status:'unknown'};
+  await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
+  await page.element('use-development').dispatch('click');
+  page.element('development-target').value='ollama-qwen35-4b-local';
+  await page.element('development-target').dispatch('change');
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'ollama-qwen35-4b-local');
+  assert.equal(vm.runInContext('originToolProfile().profile_id',page.context),'user-local');
+  page.element('tool-target').value='selected';await page.element('tool-target').dispatch('change');
+  assert.equal(page.element('tool-run').disabled,true);
+  assert.match(page.element('tool-target-status').textContent,/DS_1.*OPTION_UNKNOWN/);
+  await page.element('return-normal').dispatch('click');
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'user-local');
+});
+
+test('Development UX return restores Managed runtime options without any Profile Credential or Evidence writes',async()=>{
+  const page=developmentUxPage();
+  await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
+  page.element('reasoning-mode').value='off';page.element('response-mode').value='streaming';
+  const profilesBefore=vm.runInContext('JSON.stringify(profiles)',page.context);
+  const count=page.calls.length;
+  await page.element('use-development').dispatch('click');
+  await page.element('return-normal').dispatch('click');
+  assert.equal(vm.runInContext('accessMode',page.context),'managed_custom');
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'user-local');
+  assert.equal(page.element('reasoning-mode').value,'off');
+  assert.equal(page.element('response-mode').value,'streaming');
+  assert.equal(vm.runInContext('JSON.stringify(profiles)',page.context),profilesBefore);
+  assert.equal(page.element('tool-conversation-panel').hidden,true);
+  assert.equal(page.element('use-development').hidden,false);
+  assert.equal(page.calls.slice(count).some(x=>/probe|metadata|credentials|evidence|apply|requests|tool-conversation/.test(x.url)),false);
+  assert.equal(vm.runInContext('developmentReturnState',page.context),null);
+});
+
+test('Development UX return restores exact Preset variant and independent Streaming choice',async()=>{
+  const page=developmentUxPage();await vm.runInContext('init()',page.context);
+  page.element('preset-variant').value='preset-qwen-plus-on';await page.element('preset-variant').dispatch('change');
+  page.element('response-mode').value='streaming';
+  await page.element('use-development').dispatch('click');
+  assert.equal(vm.runInContext('originToolProfile().profile_id',page.context),'preset-qwen-plus-on');
+  await page.element('return-normal').dispatch('click');
+  assert.equal(vm.runInContext('accessMode',page.context),'preset');
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'preset-qwen-plus-on');
+  assert.equal(page.element('response-mode').value,'streaming');
+});
+
+test('Development UX Manual V1 returns its saved target and untouched raw draft',async()=>{
+  const page=developmentUxPage();await vm.runInContext('(async()=>{await init();await setAccessMode("manual_expert","user-local");})()',page.context);
+  const raw='{ "model": "local-model", "messages": [], "stream": true }';
+  page.element('manual-body').value=raw;
+  await page.element('use-development').dispatch('click');
+  await page.element('return-normal').dispatch('click');
+  assert.equal(vm.runInContext('accessMode',page.context),'manual_expert');
+  assert.equal(vm.runInContext('selectedProfile().profile_id',page.context),'user-local');
+  assert.equal(page.element('manual-body').value,raw);
+  assert.equal(page.element('manual-expert').hidden,false);
+});
+
+test('Development UX Manual V2 retains independent experiment and has no implicit V1 real target',async()=>{
+  const page=developmentUxPage();await vm.runInContext('(async()=>{await init();await setAccessMode("manual_expert","user-local");})()',page.context);
+  vm.runInContext("manualVersion='v2';experimentId='offline-experiment';updateManualVersionView()",page.context);
+  page.element('experiment-name').value='Experiment draft';
+  page.element('manual-body').value='untouched V1';
+  await page.element('use-development').dispatch('click');
+  assert.equal(vm.runInContext('originToolProfile()',page.context),undefined);
+  assert.equal(page.element('tool-origin-target').disabled,true);
+  await page.element('return-normal').dispatch('click');
+  assert.equal(vm.runInContext('manualVersion',page.context),'v2');
+  assert.equal(vm.runInContext('experimentId',page.context),'offline-experiment');
+  assert.equal(page.element('experiment-name').value,'Experiment draft');
+  assert.equal(page.element('manual-body').value,'untouched V1');
+  assert.equal(page.element('profile').hidden,true);
+});
+
+test('Development UX empty normal selection remains empty after return rather than picking another runtime',async()=>{
+  const page=developmentUxPage();await vm.runInContext('(async()=>{await init();await setAccessMode("preset");})()',page.context);
+  page.element('profile').value='';page.element('preset-variant').value='';await vm.runInContext('updateProfile()',page.context);
+  await page.element('use-development').dispatch('click');
+  assert.equal(page.element('tool-origin-target').disabled,true);
+  await page.element('return-normal').dispatch('click');
+  assert.equal(vm.runInContext('selectedProfile()',page.context),undefined);
+  assert.equal(page.element('analyze').disabled,true);
+});
+
+test('Development UX restores an unsaved Managed edit draft without copying new Secret input',async()=>{
+  const page=developmentUxPage();
+  await vm.runInContext('(async()=>{await init();await setAccessMode("managed_custom");})()',page.context);
+  await page.element('edit-profile').dispatch('click');
+  page.element('custom-model').value='unsaved-model-draft';
+  page.element('custom-url').value='https://draft.invalid/v1';
+  page.element('credential-value').value='fictional-unsaved-secret';
+  const before=vm.runInContext('JSON.stringify(profiles)',page.context);
+  await page.element('use-development').dispatch('click');
+  assert.doesNotMatch(vm.runInContext('JSON.stringify(developmentReturnState)',page.context),/fictional-unsaved-secret/);
+  await page.element('return-normal').dispatch('click');
+  assert.equal(vm.runInContext('formMode',page.context),'edit');
+  assert.equal(page.element('custom-model').value,'unsaved-model-draft');
+  assert.equal(page.element('custom-url').value,'https://draft.invalid/v1');
+  assert.equal(vm.runInContext('selectedProfile().model',page.context),'local-model');
+  assert.equal(vm.runInContext('JSON.stringify(profiles)',page.context),before);
+  assert.equal(page.element('credential-value').value,'');
+  assert.equal(page.element('cancel-edit').hidden,false);
+});
+
+test('Development UX snapshot display action only reads current state without Apply or simulator request',async()=>{
+  const page=developmentUxPage();await vm.runInContext('init()',page.context);
+  await page.element('use-development').dispatch('click');
+  const count=page.calls.length;
+  await page.element('tool-refresh-snapshot').dispatch('click');
+  assert.deepEqual(page.calls.slice(count).map(x=>x.url),['/api/water-quality/current']);
+  assert.match(html,/id="tool-refresh-snapshot"[^>]*>更新快照状态显示</);
+  assert.equal(html.includes('刷新快照状态'),false);
+});
+
+test('Development UX return stays locked while T4 request runs and Mock Trace Final and Stop remain available',async()=>{
+  const page=developmentUxPage();await vm.runInContext('init()',page.context);
+  await page.element('use-development').dispatch('click');
+  await vm.runInContext("credentialCsrf='offline-csrf';beginExecution()",page.context);
+  assert.equal(page.element('return-normal').disabled,true);
+  await vm.runInContext('returnNormalMode()',page.context);
+  assert.equal(vm.runInContext('accessMode',page.context),'development');
+  vm.runInContext('finishExecution()',page.context);
+  assert.equal(page.element('return-normal').disabled,false);
+  await page.element('return-normal').dispatch('click');
+  assert.equal(vm.runInContext('accessMode',page.context),'preset');
 });

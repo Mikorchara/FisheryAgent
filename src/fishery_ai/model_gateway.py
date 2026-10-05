@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Mapping, Protocol
+from types import MappingProxyType
 import json
 import re
 from urllib.parse import urlsplit
@@ -341,9 +342,106 @@ class ProfileRegistry:
 
 
 @dataclass(frozen=True)
+class ModelToolDefinition:
+    name: str
+    description: str
+    parameters: Mapping = field(repr=False)
+    type: str = "function"
+
+    def __post_init__(self) -> None:
+        if (self.type != "function" or not isinstance(self.name, str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", self.name)
+                or not isinstance(self.description, str)):
+            raise ValueError("invalid function definition")
+        if not isinstance(self.parameters, Mapping) or self.parameters.get("type", "object") != "object":
+            raise ValueError("parameters must be an object JSON Schema")
+        try:
+            copied = json.loads(json.dumps(_plain_json(self.parameters), allow_nan=False))
+        except (TypeError, ValueError, RecursionError):
+            raise ValueError("parameters must be JSON serializable") from None
+        object.__setattr__(self, "parameters", _freeze_json(copied))
+
+    def parameters_dict(self) -> dict:
+        """Return a detached JSON Schema, not a mutable reference to this contract."""
+        return _plain_json(self.parameters)
+
+
+def _freeze_json(value):
+    if isinstance(value, dict):
+        return MappingProxyType({key: _freeze_json(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze_json(item) for item in value)
+    return value
+
+
+def _plain_json(value):
+    if isinstance(value, Mapping):
+        return {key: _plain_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain_json(item) for item in value]
+    return value
+
+
+def _json_content(text: str):
+    def invalid_constant(_value):
+        raise ValueError("non-finite JSON value")
+    if not isinstance(text, str):
+        raise ValueError("expected a JSON string")
+    try:
+        return json.loads(text, parse_constant=invalid_constant)
+    except (ValueError, RecursionError):
+        raise ValueError("invalid JSON string") from None
+
+
+@dataclass(frozen=True)
+class ModelToolCall:
+    id: str
+    function_name: str
+    arguments_json: str = field(repr=False)
+    type: str = "function"
+
+    def __post_init__(self) -> None:
+        if (self.type != "function" or not isinstance(self.id, str) or not self.id.strip()
+                or not isinstance(self.function_name, str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", self.function_name)):
+            raise ValueError("invalid function call")
+        if not isinstance(_json_content(self.arguments_json), dict):
+            raise ValueError("function arguments must be a JSON object")
+
+
+def _tool_calls_tuple(calls) -> tuple[ModelToolCall, ...]:
+    values = tuple(calls)
+    if not all(isinstance(call, ModelToolCall) for call in values):
+        raise ValueError("tool_calls must contain ModelToolCall")
+    if len({call.id for call in values}) != len(values):
+        raise ValueError("duplicate tool call ID")
+    return values
+
+
+@dataclass(frozen=True)
 class ModelMessage:
     role: str
-    content: str
+    content: str | None = None
+    tool_calls: tuple[ModelToolCall, ...] = ()
+    tool_call_id: str | None = None
+
+    def __post_init__(self) -> None:
+        calls = _tool_calls_tuple(self.tool_calls)
+        object.__setattr__(self, "tool_calls", calls)
+        if self.role not in ("system", "user", "assistant", "tool"):
+            raise ValueError("invalid message role")
+        if self.content is not None and not isinstance(self.content, str):
+            raise ValueError("message content must be text or None")
+        if calls and self.role != "assistant":
+            raise ValueError("only assistant messages can carry tool_calls")
+        if self.content is None and not (self.role == "assistant" and calls):
+            raise ValueError("None content requires assistant tool_calls")
+        if self.role == "tool":
+            if not isinstance(self.tool_call_id, str) or not self.tool_call_id.strip():
+                raise ValueError("tool result requires tool_call_id")
+            _json_content(self.content)
+        elif self.tool_call_id is not None:
+            raise ValueError("only tool results can carry tool_call_id")
 
 
 @dataclass(frozen=True)
@@ -352,6 +450,39 @@ class ModelRequest:
     messages: tuple[ModelMessage, ...]
     generation: GenerationOptions = field(default_factory=GenerationOptions)
     reasoning: ReasoningOptions | None = None
+    tools: tuple[ModelToolDefinition, ...] = ()
+    tool_choice: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "messages", tuple(self.messages))
+        object.__setattr__(self, "tools", tuple(self.tools))
+        if not all(isinstance(message, ModelMessage) for message in self.messages):
+            raise ValueError("messages must contain ModelMessage")
+        if not all(isinstance(tool, ModelToolDefinition) for tool in self.tools):
+            raise ValueError("tools must contain ModelToolDefinition")
+        if len({tool.name for tool in self.tools}) != len(self.tools):
+            raise ValueError("duplicate tool definition name")
+        if self.tool_choice not in (None, "auto", "none", "required"):
+            raise ValueError("invalid tool_choice")
+        if self.tool_choice is not None and not self.tools:
+            raise ValueError("tool_choice requires tools")
+
+    @property
+    def uses_tools(self) -> bool:
+        return bool(self.tools or any(message.tool_calls or message.role == "tool"
+                                      for message in self.messages))
+
+
+def validate_tool_request(request: ModelRequest, runtime: RuntimeSnapshot, *, streaming: bool) -> None:
+    """Protocol availability grants no model support; Manual bypasses this contract."""
+    if not request.uses_tools:
+        return
+    if streaming:
+        raise GatewayError("TOOL_STREAMING_NOT_IMPLEMENTED")
+    support = runtime.capabilities.tool_calling
+    if support != Support.SUPPORTED:
+        raise GatewayError("OPTION_UNKNOWN" if support == Support.UNKNOWN else "OPTION_UNSUPPORTED",
+                           option="tool_calling")
 
 
 def effective_options(request: ModelRequest, runtime: RuntimeSnapshot
@@ -379,11 +510,23 @@ def validate_preset_response(runtime, *, streaming: bool) -> None:
 
 @dataclass(frozen=True)
 class ModelResponse:
-    text: str
+    text: str | None
     usage: Usage = field(default_factory=Usage)
     returned_model: str | None = None
     reasoning_present: bool = False
     reasoning_content: str | None = None
+    tool_calls: tuple[ModelToolCall, ...] = ()
+    finish_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        calls = _tool_calls_tuple(self.tool_calls)
+        object.__setattr__(self, "tool_calls", calls)
+        if self.text is not None and not isinstance(self.text, str):
+            raise ValueError("response text must be a string or None")
+        if self.text is None and not calls:
+            raise ValueError("None response text requires tool_calls")
+        if self.finish_reason is not None and not isinstance(self.finish_reason, str):
+            raise ValueError("finish_reason must be text or None")
 
 
 @dataclass(frozen=True)
@@ -415,8 +558,9 @@ class RetryableGatewayError(GatewayError):
 class MockGateway:
     """Offline model substitute. Profiles are selected, but no HTTP client is created."""
 
-    def __init__(self):
+    def __init__(self, *, responses: tuple[ModelResponse, ...] | None = None):
         self.calls: list[tuple[str, RuntimeSnapshot]] = []
+        self._responses = iter(responses) if responses is not None else None
 
     def manual_complete(self, request: ManualRequest, runtime: RuntimeSnapshot) -> ManualResponse:
         raise GatewayError("MANUAL_CONNECTION_REQUIRED")
@@ -425,6 +569,7 @@ class MockGateway:
         raise GatewayError("MANUAL_CONNECTION_REQUIRED")
 
     def complete(self, request: ModelRequest, runtime: RuntimeSnapshot) -> ModelResponse:
+        validate_tool_request(request, runtime, streaming=False)
         validate_preset_response(runtime, streaming=False)
         generation, reasoning = effective_options(request, runtime)
         try:
@@ -432,6 +577,11 @@ class MockGateway:
         except OptionValidationError as exc:
             raise GatewayError(exc.code, option=exc.option) from exc
         self.calls.append((request.mode.value, runtime))
+        if self._responses is not None:
+            try:
+                return next(self._responses)
+            except StopIteration:
+                raise GatewayError("MOCK_RESPONSE_EXHAUSTED") from None
         text = json.dumps({
             "inference": "Mock 模型已根据规则结果和检索证据生成分析。",
             "recommendations": ["核对当前水质，并按确定性告警优先处理。"],
@@ -440,6 +590,7 @@ class MockGateway:
         return ModelResponse(text)
 
     def stream(self, request: ModelRequest, runtime: RuntimeSnapshot) -> Iterator[ModelEvent]:
+        validate_tool_request(request, runtime, streaming=True)
         validate_preset_response(runtime, streaming=True)
         generation, reasoning = effective_options(request, runtime)
         try:

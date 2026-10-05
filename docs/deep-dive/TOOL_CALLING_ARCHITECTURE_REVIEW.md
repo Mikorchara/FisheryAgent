@@ -1,8 +1,8 @@
 # Tool Calling 前置架构审计
 
-初次审计：2026-10-04；数据读取修正：2026-10-05。结论：**READY WITH FIXES**（数据前置问题已解决，工具协议与执行仍待实施）。
+初次审计：2026-10-04；数据读取修正与 T1：2026-10-05。以下主体保留该时点审计记录；当时结论为 **READY WITH FIXES**。
 
-当前 Web 的水质转换、诊断和模型分析边界基本成立，可以作为第一版只读 Tool 的基础。10 月 5 日已建立只读 CurrentWaterQualityReader 并修复查询时 Freshness；现在可以进入 Gateway Tool Contract 阶段，但当前 Gateway 仍未支持完整 Tool Calling。未创建 tools/，未联网。
+**T4 当前状态（2026-10-05）：** T2 tools/ 与独立 ToolCallingService 单轮 Model → Tool → Model 已接入 Web Development / Test。默认使用离线 Tool Mock，并共享 Web CurrentWaterQualityReader；真实工具能力门禁保留。可以开始浏览器人工验收；T5 仍需独立真实模型能力验证。最新实现边界见[T1–T4 说明](READ_ONLY_TOOL_CALLING.md)。当前无 Agent、Streaming Tool Calling 或真实模型工具验证。下文“待 T2 / 未创建 tools”等文字均为此前审计时点，不是当前状态。
 
 ## 1. 当前真实数据链
 
@@ -123,14 +123,14 @@ src/fishery_ai/tools/
 
 | 项目 | Managed / Preset 标准路径 | Manual V1/V2 Raw 路径 |
 | --- | --- | --- |
-| tools request schema | **NOT IMPLEMENTED**：ModelRequest 只有 messages / generation / reasoning。ProtocolSpec 也无工具 schema 编码。 | **SUPPORTED BY CURRENT CODE**：Raw body 可携带 tools；ManualRequest 不禁止此字段，通过 SDK `post('/chat/completions', body=...)` 原样发送。 |
-| assistant.tool_calls | **NOT IMPLEMENTED**：ModelResponse 没有 tool_calls；普通响应要求 content 为字符串，只有 tool_calls 且 content=null 会变成 INVALID_RESPONSE。 | **SUPPORTED BY CURRENT CODE**：SDK `model_dump()` Raw response / chunk 可保留并展示工具字段；不执行。 |
-| tool_call_id | **NOT IMPLEMENTED**：ModelMessage 只有 role/content。 | **SUPPORTED BY CURRENT CODE**：可在用户编写的 Raw messages 中传送。 |
-| role=tool message | **PARTIAL**：role 是普通字符串，能传“tool”，但缺少必需调用关联字段，不能完整完成工具协议。 | **SUPPORTED BY CURRENT CODE**：Raw messages 可表达完整 tool 消息。 |
-| follow-up model request | **PARTIAL**：Gateway 可被再次调用，但没有工具调用归一、结果关联或受控后续流程。 | **PARTIAL**：用户可手工提交下一份 Raw 请求；没有自动工具执行/后续请求。 |
+| tools request schema | **SUPPORTED BY CURRENT CODE**：ModelRequest.tools + ModelToolDefinition，Adapter 编码；最小 tool_choice 为 auto / none / required 或不发送。仍须 runtime tool_calling=SUPPORTED。 | **SUPPORTED BY CURRENT CODE**：Raw body 可携带 tools；ManualRequest 不禁止此字段，通过 SDK `post('/chat/completions', body=...)` 原样发送。 |
+| assistant.tool_calls | **SUPPORTED BY CURRENT CODE**：ModelResponse / ModelMessage 携带 ModelToolCall；合法调用允许 content=null，同步与异步桥接共用解析。 | **SUPPORTED BY CURRENT CODE**：SDK `model_dump()` Raw response / chunk 可保留并展示工具字段；不执行。 |
+| tool_call_id | **SUPPORTED BY CURRENT CODE**：ModelMessage 显式字段，编码保留 ID。 | **SUPPORTED BY CURRENT CODE**：可在用户编写的 Raw messages 中传送。 |
+| role=tool message | **SUPPORTED BY CURRENT CODE**：要求调用 ID 与合法 JSON content。 | **SUPPORTED BY CURRENT CODE**：Raw messages 可表达完整 tool 消息。 |
+| follow-up model request | **SUPPORTED BY CURRENT CODE（手工构造消息）**：已有离线两次请求证明；**NOT IMPLEMENTED（自动执行与后续流程）**。 | **PARTIAL**：用户可手工提交下一份 Raw 请求；没有自动工具执行/后续请求。 |
 | 流式工具调用分片 | **NOT IMPLEMENTED**：ModelEvent 只有正文、reasoning、usage、finish_reason；Adapter 不归一 tool_calls delta，也不拼接 arguments。 | **PARTIAL**：Raw chunk 可展示；没有工具 arguments 汇聚与执行。 |
 
-当前 `ModelCapabilities.tool_calling` 只是状态位置，没有实际 tools request / executor。SDK 能处理协议不能代替上层合同。工具接入还须避免工具调用分片已经输出后发生自动重试；现有“已输出正文/推理后禁止重试”没有覆盖尚未实现的工具事件。
+T1 增加了实际 tools request 和消息归一，但不是 executor，也没有修改任何真实模型能力或 Preset。工具请求及工具历史消息使用现有 runtime 三态：UNKNOWN / UNSUPPORTED 拒绝，SUPPORTED 才编码。合法 non-streaming 工具响应接受后视为已输出，不透明重试。正式 Streaming 工具请求与意外工具 delta 明确返回 TOOL_STREAMING_NOT_IMPLEMENTED；不聚合或执行。详见[T1 合同说明](READ_ONLY_TOOL_CALLING.md)。
 
 ## 9. 第一个 Tool：get_current_water_quality()
 
@@ -172,20 +172,20 @@ Handler 不读取 ScenarioTemplate、SimulationPacket、模拟资源或 Hardware
 
 ## 12. 阻塞问题与结论
 
-**READY WITH FIXES** 指“可开始最小只读 Tool 的准备工作”，不是“当前已能完整运行工具对话”。
+**READY WITH FIXES** 指“可进入 T2 最小只读执行层”，不是“当前已能自动执行工具对话”。
 
 - 数据基础可复用：canonical reading、统一转换、集中 Diagnosis、Web 请求内冻结快照已成立。
 - 数据前置修正已完成：共享 query-time Freshness；snapshot-only Reader 与 scenario generation 后备隔离。第二 Store 改为 Demo 专用惰性实例，不作为 Web current 依赖。
-- 协议实现缺口：工具 schema、tool_calls / ID / tool 消息、nullable content、流式工具分片和后续请求合同尚未完整实现。
+- T1 已完成工具 schema、tool_calls / ID / tool 消息、nullable content、显式 follow-up 请求合同。流式工具分片和自动后续流程仍未实现。
 - 安全执行缺口：Registry / Executor / 工具参数验证与次数限制尚未实现。
 - 精确模型的 Tool Calling 合同仍需独立依据；不能从 Streaming / Thinking 发布记录推导，也不能绕过现有 Preset 固定合同和 Managed 能力门禁。
 
-已达到开始 Gateway Tool Contract 阶段的数据条件；本轮未实施工具协议、执行器或 tools/。
+数据与 non-streaming Gateway 合同条件已满足；未实施执行器或 tools/。固定 Analysis 收到意外工具响应返回 UNEXPECTED_TOOL_CALL，绝不执行。
 
 ## 13. 推荐实施顺序
 
 1. **已完成**共享只读 current 查询边界与 Domain Freshness；空快照、过期、Apply 隔离测试覆盖，固定 Analysis 保留。
-2. 扩充 Gateway 工具消息合同与 Adapter 编码/归一，离线 mock 验证 tools → assistant.tool_calls → tool_call_id / role=tool → follow-up。Normal 先行；Streaming 工具分片明确另行验收，不能宣称现有流式正文链已覆盖。
+2. **T1 已完成** Gateway 工具消息合同与 Adapter 编码/归一，离线 Mock / SDK fixture / 官方 SDK MockTransport 验证 tools → assistant.tool_calls → tool_call_id / role=tool → follow-up。Streaming 工具分片仍待单独阶段。
 3. 建立最小 tools/，只注册 get_current_water_quality，无参数、无写入能力；先用离线请求证明 NO_DATA / INVALID / STALE / Findings 正确。
 4. 新增显式工具对话路径，保留固定 Analysis。限制一个工具阶段，检查 Cancellation、Usage/Trace 和工具事件重试边界。
 5. 在精确模型能力得到维护者确认和单独授权后再真实验证；最后做正常概念问题无需现场工具、当前事实问题必须取数的行为测试。不要自动扩展 Tool、Agent 或设备权限。
@@ -204,3 +204,11 @@ Handler 不读取 ScenarioTemplate、SimulationPacket、模拟资源或 Hardware
 - 工作树：10 个已跟踪文件修改；本报告（前一轮即未跟踪）、current.py 与 test_current_water_quality.py 为 3 个未跟踪文件。未提交。
 - 保持 NO_DATA 原空响应；有数据时返回单独 evaluated_at。旧 Demo 的 observed_facts.evaluated_at 为 null，继续兼容；Web 为查询时间。
 - 凭据、Preset、RAG、养殖诊断阈值、Gateway、正式 Fishery_Project 均未修改；不 commit / push。
+
+### T1 Gateway Tool Contract 验证（2026-10-05）
+
+- T1 targeted：29 项通过；覆盖工具定义/消息、nullable response、SDK 编码、畸形调用、两轮 fixture、接受调用后禁止重试、Cancellation 和 Streaming 明确拒绝。
+- 完整 Python：459 项通过（20.574 秒）；完整 Browser：114 项通过；JS syntax / diff check 通过；27 个本地 Markdown 链接有效。
+- 受控敏感扫描无未解决风险；唯一既有 URL 格式匹配为 Manual V2 校验负例。未读取真实凭据或执行真实请求。
+- 工作树为 5 个跟踪文件修改、2 个新文件；未 commit / push。Tool Registry / Executor / get_current_water_quality / Agent / Streaming Tool Calling 均未实施。
+- 当前可以进入 T2 的只读 Handler / allowlist 实现；真实模型 Tool capability 不因 T1 改变。

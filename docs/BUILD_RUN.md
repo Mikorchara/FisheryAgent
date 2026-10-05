@@ -23,6 +23,8 @@ Demo 使用 MockGateway，不访问模型。tests/ 是自动化回归，不参�
 
 访问 http://127.0.0.1:8765。服务只监听本机。Mock 分析离线；Cloud / Local 真实请求、连接测试和 Capability Probe 必须由用户显式确认，Cloud 请求可能收费。
 
+普通 Preset / Managed / Manual 模式的 Development / Test 只显示说明与“进入开发验证”。点击进入后显示完整实验区域，默认使用 Mock；“返回正常模式”恢复原模式、模型和运行选择。Read-only Tool Calling 的真实目标明确显示进入前的连接名，不使用顶部开发 Mock 冒充真实目标。先不 Apply 可验证 NO_DATA；随后显式 Apply 情景并问“现在水质怎么样？”，查看 Tool Result 与最终回答。“什么是溶氧？”直接回答。该入口仅支持 Normal；“更新快照状态显示”只读、不采样、不 Apply。真实 Tool 能力未验证时仍阻止发送。验收清单见[只读工具说明](deep-dive/READ_ONLY_TOOL_CALLING.md)。
+
 ## Preset
 
 用户可选模型、Thinking 和 Response Mode。Qwen 3.8 Flash、DeepSeek Flash、Ollama Qwen3.5 4B 当前各发布 OFF/ON 与 Normal/Streaming 四种组合；默认 Qwen OFF + Normal。Preset 不显示 URL、凭据引用、Capability Evidence 或 Probe。合同依据见[Preset 发布说明](deep-dive/PRESET_PUBLICATION.md)。
