@@ -336,7 +336,7 @@
       "id": "ollama-qwen35-4b-r1",
       "display_name": "Ollama Qwen3.5 4B",
       "release_status": "published",
-      "contract_version": "1.0.1",
+      "contract_version": "1.0.2",
       "connection": {
         "profile_id": "ollama-qwen35-4b-r1-template",
         "display_name": "Ollama Qwen3.5 4B",
@@ -377,7 +377,8 @@
         "thinking_streaming_combination": "supported",
         "source": "USER_VERIFIED",
         "verified_at": "2026-10-03T14:45:33.251541+00:00",
-        "thinking_off_streaming_combination": "supported"
+        "thinking_off_streaming_combination": "supported",
+        "tool_calling": "supported"
       },
       "defaults": {
         "thinking": "off",
@@ -540,6 +541,95 @@
             "source": "unavailable"
           },
           "request_attempts": 1
+        },
+        "tool_calling_qualification": {
+          "validated_at": "2026-10-05T17:32:58.687693+00:00",
+          "published_at": "2026-10-06",
+          "contract_version": "1.0.2",
+          "validation_source": "MAINTAINER_PRESET_QUALIFICATION",
+          "maintainer": "project-developer",
+          "identity": [
+            "ollama",
+            "generic_openai_chat",
+            "http://127.0.0.1:11434/v1",
+            "qwen3.5:4b"
+          ],
+          "protocol_spec_id": "ollama_openai_chat",
+          "protocol_spec_version": "1",
+          "qualified_variant": "off",
+          "response_mode": "normal",
+          "snapshot": "EMPTY_QUALIFICATION_PROCESS",
+          "verdict": "SUPPORTED",
+          "model_requests": 3,
+          "transport_attempts": 3,
+          "retry": 0,
+          "max_tool_rounds": 1,
+          "max_output_tokens": 192,
+          "request_1": "tool_calls",
+          "tool_name": "get_current_water_quality",
+          "tool_call_id_valid": true,
+          "arguments_empty_object": true,
+          "tool_result_status": "NO_DATA",
+          "request_2": "final_answer",
+          "final_answer_present": true,
+          "final_finish_reason": "stop",
+          "concept_question": {
+            "outcome": "direct_answer",
+            "no_tool": true,
+            "content_present": true,
+            "finish_reason": "stop",
+            "usage": {
+              "input_tokens": 358,
+              "output_tokens": 158,
+              "total_tokens": 516,
+              "reasoning_tokens": null,
+              "cached_input_tokens": 0,
+              "source": "provider"
+            },
+            "error_code": null
+          },
+          "request_1_usage": {
+            "input_tokens": 362,
+            "output_tokens": 16,
+            "total_tokens": 378,
+            "reasoning_tokens": null,
+            "cached_input_tokens": 0,
+            "source": "provider"
+          },
+          "request_2_usage": {
+            "input_tokens": 406,
+            "output_tokens": 12,
+            "total_tokens": 418,
+            "reasoning_tokens": null,
+            "cached_input_tokens": 358,
+            "source": "provider"
+          },
+          "round_trip_usage": {
+            "request_count": 2,
+            "reported_count": 2,
+            "usage": {
+              "input_tokens": 768,
+              "output_tokens": 28,
+              "total_tokens": 796,
+              "reasoning_tokens": null,
+              "cached_input_tokens": 358,
+              "source": "provider"
+            }
+          },
+          "usage": {
+            "request_count": 3,
+            "reported_count": 3,
+            "usage": {
+              "input_tokens": 1126,
+              "output_tokens": 186,
+              "total_tokens": 1312,
+              "reasoning_tokens": null,
+              "cached_input_tokens": 358,
+              "source": "provider"
+            }
+          },
+          "latency_ms": 9109.0,
+          "decision": "独立维护者资格验证完整通过；只发布精确模型 non-streaming Tool Calling。Thinking OFF + Normal 为本次验证条件；不宣称 Thinking ON + Tool 或 Streaming Tool Calling 已验证。没有复制 Managed Evidence，也不启用 Analysis Tool Calling。"
         }
       }
     }

@@ -18,13 +18,13 @@ Python 3.11+，在 PowerShell 项目根目录运行：
 - **Managed Custom**：用户维护连接；高级能力须有精确身份证据，UNKNOWN 时可显式 Probe。
 - **Manual Expert V1 / V2**：V1 使用已保存连接；V2 自定义目标并保存独立实验。Raw 请求不进入 Fishery 分析，也不执行返回的 tool_calls。
 
-当前 Preset 均为合同 1.0.1：
+当前 Preset：
 
-| 模型 | 发布组合 | 默认 |
-| --- | --- | --- |
-| Qwen 3.8 Flash | OFF/ON × Normal/Streaming | 是，OFF + Normal |
-| DeepSeek Flash | OFF/ON × Normal/Streaming | 否 |
-| Ollama Qwen3.5 4B | OFF/ON × Normal/Streaming | 否 |
+| 模型 | 合同版本 | 发布组合 | 默认 |
+| --- | --- | --- | --- |
+| Qwen 3.8 Flash | 1.0.1 | OFF/ON × Normal/Streaming | 是，OFF + Normal |
+| DeepSeek Flash | 1.0.1 | OFF/ON × Normal/Streaming | 否 |
+| Ollama Qwen3.5 4B | 1.0.2 | OFF/ON × Normal/Streaming | 否 |
 
 ## 文档
 

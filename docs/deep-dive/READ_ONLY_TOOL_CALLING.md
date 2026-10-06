@@ -1,6 +1,12 @@
 # 只读 Tool Calling：T1–T5
 
-日期：2026-10-05。**T1 = non-streaming Gateway Contract；T2 = 只读 Registry / Executor / Handler；T3 = 单轮 Model → Tool → Model；T4 = Web 开发测试入口。Tool Calling ≠ Agent。T5 已提供显式精确 Identity Probe；用户已报告 QW_2 真实验证成功。本轮仅离线整理 Policy / UI，Preset 合同未变。**
+**T1 = non-streaming Gateway Contract；T2 = 只读 Registry / Executor / Handler；T3 = 单轮 Model → Tool → Model；T4 = Web 开发测试入口；T5 = Managed 显式精确 Identity Probe。Tool Calling ≠ Agent。** 2026-10-06 的独立 Preset Qualification 仅发布 Ollama Tool 协议合同，固定 Analysis 仍不调用 Tool。
+
+## Preset 独立 Qualification
+
+维护者组件 preset_tool_qualification.py 直接捕获当前 Preset 固定 RuntimeSnapshot，复用 ToolCallingService、Registry / Executor 和 Reader。临时诊断授权不修改原 Runtime、不写 Managed Evidence，也不自动改合同。合法唯一 get_current_water_quality({}) → OK / NO_DATA → role=tool → 非空最终回答（正常 stop、无后续 Tool）后，再发送一次带相同 Tool 定义的概念问题；必须直接回答。最多三次模型请求，retry=0，沿用 RequestHandle / Cancellation。
+
+Qwen / DeepSeek 因 CREDENTIAL_FILE_ERROR 未发请求，均不发布。Ollama 在 OFF + Normal 下完整成功（Tool Result=NO_DATA），概念问题未调用 Tool；固定合同 1.0.2 增加 tool_calling=SUPPORTED。这不支持 Streaming Tool Calling、不自动启用 Analysis Tool Calling、不推广 Thinking ON + Tool 组合。精确 Identity、逐次 Usage、Cloud 阻塞和维护记录见[Preset 发布说明](PRESET_PUBLICATION.md)。以下 T5 的 Evidence 写入仍只属于 Managed，不能代替 Preset 发布。
 
 ## 合同
 

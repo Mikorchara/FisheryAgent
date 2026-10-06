@@ -29,7 +29,7 @@
 | Credential Writer 辅助文件 | revision lock、staging / recovery，和对应凭据同一私有目录 | credentials/.env.writer.lock、credentials/.env.stage-<id>/{new,original}；Manual 文件使用对应文件名 | 否 | 是 | 仅凭据写入期间 / 恢复时 | 仅确认 writer 已停止且无待恢复状态后人工处置 |
 | Manual Experiment | V2 target、Raw Request、credential_ref 与说明 | outputs/manual-experiments/experiment-<id>.json | 否，Git 忽略 | 否；不存真实 Key | V2 选择该实验时 | 删除会丢失实验内容；先导出或备份 |
 | Trace | Web、Mock CLI、real-validation 的安全运行追踪 | outputs/web-traces.jsonl、outputs/mock-traces.jsonl、outputs/real-validation-traces.jsonl | 否，Git 忽略 | 否；按字段白名单记录 | 运行分析时产生 | 停止应用并备份后可清理；无法自动重建历史 |
-| Preset qualification 输出 | 维护者精确本地资格检查摘要 | outputs/preset-qualification/*.json | 否，Git 忽略 | 否；摘要不含 Key / 完整模型正文 | 仅维护者工具生成 | 先备份；如需重测可重新授权执行，但不会自动重建旧记录 |
+| Preset qualification 输出 | 维护者精确单项 / Tool 闭环资格摘要及安全 Trace | outputs/preset-qualification/*.json、tool-traces.jsonl；由 scripts/qualify_local_preset_request.py 或 qualify_preset_tools.py 生成 | 否，Git 忽略 | 否；摘要不含 Key / 完整模型正文 | 仅维护者工具生成 | 先备份；如需重测可重新授权执行，但不会自动重建旧记录 |
 | 保留的维护脚本 | 精确 Ollama 单项 qualification；不进入 Web 启动 | scripts/qualify_local_preset_request.py | 是 | 否 | 正常运行不需要 | 可从源码恢复；运行时输出另存 outputs/ |
 | 自动测试及 fixture | 回归测试和兼容性历史夹具 | tests/、tests/fixtures/r0_runtime_baseline.json、tests/fixtures/historical_model_assets/ | 是 | 否 | 正常运行不需要；开发必须保留 | 不删除；fixture 用途见其 README |
 | 虚拟环境 / Python 缓存 | 本机依赖和可重建字节码 | .venv/、__pycache__/、*.pyc | 否，Git 忽略 | 否 | 仅开发环境 | 停止相关进程后可删除；虚拟环境可按 BUILD_RUN 重建 |

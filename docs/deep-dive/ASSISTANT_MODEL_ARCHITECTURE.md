@@ -71,7 +71,7 @@ Development / Test 仅验证已有运行能力，保留 Mock / 真实 Runtime、
 
 ## Preset 边界与下一步
 
-Managed Custom 使用 Evidence-driven capability；Preset 使用 Maintainer-published 固定合同。QW_2 Evidence 不自动修改默认 Qwen Preset；当前三个 Preset 合同未变。
+Managed Custom 使用 Evidence-driven capability；Preset 使用 Maintainer-published 固定合同。QW_2 Evidence 不自动修改默认 Qwen Preset。该 UI / Policy 阶段没有改合同；后续 2026-10-06 独立资格验证仅发布 Ollama Tool 协议合同 1.0.2，Qwen / DeepSeek 因凭据访问阻塞仍为 1.0.1，详见[当前 Preset 发布说明](PRESET_PUBLICATION.md)。
 
 下一步 Preset Tool Calling Qualification 应先确定精确 Identity 与候选合同，维护者逐项确认 NO_DATA / 正常 / 异常、合法 Tool Call、单轮结束、Usage、取消和安全失败，并检查 Manual V1 原始响应。只有确认需要发布且验证充分后才修改固定合同版本；不得自动 Custom → Preset。本轮不执行资格测试。
 

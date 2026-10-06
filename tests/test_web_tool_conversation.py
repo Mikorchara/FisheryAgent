@@ -15,6 +15,7 @@ from fishery_ai.credentials import CredentialStore, CredentialSnapshot, Credenti
 from fishery_ai.model_gateway import ModelCapabilities, ModelProfile
 from fishery_ai.model_options import Support
 from fishery_ai.providers import AuthSpec
+from fishery_ai.presets import preset_profiles
 from fishery_ai.repositories import MockRepository
 from fishery_ai.telemetry.scenario_templates import ScenarioTemplateStore
 from fishery_ai.tool_conversation import MockToolGateway, ToolCallingService
@@ -195,14 +196,25 @@ class WebToolConversationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         converse.assert_not_called()
 
-    def test_real_current_profiles_not_granted_tool_capability(self):
+    def test_unpublished_current_profiles_remain_gated(self):
         config = self.client.get("/api/config").get_json()
+        published = {p.profile_id for p in preset_profiles() if p.capabilities.tool_calling == Support.SUPPORTED}
         for profile in config["profiles"]:
-            if profile["runtime_type"] == "mock":
+            if profile["runtime_type"] == "mock" or profile["profile_id"] in published:
                 continue
             response = self.run_tool(target="selected", profile_id=profile["profile_id"], confirm_network=True)
             self.assertIn(response.get_json()["error_code"], ("OPTION_UNKNOWN", "OPTION_UNSUPPORTED"))
         self.real_factory.assert_not_called()
+
+    def test_published_ollama_enters_existing_tool_path_with_offline_gateway(self):
+        profile = next(p for p in preset_profiles() if p.model == "qwen3.5:4b" and p.preset_variant == "off")
+        self.real_factory.side_effect = None
+        self.real_factory.return_value = MockToolGateway()
+        response = self.run_tool(target="selected", profile_id=profile.profile_id, confirm_network=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["result"]["tool_result"]["status"], "NO_DATA")
+        self.assertEqual(response.get_json()["result"]["request_2"]["outcome"], "final_answer")
+        self.real_factory.assert_called_once_with()
 
     def test_mock_fixture_does_not_change_profile_or_evidence(self):
         before = self.client.get("/api/config").get_json()

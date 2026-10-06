@@ -23,6 +23,7 @@ pyproject.toml 定义安装包、Python 版本、依赖和包资源。README.md 
 - tools/catalog.py：固定 UI metadata；一个真实水质 Tool 与三个 DEV ONLY / NOT EXECUTABLE 占位。Catalog 不注册 Handler，用户不能把占位项保存到实际 Policy。
 - tool_conversation.py：T3 独立应用层 ToolCallingService；最多一次 Tool 和一次 follow-up；T4 增加离线 MockToolGateway 示例，不替代固定 Analysis。observability.py 为其记录单独的 JSONL Trace。
 - presets.py、protocol_specs.py、providers.py：固定 Preset、协议编码和 Provider 元信息。
+- preset_tool_qualification.py：维护者独立 Preset Tool 资格验证，复用 T3 / T2；最多一次 Tool 闭环加一次概念问题，不写 Managed Evidence、不自动发布、不进入 Analysis。
 - capability_store.py、evidence_resolver.py、capability_probe.py、tool_capability_probe.py：Managed Custom 的能力证据与显式验证；Tool Probe 位于 02 · 模型能力的高级验证操作，Development 只验证已有能力。
 - credentials.py、credential_paths.py、project_env.py：凭据读取、用户私有路径和受控写入。
 - manual.py、manual_experiments.py：Manual V1/V2 Raw 请求与实验存储。
@@ -74,7 +75,7 @@ ToolCallingService 接受调用者已经捕获的不可变 RuntimeSnapshot，两
 
 ## scripts/
 
-当前保留精确 Ollama Identity 的单项资格验证工具。它只供维护者使用，必须显式确认；不自动发布 Preset，也不是 Web 启动依赖。
+qualify_local_preset_request.py 保留精确 Ollama Identity 的单项资格检查；qualify_preset_tools.py 对当前发布 Preset 执行有限 Tool 资格验证，一次只选一个模型。两者只供维护者使用，必须显式确认联网，不自动发布 Preset，也不是 Web 启动依赖。
 
 ## docs/ 与 outputs/
 

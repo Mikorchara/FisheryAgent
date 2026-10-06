@@ -33,6 +33,12 @@ Demo 使用 MockGateway，不访问模型。tests/ 是自动化回归，不参�
 
 用户可选模型、Thinking 和 Response Mode。Qwen 3.8 Flash、DeepSeek Flash、Ollama Qwen3.5 4B 当前各发布 OFF/ON 与 Normal/Streaming 四种组合；默认 Qwen OFF + Normal。Preset 不显示 URL、凭据引用、Capability Evidence 或 Probe。合同依据见[Preset 发布说明](deep-dive/PRESET_PUBLICATION.md)。
 
+维护者独立 Tool 资格验证入口（真实联网，最多两次闭环请求加一次概念请求；不是普通启动或自动测试）：
+
+    .\.venv\Scripts\python.exe scripts/qualify_preset_tools.py --preset-id ollama-qwen35-4b-r1 --confirm-network
+
+一次只指定一个发布 Preset，固定使用 OFF + Normal、retry=0；无确认不读取凭据、不联网。复用正式私有 CredentialStore，无源码 .env 回退。脚本只输出安全摘要并保存到 outputs/preset-qualification/，不会自动修改发布合同；不要把重复运行当作无需授权的日常测试。
+
 ## Managed Custom
 
 在模型配置中创建连接并填写 Base URL、精确 Model、凭据引用。真实 Key 只在本机凭据管理入口设置；不填入 Profile。Normal + AUTO 可在高级能力未验证时使用。Thinking / Streaming 等选项只有精确身份证据支持时才可运行；Probe 由用户逐项触发。
