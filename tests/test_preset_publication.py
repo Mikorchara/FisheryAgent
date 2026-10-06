@@ -40,7 +40,7 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual({p.model for p in self.profiles},
                          {'qwen3.8-flash', 'deepseek-flash', 'qwen3.5:4b'})
         self.assertEqual({p.model: p.preset_contract_version for p in self.profiles},
-                         {'qwen3.8-flash': '1.0.1', 'deepseek-flash': '1.0.1', 'qwen3.5:4b': '1.0.2'})
+                         {'qwen3.8-flash': '1.0.2', 'deepseek-flash': '1.0.2', 'qwen3.5:4b': '1.0.2'})
         for model in ('qwen3.8-flash', 'deepseek-flash', 'qwen3.5:4b'):
             self.assertEqual({(p.preset_variant, r) for p in self.profiles if p.model == model
                               for r in p.preset_response_modes},
@@ -164,7 +164,7 @@ class PublicationTests(unittest.TestCase):
     def test_new_release_maintenance_is_exact_and_not_legacy(self):
         for template in _catalog()['templates']:
             self.assertEqual(template['contract_version'],
-                             '1.0.2' if template['connection']['model'] == 'qwen3.5:4b' else '1.0.1')
+                             '1.0.2')
             records = template['maintenance']['evidence_summary']
             recorded = {r.get('capability') for r in records if r.get('capability')}
             self.assertTrue(recorded.issubset({'reasoning_on', 'reasoning_off', 'streaming',
@@ -255,7 +255,7 @@ class PublicationTests(unittest.TestCase):
         store=CapabilityStore(self.root/'evidence')
         for model in ('qwen3.8-flash', 'deepseek-flash', 'qwen3.5:4b'):
             off=next(p for p in self.profiles if p.model==model and p.preset_variant=='off')
-            self.assertEqual(off.preset_contract_version,'1.0.2' if model=='qwen3.5:4b' else '1.0.1')
+            self.assertEqual(off.preset_contract_version,'1.0.2')
             self.assertIn('streaming',off.preset_response_modes)
             self.assertEqual(off.capabilities.thinking_off_streaming_combination,Support.SUPPORTED)
             managed=replace(off,access_mode='managed_custom',preset_id=None,preset_variant=None,

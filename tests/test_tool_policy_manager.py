@@ -11,7 +11,7 @@ from fishery_ai.credentials import CredentialStore
 from fishery_ai.domain import DiagnosisService
 from fishery_ai.model_gateway import ModelToolCall
 from fishery_ai.telemetry import CurrentSnapshotStore, CurrentWaterQualityReader
-from fishery_ai.tool_policy import UserToolPolicyStore, ToolPolicyError, load_tool_policies
+from fishery_ai.tools.policy import UserToolPolicyStore, ToolPolicyError, load_tool_policies
 from fishery_ai.tools import ToolRegistry, ToolExecutor
 from fishery_ai.tools.catalog import tool_catalog
 from fishery_ai.web import create_app
@@ -46,15 +46,15 @@ class ToolPolicyManagerTests(unittest.TestCase):
         return {"schema_version":1, "modes": {"analysis":{"selected_tools":list(analysis)},
             "assistant":{"selected_tools":list(assistant)}}}
 
-    def test_catalog_only_one_real_and_three_disabled_placeholders(self):
+    def test_catalog_two_real_and_three_disabled_placeholders(self):
         catalog = tool_catalog(self.registry)
-        self.assertEqual(len(catalog), 4)
-        self.assertEqual([i["name"] for i in catalog if i["executable"]], [NAME])
-        for item in catalog[1:]:
+        self.assertEqual(len(catalog), 5)
+        self.assertEqual([i["name"] for i in catalog if i["executable"]], [NAME, "score_current_water_quality"])
+        for item in catalog[2:]:
             self.assertTrue(item["dev_only"])
             self.assertFalse(item["registered"])
             self.assertFalse(item["executable"])
-        self.assertEqual(self.registry.registered_names(), (NAME,))
+        self.assertEqual(self.registry.registered_names(), (NAME, "score_current_water_quality"))
 
     def test_absent_override_loads_builtin_without_creating_file(self):
         self.assertFalse(self.store.path.exists())
@@ -67,7 +67,7 @@ class ToolPolicyManagerTests(unittest.TestCase):
         reloaded = UserToolPolicyStore(self.store.directory, self.registry)
         self.assertEqual(reloaded.load(), self.selection((NAME,), ()))
         self.assertEqual(reloaded.public()["source"], "USER_OVERRIDE")
-        self.assertEqual(reloaded.effective()["analysis"].exposed_tools, ())
+        self.assertEqual(reloaded.effective()["analysis"].exposed_tools, (NAME,))
         self.assertEqual(reloaded.effective()["assistant"].exposed_tools, ())
 
     def test_reset_removes_only_override_and_restores_defaults(self):
@@ -104,7 +104,7 @@ class ToolPolicyManagerTests(unittest.TestCase):
     def test_atomic_replace_failure_preserves_original_and_cleans_staging(self):
         self.store.save(self.selection())
         original=self.store.path.read_bytes()
-        with patch("fishery_ai.tool_policy.os.replace", side_effect=OSError("fictional path error")):
+        with patch("fishery_ai.tools.policy.os.replace", side_effect=OSError("fictional path error")):
             with self.assertRaises(ToolPolicyError) as error: self.store.save(self.selection(assistant=()))
         self.assertEqual(str(error.exception), "TOOL_POLICY_STORAGE_ERROR")
         self.assertEqual(self.store.path.read_bytes(), original)
@@ -127,15 +127,15 @@ class ToolPolicyManagerTests(unittest.TestCase):
         self.assertEqual(self.store.effective()["assistant"].exposed_tools, ())
 
     def test_catalog_mutation_cannot_add_handler_or_grant_execution(self):
-        catalog=tool_catalog(self.registry); catalog[1]["executable"]=True
+        catalog=tool_catalog(self.registry); catalog[2]["executable"]=True
         result=ToolExecutor(self.registry).execute(ModelToolCall("c1", "testTool_1", "{}"))
         self.assertEqual(result.error_code.value,"UNKNOWN_TOOL")
-        self.assertEqual(self.registry.registered_names(),(NAME,))
+        self.assertEqual(self.registry.registered_names(),(NAME, "score_current_water_quality"))
 
     def test_web_returns_catalog_and_no_profile_or_secret(self):
         response=self.client.get("/api/tool-policies")
         self.assertEqual(response.status_code,200)
-        self.assertEqual(len(response.get_json()["catalog"]),4)
+        self.assertEqual(len(response.get_json()["catalog"]),5)
         self.assertNotIn("credential",response.get_data(as_text=True).lower())
         self.assertNotIn("path",response.get_json())
         self.factory.assert_not_called()

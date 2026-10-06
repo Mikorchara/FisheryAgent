@@ -19,7 +19,7 @@ from fishery_ai.observability import JsonlTraceSink
 from fishery_ai.providers import AuthSpec
 from fishery_ai.telemetry import CurrentSnapshotStore, CurrentWaterQualityReader
 from fishery_ai.tool_conversation import MockToolGateway, ToolCallingService
-from fishery_ai.tool_policy import ToolPolicy, ToolPolicyError, load_tool_policies, parse_tool_policies
+from fishery_ai.tools.policy import ToolPolicy, ToolPolicyError, load_tool_policies, parse_tool_policies
 from fishery_ai.tools import ToolExecutor, ToolRegistry
 from fishery_ai.web import create_app
 
@@ -52,7 +52,7 @@ class ToolPolicyTests(unittest.TestCase):
         self.assertEqual(self.policies["analysis"].model_definitions(self.registry), ())
         self.assertFalse(self.policies["analysis"].llm_tool_calling)
         self.assertEqual([item.name for item in self.policies["assistant"].model_definitions(self.registry)], [NAME])
-        self.assertEqual(self.registry.registered_names(), (NAME,))
+        self.assertEqual(self.registry.registered_names(), (NAME, "score_current_water_quality"))
         self.assertFalse(hasattr(self.registry, "register"))
 
     def test_unknown_tool_name_fails_closed_without_echo(self):
@@ -62,7 +62,7 @@ class ToolPolicyTests(unittest.TestCase):
             parse_tool_policies(data)
         self.assertEqual(str(error.exception), "UNKNOWN_POLICY_TOOL")
         self.assertNotIn("private", str(error.exception))
-        self.assertEqual(self.registry.registered_names(), (NAME,))
+        self.assertEqual(self.registry.registered_names(), (NAME, "score_current_water_quality"))
 
     def test_policy_cannot_register_handler_import_module_or_function(self):
         for name in ("module", "handler", "import", "function_path", "eval", "exec"):
@@ -70,7 +70,7 @@ class ToolPolicyTests(unittest.TestCase):
             data["modes"]["assistant"][name] = "fake.private.function"
             with self.subTest(name=name), self.assertRaises(ToolPolicyError):
                 parse_tool_policies(data)
-        self.assertEqual([d.name for d in self.registry.model_definitions()], [NAME])
+        self.assertEqual([d.name for d in self.registry.model_definitions()], [NAME, "score_current_water_quality"])
 
     def test_bad_schema_mode_types_and_duplicate_tools_fail_closed(self):
         for value in ("false", 1, None):
@@ -94,18 +94,16 @@ class ToolPolicyTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             self.policies["analysis"] = self.policies["assistant"]
 
-    def test_analysis_cannot_be_enabled_by_configuration(self):
+    def test_analysis_can_explicitly_authorize_registered_tool(self):
         data = self.config()
         data["modes"]["analysis"] = {"llm_tool_calling":True, "exposed_tools":[NAME]}
-        with self.assertRaises(ToolPolicyError) as error:
-            parse_tool_policies(data)
-        self.assertEqual(error.exception.code, "ANALYSIS_TOOL_POLICY_INVALID")
+        self.assertTrue(parse_tool_policies(data)["analysis"].allows(NAME))
 
     def test_web_startup_rejects_unknown_policy_before_gateway(self):
         data = self.config(); data["modes"]["assistant"]["exposed_tools"] = ["unknown_tool"]
         resource = Mock(); resource.joinpath.return_value.read_text.return_value = json.dumps(data)
         factory = Mock(side_effect=AssertionError("no real client"))
-        with patch("fishery_ai.tool_policy.files", return_value=resource), self.assertRaises(ToolPolicyError):
+        with patch("fishery_ai.tools.policy.files", return_value=resource), self.assertRaises(ToolPolicyError):
             create_app(credential_store=CredentialStore(process_env={}), real_gateway_factory=factory,
                 custom_profiles_dir=self.root / "profiles", capability_evidence_dir=self.root / "evidence",
                 scenario_templates_dir=self.root / "templates", manual_experiments_dir=self.root / "experiments")
@@ -181,7 +179,7 @@ class ToolPolicyTests(unittest.TestCase):
         self.assertEqual(result.error_code.value, "UNKNOWN_TOOL")
 
     def test_safety_no_dynamic_loading_in_policy(self):
-        import fishery_ai.tool_policy as module
+        import fishery_ai.tools.policy as module
         source = Path(module.__file__).read_text(encoding="utf-8")
         calls = [node.func for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Call)]
         self.assertFalse(any(isinstance(node, ast.Name) and node.id in ("exec", "eval", "__import__") for node in calls))

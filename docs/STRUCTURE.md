@@ -18,10 +18,11 @@ pyproject.toml 定义安装包、Python 版本、依赖和包资源。README.md 
 - contracts.py、domain.py、repositories.py：领域合同（含共享 Freshness 判断）、确定性诊断与 Mock / Demo 场景生成。
 - telemetry/：内置 / 用户情景模板管理与动态模拟入口；Template 经 Simulator、SimulationAdapter 转成既有 WaterQualityReading，再写入进程内 CurrentSnapshotStore。Web 与 CLI 水质入口统一使用这条管线。
 - application.py、model_gateway.py、openai_compatible_adapter.py：固定分析流程和模型传输；T1 增加 non-streaming tools / tool_calls / tool_call_id 消息合同与 SDK 编码归一，不执行工具。
-- tools/：T2 显式静态 allowlist、有限执行器和当前水质只读 Handler。
-- tool_policy.py、resources/tools/tool_policies.json：冻结的 analysis / assistant 默认授权策略及 UserToolPolicyStore；用户设置存 outputs/tool-policies/tool_policies.json，原子替换、启动校验、可恢复默认。Analysis 的用户选择仅作准备，实际仍暴露零工具；Assistant 新请求捕获有效 Policy，定义和执行均受限制。
-- tools/catalog.py：固定 UI metadata；一个真实水质 Tool 与三个 DEV ONLY / NOT EXECUTABLE 占位。Catalog 不注册 Handler，用户不能把占位项保存到实际 Policy。
-- tool_conversation.py：T3 独立应用层 ToolCallingService；最多一次 Tool 和一次 follow-up；T4 增加离线 MockToolGateway 示例，不替代固定 Analysis。observability.py 为其记录单独的 JSONL Trace。
+- tools/：静态 allowlist、有限执行器、Catalog、Policy 和两个只读 Handler；协调器仍留在服务层。
+- tools/policy.py、resources/tools/tool_policies.json：冻结的 analysis / assistant 默认授权策略及 UserToolPolicyStore；用户设置存 outputs/tool-policies/tool_policies.json，原子替换、启动校验、可恢复默认。Analysis 默认零工具；Assistant 默认仅 get_current_water_quality。评分工具在两种模式默认关闭，用户显式保存后新请求生效。
+- tools/catalog.py：固定 UI metadata；两个可执行 Tool 与三个 DEV ONLY / NOT EXECUTABLE 占位。Catalog 不注册 Handler，不能用 metadata 获得执行权限。
+- water_quality_scoring.py：独立 WaterQualityScoringService / WaterQualityScore；复用 DiagnosisService 的正常区间，实验惩罚系数集中定义，非专业养殖评分标准。
+- tool_conversation.py：共享单轮 ToolCallingService；converse 构建 Assistant 问答，run_request 接收 Analysis 已有上下文。最多一次 Tool 和一次 follow-up，复用同一 Executor；T4 离线 MockToolGateway 不替代固定 Analysis。observability.py 区分应用模式，记录安全步骤摘要。
 - presets.py、protocol_specs.py、providers.py：固定 Preset、协议编码和 Provider 元信息。
 - preset_tool_qualification.py：维护者独立 Preset Tool 资格验证，复用 T3 / T2；最多一次 Tool 闭环加一次概念问题，不写 Managed Evidence、不自动发布、不进入 Analysis。
 - capability_store.py、evidence_resolver.py、capability_probe.py、tool_capability_probe.py：Managed Custom 的能力证据与显式验证；Tool Probe 位于 02 · 模型能力的高级验证操作，Development 只验证已有能力。
@@ -53,13 +54,19 @@ tools/ 的最小结构：
 tools/
 ├─ __init__.py      对外入口
 ├─ contracts.py     ToolDefinition / ToolExecutionResult / 安全错误码
-├─ registry.py      仅 get_current_water_quality 的固定 allowlist
+├─ registry.py      两个只读 Tool 的固定 allowlist
 ├─ catalog.py       仅展示 metadata / DEV 占位；执行权限仍来自 Registry
 ├─ executor.py      显式执行、空参数校验、次数/结果大小限制、取消检查
-└─ water_quality.py CurrentWaterQualityReader → DiagnosisService → JSON 数据
+├─ policy.py        冻结授权与固定路径用户设置（配置持久化，不执行 Tool）
+└─ handlers/
+   ├─ __init__.py
+   ├─ current_water_quality.py  Reader → DiagnosisService → JSON
+   └─ water_quality_score.py    Reader → WaterQualityScoringService → JSON
 ```
 
 ModelToolDefinition / ModelToolCall 仍属于 T1 模型协议，T2 复用它们。Registry 由调用者注入 Reader / Diagnosis，Handler 只读取查询视图；不读取 Scenario、MockRepository、文件或硬件包，不修改 Snapshot。Executor 按请求创建，默认最多一次调用，不自动向模型发 Request #2。T4 Web API 通过 T3 发起单轮对话；没有 Agent 或 Streaming Tool Calling。
+
+迁移没有保留旧 tool_policy.py / tools/water_quality.py 兼容实现；Python import 与测试 patch 目标同步改到实际模块。现有 tools 包顶层执行 API 保留，并导出 Policy。新增 Tool 的流程见[ADDING_A_TOOL](deep-dive/ADDING_A_TOOL.md)。
 
 T3 单轮路径为：system / user / Policy-filtered Registry tools → Model Request #1 → 一个 assistant.tool_calls → T2 Executor → role=tool JSON → Model Request #2（tool_choice=none）→ 最终正文。首次请求不提前读取或注入当前水质。无 Tool Call 时直接结束；第二轮继续调用 Tool 返回 TOOL_ROUND_LIMIT。Tool Calling ≠ Agent。
 
@@ -67,7 +74,7 @@ ToolCallingService 接受调用者已经捕获的不可变 RuntimeSnapshot，两
 
 正式 Gateway 工具请求仍受精确 runtime 的能力门禁限制；Preset / Evidence 合同不因 T1/T2/T3/T4 改变。Web 选择当前 Runtime 时，未验证能力在创建 Gateway 前拒绝；服务和 Gateway 继续校验。普通固定 Analysis、Streaming 与 Manual Raw 保留原路径。见[T1–T5 只读工具说明](deep-dive/READ_ONLY_TOOL_CALLING.md)与[Analysis / Assistant 架构](deep-dive/ASSISTANT_MODEL_ARCHITECTURE.md)。模型接入方式与应用流程是两个维度；当前 Assistant 仍是单轮开发实验。
 
-标题右侧 Tool 打开独立 Modal；Analysis / Assistant 两份草稿分开，默认折叠条目，保存前不改变有效策略。Analysis 勾选不启用 LLM Tool。右上 Assistant Model · Coming Soon 只提示尚未实现，不切换 Profile / Runtime。Web 的 Policy 写 API 复用 Host / Origin / CSRF，不接受文件路径。独立 Python 组件未注入 UserToolPolicyStore 时仍使用包内默认；Web 单轮对话与 T5 Probe 显式传入同一有效 Assistant Policy。
+标题右侧 Tool 打开独立 Modal；Analysis / Assistant 两份草稿分开，默认折叠条目，保存前不改变有效策略。Analysis 勾选并保存后影响新的 Normal 请求；启用 Tool 的 Streaming 明确拒绝。右侧正式结果区 Tool Activity 默认折叠，只显示本次执行，不编辑权限。固定 Facts / Rules / Evidence 与 Tool 调用时的观测分别保留，差异不覆盖。右上 Assistant Model · Coming Soon 仍只提示尚未实现。Web 的 Policy 写 API 复用 Host / Origin / CSRF，不接受文件路径；独立 Python 组件不搜索磁盘设置。见[Analysis v1](deep-dive/ANALYSIS_MODEL_TOOL_CALLING_V1.md)。
 
 ## tests/
 

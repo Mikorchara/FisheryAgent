@@ -102,6 +102,21 @@ class WebToolConversationTests(unittest.TestCase):
         self.assertEqual(result["request_2"]["outcome"], "final_answer")
         self.assertIn("没有当前水质数据", result["generated_text"])
         self.assertIsNone(self.store.get_current())
+
+    def test_development_assistant_score_uses_saved_policy_and_current_store(self):
+        name="score_current_water_quality"
+        self.app.extensions["fishery_tool_policy_store"].save({"schema_version":1,"modes":{
+            "analysis":{"selected_tools":[]},"assistant":{"selected_tools":[name]}}})
+        self.apply("low_oxygen");before=self.store.get_current()
+        response=self.run_tool(question="请给当前水质打分")
+        self.assertEqual(response.status_code,200)
+        result=response.get_json()["result"]
+        self.assertEqual(result["tool_call"]["name"],name)
+        self.assertEqual(result["tool_call"]["arguments"],{})
+        self.assertEqual(result["tool_result"]["score"],81.3)
+        self.assertEqual(result["request_2"]["outcome"],"final_answer")
+        self.assertIs(self.store.get_current(),before)
+        self.real_factory.assert_not_called()
         self.real_factory.assert_not_called()
 
     def test_normal_available_trace_and_final(self):

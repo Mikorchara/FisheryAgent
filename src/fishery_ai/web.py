@@ -40,7 +40,7 @@ from .model_gateway import validate_preset_response
 from .execution import RequestRegistry, request_scope
 from .tool_conversation import ToolCallingService, MockToolGateway
 from .tool_capability_probe import run_tool_calling_probe
-from .tool_policy import load_tool_policies, UserToolPolicyStore, ToolPolicyError
+from .tools.policy import load_tool_policies, UserToolPolicyStore, ToolPolicyError
 from .tools.catalog import tool_catalog
 from .tools import ToolRegistry
 from .manual import ManualRequest
@@ -1064,7 +1064,7 @@ def create_app(*, trace_path: Path | None = None,
             "request_1": _public_data(result.request_1), "request_2": _public_data(result.request_2),
             "tool_call": ({"id": result.tool_call_id if re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", result.tool_call_id) else "unavailable",
                            "name": result.tool_name if result.tool_name in {item.name for item in tool_registry.model_definitions()} else "unknown_tool",
-                           "arguments": {} if tool and tool.status.value in ("OK", "NO_DATA") else None}
+                           "arguments": {} if tool and tool.status.value != "ERROR" else None}
                           if result.tool_call_id else None),
             "tool_result": body, "tool_duration_ms": result.tool_duration_ms,
             "final_finish_reason": result.final_finish_reason, "usage": _public_data(result.usage),
@@ -1116,11 +1116,16 @@ def create_app(*, trace_path: Path | None = None,
         view, failure = analysis_snapshot(payload)
         if failure is not None:
             return failure
+        try:
+            analysis_policy = policy_store.effective()["analysis"]
+        except ToolPolicyError as exc:
+            return error(exc.code, 400)
         gateway = real_gateway_factory() if real else MockGateway()
         orchestrator = Orchestrator(
             repository, diagnosis, knowledge, ProfileRegistry([runtime_profile], credentials,
                 request_runtime=runtime), gateway, traces,
             resolve_secrets=real,
+            tool_registry=tool_registry, tool_policy=analysis_policy,
         )
         started = time.monotonic()
         handle, failure = claim_execution(payload)
@@ -1166,6 +1171,12 @@ def create_app(*, trace_path: Path | None = None,
             return error("NETWORK_CONFIRMATION_REQUIRED", 403)
         profile = profiles[profile_id]
         try:
+            analysis_policy = policy_store.effective()["analysis"]
+        except ToolPolicyError as exc:
+            return error(exc.code, 400)
+        if analysis_policy.llm_tool_calling and analysis_policy.exposed_tools:
+            return error("TOOL_STREAMING_NOT_IMPLEMENTED", 400)
+        try:
             validate_preset_response(profile, streaming=True)
         except GatewayError as exc:
             return error(exc.code, 400)
@@ -1186,6 +1197,7 @@ def create_app(*, trace_path: Path | None = None,
             repository, diagnosis, knowledge, ProfileRegistry([runtime_profile], credentials,
                 request_runtime=runtime), gateway, traces,
             resolve_secrets=real,
+            tool_registry=tool_registry, tool_policy=analysis_policy,
         )
         analysis_request = AnalysisRequest(Mode.CHAT, profile_id, question.strip(),
                                           reasoning=reasoning)

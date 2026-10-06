@@ -15,7 +15,7 @@ from .model_gateway import (GatewayError, ModelGateway, ModelMessage, ModelReque
 from .model_gateway import MockGateway
 from .observability import JsonlTraceSink
 from .tools import ToolExecutionResult, ToolExecutor, ToolRegistry, ToolStatus
-from .tool_policy import ToolPolicy, ToolPolicyError, load_tool_policies
+from .tools.policy import ToolPolicy, ToolPolicyError, load_tool_policies
 
 
 SYSTEM_INSTRUCTION = (
@@ -43,9 +43,12 @@ class MockToolGateway(MockGateway):
         check_cancelled()
         super().complete(request, runtime)  # Reuse the ordinary option/capability gates.
         if request.tool_choice == "none":
-            payload = json.loads(request.messages[-1].content)
+            payload = json.loads(next(m.content for m in reversed(request.messages) if m.role == "tool"))
             if payload["status"] == "NO_DATA":
                 text = "离线 Mock：没有当前水质数据，请先显式 Apply 情景或取得快照。"
+            elif "scoring_version" in payload:
+                text = (f"离线 Mock：实验评分 {payload['score']}，等级 {payload['grade']}，"
+                        f"状态 {payload['status']}。EXPERIMENTAL / NOT PROFESSIONAL STANDARD；不是专业养殖标准。")
             else:
                 water = payload["water_quality"]
                 value = lambda key: "缺失" if water[key] is None else str(water[key])
@@ -58,8 +61,10 @@ class MockToolGateway(MockGateway):
         if re.search(r"现在|当前|目前|现场", question):
             if not request.tools:
                 return ModelResponse("离线 Mock：当前 Policy 未允许水质 Tool，无法读取当前事实。", finish_reason="stop")
+            desired = "score_current_water_quality" if re.search(r"评分|打分|打.*分", question) else "get_current_water_quality"
+            selected = next((t for t in request.tools if t.name == desired), request.tools[0])
             return ModelResponse(None, tool_calls=(ModelToolCall("mock_current_water_quality",
-                request.tools[0].name, "{}"),), finish_reason="tool_calls")
+                selected.name, "{}"),), finish_reason="tool_calls")
         text = ("离线 Mock：溶氧是水中溶解的氧气，通常以 mg/L 表示；本回答未读取当前水质。"
                 if "溶氧" in question else "离线 Mock：这是概念回答，未读取当前传感器数据。")
         return ModelResponse(text, finish_reason="stop")
@@ -94,6 +99,8 @@ class ToolConversationResult:
     tool_call_id: str | None = None
     tool_name: str | None = None
     trace_recorded: bool = False
+    reasoning_content: str | None = field(default=None, repr=False)
+    application_mode: str = "assistant"
 
 
 def _safe_code(code: str) -> str:
@@ -131,7 +138,7 @@ def _aggregate_usage(items: list[Usage]) -> SessionUsage:
 
 
 class ToolCallingService:
-    """Independent from Fishery Analysis, RAG, scenario generation and Web."""
+    """One shared bounded executor; callers own Analysis or Assistant context."""
 
     def __init__(self, gateway: ModelGateway, registry: ToolRegistry, traces: JsonlTraceSink,
                  *, clock: Callable[[], datetime] = utcnow,
@@ -140,22 +147,29 @@ class ToolCallingService:
         self.gateway, self.registry, self.traces = gateway, registry, traces
         self.clock, self.id_factory = clock, id_factory
         self.policy = policy if policy is not None else load_tool_policies()["assistant"]
-        if self.policy.mode != "assistant":
-            raise ToolPolicyError("ASSISTANT_TOOL_POLICY_REQUIRED")
         self.policy.validate_registry(registry)
 
     def converse(self, question: str, runtime: RuntimeSnapshot) -> ToolConversationResult:
         if not isinstance(question, str) or not question.strip():
             raise ValueError("question is required")
+        request = ModelRequest(Mode.CHAT, (ModelMessage("system", SYSTEM_INSTRUCTION),
+                                         ModelMessage("user", question)))
+        return self.run_request(request, runtime)
+
+    def run_request(self, request: ModelRequest, runtime: RuntimeSnapshot, *,
+                    request_id: str | None = None, trace_id: str | None = None,
+                    final_response_instruction: str | None = None) -> ToolConversationResult:
+        """Shared bounded execution; caller owns context, Registry owns definitions."""
         started_at, start_tick = self.clock(), time.monotonic()
         handle = current_handle()
-        request_id = handle.request_id if handle else self.id_factory()
-        trace_id = self.id_factory()
+        request_id = request_id or (handle.request_id if handle else self.id_factory())
+        trace_id = trace_id or self.id_factory()
         steps = [ModelStepOutcome(), ModelStepOutcome()]
         usage_items: list[Usage] = []
         tool_result, tool_duration_ms = None, None
         tool_call_id, tool_name = None, None
         text, finish_reason, error_code = "", None, None
+        reasoning_content = None
         status = Status.COMPLETED
 
         def complete(request: ModelRequest, index: int):
@@ -197,12 +211,11 @@ class ToolCallingService:
         try:
             check_cancelled()
             definitions = self.policy.model_definitions(self.registry)
-            request = ModelRequest(Mode.CHAT, (ModelMessage("system", SYSTEM_INSTRUCTION),
-                                   ModelMessage("user", question)),
-                                   tools=definitions, tool_choice="auto" if definitions else None)
+            request = replace(request, tools=definitions, tool_choice="auto" if definitions else None)
             first, calls = complete(request, 0)
             if not calls:
                 text, finish_reason = first.text, _finish_reason(first.finish_reason)
+                reasoning_content = first.reasoning_content
             else:
                 if len(calls) > 1:
                     steps[0] = replace(steps[0], outcome="multiple_tool_calls", error_code="TOOL_CALL_LIMIT")
@@ -221,12 +234,14 @@ class ToolCallingService:
                     *request.messages,
                     ModelMessage("assistant", first.text, tool_calls=calls),
                     ModelMessage("tool", tool_result.to_json(), tool_call_id=calls[0].id),
+                    *((ModelMessage("user", final_response_instruction),) if final_response_instruction else ()),
                 ))
                 second, next_calls = complete(follow_up, 1)
                 if next_calls:
                     steps[1] = replace(steps[1], outcome="tool_round_limit", error_code="TOOL_ROUND_LIMIT")
                     raise GatewayError("TOOL_ROUND_LIMIT")
                 text, finish_reason = second.text, _finish_reason(second.finish_reason)
+                reasoning_content = second.reasoning_content
             check_cancelled()
         except GatewayError as exc:
             error_code = _safe_code(exc.code)
@@ -237,7 +252,8 @@ class ToolCallingService:
         result = ToolConversationResult(request_id, trace_id, status, runtime.public_info(),
             text if status == Status.COMPLETED else "", steps[0], steps[1], _aggregate_usage(usage_items),
             tool_result, tool_duration_ms, finish_reason if status == Status.COMPLETED else None, error_code,
-            tool_call_id, tool_name)
+            tool_call_id, tool_name, reasoning_content=reasoning_content if status == Status.COMPLETED else None,
+            application_mode=self.policy.mode)
         try:
             self.traces.record_tool_conversation(result, started_at=started_at,
                 finished_at=self.clock(), total_ms=(time.monotonic() - start_tick) * 1000)

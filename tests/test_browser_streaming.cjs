@@ -13,6 +13,71 @@ const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'fishery_ai',
   'resources', 'web', 'app.css'), 'utf8');
 const knownIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
 
+function analysisActivityResult(activity) {
+  return {runtime:{},usage:{},status:'completed',structured_parse_ok:true,inference:'固定分析',
+    generated_text:'{}',recommendations:[],uncertainty:[],rule_results:[],evidence:[],
+    observed_facts:{water_quality:{temperature_c:28,ph:7.5,dissolved_oxygen_mg_l:6,
+      observed_at:'2026-10-06T05:00:00Z',retrieved_at:'2026-10-06T05:00:00Z',source:'initial-fixture',
+      quality:'valid',freshness:'fresh'}},tool_activity:activity};
+}
+
+test('Analysis Tool Activity belongs to right formal results and is collapsed by default',()=>{
+  assert.ok(html.indexOf('id="analysis-tool-activity"')>html.indexOf('<main class="results"'));
+  assert.doesNotMatch(html, /id="analysis-tool-activity"[^>]*\bopen\b/);
+  const page=makePage(async()=>{throw new Error('no network')});
+  vm.runInContext(`render(${JSON.stringify(analysisActivityResult())},10)`,page.context);
+  assert.equal(page.element('analysis-tool-activity').open,false);
+  assert.match(page.element('analysis-tool-observation-note').textContent,/未调用/);
+});
+
+test('Analysis Tool Activity shows allowed tool, steps, usage and NO_DATA without replacing facts',()=>{
+  const page=makePage(async()=>{throw new Error('no network')});
+  const activity={enabled:true,allowed_tools:['get_current_water_quality'],called:true,
+    tool_name:'get_current_water_quality',arguments_summary:'{}',result_status:'NO_DATA',duration_ms:2,
+    request_1:{outcome:'tool_calls',usage:{total_tokens:10}},request_2:{outcome:'final_answer',usage:{total_tokens:20}},
+    usage:{request_count:2,usage:{total_tokens:30}},final_finish_reason:'stop',
+    tool_result:{status:'NO_DATA',water_quality:null},snapshot_comparison:'no_data'};
+  vm.runInContext(`render(${JSON.stringify(analysisActivityResult(activity))},10)`,page.context);
+  assert.match(page.element('analysis-tool-summary').children.map(x=>x.textContent).join(' '),/get_current_water_quality/);
+  const record=JSON.parse(page.element('analysis-tool-record').textContent);
+  assert.equal(record.request_2.outcome,'final_answer');assert.equal(record.usage.usage.total_tokens,30);
+  assert.match(page.element('analysis-tool-observation-note').textContent,/NO_DATA.*保留/);
+  assert.match(page.element('facts').children.map(x=>x.textContent).join(' '),/initial-fixture/);
+});
+
+test('Analysis Tool Activity separates changed tool observation from initial Facts',()=>{
+  const page=makePage(async()=>{throw new Error('no network')});
+  const result=analysisActivityResult({called:true,allowed_tools:['get_current_water_quality'],snapshot_comparison:'different',
+    tool_result:{status:'OK',evaluated_at:'2026-10-06T06:00:00Z',water_quality:{dissolved_oxygen_mg_l:2.2,source:'new-fixture'}}});
+  vm.runInContext(`render(${JSON.stringify(result)},10)`,page.context);
+  assert.match(page.element('analysis-tool-observation-note').textContent,/不一致.*未合并或覆盖/);
+  assert.match(page.element('facts').children.map(x=>x.textContent).join(' '),/initial-fixture/);
+  assert.doesNotMatch(page.element('facts').children.map(x=>x.textContent).join(' '),/new-fixture/);
+  assert.match(page.element('analysis-tool-record').textContent,/new-fixture/);
+  assert.equal(page.element('model-inference').textContent,'固定分析');
+});
+
+test('Analysis Tool Activity no call and streaming preparation clear previous execution',()=>{
+  const page=makePage(async()=>{throw new Error('no network')});
+  vm.runInContext(`render(${JSON.stringify(analysisActivityResult({called:true,tool_result:{status:'OK'}}))},10);
+    render(${JSON.stringify(analysisActivityResult({enabled:true,allowed_tools:['get_current_water_quality'],called:false}))},10)`,page.context);
+  assert.match(page.element('analysis-tool-observation-note').textContent,/未调用/);
+  assert.equal(JSON.parse(page.element('analysis-tool-record').textContent).tool_observation,null);
+  vm.runInContext('prepareStreamView()',page.context);
+  assert.equal(JSON.parse(page.element('analysis-tool-record').textContent).tool_observation,null);
+});
+
+test('Analysis Tool Activity preserves safe error and cancellation display',()=>{
+  for(const code of ['OPTION_UNKNOWN','TOOL_ROUND_LIMIT','USER_CANCELLED','TOOL_STREAMING_NOT_IMPLEMENTED']) {
+    const page=makePage(async()=>{throw new Error('no network')});
+    const result={...analysisActivityResult({enabled:true,called:false,request_1:{outcome:'blocked',error_code:code}}),
+      error_code:code,status:code==='USER_CANCELLED'?'cancelled':'failed'};
+    vm.runInContext(`render(${JSON.stringify(result)},10)`,page.context);
+    assert.match(page.element('model-inference').textContent,new RegExp(code));
+    assert.match(page.element('analysis-tool-record').textContent,new RegExp(code));
+  }
+});
+
 function scenarioFixture(id='normal', source='BUILTIN') {
   return {schema_version:'scenario-template-v1',id,display_name:id,source,
     device_id:'sim-test',observed_age_s:0,water_quality:{
@@ -922,12 +987,15 @@ function toolManagerFixture(analysis=[], assistant=['get_current_water_quality']
   return {catalog:[{name:'get_current_water_quality',display_name:'get_current_water_quality',
     short_description:'读取当前水质',detailed_description:'canonical Snapshot 与确定性 Findings',
     access_type:'READ ONLY',registered:true,executable:true,dev_only:false,planned:false,parameter_summary:'无；{}'},
+    {name:'score_current_water_quality',display_name:'水质评分',short_description:'实验评分',
+      detailed_description:'EXPERIMENTAL / NOT PROFESSIONAL STANDARD',access_type:'READ ONLY',
+      registered:true,executable:true,dev_only:false,planned:false,experimental:true,parameter_summary:'无；{}'},
     ...[1,2,3].map(n=>({name:`testTool_${n}`,display_name:`testTool_${n}`,short_description:'占位',
       detailed_description:'UI PLACEHOLDER',access_type:'READ ONLY',registered:false,executable:false,dev_only:true,
       planned:false,parameter_summary:'不适用'}))],policy:{schema_version:1,source,
       modes:{analysis:{selected_tools:analysis},assistant:{selected_tools:assistant}},
       defaults:{analysis:{selected_tools:[]},assistant:{selected_tools:['get_current_water_quality']}},
-      runtime_consumed:{analysis:false,assistant:true}}};
+      runtime_consumed:{analysis:true,assistant:true}}};
 }
 
 function toolManagerPage(fetch=async()=>r2Reply(toolManagerFixture())) {
@@ -948,7 +1016,7 @@ test('Tool Manager opens Analysis tab with collapsed entries and closes without 
   await page.element('open-tool-manager').dispatch('click');
   assert.equal(page.element('tool-manager').open,true);
   assert.match(page.element('tool-manager-title').textContent,/Analysis/);
-  assert.equal(page.element('tool-catalog-list').children.length,4);
+  assert.equal(page.element('tool-catalog-list').children.length,5);
   for(const row of page.element('tool-catalog-list').children)assert.equal(row.children[1].hidden,true);
   await page.element('tool-policy-close').dispatch('click');
   assert.equal(page.element('tool-manager').hidden,true);
@@ -965,18 +1033,18 @@ test('Tool Manager expands details and collapses again without saving or fetchin
   assert.equal(calls,1);
 });
 
-test('Tool Manager both tabs retain independent drafts and mark Analysis preparation',async()=>{
+test('Tool Manager both tabs retain independent drafts and mark Normal Analysis authorization',async()=>{
   const page=toolManagerPage();await page.element('open-tool-manager').dispatch('click');
-  assert.match(page.element('tool-policy-note').textContent,/实际暴露 0 个 Tool/);
-  assert.match(page.element('tool-policy-count').textContent,/0 \/ 4/);
+  assert.match(page.element('tool-policy-note').textContent,/Normal Analysis.*模型|Normal Analysis.*Runtime/);
+  assert.match(page.element('tool-policy-count').textContent,/0 \/ 5/);
   let checkbox=page.element('tool-catalog-list').children[0].children[0].children[0];
   checkbox.checked=true;await checkbox.dispatch('change');
-  assert.match(page.element('tool-policy-count').textContent,/1 \/ 4/);
+  assert.match(page.element('tool-policy-count').textContent,/1 \/ 5/);
   assert.match(page.element('tool-policy-status').textContent,/未保存/);
   await page.element('tool-policy-assistant').dispatch('click');
   checkbox=page.element('tool-catalog-list').children[0].children[0].children[0];assert.equal(checkbox.checked,true);
   checkbox.checked=false;await checkbox.dispatch('change');
-  assert.match(page.element('tool-policy-count').textContent,/0 \/ 4/);
+  assert.match(page.element('tool-policy-count').textContent,/0 \/ 5/);
   await page.element('tool-policy-analysis').dispatch('click');
   assert.equal(page.element('tool-catalog-list').children[0].children[0].children[0].checked,true);
 });
@@ -984,7 +1052,7 @@ test('Tool Manager both tabs retain independent drafts and mark Analysis prepara
 test('Tool Manager placeholders are disabled but expandable and never enter draft',async()=>{
   const page=toolManagerPage();await page.element('open-tool-manager').dispatch('click');
   const rows=page.element('tool-catalog-list').children;
-  for(const item of rows.slice(1)) {
+  for(const item of rows.slice(2)) {
     const controls=item.children[0].children;assert.equal(controls[0].disabled,true);
     assert.match(controls[2].textContent,/DEV ONLY.*NOT EXECUTABLE.*UI PLACEHOLDER/);
     controls[0].checked=true;await controls[0].dispatch('change');
@@ -2990,4 +3058,44 @@ test('Development UX return stays locked while T4 request runs and Mock Trace Fi
   assert.equal(page.element('return-normal').disabled,false);
   await page.element('return-normal').dispatch('click');
   assert.equal(vm.runInContext('accessMode',page.context),'preset');
+});
+
+
+test('Experimental score Tool is configurable in both Policy tabs without changing defaults',async()=>{
+  let state=toolManagerFixture();
+  const page=toolManagerPage(async(_url,options)=>{
+    if(options.method==='PUT')state={...state,policy:{...state.policy,...JSON.parse(options.body)}};
+    return r2Reply(state);
+  });
+  await page.element('open-tool-manager').dispatch('click');
+  for(const tab of ['analysis','assistant']) {
+    await page.element(`tool-policy-${tab}`).dispatch('click');
+    const row=page.element('tool-catalog-list').children[1];
+    const checkbox=row.children[0].children[0];
+    assert.equal(checkbox.checked,false);assert.equal(checkbox.disabled,false);
+    await row.children[0].children[3].dispatch('click');
+    assert.match(row.children[1].children.map(n=>n.textContent).join(' '),/EXPERIMENTAL/);
+    checkbox.checked=true;await checkbox.dispatch('change');
+  }
+  await page.element('tool-policy-save').dispatch('click');
+  assert.deepEqual(state.policy.modes.analysis.selected_tools,['score_current_water_quality']);
+  assert.deepEqual(state.policy.modes.assistant.selected_tools,['get_current_water_quality','score_current_water_quality']);
+});
+
+test('Analysis Tool Activity renders score and future tool result JSON generically and safely',()=>{
+  const page=makePage(async()=>assert.fail('no network'));
+  for(const name of ['score_current_water_quality','example_read_only_tool']) {
+    const activity={allowed_tools:[name],called:true,requested:true,tool_name:name,arguments_summary:'{}',
+      result_status:'PARTIAL',duration_ms:2,snapshot_comparison:'consistent',
+      request_1:{outcome:'tool_calls'},request_2:{outcome:'final_answer'},
+      tool_result:{status:'PARTIAL',score:72,standard:'EXPERIMENTAL / NOT PROFESSIONAL STANDARD',
+        components:{dissolved_oxygen:{score:44}},note:'<img src=x onerror=alert(1)>'}};
+    vm.runInContext(`render(${JSON.stringify(analysisActivityResult(activity))},10)`,page.context);
+    assert.match(page.element('analysis-tool-summary').children.map(n=>n.textContent).join(' '),new RegExp(name));
+    const record=JSON.parse(page.element('analysis-tool-record').textContent);
+    assert.equal(record.tool_observation.score,72);
+    assert.equal(record.tool_observation.components.dissolved_oxygen.score,44);
+    assert.match(page.element('facts').children.map(n=>n.textContent).join(' '),/initial-fixture/);
+    assert.equal(page.element('analysis-tool-activity').open,false);
+  }
 });

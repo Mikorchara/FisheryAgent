@@ -89,7 +89,8 @@ class PresetToolQualificationTests(unittest.TestCase):
         self.assertEqual(json.loads(requests[1].messages[-1].content)["status"],"NO_DATA")
         self.assertEqual(requests[1].tool_choice,"none")
         self.assertEqual(requests[2].tool_choice,"auto")
-        self.assertEqual(requests[2].messages[-1].content,"什么是溶氧？")
+        self.assertIn("什么是溶氧？",requests[2].messages[-1].content)
+        self.assertIn("一两句话",requests[2].messages[-1].content)
         self.assertTrue(result["arguments_empty_object"])
 
     def test_diagnostic_authorization_budget_fixed_protocol_retry_zero(self):
@@ -102,7 +103,7 @@ class PresetToolQualificationTests(unittest.TestCase):
                 self.assertIs(runtime.preset_protocol_spec,profile.preset_protocol_spec)
                 wire=OpenAICompatibleAdapter._kwargs(request,runtime,stream=False)
                 self.assertNotIn("stream",wire)
-                self.assertEqual(wire[profile.preset_protocol_spec.max_output_tokens_field],192)
+                self.assertEqual(wire[profile.preset_protocol_spec.max_output_tokens_field],384 if request.generation.max_output_tokens else 192)
         self.assertEqual(self.runtime.default_generation.max_output_tokens,None)
 
     def test_missing_secret_before_model_or_reader(self):
@@ -153,6 +154,16 @@ class PresetToolQualificationTests(unittest.TestCase):
         self.assertEqual(result["model_requests"],3)
         self.assertEqual(result["verdict"],"UNKNOWN")
         self.assertEqual(result["error_code"],"CONCEPT_QUESTION_NOT_DIRECT")
+
+    def test_deepseek_concept_length_stays_unknown_with_independent_budget(self):
+        profile=next(p for p in self.profiles if p.model=="deepseek-flash")
+        result,gateway=self.run_qualification(self.responses(concept=ModelResponse("截断解释",finish_reason="length")),profile)
+        self.assertEqual(result["verdict"],"UNKNOWN")
+        self.assertEqual(result["model_requests"],3)
+        self.assertEqual(result["concept_question"]["finish_reason"],"length")
+        self.assertEqual(result["concept_max_output_tokens"],384)
+        self.assertEqual([request.generation.max_output_tokens for request,_ in gateway.requests],[None,None,384])
+        self.assertTrue(all(runtime.default_generation.max_output_tokens==192 for _,runtime in gateway.requests))
 
     def test_network_unauthorized_rate_limit_errors_do_not_retry_or_publish(self):
         for code in ("CONNECT_TIMEOUT","HTTP_401","HTTP_429","TOOL_UNSUPPORTED"):
@@ -213,9 +224,9 @@ class PresetToolQualificationTests(unittest.TestCase):
             else:
                 self.assertEqual(profile.capabilities.tool_calling,Support.UNKNOWN)
 
-    def test_actual_publication_is_ollama_only_and_preserves_other_modes(self):
+    def test_three_actual_publications_preserve_other_modes(self):
         for template in _catalog()["templates"]:
-            local = template["id"] == "ollama-qwen35-4b-r1"
+            local = template["id"] in ("ollama-qwen35-4b-r1", "dashscope-qwen38-flash-r1", "deepseek-flash-r1")
             self.assertEqual(template["contract_version"], "1.0.2" if local else "1.0.1")
             self.assertEqual(template["capabilities"].get("tool_calling", "unknown"),
                              "supported" if local else "unknown")
@@ -224,13 +235,13 @@ class PresetToolQualificationTests(unittest.TestCase):
             if local:
                 publication = template["maintenance"]["tool_calling_qualification"]
                 self.assertEqual(publication["identity"], template["identity"])
-                self.assertEqual(publication["validation_source"], "MAINTAINER_PRESET_QUALIFICATION")
+                self.assertIn(publication["validation_source"], ("MAINTAINER_PRESET_QUALIFICATION", "USER_RUN_MAINTAINER_PRESET_QUALIFICATION"))
                 self.assertEqual(publication["model_requests"], 3)
                 self.assertEqual(publication["qualified_variant"], "off")
                 self.assertEqual(publication["tool_result_status"], "NO_DATA")
                 self.assertEqual(publication["request_2"], "final_answer")
                 self.assertTrue(publication["concept_question"]["no_tool"])
-                self.assertEqual(template["capabilities"]["streaming_usage"], "unknown")
+                self.assertEqual(template["capabilities"]["streaming_usage"], "unknown" if template["id"].startswith("ollama") else "supported")
 
     def test_published_support_is_not_inherited_or_overwritten_by_managed(self):
         profile = next(p for p in self.profiles if p.model == "qwen3.5:4b")

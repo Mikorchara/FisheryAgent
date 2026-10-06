@@ -6,7 +6,7 @@
       "id": "dashscope-qwen38-flash-r1",
       "display_name": "Qwen 3.8 Flash",
       "release_status": "published",
-      "contract_version": "1.0.1",
+      "contract_version": "1.0.2",
       "connection": {
         "profile_id": "qwen38-flash-template",
         "display_name": "Qwen 3.8 Flash",
@@ -47,7 +47,8 @@
         "thinking_streaming_combination": "supported",
         "source": "USER_VERIFIED",
         "verified_at": "2026-10-02T17:58:24.144432+00:00",
-        "thinking_off_streaming_combination": "supported"
+        "thinking_off_streaming_combination": "supported",
+        "tool_calling": "supported"
       },
       "defaults": {
         "thinking": "off",
@@ -129,6 +130,95 @@
           "validation_source": "USER_CONFIRMED_MANUAL_VALIDATION",
           "verified": "OFF + Streaming",
           "request_attempts_by_codex": 0
+        },
+        "tool_calling_qualification": {
+          "validated_at": "2026-10-06T04:53:25.594374+00:00",
+          "published_at": "2026-10-06",
+          "contract_version": "1.0.2",
+          "validation_source": "USER_RUN_MAINTAINER_PRESET_QUALIFICATION",
+          "maintainer": "project-developer",
+          "identity": [
+            "dashscope",
+            "openai_chat",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "qwen3.8-flash"
+          ],
+          "protocol_spec_id": "dashscope_chat",
+          "protocol_spec_version": "1",
+          "qualified_variant": "off",
+          "response_mode": "normal",
+          "snapshot": "EMPTY_QUALIFICATION_PROCESS",
+          "verdict": "SUPPORTED",
+          "model_requests": 3,
+          "transport_attempts": 3,
+          "retry": 0,
+          "max_tool_rounds": 1,
+          "max_output_tokens": 192,
+          "request_1": "tool_calls",
+          "tool_name": "get_current_water_quality",
+          "tool_call_id_valid": true,
+          "arguments_empty_object": true,
+          "tool_result_status": "NO_DATA",
+          "request_2": "final_answer",
+          "final_answer_present": true,
+          "final_finish_reason": "stop",
+          "concept_question": {
+            "outcome": "direct_answer",
+            "no_tool": true,
+            "content_present": true,
+            "finish_reason": "stop",
+            "usage": {
+              "input_tokens": 362,
+              "output_tokens": 57,
+              "total_tokens": 419,
+              "reasoning_tokens": null,
+              "cached_input_tokens": 0,
+              "source": "provider"
+            },
+            "error_code": null
+          },
+          "request_1_usage": {
+            "input_tokens": 366,
+            "output_tokens": 15,
+            "total_tokens": 381,
+            "reasoning_tokens": null,
+            "cached_input_tokens": 0,
+            "source": "provider"
+          },
+          "request_2_usage": {
+            "input_tokens": 153,
+            "output_tokens": 6,
+            "total_tokens": 159,
+            "reasoning_tokens": null,
+            "cached_input_tokens": 0,
+            "source": "provider"
+          },
+          "round_trip_usage": {
+            "request_count": 2,
+            "reported_count": 2,
+            "usage": {
+              "input_tokens": 519,
+              "output_tokens": 21,
+              "total_tokens": 540,
+              "reasoning_tokens": null,
+              "cached_input_tokens": 0,
+              "source": "provider"
+            }
+          },
+          "usage": {
+            "request_count": 3,
+            "reported_count": 3,
+            "usage": {
+              "input_tokens": 881,
+              "output_tokens": 78,
+              "total_tokens": 959,
+              "reasoning_tokens": null,
+              "cached_input_tokens": 0,
+              "source": "provider"
+            }
+          },
+          "latency_ms": 7172.0,
+          "decision": "用户正常进程独立 Qualification 全部通过，并核对对应安全 Tool Trace；固定合同发布 Tool Calling，不复制 Managed Evidence。"
         }
       }
     },
@@ -136,7 +226,7 @@
       "id": "deepseek-flash-r1",
       "display_name": "DeepSeek Flash",
       "release_status": "published",
-      "contract_version": "1.0.1",
+      "contract_version": "1.0.2",
       "connection": {
         "profile_id": "deepseek-flash-r1-template",
         "display_name": "DeepSeek Flash",
@@ -177,7 +267,8 @@
         "thinking_streaming_combination": "supported",
         "source": "USER_VERIFIED",
         "verified_at": "2026-10-02T18:16:20.900208+00:00",
-        "thinking_off_streaming_combination": "supported"
+        "thinking_off_streaming_combination": "supported",
+        "tool_calling": "supported"
       },
       "defaults": {
         "thinking": "off",
@@ -329,6 +420,98 @@
           "validation_source": "USER_CONFIRMED_MANUAL_VALIDATION",
           "verified": "OFF + Streaming",
           "request_attempts_by_codex": 0
+        },
+        "tool_calling_qualification": {
+          "verdict": "SUPPORTED",
+          "error_code": null,
+          "request_1": "tool_calls",
+          "request_2": "final_answer",
+          "tool_name": "get_current_water_quality",
+          "tool_call_id_valid": true,
+          "arguments_empty_object": true,
+          "tool_result_status": "NO_DATA",
+          "final_answer_present": true,
+          "final_finish_reason": "stop",
+          "concept_question": {
+            "outcome": "direct_answer",
+            "no_tool": true,
+            "content_present": true,
+            "finish_reason": "stop",
+            "usage": {
+              "input_tokens": 366,
+              "output_tokens": 32,
+              "total_tokens": 398,
+              "reasoning_tokens": null,
+              "cached_input_tokens": 128,
+              "source": "provider"
+            },
+            "error_code": null
+          },
+          "round_trip_usage": {
+            "request_count": 2,
+            "reported_count": 2,
+            "usage": {
+              "input_tokens": 505,
+              "output_tokens": 37,
+              "total_tokens": 542,
+              "reasoning_tokens": null,
+              "cached_input_tokens": 128,
+              "source": "provider"
+            }
+          },
+          "request_1_usage": {
+            "input_tokens": 360,
+            "output_tokens": 25,
+            "total_tokens": 385,
+            "reasoning_tokens": null,
+            "cached_input_tokens": 128,
+            "source": "provider"
+          },
+          "request_2_usage": {
+            "input_tokens": 145,
+            "output_tokens": 12,
+            "total_tokens": 157,
+            "reasoning_tokens": null,
+            "cached_input_tokens": 0,
+            "source": "provider"
+          },
+          "usage": {
+            "request_count": 3,
+            "reported_count": 3,
+            "usage": {
+              "input_tokens": 871,
+              "output_tokens": 69,
+              "total_tokens": 940,
+              "reasoning_tokens": null,
+              "cached_input_tokens": 256,
+              "source": "provider"
+            }
+          },
+          "trace_id": "76a00a4efbab4a9ab0f506aaebdb5927",
+          "qualified_variant": "off",
+          "response_mode": "normal",
+          "retry": 0,
+          "max_output_tokens": 192,
+          "concept_max_output_tokens": 384,
+          "max_tool_rounds": 1,
+          "model_requests": 3,
+          "transport_attempts": 3,
+          "returned_models": [
+            "deepseek-flash",
+            "deepseek-flash",
+            "deepseek-flash"
+          ],
+          "latency_ms": 3156.0,
+          "identity": [
+            "deepseek_api",
+            "openai_chat",
+            "https://api.deepseek.com",
+            "deepseek-flash"
+          ],
+          "validated_at": "2026-10-06T06:10:26.722638+00:00",
+          "validation_source": "USER_RUN_MAINTAINER_PRESET_QUALIFICATION",
+          "qualification_record": "outputs/preset-qualification/deepseek-flash-r1-tools-20261006T061029872004.json",
+          "maintainer_decision": "独立 Preset 完整资格验证成功，发布只读单轮 non-streaming Tool Calling；不继承 Managed Evidence。"
         }
       }
     },

@@ -307,6 +307,14 @@
           <p id="model-inference" class="model-output"></p>
         </section>
 
+        <details id="analysis-tool-activity" class="panel">
+          <summary>Tool Activity · 工具调用记录</summary>
+          <p class="helper">这里记录本次实际执行；左侧 Tool 管理仅配置权限。Tool 读取时的观测单独保留，不覆盖分析开始时的 Observed Facts。</p>
+          <dl id="analysis-tool-summary" class="facts-grid"></dl>
+          <p id="analysis-tool-observation-note" class="helper"></p>
+          <pre id="analysis-tool-record" class="model-output tool-trace"></pre>
+        </details>
+
         <details id="streaming-preview" class="panel raw-output" hidden>
           <summary>Live Raw Stream Preview · 生成中的调试预览</summary>
           <p class="helper">这里是尚未解析的实时原文；完成后收敛为统一业务结果，原文保留在 Raw Model Output。</p>

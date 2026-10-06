@@ -14,7 +14,7 @@ class ToolExecutor:
 
     def __init__(self, registry: ToolRegistry, *, max_calls: int = 1,
                  max_result_bytes: int = 32768, policy=None):
-        from ..tool_policy import load_tool_policies
+        from .policy import load_tool_policies
         self._policy = policy if policy is not None else load_tool_policies()["assistant"]
         self._policy.validate_registry(registry)
         if type(max_calls) is not int or not 1 <= max_calls <= 8:

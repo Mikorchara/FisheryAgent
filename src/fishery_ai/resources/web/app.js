@@ -1544,6 +1544,30 @@ function renderEvidence(evidence) {
   });
 }
 
+function renderAnalysisToolActivity(activity = {}) {
+  $("analysis-tool-activity").open = false;
+  addPairs("analysis-tool-summary", [
+    ["本次允许的 Tool", (activity.allowed_tools || []).join("、") || "无（未启用）"],
+    ["模型请求 Tool", (activity.requested ?? activity.called) ? "是" : "否"],
+    ["实际执行", activity.called === null ? "调用未完成，结果未确认" : activity.called ? "已调用" : "未调用"],
+    ["Tool 名称", activity.tool_name], ["安全参数摘要", activity.arguments_summary],
+    ["Tool Result 状态", activity.result_status], ["调用耗时 (ms)", activity.duration_ms],
+    ["Request #1", activity.request_1?.outcome], ["Request #2", activity.request_2?.outcome],
+    ["Finish reason", activity.final_finish_reason],
+  ]);
+  $("analysis-tool-observation-note").textContent = activity.snapshot_comparison === "different"
+    ? "Tool 观测与分析开始快照不一致；请分别核查下方 Tool 时间/来源与 Observed Facts，系统未合并或覆盖。"
+    : activity.snapshot_comparison === "no_data" ? "Tool 查询时 NO_DATA；已捕获的 Analysis Facts 保留。"
+      : activity.called ? "Tool 调用时的观测单独展示；固定分析事实保持不变。"
+        : activity.requested ? "模型请求已被拒绝或取消；没有确认完成的 Tool Result。" : "本次未调用 Tool。";
+  $("analysis-tool-record").textContent = JSON.stringify({
+    request_1: activity.request_1 || {outcome:"not_started"},
+    request_2: activity.request_2 || {outcome:"not_started"},
+    usage: activity.usage || null,
+    tool_observation: activity.tool_result || null,
+  }, null, 2);
+}
+
 function render(data, latency, ttft = null) {
   const runtime = data.runtime || {};
   const usage = data.usage || {};
@@ -1566,6 +1590,7 @@ function render(data, latency, ttft = null) {
     showScenarioSnapshot({status:"ready", snapshot:data.observed_facts.water_quality,
       evaluated_at:data.observed_facts.evaluated_at, rule_results:data.rule_results});
   renderEvidence(data.evidence);
+  renderAnalysisToolActivity(data.tool_activity);
   addPairs("structured", [
     ["Inference", inference], ["解析成功", data.structured_parse_ok ? "是" : "否"],
     ["状态", data.status], ["错误码", data.error_code], ["Trace ID", data.trace_id],
@@ -1587,6 +1612,7 @@ function render(data, latency, ttft = null) {
 }
 
 function prepareStreamView() {
+  renderAnalysisToolActivity();
   $("empty-state").hidden = true;
   $("results").hidden = false;
   $("model-inference").hidden = false;
@@ -2503,7 +2529,7 @@ function renderToolCatalog() {
   $("tool-policy-analysis").setAttribute("aria-pressed", String(analysis));
   $("tool-policy-assistant").setAttribute("aria-pressed", String(!analysis));
   $("tool-policy-note").textContent = analysis
-    ? "架构准备：可以保存工具选择，但尚未启用到正式 Analysis LLM 请求；实际暴露 0 个 Tool。"
+    ? "保存后，新 Normal Analysis 请求可使用所选只读 Tool；仍需精确 Runtime 已支持 Tool Calling。最多一次 Tool、一次 follow-up；启用 Tool 时不支持 Streaming。"
     : "允许的工具用于现有单轮开发对话；仍须模型 tool_calling 能力支持。Assistant 主界面尚未实现。";
   const selected = toolPolicyDraft.modes[toolPolicyMode].selected_tools;
   const list = $("tool-catalog-list"); list.replaceChildren();
@@ -2515,14 +2541,14 @@ function renderToolCatalog() {
     check.disabled = toolPolicyBusy || check.toolUnavailable; check.checked = !check.toolUnavailable && selected.includes(item.name);
     const label = document.createElement("label"); label.htmlFor = check.id; label.textContent = item.display_name;
     const badge = document.createElement("span"); badge.classList.add("tool-catalog-badge");
-    badge.textContent = item.dev_only ? "DEV ONLY · NOT EXECUTABLE · UI PLACEHOLDER" : `${item.access_type} · Registered / Executable`;
+    badge.textContent = item.dev_only ? "DEV ONLY · NOT EXECUTABLE · UI PLACEHOLDER" : `${item.access_type} · ${item.experimental ? "Experimental · " : ""}Registered / Executable`;
     const expand = document.createElement("button"); expand.type = "button"; expand.classList.add("secondary", "compact-action"); expand.textContent = "展开";
     const detail = document.createElement("dl"); detail.classList.add("tool-catalog-detail"); detail.hidden = true;
     detail.id = `tool-detail-${item.name}`; expand.setAttribute("aria-controls", detail.id); expand.setAttribute("aria-expanded", "false");
     for (const [key, value] of [["用途",item.short_description],["说明",item.detailed_description],
       ["类型",item.access_type],["执行状态",`${item.registered ? "Registered" : "Not Registered"} / ${item.executable ? "Executable" : "NOT EXECUTABLE"}`],
-      ["参数",item.parameter_summary],["适用模式","Analysis（准备） / Assistant"],
-      ["来源",item.dev_only ? "DEV ONLY · UI PLACEHOLDER" : "Built-in"],["规划状态",item.planned ? "Planned" : "非规划 Tool"]]) {
+      ["参数",item.parameter_summary],["适用模式","Analysis（Normal） / Assistant"],
+      ["来源",item.dev_only ? "DEV ONLY · UI PLACEHOLDER" : "Built-in"],["实验性质",item.experimental ? "EXPERIMENTAL / NOT PROFESSIONAL STANDARD" : "否"],["规划状态",item.planned ? "Planned" : "非规划 Tool"]]) {
       const dt=document.createElement("dt"), dd=document.createElement("dd"); dt.textContent=key; dd.textContent=value; detail.append(dt,dd);
     }
     expand.addEventListener("click", () => { detail.hidden = !detail.hidden; expand.textContent = detail.hidden ? "展开" : "收起"; expand.setAttribute("aria-expanded", String(!detail.hidden)); });
@@ -2540,7 +2566,7 @@ function renderToolCatalog() {
 
 function updateToolPolicyCount() {
   const count = toolPolicyDraft.modes[toolPolicyMode].selected_tools.length;
-  $("tool-policy-count").textContent = `${toolPolicyMode === "analysis" ? "准备选择" : "当前启用"}：${count} / ${toolManagerData.catalog.length} · 可执行工具 ${toolManagerData.catalog.filter(item => item.executable).length} 个 · ${toolManagerData.policy.source}`;
+  $("tool-policy-count").textContent = `当前启用：${count} / ${toolManagerData.catalog.length} · 可执行工具 ${toolManagerData.catalog.filter(item => item.executable).length} 个 · ${toolManagerData.policy.source}`;
 }
 
 async function openToolManager(mode = "analysis") {
@@ -2565,7 +2591,7 @@ async function saveToolPolicy(reset = false) {
   toolManagerLock(true); $("tool-policy-status").textContent = reset ? "正在恢复默认…" : "正在保存…";
   try {
     setToolManagerData(await toolPolicyApi(reset ? "DELETE" : "PUT", reset ? {} : toolPolicyDraft));
-    $("tool-policy-status").textContent = reset ? "已恢复内置默认；新请求使用默认策略。" : "已保存；新 Assistant 请求生效。Analysis 仍不开放 LLM Tool。";
+    $("tool-policy-status").textContent = reset ? "已恢复内置默认；新请求使用默认策略。" : "已保存；新的 Normal Analysis / Assistant 请求使用该授权，仍受模型能力门禁保护。";
   } catch (exc) { $("tool-policy-status").textContent = `操作失败：${scenarioErrorText(exc)}；草稿保留，请重新读取确认实际状态。`; }
   finally { toolManagerLock(false); }
 }

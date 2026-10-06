@@ -1,12 +1,12 @@
 # 只读 Tool Calling：T1–T5
 
-**T1 = non-streaming Gateway Contract；T2 = 只读 Registry / Executor / Handler；T3 = 单轮 Model → Tool → Model；T4 = Web 开发测试入口；T5 = Managed 显式精确 Identity Probe。Tool Calling ≠ Agent。** 2026-10-06 的独立 Preset Qualification 仅发布 Ollama Tool 协议合同，固定 Analysis 仍不调用 Tool。
+**T1 = non-streaming Gateway Contract；T2 = 只读 Registry / Executor / Handler；T3 = 单轮 Model → Tool → Model；T4 = Web 开发测试入口；T5 = Managed 显式精确 Identity Probe。Tool Calling ≠ Agent。** 2026-10-06 已发布 Qwen / DeepSeek / Ollama 固定 Tool 合同，并增加 Analysis v1 的显式 Normal opt-in。最新数据流、安全边界和验收见[Analysis v1](ANALYSIS_MODEL_TOOL_CALLING_V1.md)。
 
 ## Preset 独立 Qualification
 
 维护者组件 preset_tool_qualification.py 直接捕获当前 Preset 固定 RuntimeSnapshot，复用 ToolCallingService、Registry / Executor 和 Reader。临时诊断授权不修改原 Runtime、不写 Managed Evidence，也不自动改合同。合法唯一 get_current_water_quality({}) → OK / NO_DATA → role=tool → 非空最终回答（正常 stop、无后续 Tool）后，再发送一次带相同 Tool 定义的概念问题；必须直接回答。最多三次模型请求，retry=0，沿用 RequestHandle / Cancellation。
 
-Qwen / DeepSeek 因 CREDENTIAL_FILE_ERROR 未发请求，均不发布。Ollama 在 OFF + Normal 下完整成功（Tool Result=NO_DATA），概念问题未调用 Tool；固定合同 1.0.2 增加 tool_calling=SUPPORTED。这不支持 Streaming Tool Calling、不自动启用 Analysis Tool Calling、不推广 Thinking ON + Tool 组合。精确 Identity、逐次 Usage、Cloud 阻塞和维护记录见[Preset 发布说明](PRESET_PUBLICATION.md)。以下 T5 的 Evidence 写入仍只属于 Managed，不能代替 Preset 发布。
+首次历史资格阶段：Qwen / DeepSeek 因 CREDENTIAL_FILE_ERROR 未发请求；后续用户独立资格完整通过，当前均已发布 1.0.2。历史首次记录中不发布。Ollama 在 OFF + Normal 下完整成功（Tool Result=NO_DATA），概念问题未调用 Tool；固定合同 1.0.2 增加 tool_calling=SUPPORTED。这不支持 Streaming Tool Calling、不自动启用 Analysis Tool Calling、不推广 Thinking ON + Tool 组合。精确 Identity、逐次 Usage、Cloud 阻塞和维护记录见[Preset 发布说明](PRESET_PUBLICATION.md)。以下 T5 的 Evidence 写入仍只属于 Managed，不能代替 Preset 发布。
 
 ## 合同
 
@@ -29,9 +29,9 @@ T1 拒绝非法名称、非 function 类型、重复定义名称、重复调用 
 | 文件 | 职责 |
 | --- | --- |
 | contracts.py | ToolDefinition 持有 T1 ModelToolDefinition 与固定 Handler；ToolExecutionResult 保存调用 ID、名称、OK/NO_DATA/ERROR、独立 JSON 内容和安全错误码。 |
-| registry.py | ToolRegistry(reader, diagnosis) 静态注册唯一 get_current_water_quality；model_definitions() 可取得 T1 定义；无注册接口、扫描或动态加载。 |
+| registry.py | ToolRegistry(reader, diagnosis) 静态注册 get_current_water_quality 与 score_current_water_quality；model_definitions() 可取得 T1 定义；无注册接口、扫描或动态加载。 |
 | executor.py | ToolExecutor.execute(ModelToolCall)；查 allowlist → JSON object → 必须为 {} → Handler 执行一次 → JSON 结果。 |
-| water_quality.py | Reader.query() 捕获一次视图，再由 DiagnosisService.diagnose(view.reading) 生成 findings；不自行诊断、读取场景或改变 Store。 |
+| handlers/current_water_quality.py | Reader.query() 捕获一次视图，再由 DiagnosisService.diagnose(view.reading) 生成 findings；不自行诊断、读取场景或改变 Store。 |
 
 Executor 应为每个请求新建。默认 max_calls=1，可信调用者可明确设为 1–8；失败尝试也消耗预算。同一 Executor 内调用 ID 不可重放，没有自主循环或透明重试。参数上限 4 KiB；正文结果默认 32 KiB UTF-8，可配置为 256 B–256 KiB。超限返回 TOOL_RESULT_TOO_LARGE，不截断 JSON。
 
@@ -218,11 +218,11 @@ DS_1 实际验证与本轮测试结果见 [T5 验证记录](T5_DS_1_TOOL_CALLING
 
 Tool 管理入口位于左侧 **01 · Analysis Model** 标题右侧，不绑定具体模型。Catalog 只负责展示；Registry 决定固定 Handler；Policy 限制授权子集。Modal 提供 Analysis / Assistant 标签、默认折叠详情、计数、保存、恢复默认与关闭。三个 testTool 占位仅用于布局，不注册、不发送、不执行。
 
-用户选择保存到 Git ignored 的 outputs/tool-policies/tool_policies.json。启动与请求校验，原子写入；Assistant 新请求捕获冻结策略，进行中的请求不因新保存而改变。Analysis 的 selected_tools 仅作未来架构准备，实际 ModelRequest.tools 始终为空。恢复默认只删除 Override，不修改源码、Profile、Credential、Evidence 或 Snapshot。
+用户选择保存到 Git ignored 的 outputs/tool-policies/tool_policies.json。启动与请求校验，原子写入；Assistant 新请求捕获冻结策略，进行中的请求不因新保存而改变。Analysis 的 selected_tools 在保存后影响新的 Normal 请求；默认仍为空，启用时须通过精确 Runtime 的工具能力门禁。恢复默认只删除 Override，不修改源码、Profile、Credential、Evidence 或 Snapshot。
 
 请求定义须同时满足 Registry 注册、当前 Policy 允许、固定 Handler 可执行及精确 Runtime 能力 SUPPORTED。普通请求仍不可绕过能力门禁；显式 T5 Probe 只临时绕过 UNKNOWN 能力，不能越过用户 Policy。若已关闭水质 Tool，先在 Tool 管理的 Assistant 标签重新允许；Probe 返回 TOOL_NOT_ALLOWED，不联网。
 
-Analysis Model 是程序控制的 Snapshot → Diagnosis → RAG → LLM；固定 tools 为空，不持有执行器，意外调用继续拒绝。Assistant 当前是 T3 单轮实验路径，不预注入事实；tool_policy.py 从 resources/tools/tool_policies.json 加载冻结策略，过滤 Registry 定义，Executor 再检查注册与授权，未知 Policy 名称启动失败。没有新增 Tool 或 Agent。
+Analysis Model 仍是程序控制的 Snapshot → Diagnosis → RAG → LLM；未启用 Tool 时 tools 为空，意外调用仍拒绝。启用后复用共享协调器单轮执行，Tool Result 不覆盖固定 Facts。Assistant 当前是 T3 单轮实验路径，不预注入事实；tools/policy.py 从 resources/tools/tool_policies.json 加载冻结策略，过滤 Registry 定义，Executor 再检查注册与授权，未知 Policy 名称启动失败。评分工具已按静态注册加入；没有 Agent。
 
 Managed 的验证结果在能力面板显示，成功后即时刷新；Development 只显示对话 Trace。Preset 固定合同不被 Evidence 覆盖。完整边界、QW_2 用户验收与未来实验评分规划见[Analysis / Assistant 架构](ASSISTANT_MODEL_ARCHITECTURE.md)。
 
@@ -251,3 +251,7 @@ Managed 的验证结果在能力面板显示，成功后即时刷新；Developme
 T3 新增 tool_conversation.py / test_tool_conversation.py；小幅修改 Gateway / Adapter 以保留 non-streaming finish_reason，复用 observability.py 增加独立 Trace。T4 修改 web.py、Web HTML/CSS/JS、tool_conversation.py 的离线 fixture，新增 test_web_tool_conversation.py，并扩展既有 Browser 测试；更新 BUILD_RUN / STRUCTURE / 本说明与架构审计状态，同步 README / ROADMAP 过时的“尚未实现”描述。保留 T1/T2/T3 工作树；本轮不修改正式项目、凭据存储、RAG、Diagnosis、Orchestrator、Preset 或能力证据，不 commit / push。
 
 最终工作树（包含 T1/T2/T3）：14 个已跟踪文件修改、11 个新文件；T4 本轮新增 1 个测试文件。所有回归离线，仅测试内临时存储和虚构凭据，未读取真实凭据、未发真实 Provider 请求。当前可以开始 T4 人工验收；T5 的真实模型工具能力仍未验证。
+
+## 第二个只读 Tool（2026-10-06）
+
+score_current_water_quality 无参数，Reader → 独立评分服务 → JSON。OK / PARTIAL / NOT_SCORABLE / NO_DATA 是业务结果状态，不代表执行异常。默认 Analysis 关闭、Assistant 仅查询工具；评分均须显式授权。最多执行一个调用的规则不变，未授权为 TOOL_NOT_ALLOWED。Catalog / Policy 集中在 tools/；新增流程见[新增 Tool 指南](ADDING_A_TOOL.md)。

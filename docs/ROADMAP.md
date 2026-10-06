@@ -18,7 +18,7 @@ Managed Custom 已有 T5 显式 Tool Probe，入口在模型能力的高级验�
 
 Analysis Model 保留固定分析，不向模型暴露 Tool；Assistant Model 当前为 Policy 限制的单轮实验路径。见[架构与 Tool Policy](deep-dive/ASSISTANT_MODEL_ARCHITECTURE.md)。下一步可单独评审实验评分 Tool 的程序 / 模型触发方式，以及 Preset Tool Calling Qualification；当前没有实现评分或升级 Preset。真实请求仍需当轮明确授权。
 
-第一阶段仍只有 get_current_water_quality，NO_DATA 明确返回。工具不读取 Scenario Template、SimulationPacket、场景资源或硬件原始 JSON，不改变规则、Snapshot 或数据库。保留已有 allowlist、单轮限制、Trace 和取消；不增加 Streaming Tool Calling 或 Agent。Manual 返回的 tool_calls 继续只展示、不执行。
+当前注册 get_current_water_quality 和实验性 score_current_water_quality；NO_DATA 明确返回，评分非专业标准且默认关闭。工具不读取 Scenario Template、SimulationPacket、场景资源或硬件原始 JSON，不改变规则、Snapshot 或数据库。保留已有 allowlist、单轮限制、Trace 和取消；不增加 Streaming Tool Calling 或 Agent。Manual 返回的 tool_calls 继续只展示、不执行。
 
 ## 暂缓
 

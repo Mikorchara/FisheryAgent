@@ -31,11 +31,9 @@ class ToolPolicy:
                 or (not self.llm_tool_calling and self.exposed_tools)):
             raise ToolPolicyError()
         object.__setattr__(self, "exposed_tools", tuple(self.exposed_tools))
-        if self.mode == "analysis" and (self.llm_tool_calling or self.exposed_tools):
-            raise ToolPolicyError("ANALYSIS_TOOL_POLICY_INVALID")
 
     def validate_registry(self, registry):
-        from .tools.contracts import ToolError
+        from .contracts import ToolError
         for name in self.exposed_tools:
             try:
                 registry.lookup(name)
@@ -53,7 +51,7 @@ class ToolPolicy:
 
 
 def parse_tool_policies(data):
-    from .tools.registry import ToolRegistry
+    from .registry import ToolRegistry
     if (not isinstance(data, dict) or set(data) != {"schema_version", "modes"}
             or type(data["schema_version"]) is not int or data["schema_version"] != 1
             or not isinstance(data["modes"], dict) or set(data["modes"]) != {"analysis", "assistant"}):
@@ -81,7 +79,7 @@ def load_tool_policies():
 
 
 class UserToolPolicyStore:
-    """Fixed startup path; user selection is distinct from active Analysis policy."""
+    """Fixed startup path; capture frozen Analysis/Assistant authorization per request."""
     def __init__(self, directory: Path, registry):
         self.directory = Path(directory).absolute()
         self.path = self.directory / "tool_policies.json"
@@ -107,7 +105,7 @@ class UserToolPolicyStore:
                 or not isinstance(data["modes"], dict) or set(data["modes"]) != {"analysis", "assistant"}):
             raise ToolPolicyError()
         result = {"schema_version": 1, "modes": {}}
-        from .tools.catalog import tool_catalog
+        from .catalog import tool_catalog
         executable = {item["name"] for item in tool_catalog(self.registry) if item["executable"]}
         for mode, record in data["modes"].items():
             if not isinstance(record, dict) or set(record) != {"selected_tools"}:
@@ -141,18 +139,20 @@ class UserToolPolicyStore:
 
     def effective(self):
         selections = self.load()
-        # Analysis selections are preparation only: never become LLM permission.
+        analysis_names = selections["modes"]["analysis"]["selected_tools"]
+        analysis = ToolPolicy("analysis", bool(analysis_names), analysis_names)
+        analysis.validate_registry(self.registry)
         assistant = ToolPolicy("assistant", True,
             selections["modes"]["assistant"]["selected_tools"])
         assistant.validate_registry(self.registry)
-        return MappingProxyType({"analysis": self.defaults["analysis"], "assistant": assistant})
+        return MappingProxyType({"analysis": analysis, "assistant": assistant})
 
     def public(self):
         with self._lock:
             selections = self.load()
             return {**selections, "defaults": self.default_selections()["modes"],
                     "source": "USER_OVERRIDE" if self.path.exists() else "BUILTIN_DEFAULT",
-                    "runtime_consumed": {"analysis": False, "assistant": True}}
+                    "runtime_consumed": {"analysis": True, "assistant": True}}
 
     def save(self, data):
         values = self._validate(data)

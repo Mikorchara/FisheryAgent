@@ -18,9 +18,9 @@
 | Provider 配置 | Provider / Auth / adapter 元信息 | src/fishery_ai/providers.py | 是 | 否 | Managed / Preset 连接校验需要 | 否 |
 | 内置实验连接 | 开发 / Managed 兼容使用的 Qwen、DeepSeek、Ollama 连接模板 | src/fishery_ai/resources/profiles/qwen_experimental.json、deepseek_experimental.json、ollama_qwen35_local.json | 是 | 否 | 开发配置路径需要 | 否；不等同 Preset 发布合同 |
 | ProtocolSpec | OpenAI-compatible 参数编码定义 | src/fishery_ai/protocol_specs.py | 是 | 否 | Managed 与 Preset 请求需要 | 否 |
-| Tool Policy | analysis / assistant 对静态 Registry 的授权子集；不能注册 Handler | src/fishery_ai/resources/tools/tool_policies.json；loader src/fishery_ai/tool_policy.py | 是；包资源 | 否 | Analysis / Assistant 创建时校验 | 不删除；由维护者修改并补测试 |
+| Tool Policy | analysis / assistant 对静态 Registry 的授权子集；不能注册 Handler | src/fishery_ai/resources/tools/tool_policies.json；loader src/fishery_ai/tools/policy.py | 是；包资源 | 否 | Analysis / Assistant 创建时校验 | 不删除；由维护者修改并补测试 |
 | Tool Catalog | 展示说明和三个不可执行的 DEV ONLY 占位；不注册工具 | src/fishery_ai/tools/catalog.py | 是；源码 | 否 | Tool 管理界面需要 | 不删除源码；没有本地 Handler 文件 |
-| User Tool Policy Override | 两份模式的用户选择；Analysis 仅准备，Assistant 新请求使用 | outputs/tool-policies/tool_policies.json；schema_version=1 | 否；Git 忽略 | 否；工作区设置，不含 Secret | 有 Override 时加载；不存在用包内默认 | Web 恢复默认只删除该文件；删除前确认愿意丢弃两份自定义设置 |
+| User Tool Policy Override | 两份模式的用户选择；Analysis / Assistant 新请求捕获冻结授权 | outputs/tool-policies/tool_policies.json；schema_version=1 | 否；Git 忽略 | 否；工作区设置，不含 Secret | 有 Override 时加载；不存在用包内默认 | Web 恢复默认只删除该文件；删除前确认愿意丢弃两份自定义设置 |
 | Managed Custom Profile | 用户连接参数、credential_ref 与运行偏好 | outputs/custom_profiles/custom-*.json | 否，Git 忽略 | 否；仅工作区本地数据 | 有已保存连接时需要 | 手动备份后可删除；不能由程序自动恢复 |
 | Capability / Evidence | 精确 Identity 的 Probe / Metadata 证据 | outputs/capability-evidence/*.json | 否，Git 忽略 | 否；不含 Secret，但属本地验证数据 | Managed 高级选项解析需要 | 删除会丢失证据并锁定选项；不建议清理 |
 | Runtime defaults | Custom 用户偏好；Preset 开发者默认值 | Custom：outputs/custom_profiles/*.json；Preset：src/fishery_ai/resources/profiles/presets.json 的 defaults | 分别否 / 是 | Custom 文件不是 ACL 私有凭据 | 有对应 Profile 时读取 | 删除 Custom Profile 会一起丢失偏好；谨慎 |
@@ -40,3 +40,5 @@
 用户私有目录由 src/fishery_ai/credential_paths.py 从应用固定项目根和 LOCALAPPDATA 生成；网页、Profile 或 Model 输入不能指定目录。CredentialStore / ProjectEnvWriter 位于 credentials.py / project_env.py。PROCESS_ENV 是外部只读来源；应用不使用 load_dotenv。
 
 outputs/ 虽被 Git 忽略，仍可能含用户维护的 Profile、Evidence、实验和历史 Trace，不可把“忽略”理解为“随时可删”。自动测试使用临时目录和虚构凭据，不读取真实 Credential。
+
+实验水质评分：src/fishery_ai/water_quality_scoring.py（Git 跟踪、非用户私有、仅调用评分时需要、不应删除源码）；正常区间由 domain.py::DiagnosisService 共享，penalty rate 在评分服务集中定义。Handler 位于 tools/handlers/，不读取本地文件。

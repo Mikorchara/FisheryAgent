@@ -10,6 +10,8 @@ from ..model_gateway import ModelToolDefinition
 
 class ToolStatus(str, Enum):
     OK = "OK"
+    PARTIAL = "PARTIAL"
+    NOT_SCORABLE = "NOT_SCORABLE"
     NO_DATA = "NO_DATA"
     ERROR = "ERROR"
 

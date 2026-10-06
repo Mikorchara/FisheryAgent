@@ -323,6 +323,24 @@ class AnalysisRequest:
 
 
 @dataclass(frozen=True)
+class AnalysisToolActivity:
+    enabled: bool = False
+    allowed_tools: tuple[str, ...] = ()
+    called: bool | None = False
+    requested: bool = False
+    tool_name: str | None = None
+    arguments_summary: str | None = None
+    result_status: str | None = None
+    duration_ms: float | None = None
+    request_1: dict = field(default_factory=lambda: {"outcome": "not_started"})
+    request_2: dict = field(default_factory=lambda: {"outcome": "not_started"})
+    usage: SessionUsage = field(default_factory=lambda: SessionUsage(0, 0, Usage()))
+    final_finish_reason: str | None = None
+    tool_result: dict | None = field(default=None, repr=False)
+    snapshot_comparison: str = "not_called"
+
+
+@dataclass(frozen=True)
 class AnalysisResult:
     request_id: str
     trace_id: str
@@ -340,3 +358,4 @@ class AnalysisResult:
     error_code: str | None = None
     error_option: str | None = None
     reasoning_content: str | None = None
+    tool_activity: AnalysisToolActivity = field(default_factory=AnalysisToolActivity)

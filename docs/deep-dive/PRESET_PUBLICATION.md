@@ -6,8 +6,8 @@ Preset 是维护者发布的固定方案。普通用户只选择 Model、Thinkin
 
 | Preset | exact model | 合同 | Thinking × Response Mode | 默认 |
 | --- | --- | --- | --- | --- |
-| Qwen 3.8 Flash | qwen3.8-flash | 1.0.1 | OFF/ON × Normal/Streaming | Qwen，OFF + Normal |
-| DeepSeek Flash | deepseek-flash | 1.0.1 | OFF/ON × Normal/Streaming | 否 |
+| Qwen 3.8 Flash | qwen3.8-flash | 1.0.2 | OFF/ON × Normal/Streaming | Qwen，OFF + Normal |
+| DeepSeek Flash | deepseek-flash | 1.0.2 | OFF/ON × Normal/Streaming | 否 |
 | Ollama Qwen3.5 4B | qwen3.5:4b | 1.0.2 | OFF/ON × Normal/Streaming | 否 |
 
 AUTO、Reasoning Effort 与其他未发布组合不在用户选项内。各 Preset 使用自己的固定服务身份、适配器、URL、精确模型、凭据引用、超时与协议编码；Ollama 使用 Auth NONE。定义位于 src/fishery_ai/resources/profiles/presets.json。
@@ -27,7 +27,27 @@ Ollama Qwen3.5 4B 的 OFF + Streaming 在此前单次 R5 Probe 成功后已发�
 - Preset 页面不出现 Probe、Evidence、连接编辑和 Secret 控件。
 - Managed Custom 能力状态不能改写这些静态合同。
 
-## Tool Calling 独立资格验证（2026-10-06）
+## 最新资格与 Analysis 接入（2026-10-06）
+
+用户已在正常凭据进程产生新的独立维护者资格记录。本轮核对 exact Identity、固定 ProtocolSpec、对应 Tool Trace 及所有成功条件；Codex 不再联网。
+
+| Preset | 最新结果 | 固定 Tool 能力 / 合同 |
+| --- | --- | --- |
+| Qwen 3.8 Flash | 合法唯一 Tool Call、空参数、有效 call id、NO_DATA、第二轮非空 stop、概念题直接回答 stop；三个返回模型均为 qwen3.8-flash | SUPPORTED，1.0.1 → 1.0.2 |
+| DeepSeek Flash | 最新独立资格记录完整通过：唯一 get_current_water_quality({})、有效 call id、NO_DATA、第二轮非空 stop、概念题直接回答 stop，三个返回模型均为 deepseek-flash | SUPPORTED，1.0.1 → 1.0.2 |
+| Ollama Qwen3.5 4B | 上轮资格已完整通过 | SUPPORTED / 1.0.2 完全不变 |
+
+Qwen 用户验证时间 2026-10-06T04:53:25.594374+00:00，3 次请求，总耗时 7.172 秒；Usage 881 input / 78 output / 959 total。安全维护记录保存于 Qwen Template 的 maintenance.tool_calling_qualification，不复制 Managed Evidence。其他能力及四种 Thinking / Response 组合不变。
+
+DeepSeek 新资格记录为 outputs/preset-qualification/deepseek-flash-r1-tools-20261006T061029872004.json；validated_at=2026-10-06T06:10:26.722638+00:00。exact Identity 为 deepseek_api / openai_chat / https://api.deepseek.com / deepseek-flash，固定 ProtocolSpec=deepseek_chat v1。对应安全 Trace 确认唯一合法调用、NO_DATA 与正常 stop；概念题 32 output tokens、无 Tool、正常 stop。用户共发送 3 次请求，耗时 3156 ms，Usage input 871 / output 69 / total 940。maintenance.tool_calling_qualification 保留这份独立资格依据，未复制 Managed Evidence。
+
+此前 192-token 概念题截断属于历史失败记录；简短提示及独立 384 上限后，本次用户资格成功。只增加 DeepSeek tool_calling 固定能力、1.0.2 与维护记录，其他能力、Thinking / Streaming 组合和 Qwen 默认不变；Codex 本轮没有真实模型请求。
+
+Analysis v1 默认工具关闭，用户授权且 Runtime 支持后 Normal 执行单轮；Tool 协议资格在 OFF + Normal 验证，不代表 Streaming Tool Calling 已实现。新实验评分是程序 Tool，不是新模型 Capability，也不会改写合同。当前自动结果见[Analysis v1](ANALYSIS_MODEL_TOOL_CALLING_V1.md)。
+
+## 首次独立资格验证（历史记录）
+
+以下为用户新增记录之前的首次执行过程及当时的合同、测试和工作树状态；当前结论以上节为准，历史“Analysis 尚未接入”已经由 v1 替代。
 
 资格验证直接读取当前发布 Template、固定 ProtocolSpec 和 Provider 配置；不复制 Managed Custom Evidence。维护者入口为 [qualify_preset_tools.py](../../scripts/qualify_preset_tools.py)，执行组件为 [preset_tool_qualification.py](../../src/fishery_ai/preset_tool_qualification.py)。一次显式确认只验证一个 Preset：Tool 闭环最多两次请求，随后概念问题最多一次请求。SDK / Gateway retry=0，每次最多 192 输出 token。运行脚本不会自动发布合同或写 Capability Evidence。
 
@@ -58,7 +78,7 @@ Usage 来源为 Provider；cached input 合计 358，reasoning tokens 未返回�
 
 Ollama 固定 capabilities 增加 tool_calling=supported，其他能力、连接配置、默认 Qwen 和已有四种组合未改。Tool 协议支持在 OFF + Normal 条件下得到独立确认；不据此发布 Thinking ON + Tool 或 Streaming Tool Calling 组合。普通 Preset 界面仍不展示 Evidence / Probe；当前 Analysis ModelRequest.tools 仍为空，**本轮没有接入 Analysis Tool Calling**。
 
-### 当前验收与下一步
+### 首次资格阶段验收与下一步（历史）
 
 - 确认 Ollama 固定合同加载 SUPPORTED，Cloud 两项仍 UNKNOWN；相似模型和其他 Base URL 不继承结果。
 - 确认 Managed Evidence 不修改固定合同；正常 Normal / Streaming Analysis 与 Manual 保持原路径。

@@ -8,7 +8,7 @@ from .execution import check_cancelled
 from .model_gateway import GatewayError, ModelMessage, ModelRequest, ModelResponse
 from .model_options import GenerationOptions, Support
 from .tool_conversation import ToolCallingService, SYSTEM_INSTRUCTION
-from .tool_policy import load_tool_policies, ToolPolicy
+from .tools.policy import load_tool_policies, ToolPolicy
 from .tools.registry import CURRENT_WATER_QUALITY
 
 
@@ -78,7 +78,7 @@ def qualify_preset_tools(gateway, profile, runtime, registry, traces):
         "request_2_usage":asdict(conversation.request_2.usage),
         "usage":asdict(conversation.usage), "trace_id":conversation.trace_id,
         "qualified_variant":"off", "response_mode":"normal", "retry":0,
-        "max_output_tokens":192, "max_tool_rounds":1}
+        "max_output_tokens":192, "concept_max_output_tokens":384, "max_tool_rounds":1}
     complete_round = (conversation.status == Status.COMPLETED and conversation.error_code is None
         and conversation.request_1.outcome == "tool_calls"
         and conversation.tool_name == CURRENT_WATER_QUALITY and bool(conversation.tool_call_id)
@@ -92,7 +92,9 @@ def qualify_preset_tools(gateway, profile, runtime, registry, traces):
             # Definitions remain available to prove model discretion; if it calls
             # a tool here, reject without Executor or a follow-up model request.
             request = ModelRequest(Mode.CHAT, (ModelMessage("system", SYSTEM_INSTRUCTION),
-                ModelMessage("user", "什么是溶氧？")), tools=policy.model_definitions(registry), tool_choice="auto")
+                ModelMessage("user", "什么是溶氧？请用一两句话简短回答，不要展开。")),
+                tools=policy.model_definitions(registry), tool_choice="auto",
+                generation=GenerationOptions(max_output_tokens=384))
             response = bounded.complete(request, diagnostic)
             concept_usage = response.usage or Usage()
             no_tool = not response.tool_calls

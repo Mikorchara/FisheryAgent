@@ -27,7 +27,9 @@ Demo 使用 MockGateway，不访问模型。tests/ 是自动化回归，不参�
 
 ## Tool 管理
 
-左侧 **01 · Analysis Model → Tool** 打开应用级 Tool 管理：可查看两份 Policy，勾选真实 Tool 并保存、恢复默认；详情默认折叠。Assistant 设置影响新的开发 Tool Conversation；Analysis 设置暂不进入固定分析请求。DEV 占位项不可勾选、不可执行。右上 Assistant 入口仅提示 Coming Soon，不提供正式助手界面。
+左侧 **01 · Analysis Model → Tool** 打开应用级 Tool 管理：可查看两份 Policy，勾选真实 Tool 并保存、恢复默认；详情默认折叠。Analysis 设置影响新的 Normal 分析请求，仍要求精确 Runtime 的 Tool capability=SUPPORTED；启用后选择 Streaming 会明确拒绝，不自动降级。Assistant 设置影响新的开发 Tool Conversation。DEV 占位项不可勾选、不可执行。右上 Assistant 入口仅提示 Coming Soon，不提供正式助手界面。
+
+Apply 水质情景 → 选择已发布 Qwen / Ollama Preset（建议 OFF + Normal）→ 在 Analysis 标签勾选并保存水质 Tool → 开始分析。右侧结果区的 **Tool Activity · 工具调用记录** 默认折叠：显示允许列表、是否实际调用、Tool Result、耗时、两次请求状态及 Usage。不保证模型一定调用；未调用时会明确说明。详情及离线 / 人工验收见[Analysis v1](deep-dive/ANALYSIS_MODEL_TOOL_CALLING_V1.md)。
 
 ## Preset
 
@@ -38,6 +40,8 @@ Demo 使用 MockGateway，不访问模型。tests/ 是自动化回归，不参�
     .\.venv\Scripts\python.exe scripts/qualify_preset_tools.py --preset-id ollama-qwen35-4b-r1 --confirm-network
 
 一次只指定一个发布 Preset，固定使用 OFF + Normal、retry=0；无确认不读取凭据、不联网。复用正式私有 CredentialStore，无源码 .env 回退。脚本只输出安全摘要并保存到 outputs/preset-qualification/，不会自动修改发布合同；不要把重复运行当作无需授权的日常测试。
+
+DeepSeek 的 Tool 闭环已通过，但概念题在 192 输出 tokens 时被截断，尚未发布 Tool 支持。当前概念题要求一两句话，并独立使用 384 输出 token 上限；闭环两次请求仍各为 192。用户需要在正常凭据进程显式重测 `--preset-id deepseek-flash-r1`；本轮 Codex 不重新联网。
 
 ## Managed Custom
 

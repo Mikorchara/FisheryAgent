@@ -46,14 +46,25 @@ class JsonlTraceSink:
             "error_code": result.error_code,
             "error_option": result.error_option,
         }
+        activity = result.tool_activity
+        entry["tool_activity"] = {
+            "enabled": activity.enabled, "allowed_tools": list(activity.allowed_tools),
+            "called": activity.called, "requested": activity.requested, "tool_name": activity.tool_name,
+            "result_status": activity.result_status, "duration_ms": activity.duration_ms,
+            "request_1": activity.request_1, "request_2": activity.request_2,
+            "usage": asdict(activity.usage), "final_finish_reason": activity.final_finish_reason,
+            "snapshot_comparison": activity.snapshot_comparison,
+        }
         self._append(entry)
 
     def record_tool_conversation(self, result, *, started_at: datetime,
                                  finished_at: datetime, total_ms: float) -> None:
         """Separate allowlist: no question, model text, tool arguments or facts."""
+        from .tools.registry import ToolRegistry
         tool = result.tool_result
         entry = {
             "kind": "read_only_tool_conversation",
+            "application_mode": result.application_mode,
             "request_id": result.request_id, "trace_id": result.trace_id,
             "started_at": started_at.isoformat(), "finished_at": finished_at.isoformat(),
             "status": result.status.value, "error_code": result.error_code,
@@ -61,7 +72,7 @@ class JsonlTraceSink:
             "model_request_2": asdict(result.request_2),
             "tool_call_id": result.tool_call_id if result.tool_call_id and re.fullmatch(
                 r"[A-Za-z0-9_-]{1,128}", result.tool_call_id) else None,
-            "tool_name": "get_current_water_quality" if result.tool_name == "get_current_water_quality"
+            "tool_name": result.tool_name if result.tool_name in ToolRegistry.registered_names()
                          else "unknown_tool" if result.tool_name else None,
             "tool_result_status": tool.status.value if tool else None,
             "tool_duration_ms": round(result.tool_duration_ms, 3) if result.tool_duration_ms is not None else None,

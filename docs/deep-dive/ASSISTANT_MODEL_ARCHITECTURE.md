@@ -1,6 +1,12 @@
 # Analysis Model / Assistant Model 架构
 
-## 定位与当前实现
+## 当前状态（2026-10-06）
+
+Analysis Model Tool Calling v1 已实现：保留固定 Snapshot → Diagnosis → RAG → Context，Analysis Policy 显式开启且精确 Runtime 支持时，复用同一个 ToolCallingService.run_request 单轮执行。右侧正式结果显示 Tool Activity；默认关闭工具，Streaming Tool Calling 不支持。Qwen / DeepSeek / Ollama 固定合同均已发布 Tool 协议支持。新增 score_current_water_quality 为实验评分，两个模式默认关闭；详见[新增 Tool 指南](ADDING_A_TOOL.md)。最新实现与验收见[Analysis v1](ANALYSIS_MODEL_TOOL_CALLING_V1.md)及[Preset 合同](PRESET_PUBLICATION.md)。
+
+下文保留此前 Policy / UI 阶段的设计和验收过程，其中“Analysis 零工具 / 仅准备”描述属于历史阶段，已由上节的显式 opt-in 路径替代。Assistant 和 Manual 边界保持不变。
+
+## 初始定位与阶段记录
 
 **Analysis Model** 是程序控制的固定分析：Current Snapshot → Diagnosis → RAG → Analysis Context → LLM。`application.py::Orchestrator` 决定必要步骤；模型解释程序提供的事实，不自主获取事实。
 
@@ -16,13 +22,13 @@ Preset / Managed Custom / Manual 是**模型接入方式**；Analysis / Assistan
 | 事实预注入 | 是，固定当前查询视图 | 否；需要当前事实时调用 Tool |
 | Diagnosis 预计算 | 是 | 不预计算；当前水质 Tool 内使用 DiagnosisService |
 | RAG 自动执行 | 是 | 否；知识检索 Tool 仅规划 |
-| LLM Tool Calling | 禁止 | 仅 Policy 允许且模型能力支持的工具 |
+| LLM Tool Calling | Normal 显式 opt-in，保留固定上下文 | 仅 Policy 允许且模型能力支持的工具 |
 | 定时 Advice | 当前没有调度器；固定 Advice 可供未来程序触发 | 不负责调度 |
 | 交互问答 | 固定水质分析中的 Chat | 当前单轮开发验证；持续对话待设计 |
 
 ## Tool Policy 与 Registry
 
-固定包资源：`src/fishery_ai/resources/tools/tool_policies.json`，由 `tool_policy.py` 使用 `importlib.resources` 加载。
+固定包资源：`src/fishery_ai/resources/tools/tool_policies.json`，由 `tools/policy.py` 使用 `importlib.resources` 加载。
 
 ```json
 {
@@ -37,29 +43,28 @@ Preset / Managed Custom / Manual 是**模型接入方式**；Analysis / Assistan
 }
 ```
 
-- Registry 是实际 Handler 的静态安全 allowlist；当前仅注册 `get_current_water_quality`，不增加注册 API。
+- Registry 是实际 Handler 的静态安全 allowlist；当前注册 `get_current_water_quality` 与 `score_current_water_quality`，不增加注册 API。
 - Policy 只能限制 Registry 已有名称，不能添加 Handler、模块、函数路径、import、eval 或 exec。未知名称、额外字段、错误类型均 fail closed；Web 创建时校验。
 - 有效执行必须满足 **Registry 已注册 AND 当前 Policy 允许**；模型能力门禁是另一个独立条件，不由 Policy 推导。
 - ToolPolicy 冻结；定义直接取自 Registry，经 Policy 过滤，没有第二份 schema。Executor 再检查 Policy，避免只隐藏定义却仍允许越权执行。已注册但未授权返回 `TOOL_NOT_ALLOWED`，未知工具返回 `UNKNOWN_TOOL`。
 
-Analysis 固定 `ModelRequest.tools=()`、`tool_choice=None`，不持有 ToolExecutor / ToolCallingService；意外 tool_calls 继续返回 `UNEXPECTED_TOOL_CALL`。Normal / Streaming 原路径保留。
+Analysis 未授权时 `ModelRequest.tools=()`，意外调用拒绝；授权且 Runtime 支持时，Normal 使用共享协调器。首轮保留 Facts / Rules / RAG；第二轮追加明确 JSON 合同提醒，tool_choice=none。启用 Tool 的 Streaming 明确拒绝。
 
 Assistant 首轮只提供 system / user / Policy-filtered Registry definitions，不预读 Snapshot、Diagnosis 或 RAG。当前预算仍是 **最多一个调用、一个 Tool round、两次模型请求**；第二轮 `tool_choice=none`，再请求 Tool 返回 `TOOL_ROUND_LIMIT`。这不是自主 Agent Loop。
 
 ## 当前事实与未来工具
 
-当前唯一 Tool：`get_current_water_quality()`，通过共享 CurrentWaterQualityReader 查询当前 Snapshot，复用 query-time Freshness 和 DiagnosisService。没有 Snapshot 返回 NO_DATA；invalid / stale / partial 是已有数据的状态，不是 NO_DATA。不读取 Scenario，不生成 normal，不修改 Store。
+当前查询 Tool：`get_current_water_quality()`，通过共享 CurrentWaterQualityReader 查询当前 Snapshot，复用 query-time Freshness 和 DiagnosisService。没有 Snapshot 返回 NO_DATA；invalid / stale / partial 是已有数据的状态，不是 NO_DATA。不读取 Scenario，不生成 normal，不修改 Store。
 
 未来候选仅为规划，当前均没有注册、执行或发布：
 
 | 候选 | 目的与限制 |
 | --- | --- |
-| score_current_water_quality | planned experimental tool；验证同一确定性评分逻辑的两种触发方式 |
 | search_fishery_knowledge(query) | Assistant 按需检索，替代自动预注入 RAG；证据不等于现场事实 |
 | get_current_detection | 未来 canonical Detection 只读视图；不直接读取 YOLO 原包 |
 | get_recent_water_quality | 未来有界历史查询；先定义时间范围、质量与预算 |
 
-实验评分未来可由 Analysis 确定性识别 `<水质评分>`，程序调用明确允许的 programmatic Tool，再加入 Analysis Context；Assistant 则由模型请求同一 Tool。当前 Policy **没有** `programmatic_tools` 字段或评分触发器，需后续版本单独实施；不让 Analysis 的 LLM 选择工具，不宣称专业养殖评分。
+score_current_water_quality 已实现：共享 Reader → 独立 WaterQualityScoringService → JSON Result。不是专业标准；无自动 `<水质评分>` 触发器。Analysis / Assistant 均由模型在已授权 schema 中选择，最多一个调用。新工具默认关闭，Assistant 原默认仍只有查询工具。Handler / Registry / Catalog / Executor / Policy 在 tools/；服务层协调器不搬入 tools/。
 
 ## Capability UI 与验证职责
 
@@ -71,9 +76,9 @@ Development / Test 仅验证已有运行能力，保留 Mock / 真实 Runtime、
 
 ## Preset 边界与下一步
 
-Managed Custom 使用 Evidence-driven capability；Preset 使用 Maintainer-published 固定合同。QW_2 Evidence 不自动修改默认 Qwen Preset。该 UI / Policy 阶段没有改合同；后续 2026-10-06 独立资格验证仅发布 Ollama Tool 协议合同 1.0.2，Qwen / DeepSeek 因凭据访问阻塞仍为 1.0.1，详见[当前 Preset 发布说明](PRESET_PUBLICATION.md)。
+Managed Custom 使用 Evidence-driven capability；Preset 使用 Maintainer-published 固定合同。QW_2 Evidence 不自动修改默认 Qwen Preset。该 UI / Policy 阶段没有改合同；后续独立维护者资格与用户真实验证已发布三个 Preset Tool 协议合同 1.0.2，详见[当前 Preset 发布说明](PRESET_PUBLICATION.md)。
 
-下一步 Preset Tool Calling Qualification 应先确定精确 Identity 与候选合同，维护者逐项确认 NO_DATA / 正常 / 异常、合法 Tool Call、单轮结束、Usage、取消和安全失败，并检查 Manual V1 原始响应。只有确认需要发布且验证充分后才修改固定合同版本；不得自动 Custom → Preset。本轮不执行资格测试。
+新增 Preset 的 Tool Calling Qualification 应先确定精确 Identity 与候选合同，维护者逐项确认 NO_DATA / 正常 / 异常、合法 Tool Call、单轮结束、Usage、取消和安全失败，并检查 Manual V1 原始响应。只有确认需要发布且验证充分后才修改固定合同版本；不得自动 Custom → Preset。本轮不执行资格测试。
 
 ## 安全与后续决策
 
