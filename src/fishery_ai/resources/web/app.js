@@ -16,6 +16,7 @@ let credentialBusy = false;
 let credentialEpoch = 0;
 let credentialCsrf = null;
 let activeExecution = null;
+let executionPreparing = false;
 let toolConversationBusy = false;
 let accessMode = "";
 let developmentReturnState = null; // UI bookmark only: IDs/options/drafts, never CredentialSnapshot.
@@ -235,21 +236,27 @@ async function executionHeaders() {
   return {"Content-Type": "application/json", "X-CSRF-Token": credentialCsrf};
 }
 
-async function beginExecution() {
-  const headers = await executionHeaders();
-  const response = await fetch("/api/requests", {method: "POST", headers, body: "{}"});
-  const data = await response.json();
-  if (!response.ok || !data.control_token || !data.request_id) throw new Error(safeCredentialCode(data, "REQUEST_PREPARE_FAILED"));
-  activeExecution = {...data, headers, controller: new AbortController(), cancelled: false};
-  $("stop-generation").disabled = false;
-  $("manual-stop").disabled = false;
-  $("manual-send").disabled = true;
-  $("manual-version").disabled = true;
-  $("profile").disabled = true;
-  for (const id of ["access-mode", "preset-variant", "preset-response-mode", "use-development", "development-target", "return-normal"]) $(id).disabled = true;
-  updateScenarioActions();
-  updateToolConversationControls();
-  return activeExecution;
+async function beginExecution(kind = "analysis") {
+  if (activeExecution || executionPreparing) throw new Error("REQUEST_ALREADY_RUNNING");
+  executionPreparing = true;
+  updateAssistantControls();
+  try {
+    const headers = await executionHeaders();
+    const response = await fetch("/api/requests", {method: "POST", headers, body: "{}"});
+    const data = await response.json();
+    if (!response.ok || !data.control_token || !data.request_id) throw new Error(safeCredentialCode(data, "REQUEST_PREPARE_FAILED"));
+    activeExecution = {...data, headers, controller: new AbortController(), cancelled: false, kind};
+    $("stop-generation").disabled = false;
+    $("manual-stop").disabled = false;
+    $("manual-send").disabled = true;
+    $("manual-version").disabled = true;
+    $("profile").disabled = true;
+    for (const id of ["access-mode", "preset-variant", "preset-response-mode", "use-development", "development-target", "return-normal"]) $(id).disabled = true;
+    updateScenarioActions();
+    updateToolConversationControls();
+    updateAssistantControls();
+    return activeExecution;
+  } finally { executionPreparing = false; updateAssistantControls(); }
 }
 
 function finishExecution() {
@@ -264,14 +271,20 @@ function finishExecution() {
   $("preset-response-mode").disabled = false;
   updateScenarioActions();
   updateToolConversationControls();
+  updateAssistantControls();
 }
 
 async function stopGeneration() {
   const running = activeExecution;
   if (!running || running.cancelled) return;
   running.cancelled = true;
+  clearTimeout(running.phaseTimer);
   $("stop-generation").disabled = true;
-  setStatus("正在请求后端停止生成…");
+  const assistantRun = running.kind === "assistant";
+  const displayStatus = (message, failed = false) => assistantRun
+    ? assistantNotice(message, failed) : setStatus(message, failed);
+  displayStatus("正在请求后端停止生成…");
+  if (assistantRun) { setAssistantRun("Cancelling"); updateAssistantControls(); }
   if (running.kind === "tool_conversation") $("tool-status").textContent = "正在请求后端停止生成…";
   try {
     const post = async (action) => {
@@ -291,8 +304,10 @@ async function stopGeneration() {
     }
     const closed = state.backend_io_closed === true ? "后端 I/O 已关闭" : "后端 I/O 关闭尚未确认";
     const outcome = state.state === "COMPLETED" ? "请求已经完成" : state.state === "CANCELLED" ? "USER_CANCELLED" : state.state;
-    setStatus(`${outcome}；${closed}；远端计算 / 计费是否停止：UNKNOWN。`);
-    $("manual-status").textContent = $("status").textContent;
+    displayStatus(`${outcome}；${closed}；远端计算 / 计费是否停止：UNKNOWN。`);
+    if (assistantRun) completeAssistantStop(running, state.state === "CANCELLED" ? "USER_CANCELLED"
+      : state.state === "COMPLETED" ? "STOP_AFTER_COMPLETION" : "CANCEL_NOT_CONFIRMED");
+    else $("manual-status").textContent = $("status").textContent;
     if (running.kind === "tool_conversation") {
       $("tool-status").textContent = $("status").textContent;
       $("tool-trace").textContent = `取消结果：${$("status").textContent}\n未收到完整最终 Tool Trace。`;
@@ -300,7 +315,9 @@ async function stopGeneration() {
     if (running.kind === "tool_probe") $("tool-probe-result").textContent = $("status").textContent;
   } catch (exc) {
     running.controller.abort();
-    setStatus(`取消未确认：${/^[A-Z][A-Z0-9_]{0,40}$/.test(exc.message) ? exc.message : "NETWORK_ERROR"}；仅停止浏览器显示，后端状态未知。`, true);
+    const code = /^[A-Z][A-Z0-9_]{0,40}$/.test(exc.message) ? exc.message : "NETWORK_ERROR";
+    displayStatus(`取消未确认：${code}；仅停止浏览器显示，后端状态未知。`, true);
+    if (assistantRun) completeAssistantStop(running, "CANCEL_NOT_CONFIRMED");
     if (running.kind === "tool_conversation") {
       $("tool-status").textContent = $("status").textContent;
       $("tool-trace").textContent = `取消结果：${$("status").textContent}\n未收到完整最终 Tool Trace。`;
@@ -309,7 +326,7 @@ async function stopGeneration() {
   } finally {
     // Keep the run locked until the stop acknowledgement is resolved.
     if (activeExecution === running) finishExecution();
-    $("analyze").disabled = false;
+    if (!assistantRun) $("analyze").disabled = false;
     if (running.kind === "tool_conversation") { toolConversationBusy = false; updateToolConversationControls(); }
   }
 }
@@ -2036,6 +2053,7 @@ async function init() {
     bindAccessModeControls();
     bindToolConversationControls();
     bindToolManagerControls();
+    bindAssistantControls();
     await refreshToolSnapshot();
     $("reasoning-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
     $("response-mode").addEventListener("change", syncRuntimeOptionsFromCurrentSelections);
@@ -2497,7 +2515,8 @@ let toolPolicyBusy = false;
 function toolManagerLock(busy) {
   toolPolicyBusy = busy;
   for (const id of ["tool-policy-save", "tool-policy-reset", "tool-policy-close",
-    "tool-policy-analysis", "tool-policy-assistant", "open-tool-manager"]) $(id).disabled = busy;
+    "tool-policy-analysis", "tool-policy-assistant", "open-tool-manager", "assistant-tool"]) $(id).disabled = busy;
+  updateAssistantControls();
   for (const row of $("tool-catalog-list").children) {
     const input = row.children[0]?.children[0];
     if (input) input.disabled = busy || input.toolUnavailable === true;
@@ -2530,7 +2549,7 @@ function renderToolCatalog() {
   $("tool-policy-assistant").setAttribute("aria-pressed", String(!analysis));
   $("tool-policy-note").textContent = analysis
     ? "保存后，新 Normal Analysis 请求可使用所选只读 Tool；仍需精确 Runtime 已支持 Tool Calling。最多一次 Tool、一次 follow-up；启用 Tool 时不支持 Streaming。"
-    : "允许的工具用于现有单轮开发对话；仍须模型 tool_calling 能力支持。Assistant 主界面尚未实现。";
+    : "保存后，新的 Assistant 请求使用该授权；最多择一调用、一个 Tool round。";
   const selected = toolPolicyDraft.modes[toolPolicyMode].selected_tools;
   const list = $("tool-catalog-list"); list.replaceChildren();
   for (const item of toolManagerData.catalog) {
@@ -2582,7 +2601,8 @@ async function openToolManager(mode = "analysis") {
 
 function closeToolManager() {
   if (toolPolicyBusy || (toolPolicyDirty && !window.confirm("有未保存的 Tool 设置，关闭将丢弃修改。继续吗？"))) return;
-  toolPolicyDirty=false; toolPolicyDraft=null; $("tool-manager").close(); $("tool-manager").hidden=true; $("open-tool-manager").focus();
+  toolPolicyDirty=false; toolPolicyDraft=null; $("tool-manager").close(); $("tool-manager").hidden=true;
+  $(applicationMode === "assistant" ? "assistant-tool" : "open-tool-manager").focus();
 }
 
 async function saveToolPolicy(reset = false) {
@@ -2605,8 +2625,344 @@ function bindToolManagerControls() {
   $("tool-policy-reset").addEventListener("click", () => saveToolPolicy(true));
   $("tool-policy-close").addEventListener("click", closeToolManager);
   $("tool-manager").addEventListener("cancel", event => { event.preventDefault?.(); closeToolManager(); });
-  $("assistant-mode-entry").addEventListener("click", () => { $("application-mode-status").textContent="Assistant Model 界面尚未实现；当前运行方式和模型保持不变。"; });
-  $("analysis-mode-entry").addEventListener("click", () => { $("application-mode-status").textContent="当前页面仍为 Analysis / 开发验证台；未切换模型连接。"; });
+}
+
+// Application workspaces are separate from Analysis connection/access modes.
+let applicationMode = "analysis";
+let analysisScroll = {page: 0, controls: 0};
+const assistantState = {
+  selectedPresetId: "", presets: [], completedTurns: [], displayEntries: [], draft: "",
+  pendingRequest: null, epoch: null, toolActivity: null, historyTrimmed: 0,
+  scrollPosition: 0, pageScrollPosition: 0, busy: false, loading: false, run: null,
+};
+
+function assistantNotice(text, failed = false) {
+  $("assistant-notice").textContent = text;
+  $("assistant-notice").classList.toggle("error", failed);
+}
+
+function assistantPreset() {
+  return assistantState.presets.find(p => p.preset_id === assistantState.selectedPresetId);
+}
+
+function updateAssistantControls() {
+  const blocked = !!activeExecution || executionPreparing || assistantState.busy;
+  $("application-mode-toggle").disabled = blocked || toolConversationBusy || toolPolicyBusy || scenarioBusy || probeInProgress;
+  $("assistant-preset").disabled = blocked || assistantState.loading;
+  $("assistant-input").disabled = blocked;
+  $("assistant-send").disabled = blocked || assistantState.loading || !assistantPreset() || !assistantState.epoch;
+  $("assistant-clear").disabled = blocked;
+  $("assistant-tool").disabled = blocked || toolPolicyBusy;
+  $("assistant-confirm-network").disabled = blocked;
+  $("assistant-stop").disabled = !activeExecution || activeExecution.kind !== "assistant" || activeExecution.cancelled;
+}
+
+async function switchApplicationMode() {
+  if (activeExecution || executionPreparing || assistantState.busy || toolConversationBusy || scenarioBusy || probeInProgress || toolPolicyBusy) return;
+  if (applicationMode === "analysis") {
+    analysisScroll = {page: window.scrollY || 0, controls: $("analysis-controls").scrollTop || 0};
+    applicationMode = "assistant";
+    $("analysis-workspace").hidden = true;
+    $("assistant-workspace").hidden = false;
+    $("application-mode-toggle").textContent = "切换到 Analysis Model";
+    $("assistant-input").value = assistantState.draft;
+    $("assistant-messages").scrollTop = assistantState.scrollPosition;
+    window.scrollTo?.(0, assistantState.pageScrollPosition);
+    if (!assistantState.epoch) await loadAssistantBootstrap();
+  } else {
+    assistantState.draft = $("assistant-input").value;
+    assistantState.scrollPosition = $("assistant-messages").scrollTop || 0;
+    assistantState.pageScrollPosition = window.scrollY || 0;
+    applicationMode = "analysis";
+    $("assistant-workspace").hidden = true;
+    $("analysis-workspace").hidden = false;
+    $("application-mode-toggle").textContent = "切换到 Assistant Model";
+    $("analysis-controls").scrollTop = analysisScroll.controls;
+    window.scrollTo?.(0, analysisScroll.page);
+  }
+  updateAssistantControls();
+}
+
+function resetAssistantSession() {
+  assistantState.completedTurns = [];
+  assistantState.displayEntries = [];
+  assistantState.toolActivity = null;
+  assistantState.historyTrimmed = 0;
+  assistantState.run = null;
+  $("assistant-run").hidden = true;
+  $("assistant-history-notice").textContent = "";
+  $("assistant-confirm-network").checked = false;
+  renderAssistantMessages();
+}
+
+async function loadAssistantBootstrap() {
+  if (assistantState.loading) return false;
+  assistantState.loading = true; updateAssistantControls();
+  try {
+    const response = await fetch("/api/assistant/bootstrap", {credentials: "same-origin"});
+    const data = await response.json();
+    if (!response.ok) throw new Error(safeCredentialCode(data, "ASSISTANT_BOOTSTRAP_FAILED"));
+    if (!Array.isArray(data.presets) || !data.presets.length || typeof data.epoch !== "string"
+        || data.fixed_mode?.thinking !== "off" || data.fixed_mode?.response_mode !== "normal"
+        || data.presets.some(p => typeof p.preset_id !== "string" || typeof p.display_name !== "string"
+          || !["cloud", "local"].includes(p.runtime_type))) throw new Error("INVALID_RESPONSE");
+    if (assistantState.epoch && assistantState.epoch !== data.epoch) {
+      resetAssistantSession();
+      assistantNotice("Assistant 后端已重启，请重新发送当前问题。");
+    }
+    assistantState.epoch = data.epoch;
+    assistantState.presets = data.presets.map(p => ({preset_id: p.preset_id, display_name: p.display_name, runtime_type: p.runtime_type}));
+    if (!assistantPreset()) assistantState.selectedPresetId = assistantState.presets.some(p => p.preset_id === data.default_preset_id)
+      ? data.default_preset_id : "";
+    const select = $("assistant-preset"); select.replaceChildren();
+    const empty = document.createElement("option"); empty.value = ""; empty.textContent = "请选择模型"; select.append(empty);
+    for (const preset of assistantState.presets) {
+      const option = document.createElement("option"); option.value = preset.preset_id; option.textContent = preset.display_name; select.append(option);
+    }
+    select.value = assistantState.selectedPresetId;
+    renderAssistantNetwork();
+    return true;
+  } catch (exc) {
+    assistantState.epoch = null;
+    assistantNotice(`加载失败：${scenarioErrorText(exc)}`, true);
+    return false;
+  } finally { assistantState.loading = false; updateAssistantControls(); }
+}
+
+function renderAssistantNetwork() {
+  const local = assistantPreset()?.runtime_type === "local";
+  $("assistant-network-label").textContent = local ? "LOCAL MODEL REQUEST" : "REAL NETWORK REQUEST";
+  $("assistant-network-note").textContent = local ? "本次最多两次本地模型请求。" : "本次最多两次模型请求，Cloud 可能产生费用。";
+}
+
+function changeAssistantPreset() {
+  const id = $("assistant-preset").value;
+  if (activeExecution || assistantState.busy || (assistantState.completedTurns.length
+      && !window.confirm("切换模型将开始新的 Assistant 会话。"))) {
+    $("assistant-preset").value = assistantState.selectedPresetId; return;
+  }
+  if (id !== assistantState.selectedPresetId) {
+    assistantState.selectedPresetId = id;
+    resetAssistantSession(); // Draft is deliberately retained.
+    assistantNotice(""); renderAssistantNetwork(); updateAssistantControls();
+  }
+}
+
+function clearAssistantConversation() {
+  if (activeExecution || assistantState.busy) return;
+  if (assistantState.displayEntries.length && !window.confirm("清空本页面 Assistant 对话？")) return;
+  resetAssistantSession(); assistantNotice("");
+}
+
+function safeAssistantActivity(value = {}) {
+  const names = ["get_current_water_quality", "score_current_water_quality"];
+  const activity = {used_tool: value.used_tool === true, tool_name: names.includes(value.tool_name) ? value.tool_name : null,
+    tool_status: ["OK", "NO_DATA", "PARTIAL", "NOT_SCORABLE", "ERROR"].includes(value.tool_status) ? value.tool_status : null,
+    duration_ms: Number.isFinite(value.duration_ms) ? value.duration_ms : null};
+  for (const key of ["observed_at", "evaluated_at"]) {
+    if (typeof value[key] === "string" && Number.isFinite(Date.parse(value[key]))) activity[key] = value[key];
+  }
+  if (["fresh", "stale"].includes(value.freshness)) activity.freshness = value.freshness;
+  if (["valid", "partial", "invalid"].includes(value.quality)) activity.quality = value.quality;
+  return activity;
+}
+
+function assistantRows(parent, rows) {
+  parent.replaceChildren();
+  for (const [label, value] of rows) {
+    const dt = document.createElement("dt"), dd = document.createElement("dd");
+    dt.textContent = label; dd.textContent = value ?? "unavailable"; parent.append(dt, dd);
+  }
+}
+
+function renderAssistantMessages() {
+  const messages = $("assistant-messages"); messages.replaceChildren();
+  for (const entry of assistantState.displayEntries) {
+    const article = document.createElement("article"); article.classList.add("assistant-message", entry.kind);
+    const text = document.createElement("p"); text.textContent = entry.text; article.append(text);
+    if (entry.kind === "user" && entry.pending) {
+      const note = document.createElement("small"); note.textContent = "等待回答…"; article.append(note);
+    }
+    if (entry.kind === "assistant") {
+      const meta = document.createElement("small"); meta.textContent = `${entry.model} · ${entry.completedAt}`; article.append(meta);
+      const tool = entry.activity;
+      if (!tool.used_tool) {
+        const note = document.createElement("small"); note.textContent = "未调用 Tool"; article.append(note);
+      } else {
+        const details = document.createElement("details"), summary = document.createElement("summary"), dl = document.createElement("dl");
+        summary.textContent = "使用了 1 个 Tool"; dl.classList.add("facts-grid");
+        const rows = [["Tool Name", tool.tool_name], ["Result Status", tool.tool_status],
+          ["Duration", Number.isFinite(tool.duration_ms) ? `${tool.duration_ms.toFixed(1)} ms` : "unavailable"]];
+        for (const key of ["quality", "freshness", "observed_at", "evaluated_at"]) if (tool[key] !== undefined) rows.push([key, tool[key]]);
+        rows.push(["查询", "本轮已查询当前水质；读取快照，不等于新采样"]);
+        if (tool.tool_name === "score_current_water_quality") rows.push(["实验评分", "EXPERIMENTAL / NOT PROFESSIONAL STANDARD"]);
+        assistantRows(dl, rows); details.append(summary, dl); article.append(details);
+      }
+    }
+    messages.append(article);
+  }
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function assistantDuration(value) {
+  return Number.isFinite(value) ? `${(value / 1000).toFixed(2)}s` : "unavailable";
+}
+
+function assistantOutcome(value) {
+  return ["not_started", "received", "tool_calls", "final_answer", "blocked", "failed", "cancelled", "multiple_tool_calls", "tool_round_limit"].includes(value) ? value : "unavailable";
+}
+
+function safeAssistantUsage(value) {
+  const usage = {};
+  for (const key of ["input_tokens", "output_tokens", "total_tokens", "reasoning_tokens", "cached_input_tokens"]) {
+    usage[key] = Number.isSafeInteger(value?.[key]) && value[key] >= 0 ? value[key] : null;
+  }
+  usage.source = ["provider", "unavailable"].includes(value?.source) ? value.source : "unavailable";
+  return usage;
+}
+
+function setAssistantRun(phase, result = null, code = null) {
+  const run = assistantState.run || {model: assistantPreset()?.display_name || "unavailable", phase: "Preparing"};
+  run.phase = phase;
+  run.errorCode = code;
+  if (result) {
+    run.activity = safeAssistantActivity(result.tool_activity);
+    run.requests = Number.isSafeInteger(result.usage?.request_count) ? result.usage.request_count : null;
+    run.request1 = assistantOutcome(result.request_1?.outcome); run.request2 = assistantOutcome(result.request_2?.outcome);
+    run.finishReason = ["stop", "length", "content_filter", "tool_calls"].includes(result.final_finish_reason) ? result.final_finish_reason : null;
+    run.usage = safeAssistantUsage(result.usage?.usage);
+    run.latency = Number.isFinite(result.total_latency_ms) ? result.total_latency_ms : null;
+  }
+  assistantState.run = run;
+  $("assistant-run").hidden = false;
+  $("assistant-run-summary").textContent = `本次运行：${phase} · ${run.model}${run.requests !== undefined ? ` · ${run.activity?.used_tool ? 1 : 0} Tool · ${run.requests ?? "unavailable"} Requests · ${assistantDuration(run.latency)}` : ""}`;
+  const rows = [["Model", run.model], ["Stage", phase], ["Request #1 outcome", run.request1],
+    ["Tool name", run.activity?.tool_name], ["Tool result status", run.activity?.tool_status],
+    ["Request #2 outcome", run.request2], ["Finish reason", run.finishReason], ["Total latency", assistantDuration(run.latency)]];
+  for (const [key, value] of Object.entries(run.usage || {})) rows.push([key, value ?? "unavailable"]);
+  if (run.errorCode) rows.push(["Safe error", run.errorCode]);
+  assistantRows($("assistant-run-details"), rows);
+}
+
+function monitorAssistantPhase(execution) {
+  execution.phaseTimer = setTimeout(async () => {
+    if (activeExecution !== execution || execution.cancelled || assistantState.pendingRequest !== execution) return;
+    try {
+      const response = await fetch(`/api/requests/${execution.request_id}/status`, {method: "POST", headers: execution.headers,
+        body: JSON.stringify({control_token: execution.control_token}), signal: execution.controller.signal});
+      const data = await response.json();
+      if (response.ok && activeExecution === execution && !execution.cancelled && assistantState.pendingRequest === execution) {
+        const phase = {REQUEST_1: "Request #1", RUNNING_TOOL: "Running Tool", REQUEST_2: "Request #2"}[data.phase];
+        if (phase && data.state === "RUNNING") setAssistantRun(phase);
+      }
+    } catch (_) { /* Status observation cannot override the actual chat/cancel outcome. */ }
+    if (activeExecution === execution && !execution.cancelled && assistantState.pendingRequest === execution) monitorAssistantPhase(execution);
+  }, 350);
+}
+
+function completeAssistantStop(execution, code) {
+  if (assistantState.pendingRequest !== execution) return;
+  if (execution.userEntry) execution.userEntry.pending = false;
+  assistantState.displayEntries.push({kind: "state", text: code});
+  setAssistantRun(code === "USER_CANCELLED" ? "Cancelled" : code === "STOP_AFTER_COMPLETION" ? "Completed" : "Failed", null, code);
+  assistantState.pendingRequest = null; assistantState.busy = false;
+  $("assistant-confirm-network").checked = false;
+  renderAssistantMessages(); updateAssistantControls();
+}
+
+function boundedAssistantHistory() {
+  const turns = assistantState.completedTurns.slice(-6).map(t => ({user: t.user, assistant: t.assistant, completed_at: t.completed_at}));
+  while (turns.length && new TextEncoder().encode(JSON.stringify(turns)).length > 6144) turns.shift();
+  return turns;
+}
+
+async function sendAssistant() {
+  if (applicationMode !== "assistant" || activeExecution || executionPreparing || assistantState.busy || assistantState.loading) return;
+  const question = $("assistant-input").value;
+  assistantState.draft = question;
+  if (!question.trim()) { assistantNotice("请输入问题。", true); return; }
+  if (new TextEncoder().encode(question).length > 2048) { assistantNotice("ASSISTANT_QUESTION_TOO_LARGE", true); return; }
+  if (!assistantState.epoch) { await loadAssistantBootstrap(); assistantNotice("请确认本次请求后重新发送。"); return; }
+  if (!assistantPreset()) { assistantNotice("请选择模型。", true); return; }
+  if (!$("assistant-confirm-network").checked) { assistantNotice("NETWORK_CONFIRMATION_REQUIRED", true); return; }
+  assistantState.busy = true; assistantState.run = null; $("assistant-run").open = false;
+  setAssistantRun("Preparing"); assistantNotice(""); updateAssistantControls();
+  const userEntry = {kind: "user", text: question, pending: true};
+  assistantState.displayEntries.push(userEntry); renderAssistantMessages();
+  const history = boundedAssistantHistory(), locallyTrimmed = assistantState.completedTurns.length - history.length;
+  let execution;
+  try {
+    execution = await beginExecution("assistant"); execution.userEntry = userEntry;
+    assistantState.pendingRequest = execution;
+    monitorAssistantPhase(execution);
+    const response = await fetch("/api/assistant/chat", {method: "POST", headers: execution.headers,
+      signal: execution.controller.signal, body: JSON.stringify({preset_id: assistantState.selectedPresetId,
+        question, history, epoch: assistantState.epoch, confirm_network: true,
+        request_id: execution.request_id, control_token: execution.control_token})});
+    const data = await response.json();
+    if (execution.cancelled || assistantState.pendingRequest !== execution) return;
+    const result = data.result;
+    const code = safeCredentialCode(result || data, "ASSISTANT_REQUEST_FAILED");
+    if (!response.ok || !result?.successful_turn || result.status !== "completed") {
+      if (result) setAssistantRun(result.status === "cancelled" ? "Cancelled" : "Failed", result, code);
+      if (code === "ASSISTANT_SESSION_EXPIRED") {
+        resetAssistantSession(); assistantState.epoch = null;
+        await loadAssistantBootstrap();
+        assistantNotice("Assistant 后端已重启，请重新发送当前问题。", true);
+      }
+      throw new Error(code);
+    }
+    setAssistantRun(result.usage?.request_count === 2 ? "Request #2" : "Request #1", result);
+    if (typeof result.final_text !== "string" || !result.final_text.trim()) throw new Error("ASSISTANT_RESPONSE_EMPTY");
+    if (result.final_finish_reason !== "stop") throw new Error(result.final_finish_reason === "length" ? "ASSISTANT_RESPONSE_TRUNCATED" : "ASSISTANT_RESPONSE_INCOMPLETE");
+    if (typeof result.completed_at !== "string" || !Number.isFinite(Date.parse(result.completed_at))) throw new Error("INVALID_RESPONSE");
+    userEntry.pending = false;
+    const activity = safeAssistantActivity(result.tool_activity);
+    assistantState.toolActivity = activity;
+    assistantState.completedTurns.push({user: question, assistant: result.final_text, completed_at: result.completed_at});
+    assistantState.completedTurns = assistantState.completedTurns.slice(-20);
+    assistantState.displayEntries.push({kind: "assistant", text: result.final_text, model: assistantPreset().display_name,
+      completedAt: result.completed_at, activity, queried_this_turn: activity.used_tool && activity.tool_name !== null,
+      usage: safeAssistantUsage(result.usage?.usage), latency: result.total_latency_ms});
+    assistantState.displayEntries = assistantState.displayEntries.slice(-60);
+    assistantState.historyTrimmed = locallyTrimmed + (Number.isSafeInteger(result.history_trimmed) ? result.history_trimmed : 0);
+    $("assistant-history-notice").textContent = assistantState.historyTrimmed ? "较早对话未发送给模型；显示记录不代表模型收到全部历史。" : "";
+    assistantState.draft = ""; $("assistant-input").value = "";
+    setAssistantRun("Completed", result);
+    renderAssistantMessages();
+  } catch (exc) {
+    if (execution?.cancelled || (execution && assistantState.pendingRequest !== execution)) return;
+    const code = scenarioErrorText(exc);
+    userEntry.pending = false;
+    assistantState.displayEntries.push({kind: "state", text: code});
+    setAssistantRun(code === "USER_CANCELLED" ? "Cancelled" : "Failed", null, code);
+    if (code !== "ASSISTANT_SESSION_EXPIRED") assistantNotice(code, true);
+    renderAssistantMessages();
+  } finally {
+    clearTimeout(execution?.phaseTimer);
+    if (!execution?.cancelled) {
+      if (activeExecution === execution) finishExecution();
+      if (!execution || assistantState.pendingRequest === execution) {
+        assistantState.pendingRequest = null; assistantState.busy = false;
+        $("assistant-confirm-network").checked = false;
+      }
+    }
+    updateAssistantControls();
+  }
+}
+
+function bindAssistantControls() {
+  $("application-mode-toggle").addEventListener("click", switchApplicationMode);
+  $("assistant-preset").addEventListener("change", changeAssistantPreset);
+  $("assistant-tool").addEventListener("click", () => { if (!activeExecution && !assistantState.busy) return openToolManager("assistant"); });
+  $("assistant-clear").addEventListener("click", clearAssistantConversation);
+  $("assistant-send").addEventListener("click", sendAssistant);
+  $("assistant-stop").addEventListener("click", stopGeneration);
+  $("assistant-input").addEventListener("input", () => { assistantState.draft = $("assistant-input").value; });
+  $("assistant-input").addEventListener("keydown", event => {
+    if (event.ctrlKey && event.key === "Enter" && !event.isComposing) { event.preventDefault(); return sendAssistant(); }
+  });
+  updateAssistantControls();
 }
 
 init();

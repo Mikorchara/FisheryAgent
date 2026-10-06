@@ -989,10 +989,7 @@ function toolManagerFixture(analysis=[], assistant=['get_current_water_quality']
     access_type:'READ ONLY',registered:true,executable:true,dev_only:false,planned:false,parameter_summary:'无；{}'},
     {name:'score_current_water_quality',display_name:'水质评分',short_description:'实验评分',
       detailed_description:'EXPERIMENTAL / NOT PROFESSIONAL STANDARD',access_type:'READ ONLY',
-      registered:true,executable:true,dev_only:false,planned:false,experimental:true,parameter_summary:'无；{}'},
-    ...[1,2,3].map(n=>({name:`testTool_${n}`,display_name:`testTool_${n}`,short_description:'占位',
-      detailed_description:'UI PLACEHOLDER',access_type:'READ ONLY',registered:false,executable:false,dev_only:true,
-      planned:false,parameter_summary:'不适用'}))],policy:{schema_version:1,source,
+      registered:true,executable:true,dev_only:false,planned:false,experimental:true,parameter_summary:'无；{}'}],policy:{schema_version:1,source,
       modes:{analysis:{selected_tools:analysis},assistant:{selected_tools:assistant}},
       defaults:{analysis:{selected_tools:[]},assistant:{selected_tools:['get_current_water_quality']}},
       runtime_consumed:{analysis:true,assistant:true}}};
@@ -1016,7 +1013,7 @@ test('Tool Manager opens Analysis tab with collapsed entries and closes without 
   await page.element('open-tool-manager').dispatch('click');
   assert.equal(page.element('tool-manager').open,true);
   assert.match(page.element('tool-manager-title').textContent,/Analysis/);
-  assert.equal(page.element('tool-catalog-list').children.length,5);
+  assert.equal(page.element('tool-catalog-list').children.length,2);
   for(const row of page.element('tool-catalog-list').children)assert.equal(row.children[1].hidden,true);
   await page.element('tool-policy-close').dispatch('click');
   assert.equal(page.element('tool-manager').hidden,true);
@@ -1036,29 +1033,17 @@ test('Tool Manager expands details and collapses again without saving or fetchin
 test('Tool Manager both tabs retain independent drafts and mark Normal Analysis authorization',async()=>{
   const page=toolManagerPage();await page.element('open-tool-manager').dispatch('click');
   assert.match(page.element('tool-policy-note').textContent,/Normal Analysis.*模型|Normal Analysis.*Runtime/);
-  assert.match(page.element('tool-policy-count').textContent,/0 \/ 5/);
+  assert.match(page.element('tool-policy-count').textContent,/0 \/ 2/);
   let checkbox=page.element('tool-catalog-list').children[0].children[0].children[0];
   checkbox.checked=true;await checkbox.dispatch('change');
-  assert.match(page.element('tool-policy-count').textContent,/1 \/ 5/);
+  assert.match(page.element('tool-policy-count').textContent,/1 \/ 2/);
   assert.match(page.element('tool-policy-status').textContent,/未保存/);
   await page.element('tool-policy-assistant').dispatch('click');
   checkbox=page.element('tool-catalog-list').children[0].children[0].children[0];assert.equal(checkbox.checked,true);
   checkbox.checked=false;await checkbox.dispatch('change');
-  assert.match(page.element('tool-policy-count').textContent,/0 \/ 5/);
+  assert.match(page.element('tool-policy-count').textContent,/0 \/ 2/);
   await page.element('tool-policy-analysis').dispatch('click');
   assert.equal(page.element('tool-catalog-list').children[0].children[0].children[0].checked,true);
-});
-
-test('Tool Manager placeholders are disabled but expandable and never enter draft',async()=>{
-  const page=toolManagerPage();await page.element('open-tool-manager').dispatch('click');
-  const rows=page.element('tool-catalog-list').children;
-  for(const item of rows.slice(2)) {
-    const controls=item.children[0].children;assert.equal(controls[0].disabled,true);
-    assert.match(controls[2].textContent,/DEV ONLY.*NOT EXECUTABLE.*UI PLACEHOLDER/);
-    controls[0].checked=true;await controls[0].dispatch('change');
-    await controls[3].dispatch('click');assert.equal(item.children[1].hidden,false);
-  }
-  assert.equal(vm.runInContext('JSON.stringify(toolPolicyDraft)',page.context).includes('testTool'),false);
 });
 
 test('Tool Manager Save persists both drafts with CSRF and reopening reads override',async()=>{
@@ -1127,12 +1112,344 @@ test('Tool Manager pending save locks duplicate operations and mode switching',a
   assert.equal(page.element('tool-policy-save').disabled,false);
 });
 
-test('Tool Manager Assistant entry Coming Soon never switches access mode Runtime or Profile',async()=>{
-  const page=toolManagerPage(async()=>assert.fail('entry must not fetch'));
-  vm.runInContext('accessMode="managed_custom";profiles=[{profile_id:"origin"}]',page.context);page.element('profile').value='origin';
-  await page.element('assistant-mode-entry').dispatch('click');
-  assert.match(page.element('application-mode-status').textContent,/界面尚未实现/);
-  assert.equal(vm.runInContext('accessMode',page.context),'managed_custom');assert.equal(page.element('profile').value,'origin');
+test('Tool Manager Assistant workspace entry opens the shared Assistant policy tab',async()=>{
+  const page=assistantPage(async()=>r2Reply(toolManagerFixture()));
+  await enterAssistant(page);
+  await page.element('assistant-tool').dispatch('click');
+  assert.equal(vm.runInContext('toolPolicyMode',page.context),'assistant');
+  assert.match(page.element('tool-manager-title').textContent,/Assistant/);
+  assert.equal(page.element('tool-catalog-list').children.length,2);
+});
+
+function assistantBootstrap(epoch='assistant-epoch') {
+  return {epoch,default_preset_id:'qwen-preset',fixed_mode:{thinking:'off',response_mode:'normal'},
+    presets:[{preset_id:'qwen-preset',display_name:'Qwen 3.8 Flash',runtime_type:'cloud'},
+      {preset_id:'deepseek-preset',display_name:'DeepSeek Flash',runtime_type:'cloud'},
+      {preset_id:'ollama-preset',display_name:'Ollama Qwen3.5 4B',runtime_type:'local'}]};
+}
+
+function assistantResult(changes={}) {
+  return {successful_turn:true,status:'completed',final_text:'概念回答',completed_at:'2026-10-06T01:00:00Z',
+    final_finish_reason:'stop',history_turns_received:0,history_turns_sent:0,history_trimmed:0,
+    tool_activity:{used_tool:false},request_1:{outcome:'final_answer'},request_2:{outcome:'not_started'},
+    usage:{request_count:1,usage:{input_tokens:10,output_tokens:8,total_tokens:18,source:'provider'}},
+    total_latency_ms:3200,...changes};
+}
+
+function assistantPage(handler=async()=>r2Reply({result:assistantResult()}), bootstrap=assistantBootstrap()) {
+  const calls=[];
+  const page=makePage(async(url,options={})=>{
+    calls.push({url,options});
+    if(url==='/api/assistant/bootstrap')return r2Reply(bootstrap);
+    return handler(url,options);
+  });
+  page.calls=calls;
+  vm.runInContext('credentialCsrf="offline-csrf"; bindToolManagerControls(); bindAssistantControls()',page.context);
+  return page;
+}
+
+async function enterAssistant(page) { await page.element('application-mode-toggle').dispatch('click'); }
+async function sendAssistantQuestion(page, question='什么是溶氧？') {
+  page.element('assistant-input').value=question;
+  page.element('assistant-confirm-network').checked=true;
+  return page.element('assistant-send').dispatch('click');
+}
+function assistantStateJson(page, expression='assistantState') {
+  // Inspect UI records, never serialize transient control tokens or Node timer handles.
+  return JSON.parse(vm.runInContext(`JSON.stringify(${expression},(key,value)=>key==='pendingRequest'?null:value)`,page.context));
+}
+function allElementText(node) { return node.textContent+' '+node.children.map(allElementText).join(' '); }
+
+test('Assistant single fixed-width toggle replaces both old status buttons',()=>{
+  assert.match(html,/id="application-mode-toggle"/);
+  assert.doesNotMatch(html,/analysis-mode-entry|assistant-mode-entry|application-mode-status|Coming Soon/);
+  assert.match(css,/#application-mode-toggle\s*\{[^}]*width: 240px/);
+  const workspace=html.slice(html.indexOf('id="assistant-workspace"'),html.indexOf('id="tool-manager"'));
+  assert.match(workspace,/Thinking OFF · Normal/);
+  assert.doesNotMatch(workspace,/tool-trace|Reasoning|capability|Base URL/);
+});
+
+test('Assistant workspace switch preserves Analysis DOM runtime scenario result drafts and scroll',async()=>{
+  const page=assistantPage(async()=>assert.fail('switch must not generate or Apply'));
+  vm.runInContext('accessMode="managed_custom"; profiles=[{profile_id:"origin"}]; formMode="edit"; editDraft={model:"draft-model"}',page.context);
+  page.element('profile').value='origin';page.element('scenario').value='low_oxygen';page.element('question').value='Analysis草稿';
+  page.element('model-inference').textContent='原结果';page.element('analysis-controls').scrollTop=88;
+  page.context.window.scrollY=140;page.context.window.scrollTo=(_x,y)=>{page.context.window.scrollY=y;};
+  await enterAssistant(page);
+  assert.equal(page.element('analysis-workspace').hidden,true);
+  assert.equal(page.element('assistant-workspace').hidden,false);
+  page.element('assistant-input').value='助手草稿';await page.element('assistant-input').dispatch('input');
+  page.element('assistant-messages').scrollTop=50;page.context.window.scrollY=20;
+  await page.element('application-mode-toggle').dispatch('click');
+  assert.equal(page.element('analysis-workspace').hidden,false);
+  assert.equal(page.element('profile').value,'origin');assert.equal(page.element('scenario').value,'low_oxygen');
+  assert.equal(page.element('question').value,'Analysis草稿');assert.equal(page.element('model-inference').textContent,'原结果');
+  assert.equal(page.context.window.scrollY,140);assert.equal(page.element('analysis-controls').scrollTop,88);
+  assert.equal(vm.runInContext('accessMode',page.context),'managed_custom');
+  assert.equal(vm.runInContext('editDraft.model',page.context),'draft-model');
+  await page.element('application-mode-toggle').dispatch('click');
+  assert.equal(page.element('assistant-input').value,'助手草稿');assert.equal(page.element('assistant-messages').scrollTop,50);
+  assert.deepEqual(page.calls.map(c=>c.url),['/api/assistant/bootstrap']);
+});
+
+test('Assistant selector uses only bootstrap Presets OFF Normal and preserves Analysis model',async()=>{
+  const page=assistantPage();page.element('profile').value='analysis-profile';await enterAssistant(page);
+  assert.deepEqual(page.element('assistant-preset').children.map(x=>x.textContent),['请选择模型','Qwen 3.8 Flash','DeepSeek Flash','Ollama Qwen3.5 4B']);
+  assert.equal(page.element('assistant-preset').value,'qwen-preset');
+  page.element('assistant-preset').value='ollama-preset';await page.element('assistant-preset').dispatch('change');
+  assert.equal(page.element('profile').value,'analysis-profile');
+  assert.equal(page.element('assistant-network-label').textContent,'LOCAL MODEL REQUEST');
+  assert.doesNotMatch(page.element('assistant-network-note').textContent,/Mock|离线/);
+});
+
+test('Assistant Send requires question and explicit per-send network confirmation',async()=>{
+  const page=assistantPage();await enterAssistant(page);
+  await page.element('assistant-send').dispatch('click');assert.match(page.element('assistant-notice').textContent,/请输入/);
+  page.element('assistant-input').value='问题';await page.element('assistant-send').dispatch('click');
+  assert.match(page.element('assistant-notice').textContent,/NETWORK_CONFIRMATION_REQUIRED/);
+  page.element('assistant-input').value='甲'.repeat(683);page.element('assistant-confirm-network').checked=true;
+  await page.element('assistant-send').dispatch('click');assert.match(page.element('assistant-notice').textContent,/QUESTION_TOO_LARGE/);
+  assert.equal(page.calls.filter(c=>c.url==='/api/assistant/chat').length,0);
+});
+
+test('Assistant success commits only complete pairs and sends no Analysis facts raw Tool or connection',async()=>{
+  const page=assistantPage();await enterAssistant(page);await sendAssistantQuestion(page);
+  const state=assistantStateJson(page);
+  assert.deepEqual(state.completedTurns,[{user:'什么是溶氧？',assistant:'概念回答',completed_at:'2026-10-06T01:00:00Z'}]);
+  assert.equal(state.displayEntries.length,2);assert.equal(state.displayEntries[1].queried_this_turn,false);
+  assert.match(allElementText(page.element('assistant-messages')),/未调用 Tool/);
+  assert.equal(page.element('assistant-confirm-network').checked,false);
+  assert.match(page.element('assistant-run-summary').textContent,/Completed.*Qwen.*0 Tool.*1 Requests.*3.20s/);
+  const body=JSON.parse(page.calls.find(c=>c.url==='/api/assistant/chat').options.body);
+  assert.deepEqual(Object.keys(body).sort(),['control_token','epoch','history','preset_id','question','request_id','confirm_network'].sort());
+  assert.deepEqual(body.history,[]);assert.equal(body.epoch,'assistant-epoch');
+  await sendAssistantQuestion(page,'再解释一下');
+  const sent=JSON.parse(page.calls.filter(c=>c.url==='/api/assistant/chat')[1].options.body);
+  assert.deepEqual(sent.history,state.completedTurns);
+});
+
+test('Assistant pending run blocks duplicate Send workspace model clear and history commit',async()=>{
+  let resolve;const page=assistantPage(async()=>new Promise(done=>{resolve=done;}));await enterAssistant(page);
+  const pending=sendAssistantQuestion(page);while(!resolve)await new Promise(done=>setImmediate(done));
+  assert.equal(page.element('application-mode-toggle').disabled,true);assert.equal(page.element('assistant-preset').disabled,true);
+  assert.equal(page.element('assistant-clear').disabled,true);assert.equal(page.element('assistant-send').disabled,true);
+  assert.equal(assistantStateJson(page).completedTurns.length,0);
+  assert.match(allElementText(page.element('assistant-messages')),/等待回答/);
+  await page.element('application-mode-toggle').dispatch('click');await page.element('assistant-send').dispatch('click');
+  assert.equal(vm.runInContext('applicationMode',page.context),'assistant');
+  assert.equal(page.calls.filter(c=>c.url==='/api/assistant/chat').length,1);
+  resolve(r2Reply({result:assistantResult()}));await pending;
+  assert.equal(page.element('application-mode-toggle').disabled,false);
+});
+
+test('Assistant failed cancelled truncated empty unknown-finish turns never enter history or reveal partial output',async()=>{
+  for(const changes of [{successful_turn:false,status:'failed',error_code:'READ_TIMEOUT'},
+    {successful_turn:false,status:'cancelled',error_code:'USER_CANCELLED'},
+    {successful_turn:false,status:'failed',error_code:'ASSISTANT_RESPONSE_TRUNCATED'},
+    {final_text:''},{final_finish_reason:'length'},{final_finish_reason:'unrecognized'}]) {
+    const page=assistantPage(async()=>r2Reply({result:assistantResult({final_text:'secret partial body',...changes})}));
+    await enterAssistant(page);await sendAssistantQuestion(page);
+    const state=assistantStateJson(page);assert.equal(state.completedTurns.length,0);
+    assert.equal(state.displayEntries.filter(e=>e.kind==='assistant').length,0);
+    assert.doesNotMatch(allElementText(page.element('assistant-messages')),/secret partial/);
+    assert.equal(page.element('assistant-input').value,'什么是溶氧？');
+    assert.equal(page.element('assistant-confirm-network').checked,false);
+    assert.match(page.element('assistant-run-summary').textContent,/Failed|Cancelled/);
+  }
+});
+
+test('Assistant lightweight tool activity shows query status time and experimental score without Raw Trace',async()=>{
+  for(const [name,status,quality,freshness] of [['get_current_water_quality','OK','valid','fresh'],
+    ['get_current_water_quality','OK','invalid','stale'],['get_current_water_quality','PARTIAL','partial','fresh'],
+    ['get_current_water_quality','NO_DATA',undefined,undefined],['score_current_water_quality','OK','valid','fresh']]) {
+    const activity={used_tool:true,tool_name:name,tool_status:status,quality,freshness,duration_ms:2,
+      evaluated_at:'2026-10-06T01:00:00Z'};
+    const page=assistantPage(async()=>r2Reply({result:assistantResult({tool_activity:activity,
+      request_1:{outcome:'tool_calls'},request_2:{outcome:'final_answer'},usage:{request_count:2,usage:{}},
+      tool_result:{secret:'raw result must not persist'},reasoning_content:'private reasoning',prompt:'private prompt'})}));
+    await enterAssistant(page);await sendAssistantQuestion(page,'现在水质怎么样？');
+    const article=page.element('assistant-messages').children[1],detail=article.children.find(c=>c.children[0]?.textContent==='使用了 1 个 Tool');
+    assert.ok(detail);assert.notEqual(detail.open,true);
+    const text=allElementText(detail);assert.match(text,new RegExp(name));assert.match(text,new RegExp(status));
+    assert.match(text,/evaluated_at/);if(freshness)assert.match(text,new RegExp(freshness));
+    if(name==='score_current_water_quality')assert.match(text,/EXPERIMENTAL \/ NOT PROFESSIONAL STANDARD/);
+    assert.doesNotMatch(text,/Request #|Raw|Authorization|Prompt|Usage/);
+    assert.doesNotMatch(JSON.stringify(assistantStateJson(page)),/raw result must not persist|private reasoning|private prompt/);
+    assert.match(allElementText(page.element('assistant-run-details')),/Request #1 outcome.*tool_calls.*Request #2 outcome.*final_answer/);
+  }
+});
+
+test('Assistant plain text instruction is present while Markdown and HTML still render as safe literal text',async()=>{
+  const backend=fs.readFileSync(path.join(__dirname,'../src/fishery_ai/assistant.py'),'utf8');
+  assert.match(backend,/最终回答使用简洁纯文本/);
+  assert.match(backend,/不要输出Markdown表格、Markdown粗体或代码围栏/);
+  const payload='**粗体**\n| DO | 值 |\n| -- | -- |\n```json\n{}\n```\n<script>bad()</script>';
+  const page=assistantPage(async()=>r2Reply({result:assistantResult({final_text:payload})}));
+  await enterAssistant(page);await sendAssistantQuestion(page);
+  const text=page.element('assistant-messages').children[1].children[0];
+  assert.equal(text.textContent,payload);assert.equal(text.children.length,0);
+  assert.doesNotMatch(source,/marked\.|markdownit|DOMPurify/);
+});
+
+test('Assistant history budget trims complete pairs while keeping more display records',async()=>{
+  const page=assistantPage();await enterAssistant(page);
+  vm.runInContext(`assistantState.completedTurns=Array.from({length:9},(_,i)=>({user:'旧'+i+'甲'.repeat(650),assistant:'旧回答',completed_at:'2026-10-06T01:00:00Z'}));
+    assistantState.displayEntries=[{kind:'user',text:'仍可显示旧记录'}]`,page.context);
+  await sendAssistantQuestion(page);
+  const history=JSON.parse(page.calls.find(c=>c.url==='/api/assistant/chat').options.body).history;
+  assert.ok(history.length<6);assert.ok(Buffer.byteLength(JSON.stringify(history))<=6144);
+  assert.ok(history.every(t=>Object.keys(t).sort().join(',')==='assistant,completed_at,user'));
+  assert.match(page.element('assistant-history-notice').textContent,/较早对话未发送.*不代表模型收到全部/);
+  assert.match(allElementText(page.element('assistant-messages')),/仍可显示旧记录/);
+});
+
+test('Assistant epoch expiration clears old history activity retains input bootstraps once without resend',async()=>{
+  let requests=0;
+  const page=assistantPage(async()=>{requests++;return r2Reply({error_code:'ASSISTANT_SESSION_EXPIRED'},false);});
+  await enterAssistant(page);
+  vm.runInContext(`assistantState.completedTurns=[{user:'旧',assistant:'DO2.2',completed_at:'2026-10-06T01:00:00Z'}];
+    assistantState.toolActivity={used_tool:true};assistantState.displayEntries=[{kind:'user',text:'旧'}]`,page.context);
+  await sendAssistantQuestion(page,'当前问题保留');
+  assert.equal(assistantStateJson(page).completedTurns.length,0);assert.equal(assistantStateJson(page).toolActivity,null);
+  assert.equal(page.element('assistant-input').value,'当前问题保留');assert.equal(requests,1);
+  assert.equal(page.calls.filter(c=>c.url==='/api/assistant/bootstrap').length,2);
+  assert.match(page.element('assistant-notice').textContent,/后端已重启.*重新发送/);
+});
+
+test('Assistant model change and clear confirm affect only Assistant and preserve draft',async()=>{
+  const page=assistantPage();await enterAssistant(page);await sendAssistantQuestion(page);
+  page.element('assistant-input').value='未发送草稿';await page.element('assistant-input').dispatch('input');
+  page.element('model-inference').textContent='原Analysis';page.element('profile').value='analysis-origin';
+  page.context.window.confirm=()=>false;
+  page.element('assistant-preset').value='deepseek-preset';await page.element('assistant-preset').dispatch('change');
+  assert.equal(page.element('assistant-preset').value,'qwen-preset');assert.equal(assistantStateJson(page).completedTurns.length,1);
+  await page.element('assistant-clear').dispatch('click');assert.equal(assistantStateJson(page).completedTurns.length,1);
+  page.context.window.confirm=()=>true;page.element('assistant-preset').value='deepseek-preset';await page.element('assistant-preset').dispatch('change');
+  assert.equal(assistantStateJson(page).completedTurns.length,0);assert.equal(page.element('assistant-input').value,'未发送草稿');
+  assert.equal(page.element('model-inference').textContent,'原Analysis');assert.equal(page.element('profile').value,'analysis-origin');
+  assert.equal(page.calls.filter(c=>c.options.method==='PUT'||c.options.method==='DELETE').length,0);
+});
+
+test('Assistant output HTML is textContent and raw exception stays a safe code',async()=>{
+  const payload='<img src=x onerror=alert(1)><script>steal()</script>';
+  const page=assistantPage(async()=>r2Reply({result:assistantResult({final_text:payload})}));await enterAssistant(page);await sendAssistantQuestion(page);
+  const text=page.element('assistant-messages').children[1].children[0];assert.equal(text.textContent,payload);assert.equal(text.children.length,0);
+  const failed=assistantPage(async()=>{throw new Error('traceback PRIVATE_SECRET filesystem path');});await enterAssistant(failed);await sendAssistantQuestion(failed);
+  assert.match(failed.element('assistant-notice').textContent,/NETWORK_ERROR/);assert.doesNotMatch(allElementText(failed.element('assistant-messages')),/PRIVATE_SECRET|traceback/);
+});
+
+test('Assistant Stop cancels backend first rejects late answers and leaves Analysis status unchanged',async()=>{
+  let resolve;const calls=[];
+  const page=assistantPage(async(url)=>{
+    calls.push(url);if(url.endsWith('/cancel'))return r2Reply({state:'CANCELLED',backend_io_closed:true});
+    return new Promise(done=>{resolve=done;});
+  });await enterAssistant(page);page.element('status').textContent='原Analysis状态';
+  const pending=sendAssistantQuestion(page);while(!resolve)await new Promise(done=>setImmediate(done));
+  await page.element('assistant-stop').dispatch('click');
+  assert.ok(calls.some(url=>url.endsWith('/cancel')));assert.match(page.element('assistant-run-summary').textContent,/Cancelled/);
+  assert.equal(page.element('status').textContent,'原Analysis状态');assert.equal(page.element('assistant-input').value,'什么是溶氧？');
+  resolve(r2Reply({result:assistantResult({final_text:'late response must not win'})}));await pending;
+  assert.equal(assistantStateJson(page).completedTurns.length,0);assert.doesNotMatch(allElementText(page.element('assistant-messages')),/late response/);
+  assert.equal(page.element('application-mode-toggle').disabled,false);
+});
+
+test('Assistant live phase observation reads actual shared request status without model streaming',async()=>{
+  let resolve;const phases=['REQUEST_1','RUNNING_TOOL','REQUEST_2'];let index=0;
+  const page=assistantPage(async(url)=>{
+    if(url.endsWith('/status'))return r2Reply({state:'RUNNING',phase:phases[Math.min(index++,2)]});
+    return new Promise(done=>{resolve=done;});
+  });await enterAssistant(page);
+  vm.runInContext('let observedPhases=[];const originalSetRun=setAssistantRun;setAssistantRun=(phase,...args)=>{observedPhases.push(phase);return originalSetRun(phase,...args)}',page.context);
+  const pending=sendAssistantQuestion(page);while(!resolve)await new Promise(done=>setImmediate(done));
+  await new Promise(done=>setTimeout(done,1150));
+  assert.deepEqual(assistantStateJson(page,'observedPhases'),['Preparing','Request #1','Running Tool','Request #2']);
+  resolve(r2Reply({result:assistantResult()}));await pending;
+  assert.match(page.element('assistant-run-summary').textContent,/Completed/);
+});
+
+test('Assistant Ctrl Enter sends and normal Enter retains multiline input',async()=>{
+  const page=assistantPage();await enterAssistant(page);page.element('assistant-input').value='第一行\n第二行';page.element('assistant-confirm-network').checked=true;
+  let prevented=false;
+  await page.element('assistant-input').dispatch('keydown',{key:'Enter',ctrlKey:false,preventDefault:()=>{prevented=true;}});
+  assert.equal(prevented,false);assert.equal(page.calls.filter(c=>c.url==='/api/assistant/chat').length,0);
+  await page.element('assistant-input').dispatch('keydown',{key:'Enter',ctrlKey:true,preventDefault:()=>{prevented=true;}});
+  assert.equal(prevented,true);assert.equal(page.calls.filter(c=>c.url==='/api/assistant/chat').length,1);
+});
+
+test('Assistant current-fact follow-up passes only old text pairs and renders newly queried mock facts',async()=>{
+  let oxygen=2.2;
+  const page=assistantPage(async(url,options)=>{
+    assert.equal(url,'/api/assistant/chat');const body=JSON.parse(options.body);
+    const current=/现在|当前/.test(body.question);
+    const activity=current?{used_tool:true,tool_name:'get_current_water_quality',tool_status:'OK',freshness:'fresh'}:{used_tool:false};
+    const text=current?`本轮Tool查询DO=${oxygen}`:'刚才2.2是历史低氧读数';
+    return r2Reply({result:assistantResult({final_text:text,tool_activity:activity,raw_tool_result:{oxygen}})});
+  });await enterAssistant(page);await sendAssistantQuestion(page,'现在水质怎么样？');
+  await page.element('application-mode-toggle').dispatch('click');oxygen=6.4;
+  await page.element('application-mode-toggle').dispatch('click');await sendAssistantQuestion(page,'现在仍然是2.2吗？');
+  const body=JSON.parse(page.calls.filter(c=>c.url==='/api/assistant/chat')[1].options.body);
+  assert.match(body.history[0].assistant,/2.2/);assert.ok(body.history.every(t=>Object.keys(t).length===3));
+  assert.match(assistantStateJson(page).completedTurns[1].assistant,/6.4/);
+  await sendAssistantQuestion(page,'刚才2.2意味着什么？');
+  assert.equal(assistantStateJson(page).displayEntries.at(-1).activity.used_tool,false);
+});
+
+test('Assistant no default Preset keeps empty selection and loading failures do not send models',async()=>{
+  const page=assistantPage(undefined,{...assistantBootstrap(),default_preset_id:null});await enterAssistant(page);
+  assert.equal(page.element('assistant-preset').value,'');assert.equal(page.element('assistant-send').disabled,true);
+  page.element('assistant-input').value='问题';page.element('assistant-confirm-network').checked=true;
+  await page.element('assistant-send').dispatch('click');assert.match(page.element('assistant-notice').textContent,/请选择模型/);
+  assert.equal(page.calls.filter(c=>c.url==='/api/assistant/chat').length,0);
+  vm.runInContext('assistantState.epoch=null',page.context);
+  await page.element('assistant-send').dispatch('click');
+  assert.equal(page.calls.filter(c=>c.url==='/api/assistant/chat').length,0);
+});
+
+test('Assistant prepare lock also blocks switching while an Analysis handle is being prepared',async()=>{
+  let release;const page=makePage(async()=>new Promise(done=>{release=done;}),{ownExecutionRoutes:true});
+  vm.runInContext('credentialCsrf="offline-csrf";bindAssistantControls()',page.context);
+  const pending=vm.runInContext('beginExecution()',page.context);
+  while(!release)await new Promise(done=>setImmediate(done));
+  await page.element('application-mode-toggle').dispatch('click');
+  assert.equal(vm.runInContext('applicationMode',page.context),'analysis');
+  assert.equal(page.element('application-mode-toggle').disabled,true);
+  release(r2Reply({request_id:'offline',control_token:'offline-control'}));await pending;
+  vm.runInContext('finishExecution()',page.context);
+  assert.equal(page.element('application-mode-toggle').disabled,false);
+});
+
+test('Assistant Stop works at either model phase and unsafe cancellation failures stay unconfirmed',async()=>{
+  for(const phase of ['Request #1','Request #2']) {
+    let release;const page=assistantPage(async(url)=>url.endsWith('/cancel')
+      ?r2Reply({state:'CANCELLED',backend_io_closed:true}):new Promise(done=>{release=done;}));
+    await enterAssistant(page);const pending=sendAssistantQuestion(page);
+    while(!release)await new Promise(done=>setImmediate(done));
+    vm.runInContext(`setAssistantRun('${phase}')`,page.context);
+    await page.element('assistant-stop').dispatch('click');
+    release(r2Reply({result:assistantResult()}));await pending;
+    assert.equal(assistantStateJson(page).completedTurns.length,0);assert.match(page.element('assistant-run-summary').textContent,/Cancelled/);
+  }
+  let release;const page=assistantPage(async(url)=>{
+    if(url.endsWith('/cancel'))throw new Error('private SDK traceback');
+    return new Promise(done=>{release=done;});
+  });await enterAssistant(page);const pending=sendAssistantQuestion(page);
+  while(!release)await new Promise(done=>setImmediate(done));
+  await page.element('assistant-stop').dispatch('click');
+  assert.match(page.element('assistant-notice').textContent,/取消未确认.*后端状态未知/);
+  assert.doesNotMatch(page.element('assistant-notice').textContent,/SDK traceback/);
+  release(r2Reply({result:assistantResult()}));await pending;
+  assert.equal(assistantStateJson(page).completedTurns.length,0);
+});
+
+test('Assistant invalid response JSON gives a safe failure and full details use unavailable for absent Usage',async()=>{
+  const page=assistantPage(async()=>({ok:true,json:async()=>{throw new Error('SECRET raw response');}}));
+  await enterAssistant(page);await sendAssistantQuestion(page);
+  assert.match(page.element('assistant-notice').textContent,/NETWORK_ERROR/);
+  assert.doesNotMatch(allElementText(page.element('assistant-messages')),/SECRET/);
+  const missing=assistantPage(async()=>r2Reply({result:assistantResult({usage:{request_count:1}})}));
+  await enterAssistant(missing);await sendAssistantQuestion(missing);
+  assert.match(allElementText(missing.element('assistant-run-details')),/input_tokens\s+unavailable.*output_tokens\s+unavailable/);
+  assert.equal(missing.element('assistant-run').open,false);
 });
 
 function makePage(fetch, {ownExecutionRoutes = false} = {}) {
@@ -1155,8 +1472,8 @@ function makePage(fetch, {ownExecutionRoutes = false} = {}) {
       if (!this.listeners.has(type)) this.listeners.set(type, []);
       this.listeners.get(type).push(handler);
     }
-    async dispatch(type) {
-      const event = {type, target: this};
+    async dispatch(type, extra = {}) {
+      const event = {type, target: this, ...extra};
       return Promise.all((this.listeners.get(type) || []).map((handler) => handler(event)));
     }
     removeAttribute() {}
@@ -1176,7 +1493,7 @@ function makePage(fetch, {ownExecutionRoutes = false} = {}) {
     if (!ownExecutionRoutes && url === '/api/requests') return r2Reply({request_id:'offline-request',control_token:'offline-control'});
     return fetch(url, options);
   };
-  const context = vm.createContext({document, fetch:guardedFetch, TextDecoder, Uint8Array, AbortController, setTimeout,
+  const context = vm.createContext({document, fetch:guardedFetch, TextDecoder, TextEncoder, Uint8Array, AbortController, setTimeout, clearTimeout,
     window: {confirm: () => true}});
   vm.runInContext(source, context);
   return {element, context};

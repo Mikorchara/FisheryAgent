@@ -19,7 +19,7 @@
 | 内置实验连接 | 开发 / Managed 兼容使用的 Qwen、DeepSeek、Ollama 连接模板 | src/fishery_ai/resources/profiles/qwen_experimental.json、deepseek_experimental.json、ollama_qwen35_local.json | 是 | 否 | 开发配置路径需要 | 否；不等同 Preset 发布合同 |
 | ProtocolSpec | OpenAI-compatible 参数编码定义 | src/fishery_ai/protocol_specs.py | 是 | 否 | Managed 与 Preset 请求需要 | 否 |
 | Tool Policy | analysis / assistant 对静态 Registry 的授权子集；不能注册 Handler | src/fishery_ai/resources/tools/tool_policies.json；loader src/fishery_ai/tools/policy.py | 是；包资源 | 否 | Analysis / Assistant 创建时校验 | 不删除；由维护者修改并补测试 |
-| Tool Catalog | 展示说明和三个不可执行的 DEV ONLY 占位；不注册工具 | src/fishery_ai/tools/catalog.py | 是；源码 | 否 | Tool 管理界面需要 | 不删除源码；没有本地 Handler 文件 |
+| Tool Catalog | 展示两个真实工具的通用 metadata；不注册工具 | src/fishery_ai/tools/catalog.py | 是；源码 | 否 | Tool 管理界面需要 | 不删除源码；没有本地 Handler 文件 |
 | User Tool Policy Override | 两份模式的用户选择；Analysis / Assistant 新请求捕获冻结授权 | outputs/tool-policies/tool_policies.json；schema_version=1 | 否；Git 忽略 | 否；工作区设置，不含 Secret | 有 Override 时加载；不存在用包内默认 | Web 恢复默认只删除该文件；删除前确认愿意丢弃两份自定义设置 |
 | Managed Custom Profile | 用户连接参数、credential_ref 与运行偏好 | outputs/custom_profiles/custom-*.json | 否，Git 忽略 | 否；仅工作区本地数据 | 有已保存连接时需要 | 手动备份后可删除；不能由程序自动恢复 |
 | Capability / Evidence | 精确 Identity 的 Probe / Metadata 证据 | outputs/capability-evidence/*.json | 否，Git 忽略 | 否；不含 Secret，但属本地验证数据 | Managed 高级选项解析需要 | 删除会丢失证据并锁定选项；不建议清理 |

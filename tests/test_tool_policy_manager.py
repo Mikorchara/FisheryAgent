@@ -13,7 +13,7 @@ from fishery_ai.model_gateway import ModelToolCall
 from fishery_ai.telemetry import CurrentSnapshotStore, CurrentWaterQualityReader
 from fishery_ai.tools.policy import UserToolPolicyStore, ToolPolicyError, load_tool_policies
 from fishery_ai.tools import ToolRegistry, ToolExecutor
-from fishery_ai.tools.catalog import tool_catalog
+from fishery_ai.tools.catalog import tool_catalog, ToolCatalogEntry
 from fishery_ai.web import create_app
 
 NAME = "get_current_water_quality"
@@ -46,14 +46,11 @@ class ToolPolicyManagerTests(unittest.TestCase):
         return {"schema_version":1, "modes": {"analysis":{"selected_tools":list(analysis)},
             "assistant":{"selected_tools":list(assistant)}}}
 
-    def test_catalog_two_real_and_three_disabled_placeholders(self):
+    def test_catalog_only_two_real_tools(self):
         catalog = tool_catalog(self.registry)
-        self.assertEqual(len(catalog), 5)
+        self.assertEqual(len(catalog), 2)
         self.assertEqual([i["name"] for i in catalog if i["executable"]], [NAME, "score_current_water_quality"])
-        for item in catalog[2:]:
-            self.assertTrue(item["dev_only"])
-            self.assertFalse(item["registered"])
-            self.assertFalse(item["executable"])
+        self.assertTrue(all(not i["dev_only"] and not i["planned"] for i in catalog))
         self.assertEqual(self.registry.registered_names(), (NAME, "score_current_water_quality"))
 
     def test_absent_override_loads_builtin_without_creating_file(self):
@@ -78,8 +75,8 @@ class ToolPolicyManagerTests(unittest.TestCase):
         self.assertEqual(unrelated.read_text(), "keep")
         self.assertEqual(self.store.load(), self.selection())
 
-    def test_unknown_and_placeholder_cannot_enter_policy(self):
-        for name in ("unknown", "testTool_1", "testTool_2", "testTool_3"):
+    def test_unknown_cannot_enter_policy(self):
+        for name in ("unknown", "unregistered_fixture"):
             with self.subTest(name=name), self.assertRaises(ToolPolicyError) as error:
                 self.store.save(self.selection(assistant=(name,)))
             self.assertEqual(error.exception.code, "UNKNOWN_POLICY_TOOL")
@@ -97,7 +94,7 @@ class ToolPolicyManagerTests(unittest.TestCase):
         with self.assertRaises(ToolPolicyError): self.make_app()
 
     def test_unknown_override_at_startup_fails_closed(self):
-        self.store.directory.mkdir(); self.store.path.write_text(json.dumps(self.selection(assistant=("testTool_1",))))
+        self.store.directory.mkdir(); self.store.path.write_text(json.dumps(self.selection(assistant=("unregistered_fixture",))))
         with self.assertRaises(ToolPolicyError): self.make_app()
         self.factory.assert_not_called()
 
@@ -127,15 +124,19 @@ class ToolPolicyManagerTests(unittest.TestCase):
         self.assertEqual(self.store.effective()["assistant"].exposed_tools, ())
 
     def test_catalog_mutation_cannot_add_handler_or_grant_execution(self):
-        catalog=tool_catalog(self.registry); catalog[2]["executable"]=True
-        result=ToolExecutor(self.registry).execute(ModelToolCall("c1", "testTool_1", "{}"))
+        with patch("fishery_ai.tools.catalog.CATALOG", (ToolCatalogEntry("unregistered_fixture", "Fake", "Fake", "Fake"),)):
+            catalog=tool_catalog(self.registry)
+        self.assertFalse(catalog[0]["registered"])
+        self.assertFalse(catalog[0]["executable"])
+        catalog[0]["executable"]=True
+        result=ToolExecutor(self.registry).execute(ModelToolCall("c1", "unregistered_fixture", "{}"))
         self.assertEqual(result.error_code.value,"UNKNOWN_TOOL")
         self.assertEqual(self.registry.registered_names(),(NAME, "score_current_water_quality"))
 
     def test_web_returns_catalog_and_no_profile_or_secret(self):
         response=self.client.get("/api/tool-policies")
         self.assertEqual(response.status_code,200)
-        self.assertEqual(len(response.get_json()["catalog"]),5)
+        self.assertEqual(len(response.get_json()["catalog"]),2)
         self.assertNotIn("credential",response.get_data(as_text=True).lower())
         self.assertNotIn("path",response.get_json())
         self.factory.assert_not_called()
@@ -160,9 +161,9 @@ class ToolPolicyManagerTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/tool-policies",headers={"Host":"evil.invalid"}).status_code,403)
         self.assertNotIn("Access-Control-Allow-Origin",self.client.get("/api/tool-policies").headers)
 
-    def test_web_cannot_choose_path_or_placeholder_or_modify_package(self):
+    def test_web_cannot_choose_path_or_unknown_or_modify_package(self):
         builtin=load_tool_policies()
-        for data in (self.selection(assistant=("testTool_1",)),{**self.selection(),"path":"private.env"}):
+        for data in (self.selection(assistant=("unregistered_fixture",)),{**self.selection(),"path":"private.env"}):
             response=self.client.put("/api/tool-policies",json=data,headers=self.headers)
             self.assertEqual(response.status_code,400)
         self.assertEqual(load_tool_policies(),builtin)
@@ -179,13 +180,15 @@ class ToolPolicyManagerTests(unittest.TestCase):
         self.assertIsNone(response.get_json()["result"]["tool_result"])
         self.assertIn("未允许",response.get_json()["result"]["generated_text"])
 
-    def test_page_title_manager_and_coming_soon_structure(self):
+    def test_page_title_manager_and_assistant_workspace_structure(self):
         html=self.client.get("/").get_data(as_text=True)
         self.assertIn('<h2>Analysis Model</h2>',html)
         self.assertNotIn("基础模型配置",html)
-        for identifier in ("open-tool-manager","tool-manager","tool-policy-analysis","tool-policy-assistant","assistant-mode-entry"):
+        for identifier in ("open-tool-manager","tool-manager","tool-policy-analysis","tool-policy-assistant","application-mode-toggle", "assistant-workspace", "assistant-tool"):
             self.assertIn('id="'+identifier+'"',html)
-        self.assertIn("Coming Soon",html)
+        self.assertNotIn("Coming Soon",html)
+        self.assertIn('id="assistant-workspace" class="panel assistant-workspace" hidden', html)
+        self.assertIn("Thinking OFF · Normal", html)
 
 
 if __name__ == "__main__": unittest.main()

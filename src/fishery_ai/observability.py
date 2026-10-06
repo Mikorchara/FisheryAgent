@@ -81,6 +81,19 @@ class JsonlTraceSink:
         }
         self._append(entry)
 
+    def record_assistant(self, result, *, started_at: datetime, finished_at: datetime) -> None:
+        """Final commit outcome and numeric history budgets; no conversation material."""
+        self._append({"kind": "assistant_turn", "application_mode": "assistant",
+            "preset_id": result.preset_id, "request_id": result.execution.request_id,
+            "trace_id": result.execution.trace_id, "status": result.status.value,
+            "error_code": result.error_code, "started_at": started_at.isoformat(),
+            "finished_at": finished_at.isoformat(), "timing": {"total_ms": result.total_latency_ms},
+            "history_turns_received": result.context.history_turns_received,
+            "history_turns_sent": result.context.history_turns_sent,
+            "history_trimmed": result.context.history_trimmed,
+            "history_bytes_sent": result.context.history_bytes_sent,
+            "usage": asdict(result.execution.usage)})
+
     def _append(self, entry: dict) -> None:
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)

@@ -12,7 +12,7 @@ Analysis Model Tool Calling v1 已实现：保留固定 Snapshot → Diagnosis �
 
 **Assistant Model** 是按需调用模型的在线对话助手：System / User / 未来必要的对话历史 / 允许的 Tool Definitions → 模型选择是否调用 Tool → 程序受控执行 → 最终回答。持续可用不等于持续运行 LLM；没有用户请求时不调用模型。
 
-当前只实现了 Assistant 的实验基础：`tool_conversation.py::ToolCallingService` 和 Development / Test 单轮入口。没有正式持续对话、历史存储、Scheduler 或 Agent。现有 Analysis 的 Chat / Advice 仍属于固定分析，不能等同于 Assistant。
+当前已完成 Assistant S0/S1/S2：`assistant.py` 构造有界历史，正式聊天工作区复用 `tool_conversation.py::ToolCallingService`；Development / Test 单轮入口保留。历史仅存页面内存，没有长期历史存储、Scheduler 或 Agent。现有 Analysis 的 Chat / Advice 仍属于固定分析，不能等同于 Assistant。
 
 Preset / Managed Custom / Manual 是**模型接入方式**；Analysis / Assistant 是**应用流程**，两者不是同一组模式。Manual Raw 不进入上述 Fishery 流程。
 
@@ -102,11 +102,11 @@ Assistant + Tool Calling ≠ full Agent。未来若需要 planning、多轮、�
 
 ### 入口与 Catalog
 
-左侧标题改为 **01 · Analysis Model**，同一行右侧 **Tool** 打开 Modal。入口独立于 Profile / Provider；右上提供 Analysis Model 与 **Assistant Model · Coming Soon**，后者只显示“界面尚未实现”，不切换 Runtime 或覆盖草稿。
+左侧标题改为 **01 · Analysis Model**，同一行右侧 **Tool** 打开 Modal。入口独立于 Profile / Provider；此段原为 Policy UI 阶段记录；S2 已改为顶栏单个固定宽度切换按钮，Analysis 与 Assistant 独立工作区保留各自草稿，不改对方 Runtime。
 
 `tools/catalog.py` 为只读展示 metadata：名称、简介、说明、access_type、参数摘要、DEV / planned 等。registered / executable 根据当前 Registry 和固定 Handler 计算，Catalog 不拥有 Handler 或函数路径，修改展示值不能注册工具。
 
-列表四项：get_current_water_quality 与 testTool_1 / testTool_2 / testTool_3。条目默认只显示 checkbox、名称、状态、展开按钮；详情默认折叠，可以展开/收起。占位项 **DEV ONLY · NOT EXECUTABLE · UI PLACEHOLDER**；可展开，checkbox 禁用，不保存 preview 授权，不注册、不发送、不执行。
+当前正式列表为 get_current_water_quality / score_current_water_quality；原三个 DEV 占位已在 Assistant S0 删除。条目默认只显示 checkbox、名称、状态、展开按钮；详情默认折叠，可以展开/收起。Catalog 不注册 Handler 或授予执行权限。
 
 ### 两份设置与实际权限
 

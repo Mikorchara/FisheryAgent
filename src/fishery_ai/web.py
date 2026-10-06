@@ -39,6 +39,7 @@ from .presets import preset_profiles, default_preset_id
 from .model_gateway import validate_preset_response
 from .execution import RequestRegistry, request_scope
 from .tool_conversation import ToolCallingService, MockToolGateway
+from .assistant import ALLOWED_PRESET_IDS, AssistantError, AssistantRequest, AssistantService, assistant_profile
 from .tool_capability_probe import run_tool_calling_probe
 from .tools.policy import load_tool_policies, UserToolPolicyStore, ToolPolicyError
 from .tools.catalog import tool_catalog
@@ -195,6 +196,7 @@ def create_app(*, trace_path: Path | None = None,
     manual_credential_revisions = {}
     credential_gate, credential_origin_gate = install_local_security(app, allowed_hosts)
     executions = RequestRegistry()
+    assistant_epoch = uuid.uuid4().hex  # Non-secret app lifetime marker, not authorization.
     store = CustomProfileStore(custom_profiles_dir or Path.cwd() / "outputs/custom_profiles")
     capability_store = CapabilityStore(capability_evidence_dir or
                                         Path.cwd() / "outputs/capability-evidence")
@@ -378,7 +380,9 @@ def create_app(*, trace_path: Path | None = None,
     @app.after_request
     def close_rejected_execution(response):
         # Prepared handles that fail preflight must not consume active slots until TTL.
-        if (request.path in ("/api/analyze", "/api/analyze/stream", "/api/manual", "/api/manual-v2", "/api/tool-conversation")
+        if response.status_code == 413:
+            return response  # Do not parse an oversized body again during error cleanup.
+        if (request.path in ("/api/analyze", "/api/analyze/stream", "/api/manual", "/api/manual-v2", "/api/tool-conversation", "/api/assistant/chat")
                 or request.path.endswith("/tool-probe")) and response.status_code >= 400:
             payload = request.get_json(silent=True)
             if isinstance(payload, dict) and "request_id" in payload:
@@ -999,6 +1003,62 @@ def create_app(*, trace_path: Path | None = None,
         except Exception:
             handle.finish("CAPABILITY_PROBE_FAILED")
             return error("CAPABILITY_PROBE_FAILED", 502)
+
+    @app.get("/api/assistant/bootstrap")
+    def assistant_bootstrap():
+        failure = credential_origin_gate(required=False)
+        if failure is not None:
+            return failure
+        try:
+            allowed = [assistant_profile(identifier) for identifier in ALLOWED_PRESET_IDS]
+            policy = policy_store.effective()["assistant"]
+            default = default_preset_id()
+            return jsonify(presets=[{"preset_id": p.preset_id,
+                "display_name": p.display_name.rsplit(" · ", 1)[0], "runtime_type": p.provider_kind}
+                for p in allowed], default_preset_id=default if default in ALLOWED_PRESET_IDS else None,
+                fixed_mode={"thinking": "off", "response_mode": "normal"}, epoch=assistant_epoch,
+                tools=[{"name": definition.name} for definition in policy.model_definitions(tool_registry)])
+        except (AssistantError, ToolPolicyError) as exc:
+            return error(exc.code, 503)
+
+    @app.post("/api/assistant/chat")
+    def assistant_chat():
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        payload = request.get_json(silent=True)
+        envelope = {"epoch", "confirm_network", "request_id", "control_token"}
+        allowed = envelope | {"preset_id", "question", "history", "conversation_id"}
+        if not isinstance(payload, dict) or set(payload) - allowed:
+            return error("INVALID_ASSISTANT_REQUEST", 400)
+        if payload.get("epoch") != assistant_epoch:
+            return error("ASSISTANT_SESSION_EXPIRED", 409)
+        try:
+            turn = AssistantRequest.from_dict({k: v for k, v in payload.items() if k not in envelope})
+            profile = assistant_profile(turn.preset_id)
+            policy = policy_store.effective()["assistant"]  # Freeze before any model I/O.
+        except (AssistantError, ToolPolicyError) as exc:
+            return error(exc.code, 400)
+        if payload.get("confirm_network") is not True:
+            return error("NETWORK_CONFIRMATION_REQUIRED", 403)
+        runtime, failure = request_runtime(profile)
+        if failure is not None:
+            return failure
+        handle, failure = claim_execution(payload, required=True)
+        if failure is not None:
+            return failure
+        try:
+            with request_scope(handle):
+                coordinator = ToolCallingService(real_gateway_factory(), tool_registry, traces, policy=policy)
+                result = AssistantService(coordinator).send(turn, runtime)
+            return jsonify(result=result.to_dict()), (200 if result.status == Status.COMPLETED else
+                409 if result.status == Status.CANCELLED else 502)
+        except (AssistantError, GatewayError) as exc:
+            handle.finish(exc.code)
+            return error(exc.code, 409)
+        except Exception:
+            handle.finish("INTERNAL_ERROR")
+            return error("INTERNAL_ERROR", 500)
 
     @app.post("/api/tool-conversation")
     def tool_conversation():

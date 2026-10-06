@@ -216,7 +216,7 @@ DS_1 实际验证与本轮测试结果见 [T5 验证记录](T5_DS_1_TOOL_CALLING
 
 ## 当前 Tool Policy / 应用模式
 
-Tool 管理入口位于左侧 **01 · Analysis Model** 标题右侧，不绑定具体模型。Catalog 只负责展示；Registry 决定固定 Handler；Policy 限制授权子集。Modal 提供 Analysis / Assistant 标签、默认折叠详情、计数、保存、恢复默认与关闭。三个 testTool 占位仅用于布局，不注册、不发送、不执行。
+Tool 管理入口位于左侧 **01 · Analysis Model** 标题右侧，不绑定具体模型。Catalog 只负责展示；Registry 决定固定 Handler；Policy 限制授权子集。Modal 提供 Analysis / Assistant 标签、默认折叠详情、计数、保存、恢复默认与关闭。正式 Catalog 仅含两个真实 Tool；旧 DEV 占位已在 Assistant S0 删除，通用 metadata 保留。
 
 用户选择保存到 Git ignored 的 outputs/tool-policies/tool_policies.json。启动与请求校验，原子写入；Assistant 新请求捕获冻结策略，进行中的请求不因新保存而改变。Analysis 的 selected_tools 在保存后影响新的 Normal 请求；默认仍为空，启用时须通过精确 Runtime 的工具能力门禁。恢复默认只删除 Override，不修改源码、Profile、Credential、Evidence 或 Snapshot。
 

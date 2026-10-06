@@ -158,7 +158,8 @@ class ToolCallingService:
 
     def run_request(self, request: ModelRequest, runtime: RuntimeSnapshot, *,
                     request_id: str | None = None, trace_id: str | None = None,
-                    final_response_instruction: str | None = None) -> ToolConversationResult:
+                    final_response_instruction: str | None = None,
+                    on_progress: Callable[[str], None] | None = None) -> ToolConversationResult:
         """Shared bounded execution; caller owns context, Registry owns definitions."""
         started_at, start_tick = self.clock(), time.monotonic()
         handle = current_handle()
@@ -174,6 +175,8 @@ class ToolCallingService:
 
         def complete(request: ModelRequest, index: int):
             check_cancelled()
+            if on_progress:
+                on_progress("REQUEST_1" if index == 0 else "REQUEST_2")
             # The coordinator also gates alternate Gateways; no real capability is granted.
             try:
                 validate_tool_request(request, runtime, streaming=False)
@@ -222,6 +225,8 @@ class ToolCallingService:
                     raise GatewayError("TOOL_CALL_LIMIT")
                 tool_call_id, tool_name = calls[0].id, calls[0].function_name
                 check_cancelled()
+                if on_progress:
+                    on_progress("RUNNING_TOOL")
                 tool_tick = time.monotonic()
                 try:
                     tool_result = ToolExecutor(self.registry, max_calls=1, policy=self.policy).execute(calls[0])

@@ -27,7 +27,7 @@ Demo 使用 MockGateway，不访问模型。tests/ 是自动化回归，不参�
 
 ## Tool 管理
 
-左侧 **01 · Analysis Model → Tool** 打开应用级 Tool 管理：可查看两份 Policy，勾选真实 Tool 并保存、恢复默认；详情默认折叠。Analysis 设置影响新的 Normal 分析请求，仍要求精确 Runtime 的 Tool capability=SUPPORTED；启用后选择 Streaming 会明确拒绝，不自动降级。Assistant 设置影响新的开发 Tool Conversation。DEV 占位项不可勾选、不可执行。右上 Assistant 入口仅提示 Coming Soon，不提供正式助手界面。
+左侧 **01 · Analysis Model → Tool** 打开应用级 Tool 管理：可查看两份 Policy，勾选真实 Tool 并保存、恢复默认；详情默认折叠。Analysis 设置影响新的 Normal 分析请求，仍要求精确 Runtime 的 Tool capability=SUPPORTED；启用后选择 Streaming 会明确拒绝，不自动降级。Assistant 设置影响新的开发 Tool Conversation 和正式 Assistant 请求。正式列表只含水质查询、实验评分两个真实 Tool。右上固定按钮可切换至 Assistant 工作区。
 
 Apply 水质情景 → 选择已发布 Qwen / Ollama Preset（建议 OFF + Normal）→ 在 Analysis 标签勾选并保存水质 Tool → 开始分析。右侧结果区的 **Tool Activity · 工具调用记录** 默认折叠：显示允许列表、是否实际调用、Tool Result、耗时、两次请求状态及 Usage。不保证模型一定调用；未调用时会明确说明。详情及离线 / 人工验收见[Analysis v1](deep-dive/ANALYSIS_MODEL_TOOL_CALLING_V1.md)。
 
@@ -60,3 +60,13 @@ V1 对已保存连接发送 Raw Request。V2 使用独立 Experiment、目标和
 正式凭据优先级为 PROCESS_ENV > 用户私有 PROJECT_ENV > MISSING。Windows 用户私有路径及 Manual V2 分离文件见[凭据存储说明](deep-dive/PRIVATE_CREDENTIAL_STORAGE.md)。旧源码根 .env 不参与运行。新请求可读取轮换后的凭据，在途请求持有开始时的快照。
 
 Stop 会关闭本地 SDK I/O；不能据此断言远端服务已停止推理或计费。没有 Usage 时显示 unavailable，不等于零。
+
+## Assistant 聊天工作区（S2）
+
+GET /api/assistant/bootstrap 返回三个 OFF/Normal Preset 和 epoch；POST /api/assistant/chat 接收 preset_id、question、完整文本对 history、epoch 和现有 confirm_network/request_id/control_token envelope。调用方先使用现有 /api/credential-session 和 /api/requests，遵守 Host/Origin/CSRF。点击顶部“切换到 Assistant Model”，选择 Preset，勾选本次网络确认，Send 或 Ctrl+Enter 发送。只允许三个发布 Preset，固定 Thinking OFF · Normal；Tool 按钮打开共享管理面板的 Assistant 标签。不要用 Development Mock 或 Managed Profile 冒充正式 Assistant 目标。
+
+对话只存页面内存；切换回 Analysis 保留原页面，刷新页面清空。只有完整成功轮次进入后续历史，最多发送6轮/6 KiB；失败、取消或截断不入成功历史。模型切换/清空有确认，后端重启会提示重新发送，不自动重试。消息下只显示轻量 Tool Activity；输入区“本次运行”展开查看安全统计。Stop 使用原请求控制，不证明远端已停止计算或计费。Cloud 显示 REAL NETWORK REQUEST；Ollama 显示 LOCAL MODEL REQUEST。
+
+历史/请求字段、预算和测试说明见[Assistant v1](deep-dive/ASSISTANT_MODEL_V1_DESIGN.md)。离线针对性测试：
+
+    .\.venv\Scripts\python.exe -m unittest discover -s tests -p test_assistant.py

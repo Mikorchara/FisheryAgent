@@ -20,7 +20,7 @@ pyproject.toml 定义安装包、Python 版本、依赖和包资源。README.md 
 - application.py、model_gateway.py、openai_compatible_adapter.py：固定分析流程和模型传输；T1 增加 non-streaming tools / tool_calls / tool_call_id 消息合同与 SDK 编码归一，不执行工具。
 - tools/：静态 allowlist、有限执行器、Catalog、Policy 和两个只读 Handler；协调器仍留在服务层。
 - tools/policy.py、resources/tools/tool_policies.json：冻结的 analysis / assistant 默认授权策略及 UserToolPolicyStore；用户设置存 outputs/tool-policies/tool_policies.json，原子替换、启动校验、可恢复默认。Analysis 默认零工具；Assistant 默认仅 get_current_water_quality。评分工具在两种模式默认关闭，用户显式保存后新请求生效。
-- tools/catalog.py：固定 UI metadata；两个可执行 Tool 与三个 DEV ONLY / NOT EXECUTABLE 占位。Catalog 不注册 Handler，不能用 metadata 获得执行权限。
+- tools/catalog.py：固定 UI metadata；仅两个真实可执行 Tool；通用 dev_only / planned metadata 保留。Catalog 不注册 Handler，不能用 metadata 获得执行权限。
 - water_quality_scoring.py：独立 WaterQualityScoringService / WaterQualityScore；复用 DiagnosisService 的正常区间，实验惩罚系数集中定义，非专业养殖评分标准。
 - tool_conversation.py：共享单轮 ToolCallingService；converse 构建 Assistant 问答，run_request 接收 Analysis 已有上下文。最多一次 Tool 和一次 follow-up，复用同一 Executor；T4 离线 MockToolGateway 不替代固定 Analysis。observability.py 区分应用模式，记录安全步骤摘要。
 - presets.py、protocol_specs.py、providers.py：固定 Preset、协议编码和 Provider 元信息。
@@ -28,7 +28,8 @@ pyproject.toml 定义安装包、Python 版本、依赖和包资源。README.md 
 - capability_store.py、evidence_resolver.py、capability_probe.py、tool_capability_probe.py：Managed Custom 的能力证据与显式验证；Tool Probe 位于 02 · 模型能力的高级验证操作，Development 只验证已有能力。
 - credentials.py、credential_paths.py、project_env.py：凭据读取、用户私有路径和受控写入。
 - manual.py、manual_experiments.py：Manual V1/V2 Raw 请求与实验存储。
-- web.py、resources/web/：本地开发者界面。
+- assistant.py：Assistant S1 请求/完整问答历史合同、Context Builder、三个发布 OFF/Normal Preset 白名单与最终回答门禁；复用 ToolCallingService，不调用 Analysis Orchestrator，不预读水质或 RAG。
+- web.py、resources/web/：本地开发者界面；/api/assistant/bootstrap 与 /api/assistant/chat 已提供后端合同，正式聊天工作区已接入 S2；顶栏单按钮切换，不重建 Analysis DOM。
 - resources/scenarios/water_quality/：五个只读内置水质情景模板，保存输入意图与观测年龄。
 - resources/scenarios/detection/：normal / count_jump 固定检测事件，未增加 Detection Simulator。
 - resources/mock/、resources/knowledge/、resources/profiles/：Mock 模型 Profile、知识和固定连接/方案数据。
@@ -55,7 +56,7 @@ tools/
 ├─ __init__.py      对外入口
 ├─ contracts.py     ToolDefinition / ToolExecutionResult / 安全错误码
 ├─ registry.py      两个只读 Tool 的固定 allowlist
-├─ catalog.py       仅展示 metadata / DEV 占位；执行权限仍来自 Registry
+├─ catalog.py       仅展示通用 metadata，不含 DEV 占位实例；执行权限仍来自 Registry
 ├─ executor.py      显式执行、空参数校验、次数/结果大小限制、取消检查
 ├─ policy.py        冻结授权与固定路径用户设置（配置持久化，不执行 Tool）
 └─ handlers/
@@ -72,9 +73,9 @@ T3 单轮路径为：system / user / Policy-filtered Registry tools → Model Re
 
 ToolCallingService 接受调用者已经捕获的不可变 RuntimeSnapshot，两次请求共用它和现有 RequestHandle；不增加凭据读取或隐藏水质来源。T4 在独立 Development / Test 模式的 Read-only Tool Calling 区域调用 `/api/tool-conversation`，注入同一个 Web Reader / Diagnosis，复用凭据解析和 Stop。普通模式仅显示进入按钮；前端保存原模式 / Profile ID / 运行选项，返回时恢复，不复制凭据或构建第二套 Runtime。真实测试目标按原 Profile ID 从现有列表查找；开发顶部 Mock 与真实目标明确区分。默认使用独立的离线 Tool Mock，不注册成普通 Profile、不修改 Evidence。CLI 尚无专用 Tool Conversation 入口。
 
-正式 Gateway 工具请求仍受精确 runtime 的能力门禁限制；Preset / Evidence 合同不因 T1/T2/T3/T4 改变。Web 选择当前 Runtime 时，未验证能力在创建 Gateway 前拒绝；服务和 Gateway 继续校验。普通固定 Analysis、Streaming 与 Manual Raw 保留原路径。见[T1–T5 只读工具说明](deep-dive/READ_ONLY_TOOL_CALLING.md)与[Analysis / Assistant 架构](deep-dive/ASSISTANT_MODEL_ARCHITECTURE.md)。模型接入方式与应用流程是两个维度；当前 Assistant 仍是单轮开发实验。
+正式 Gateway 工具请求仍受精确 runtime 的能力门禁限制；Preset / Evidence 合同不因 T1/T2/T3/T4 改变。Web 选择当前 Runtime 时，未验证能力在创建 Gateway 前拒绝；服务和 Gateway 继续校验。普通固定 Analysis、Streaming 与 Manual Raw 保留原路径。见[T1–T5 只读工具说明](deep-dive/READ_ONLY_TOOL_CALLING.md)与[Analysis / Assistant 架构](deep-dive/ASSISTANT_MODEL_ARCHITECTURE.md)。模型接入方式与应用流程是两个维度；Assistant S1 已提供 Preset-only、有界历史的后端入口；正式聊天 UI 已实现，Development 单问入口继续保留完整安全 Trace。
 
-标题右侧 Tool 打开独立 Modal；Analysis / Assistant 两份草稿分开，默认折叠条目，保存前不改变有效策略。Analysis 勾选并保存后影响新的 Normal 请求；启用 Tool 的 Streaming 明确拒绝。右侧正式结果区 Tool Activity 默认折叠，只显示本次执行，不编辑权限。固定 Facts / Rules / Evidence 与 Tool 调用时的观测分别保留，差异不覆盖。右上 Assistant Model · Coming Soon 仍只提示尚未实现。Web 的 Policy 写 API 复用 Host / Origin / CSRF，不接受文件路径；独立 Python 组件不搜索磁盘设置。见[Analysis v1](deep-dive/ANALYSIS_MODEL_TOOL_CALLING_V1.md)。
+标题右侧 Tool 打开独立 Modal；Analysis / Assistant 两份草稿分开，默认折叠条目，保存前不改变有效策略。Analysis 勾选并保存后影响新的 Normal 请求；启用 Tool 的 Streaming 明确拒绝。右侧正式结果区 Tool Activity 默认折叠，只显示本次执行，不编辑权限。固定 Facts / Rules / Evidence 与 Tool 调用时的观测分别保留，差异不覆盖。顶栏固定宽度按钮切换 Analysis / Assistant；各自模型、问题、结果与滚动位置独立。Web 的 Policy 写 API 复用 Host / Origin / CSRF，不接受文件路径；独立 Python 组件不搜索磁盘设置。见[Analysis v1](deep-dive/ANALYSIS_MODEL_TOOL_CALLING_V1.md)。
 
 ## tests/
 
@@ -95,3 +96,15 @@ observed_at 是观测时间；retrieved_at 是程序当时取得数据的时间�
 Current API、Apply 后预览、Normal / Streaming 都经同一 Reader；Diagnosis 使用查询视图。分析开始时固定视图，进行中的请求不受后续 Apply 影响。重启为空；没有当前快照时返回 NO_DATA，Reader 不自动生成 normal。
 
 **Scenario generation != Current state read**：显式 scenario 兼容调用仍先走模板生成 / Apply，再查询。CLI / Demo 的 Orchestrator 后备保留，用来生成模拟输入。MockRepository.demo_snapshots 惰性创建，旧 snapshots 属性仅是兼容别名；Web current Reader 不依赖该 Store。T2 Handler 只接受 CurrentWaterQualityReader；T4 已注入这个共享 Reader，Tool API 不接受 scenario/template 或水质值。没有 Snapshot 时 Tool 返回 NO_DATA，再由第二轮解释；不会 Apply normal。
+
+## Assistant S0 / S1 / S2
+
+仅三个发布 Preset 的 OFF + Normal：bootstrap 返回白名单、默认模型、固定模式、app-lifetime epoch 和 Assistant Tool 摘要；chat 复用 Host/Origin/CSRF、正式 CredentialStore、请求 Handle 与现有单轮协调器。客户端只选 preset_id，不提交连接或高级参数。
+
+History 只收 user/assistant/completed_at 完整文本对，最近最多6轮且序列化 UTF-8 ≤6 KiB，question ≤2 KiB；整体仍受16 KiB限制。裁剪整对，结果返回接收/发送/裁剪数量。首轮没有实时事实，原始 Tool 协议消息仅存在本轮 follow-up，不进入后续历史。后端不存聊天，不返回原始 Tool Result。
+
+最终非空正文、finish_reason=stop、无取消/错误才成功；length 返回 ASSISTANT_RESPONSE_TRUNCATED，无自动续写。epoch 不匹配返回 ASSISTANT_SESSION_EXPIRED。取消复用现有请求控制；Trace 仅安全步骤与统计，附加 assistant_turn 记录最终门禁结果。S2 前端已实现独立聊天、页面历史/epoch恢复、按次确认和 Stop；状态条通过原 status API 读取安全阶段，不是 Streaming。详见[Assistant v1](deep-dive/ASSISTANT_MODEL_V1_DESIGN.md)。
+
+resources/web/app.js 的 applicationMode 管理 Analysis / Assistant 显示；模型接入的 Preset / Managed / Manual 仍是 Analysis 原维度。Assistant state 独立保留页面历史/草稿/模型/滚动位置，隐藏 Analysis DOM 而不清空结果。顶栏只有固定宽度的目标切换按钮；生成中不能切换。
+
+Assistant 消息只显示安全文本与折叠轻量 Tool Activity，输入区折叠“本次运行”展示安全阶段与Usage；Development保留完整安全Trace。execution.py 的可选phase和tool_conversation.py的进度回调只供观察，仍是一Tool/一round/最多两request，不是新增循环或Streaming。页面刷新清空历史；后端epoch变化清历史并保留输入，不自动重发。

@@ -125,7 +125,7 @@ score_current_water_quality({}) Handler 只捕获 Reader view，再调用服务�
 
 Policy 移到 tools/policy.py；旧 tool_policy.py 删除，不留重复兼容实现。查询 Handler 移到 tools/handlers/current_water_quality.py；评分 Handler 位于 tools/handlers/water_quality_score.py。imports / patch 目标 / 文档更新，包顶层既有执行 API 保留；Registry 构造器增加可选 scoring 依赖，旧两参数调用保持可用。
 
-Catalog 共两个可执行工具、三个不可执行占位；评分显式 Experimental。包内默认不变：Analysis[]，Assistant[get_current_water_quality]。用户可以分别选择评分或同时授权两工具；仍最多执行一个调用、一个 round、两次模型请求。未知/未授权/多调用/第二轮继续调用依旧安全拒绝。
+Catalog 共两个真实可执行工具；DEV 占位已在 Assistant S0 删除；评分显式 Experimental。包内默认不变：Analysis[]，Assistant[get_current_water_quality]。用户可以分别选择评分或同时授权两工具；仍最多执行一个调用、一个 round、两次模型请求。未知/未授权/多调用/第二轮继续调用依旧安全拒绝。
 
 ToolStatus 新增 PARTIAL / NOT_SCORABLE，属于正常业务结果，继续交给第二轮解释。通用 Activity 不按工具名解析分数，安全 JSON 区直接展示任意已执行 Result；Trace 工具名来自 Registry allowlist，只记录元数据，不写评分事实或完整模型正文。初始 Facts、Diagnosis、RAG 不被评分覆盖。
 

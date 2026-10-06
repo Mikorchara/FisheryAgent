@@ -2,7 +2,7 @@
 
 ## 先判断是否需要
 
-Tool 是受控程序功能，不是“由谁决定调用”。当前 Analysis 是固定 Snapshot → Diagnosis → RAG，加模型可选 Tool；Assistant 实验路径不预注入事实，按需使用 Tool。Manual 不执行 Tool。
+Tool 是受控程序功能，不是“由谁决定调用”。当前 Analysis 是固定 Snapshot → Diagnosis → RAG，加模型可选 Tool；Assistant S1 后端与开发实验路径均不预注入事实，按需使用 Tool。Manual 不执行 Tool。
 
 只有回答需要系统事实或确定性计算时才需要工具。当前两个工具是查询水质和实验评分；不能把模型 Capability、Provider 参数或网页 Apply 操作包装成 Tool。
 
@@ -59,3 +59,7 @@ score_current_water_quality({}) → Reader → WaterQualityScoringService → To
 - GOOD ≥90、ACCEPTABLE ≥70、WARNING ≥50、CRITICAL <50 仅实验展示标签。分数不能替代 Diagnosis Findings，也不能作为专业养殖控制依据。
 
 代码位置见[STRUCTURE](../STRUCTURE.md)，本轮实施与测试见[Analysis Tool Calling](ANALYSIS_MODEL_TOOL_CALLING_V1.md)。
+
+## Assistant S1 的接入边界
+
+assistant.py 负责历史验证和最终回答提交；ToolCallingService.run_request 仍负责唯一的单轮执行。新增 Tool 只遵循上述 Registry/Catalog/Policy 流程，不向历史存 raw Tool Result，不在 Assistant Context Builder 中预执行 Handler。S2 正式聊天已接入同一协调器；前端仅展示轻量 Activity，Development 保留完整安全 Trace。

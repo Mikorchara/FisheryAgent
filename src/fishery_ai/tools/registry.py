@@ -25,11 +25,11 @@ class ToolRegistry:
                  scoring: WaterQualityScoringService | None = None):
         definition = ModelToolDefinition(
             name=CURRENT_WATER_QUALITY,
-            description="只读查询当前水质、数据质量、新鲜度和确定性诊断；无快照时返回 NO_DATA。",
+            description="只读查询当前水质数值、状态、告警、数据质量、新鲜度和确定性诊断；不负责评分。当前评分、等级、分项评分应使用score_current_water_quality，不要同时调用两个Tool。无快照时返回NO_DATA。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         score_definition = ModelToolDefinition(name=WATER_QUALITY_SCORE,
-            description="只读为当前 canonical 水质计算简单实验评分、分项分数和等级。EXPERIMENTAL / NOT PROFESSIONAL STANDARD；不是专业养殖标准。无参数，无快照时 NO_DATA。",
+            description="只读为当前水质计算实验评分、等级和分项评分；用于当前评分、打分、评级问题。内部已经读取当前Snapshot，同一轮不要再调用get_current_water_quality。EXPERIMENTAL / NOT PROFESSIONAL STANDARD；不是专业养殖标准。无参数，无快照时NO_DATA。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False})
         self._entries = MappingProxyType({definition.name: ToolDefinition(
             definition, partial(get_current_water_quality, reader=reader, diagnosis=diagnosis)),

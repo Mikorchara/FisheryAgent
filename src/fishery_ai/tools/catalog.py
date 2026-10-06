@@ -19,13 +19,10 @@ class ToolCatalogEntry:
 
 CATALOG = (
     ToolCatalogEntry(CURRENT_WATER_QUALITY, CURRENT_WATER_QUALITY,
-        "读取当前 canonical 水质状态", "只读查询当前 Snapshot、query-time Freshness 与 DiagnosisService Findings；无快照时返回 NO_DATA。"),
-    ToolCatalogEntry(WATER_QUALITY_SCORE, "水质评分", "当前水质的简单实验评分",
-        "根据当前 canonical 水质计算实验分数；EXPERIMENTAL / NOT PROFESSIONAL STANDARD，不是专业水产养殖评分标准。",
+        "当前水质数值、状态与告警；不负责评分", "只读查询当前Snapshot、query-time Freshness与DiagnosisService Findings；不负责评分。评分、等级、分项评分使用score_current_water_quality，同一轮不要同时调用两个Tool。无快照时返回NO_DATA。"),
+    ToolCatalogEntry(WATER_QUALITY_SCORE, "水质评分", "当前水质实验评分、等级与分项评分",
+        "内部已经读取当前Snapshot，计算实验评分、等级、分项评分；同一轮不要再调用get_current_water_quality。EXPERIMENTAL / NOT PROFESSIONAL STANDARD，不是专业水产养殖评分标准。",
         experimental=True),
-    *(ToolCatalogEntry(f"testTool_{n}", f"testTool_{n}", "开发界面布局占位",
-        "UI PLACEHOLDER；没有 Handler，不能保存到实际 Policy，不会发送给模型。",
-        dev_only=True, parameter_summary="不适用；不可执行") for n in range(1, 4)),
 )
 
 

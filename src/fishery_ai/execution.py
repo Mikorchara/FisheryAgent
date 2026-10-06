@@ -24,6 +24,7 @@ class RequestHandle:
         self.state = "RUNNING"
         self.error_code = None
         self.io_closed = False
+        self.phase = None  # Optional safe UI observation; not model content or lifecycle state.
 
     def __repr__(self):
         return f"RequestHandle(state={self.state})"
@@ -52,6 +53,13 @@ class RequestHandle:
         with self._lock:
             self._hook = None
 
+    def report_phase(self, phase):
+        if phase not in ("REQUEST_1", "RUNNING_TOOL", "REQUEST_2"):
+            raise ValueError("invalid execution phase")
+        with self._lock:
+            if self.state == "RUNNING":
+                self.phase = phase
+
     def cancel(self):
         with self._lock:
             if self.state in TERMINAL or self.state == "CANCEL_REQUESTED":
@@ -77,9 +85,12 @@ class RequestHandle:
 
     def public_info(self):
         with self._lock:
-            return {"request_id": self.request_id, "state": self.state,
+            info = {"request_id": self.request_id, "state": self.state,
                     "error_code": self.error_code, "backend_io_closed": self.io_closed,
                     "remote_compute_stopped": "unknown"}
+            if self.phase is not None:
+                info["phase"] = self.phase
+            return info
 
 
 class RequestRegistry:

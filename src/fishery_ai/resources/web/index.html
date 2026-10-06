@@ -12,19 +12,16 @@
     <header class="page-header">
       <div>
         <p class="eyebrow">FISHERY AI PROTOTYPE · V0.1.1-A3.0</p>
-        <h1>开发验证台</h1>
-        <p class="lede">Preset 固定方案、Managed Custom 连接管理、Manual Expert 原始请求实验。</p>
+        <h1>Fishery AI</h1>
       </div>
       <div class="application-mode-switch" aria-label="应用模式">
-        <button id="analysis-mode-entry" class="secondary compact-action" type="button" aria-current="page">Analysis Model</button>
-        <button id="assistant-mode-entry" class="secondary compact-action" type="button" aria-disabled="true">Assistant Model · Coming Soon</button>
-        <p id="application-mode-status" class="helper" role="status"></p>
+        <button id="application-mode-toggle" class="secondary compact-action" type="button">切换到 Assistant Model</button>
         <span class="header-tag">LOCAL · DEVELOPER ONLY</span>
       </div>
     </header>
 
-    <div class="layout">
-      <aside class="controls panel">
+    <div id="analysis-workspace" class="layout">
+      <aside id="analysis-controls" class="controls panel">
         <div class="panel-heading"><span class="step">01</span><h2>Analysis Model</h2><button id="open-tool-manager" class="secondary compact-action tool-entry" type="button">Tool</button></div>
         <label for="access-mode">运行方式</label>
         <select id="access-mode">
@@ -368,6 +365,37 @@
         <p>先选择运行方式、模型与场景，再查看确定性事实、检索证据和模型解释。</p>
       </div>
     </div>
+    <section id="assistant-workspace" class="panel assistant-workspace" hidden aria-labelledby="assistant-title">
+      <div class="assistant-toolbar">
+        <h2 id="assistant-title">Assistant Model</h2>
+        <label class="sr-only" for="assistant-preset">Preset Model</label>
+        <select id="assistant-preset"><option value="">请选择模型</option></select>
+        <span class="assistant-fixed-mode">Thinking OFF · Normal</span>
+        <button id="assistant-tool" class="secondary compact-action" type="button">Tool</button>
+      </div>
+      <div id="assistant-messages" class="assistant-messages" role="log" aria-label="对话消息"></div>
+      <p id="assistant-history-notice" class="helper" role="status"></p>
+      <div class="assistant-composer">
+        <details id="assistant-run" class="assistant-run" hidden>
+          <summary id="assistant-run-summary" aria-live="polite">本次运行</summary>
+          <dl id="assistant-run-details" class="facts-grid"></dl>
+        </details>
+        <p id="assistant-notice" class="status" role="status" aria-live="polite"></p>
+        <label class="sr-only" for="assistant-input">消息</label>
+        <textarea id="assistant-input" rows="3" placeholder="输入问题；Ctrl + Enter 发送，Enter 换行"></textarea>
+        <div class="assistant-network real-warning">
+          <strong id="assistant-network-label">REAL NETWORK REQUEST</strong>
+          <p id="assistant-network-note">本次最多两次模型请求，Cloud 可能产生费用。</p>
+          <label class="confirm"><input id="assistant-confirm-network" type="checkbox">确认本次模型请求</label>
+        </div>
+        <div class="assistant-actions">
+          <button id="assistant-clear" class="secondary" type="button">清空对话</button>
+          <button id="assistant-stop" class="secondary" type="button" disabled>Stop</button>
+          <button id="assistant-send" type="button">Send</button>
+        </div>
+      </div>
+    </section>
+
     <dialog id="tool-manager" class="scenario-modal tool-manager" hidden aria-labelledby="tool-manager-title">
       <h2 id="tool-manager-title">Analysis Model · Tool 管理</h2>
       <p class="helper">Tool Policy 属于应用模式，不属于 Profile 或 Provider。配置不会改变模型的 Capability。</p>
