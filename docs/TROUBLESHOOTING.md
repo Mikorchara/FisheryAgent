@@ -2,7 +2,7 @@
 
 | 错误 / 现象 | 处理方式 |
 | --- | --- |
-| SECRET_MISSING | 检查 Credential Manager 显示的来源和状态。正式源为进程环境或用户私有 .env；Manual V2 使用独立 manual.env。不要查看或粘贴 Key。Ollama Auth NONE 不需要凭据。 |
+| SECRET_MISSING | 检查 Credential Manager 显示的来源和状态。正式源为进程环境或固定用户私有凭据文件；Manual V2 使用独立 manual.env。不要查看或粘贴 Key。Ollama Auth NONE 不需要凭据。 |
 | CREDENTIAL_FILE_ERROR / ENV_PERMISSION_ERROR | 私有路径、owner/DACL 或文件对象无法安全确认时系统会拒绝操作。不要放宽整个工作区权限；不要把凭据文件发到日志或对话。 |
 | ENV_REVISION_CONFLICT | 另一个标签页或进程已更新版本。刷新状态后重试，不能强制覆盖旧 revision。 |
 | ENV_RECOVERY_REQUIRED | 停止写入并在本机处理恢复状态。不要删除待恢复数据或展示文件内容。 |
@@ -15,4 +15,4 @@
 | structured_parse_ok=false | 原始模型文本仍保留供调试；程序不会让另一个模型自动修复 JSON。检查 Raw Output，不要把它当成可信事实。 |
 | 水质出现 partial / stale / invalid | 检查观测时间、取回时间、缺失字段和 Quality/Freshness。Mock 场景是固定 fixture，不代表现场实时数据。 |
 
-更多操作见[构建与运行](BUILD_RUN.md)、[数据位置](deep-dive/PROJECT_DATA_AND_CONFIG_LOCATIONS.md)和[凭据存储](deep-dive/PRIVATE_CREDENTIAL_STORAGE.md)。
+更多操作见[构建与运行](BUILD_RUN.md)、[数据位置](deep-dive/operations/PROJECT_DATA_AND_CONFIG_LOCATIONS.md)和[凭据存储](deep-dive/operations/PRIVATE_CREDENTIAL_STORAGE.md)。

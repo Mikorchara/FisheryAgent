@@ -1,28 +1,32 @@
 # 路线图
 
-本路线只说明当前边界与下一步，不自动授权实现。
+路线图区分已稳定能力、暂停项和未来研究，不构成自动实施授权。
 
-## 当前可用
+## STABLE
 
-- 确定性水质合同、规则诊断、只读内置情景与独立 Detection Mock 数据。
-- telemetry/：Builtin / User Scenario Template → Simulator → SimulationAdapter → WaterQualityReading → CurrentSnapshotStore。Web 支持自定义情景 Modal、仅应用、保存 / 编辑 / 另存 / 删除；CLI 使用同一模板转换逻辑。两个 schema 只用于模拟，快照在进程内共享，重启为空。
-- TF-IDF 知识检索、Evidence Grounding、Normal / Application Streaming。
-- Preset、Managed Custom、Manual Expert V1/V2 三条模型接入路径。
-- R2 用户私有凭据、R3 ProtocolSpec、R4 Capability Evidence Resolver、R5 显式单项 Probe。
-- Usage、JSONL Trace、请求取消及离线 Python / Browser 测试。
-- 只读 Tool Calling T1–T5：Gateway 合同、静态 Registry / Executor、get_current_water_quality、单轮 Model → Tool → Model 和 Web 离线开发入口。当前事实只经共享 CurrentWaterQualityReader 读取，首次请求不预载水质；固定 Analysis 保留。
+- 结构化水质合同、确定性诊断、Scenario/Telemetry 到 canonical Snapshot 的进程内数据链。
+- TF-IDF RAG baseline、证据边界与固定 Analysis（Normal / application Streaming）。
+- Preset、Managed Custom、Manual Expert V1/V2 三种模型接入方式；OpenAI-compatible SDK Gateway、凭据快照、Usage、JSONL Trace 与请求取消。
+- Managed 精确 Identity 的 Capability Evidence / Resolver / 显式 Probe；Preset 使用维护者固定合同。
+- Assistant Model v1：三个发布 Preset，OFF + Normal，有界页面会话历史，最多一个只读 Tool / 一轮 / 两次模型请求。
+- Analysis Model 可按 Policy 显式启用 Normal 单轮只读 Tool；Development/Test 提供安全测试入口。当前两个 Tool 为水质查询和实验评分。Tool Calling 不等于 Agent。
+- 全离线 Python 与 Browser 回归测试。
 
-## 当前整理与下一步
+## PAUSED
 
-Managed Custom 已有 T5 显式 Tool Probe，入口在模型能力的高级验证操作；用户已报告 QW_2 实际验证成功，证据只授权精确 Identity。Development / Test 负责已有能力的对话验证，不自动管理能力。
+- **Knowledge Tool**：有设计稿，当前未注册、未执行，也不属于当前 Assistant Tool Policy。
 
-Analysis Model 保留固定分析，不向模型暴露 Tool；Assistant Model 当前为 Policy 限制的单轮实验路径。见[架构与 Tool Policy](deep-dive/ASSISTANT_MODEL_ARCHITECTURE.md)。下一步可单独评审实验评分 Tool 的程序 / 模型触发方式，以及 Preset Tool Calling Qualification；当前没有实现评分或升级 Preset。真实请求仍需当轮明确授权。
+## RESEARCH
 
-当前注册 get_current_water_quality 和实验性 score_current_water_quality；NO_DATA 明确返回，评分非专业标准且默认关闭。工具不读取 Scenario Template、SimulationPacket、场景资源或硬件原始 JSON，不改变规则、Snapshot 或数据库。保留已有 allowlist、单轮限制、Trace 和取消；不增加 Streaming Tool Calling 或 Agent。Manual 返回的 tool_calls 继续只展示、不执行。
+- RAG 检索质量改进与离线评估；先建立可复现基准，再决定是否调整排序或数据合同。当前 TF-IDF baseline 保持不变。
 
-## 暂缓
+## NEXT
 
-- Agent Loop：只读工具边界验收后再单独决策；不得直接操作设备、数据库或阈值。
-- 生产项目 / 真实传感器 Adapter：等待硬件协议样例、单位、时钟和设备状态定义。未来 Hardware Receiver → Hardware Adapter → WaterQualityReading → 同一个 CurrentSnapshotStore；不把 sim-v1 当成计算板协议。
-- RAG 评估继续使用离线对照；没有证据前不增加向量数据库或大型框架。
-- Fine-tuning 等待明确任务定义和额外数据。
+- Copilot Handoff：整理源码学习路径与交接材料。
+- Production Integration preparation：先审查正式项目的数据与服务边界，再提出渐进式集成方案；原型不直接替换生产流程。
+
+## FUTURE
+
+- Detection facts：先确定 canonical Detection 合同、来源与时序，再决定是否接入模型上下文或只读 Tool。
+- Multi-Tool：只有业务需要同一轮联合多个结果时再设计预算和冲突语义；当前每轮最多一个 Tool。
+- Agent：未来单独评审自治范围、预算、停止条件和人工控制；不得直接修改设备、数据库或诊断阈值。
