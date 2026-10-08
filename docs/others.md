@@ -1,0 +1,4 @@
+- Tool 不支持 Streaming Tool Calling、tool delta 拼接或 Streaming Tool Execution.
+- 多 Tool 调用, 多轮调用. 
+- UI整理, 优化.
+- AI 回答评估系统.

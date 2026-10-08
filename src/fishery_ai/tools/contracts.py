@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import partial
 import json
 from typing import Callable
 
@@ -34,8 +35,35 @@ class ToolError(Exception):
 
 @dataclass(frozen=True)
 class ToolDefinition:
+    """Static binding of one model-visible definition to one server-side handler.
+
+    Parameterless tools (the current default) leave ``validate_arguments`` unset:
+    the Executor only accepts an empty ``{}`` object and calls ``handler()``.
+
+    A tool that accepts parameters supplies ``validate_arguments``. The Executor
+    parses the model's JSON, hands that object to the callable, and calls the
+    handler with the **normalized** arguments as a single positional argument.
+    Rejection is expressed by raising; the Executor maps it to a safe error.
+    """
+
     model_definition: ModelToolDefinition
-    handler: Callable[[], dict] = field(repr=False, compare=False)
+    handler: Callable[..., dict] = field(repr=False, compare=False)
+    validate_arguments: Callable[[dict], dict] | None = field(default=None, repr=False, compare=False)
+
+    def bind(self, arguments: dict) -> Callable[[], dict]:
+        """Return the zero-argument invocation for already-parsed arguments.
+
+        This is the whole server-side parameter contract: reject, normalize, and
+        only then hand arguments to the bound handler. Bound once per call.
+        """
+        if self.validate_arguments is None:
+            if arguments:
+                raise ValueError("this tool accepts no parameters")
+            return self.handler
+        validated = self.validate_arguments(arguments)
+        if not isinstance(validated, dict):
+            raise ValueError("validated arguments must be a JSON object")
+        return partial(self.handler, validated)
 
 
 @dataclass(frozen=True)

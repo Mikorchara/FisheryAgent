@@ -45,12 +45,15 @@ class ToolExecutor:
                 if len(call.arguments_json.encode("utf-8")) > 4096:
                     raise ValueError
                 arguments = json.loads(call.arguments_json)
-                if not isinstance(arguments, dict) or arguments:
+                if not isinstance(arguments, dict):
                     raise ValueError
+                # The definition owns its parameter contract; the Executor only
+                # enforces size, JSON shape and the safe error mapping.
+                invoke = definition.bind(arguments)
             except (ValueError, TypeError, RecursionError, UnicodeError, AttributeError):
                 raise ToolError(ToolErrorCode.INVALID_TOOL_ARGUMENTS) from None
             check_cancelled()
-            payload = definition.handler()
+            payload = invoke()
             check_cancelled()
             result = ToolExecutionResult.from_payload(call.id, call.function_name, payload)
             if len(result.to_json().encode("utf-8")) > self._max_result_bytes:

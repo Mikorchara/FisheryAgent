@@ -33,5 +33,6 @@ Assistant Model v1 与 Analysis 分离；固定 Analysis 保留 Snapshot → Dia
 - [当前 Analysis / Assistant 结构](docs/deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)
 - [只读 Tool 当前实现](docs/deep-dive/tools/READ_ONLY_TOOL_CALLING.md)
 - [如何新增 Tool](docs/deep-dive/tools/ADDING_A_TOOL.md)
+- [代码接手 / Copilot 学习](docs/handoff/README.md)：面向代码接手 / Copilot 辅助学习的流程与代码地图。
 - [水质与 Telemetry 数据边界](docs/deep-dive/data-domain/WATER_QUALITY_SCENARIO_AND_TELEMETRY_PREPARATION.md)
 - [运行数据与凭据位置](docs/deep-dive/operations/PROJECT_DATA_AND_CONFIG_LOCATIONS.md)
