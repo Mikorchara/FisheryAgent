@@ -2,11 +2,13 @@
 
 **状态：PAUSED / NOT IMPLEMENTED。** 本文是基于当前代码的未来实施学习案例，不是已实现功能，也不授权 Copilot 开始开发。当前没有 `knowledge_search.py`、对应 Registry entry、参数化 Handler 或 Knowledge Policy 授权。
 
-> **前置步骤进度（2026-10-09）**：两个与 Knowledge 无关的地基已经完成，本案例的后续步骤可以直接依赖它们。
-> 1. **受控参数合同**（Step 2）：`ToolDefinition` 已支持声明 `validate_arguments`，Executor 会在 Handler 之前完成拒绝或归一化。旧两个无参工具行为不变。见 [`docs/copilot/STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md`](../copilot/STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md)。
-> 2. **`ToolStatus.NO_MATCH`**（Step 3）：合同已采纳该状态，前端安全投影同步认识它；非错误结果仍继续 Request #2。见 [`docs/copilot/STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md`](../copilot/STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md)。
+> **前置步骤进度（2026-10-09）**：本文之前的地基步骤已经完成，本案例的后续步骤可以直接依赖它们。
+> 1. **受控参数合同**（Step 2）：`ToolDefinition` 已支持声明 `validate_arguments`，Executor 会在 Handler 之前完成拒绝或归一化。旧两个无参工具行为不变。见 [`STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md`](../copilot/STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md)。
+> 2. **`ToolStatus.NO_MATCH`**（Step 3）：合同已采纳该状态，前端安全投影同步认识它；非错误结果仍继续 Request #2。见 [`STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md`](../copilot/STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md)。
+> 3. **薄 Handler**（Step 4）：`tools/handlers/knowledge_search.py` 已实现（未注册）。见 [`STEP4_KNOWLEDGE_HANDLER_DESIGN.md`](../copilot/STEP4_KNOWLEDGE_HANDLER_DESIGN.md)。
+> 4. **Registry 注册与依赖注入**（Step 5）：`ToolRegistry` 已支持注入 `KnowledgeService`，并带有正式 `validate_arguments`；**未注入时该名称不被暴露**。**授权仍未开启**（Policy 默认不变、Catalog 还没有条目）。见 [`STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md`](../copilot/STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md)。
 >
-> 本文其余内容（Handler、Registry、Catalog、Policy、UI 文案、人工验收）仍是**未来工作**。
+> 本文其余内容（Catalog、Policy 默认、装配、UI 文案、人工验收）仍是**未来工作**。
 
 阅读时把“当前事实”和“未来建议”分开。总体约束见[新增 Tool 规范](../deep-dive/tools/ADDING_A_TOOL.md)，尚待决策的研究见[Knowledge Tool 研究](../deep-dive/research/KNOWLEDGE_TOOL_DESIGN.md)。
 
@@ -208,7 +210,7 @@ Mock 采用可检查的 scripted Gateway，不扩展生产关键词路由来“�
 | `resources/knowledge/*`（包内） | 数据与 provenance | 通常不改 | 不复制数据，不编造来源；Knowledge tests。 |
 | `tools/handlers/knowledge_search.py` | 未来薄 Handler | 新增 | query → Service → 安全结果；新 `test_knowledge_tool.py`。 |
 | `tools/contracts.py` | 参数执行合同与 ToolStatus | **已完成前置调整**（参数合同 + `NO_MATCH`） | 除非需要新的状态，否则本轮不再改；`test_tool_argument_contract.py`、`test_tool_status_no_match.py`。 |
-| `tools/registry.py` | 定义与可执行绑定 | 需改 | schema、静态绑定、registered_names、依赖注入；Registry tests。 |
+| `tools/registry.py` | 定义与可执行绑定 | **已改（Step 5）** | 名称常量、schema、静态绑定、`registered_names()`、`knowledge=` 依赖注入；剩余工作只在 Catalog/Policy。`test_knowledge_registration.py`。 |
 | `tools/catalog.py` | UI metadata | 需改 | 描述、参数摘要；`test_tool_policy_manager.py`。 |
 | `tools/policy.py` | 服务端授权 | 评估并最小调整 | 若定为仅 Assistant，需实际模式门禁；Policy tests。 |
 | `resources/tools/tool_policies.json`（包内） | 默认授权 | 评估 | 默认不开启，旧配置保持；Policy tests。 |

@@ -138,11 +138,18 @@ Executor / Policy / Registry / UI
 - **未做**：Registry 注册、Catalog、Policy、装配、提示词、UI、`tools/__init__.py` 导出。
 - **验证**：`tests.test_knowledge_handler` 15/15；全量 `unittest discover -s tests` → **761 项通过**；并用真实 `KnowledgeService` 冒烟（3 个查询 `OK` / 1 个 `NO_MATCH`，最大结果 2165 B）。
 
-### Step 5：Registry 注册与依赖注入
+### Step 5：Registry 注册与依赖注入 —— **已实施 2026-10-09**
 
-- **改** `tools/registry.py`：加名称常量、`ModelToolDefinition`（schema 见研究文档：必填 `query`、`additionalProperties: false`）、`_entries` 静态绑定、`registered_names()`，构造参数增加 `knowledge: KnowledgeService | None = None`。
-- **要明确的决策**：未注入 Service 时是**拒绝组合**还是**不暴露该 entry** —— 不允许出现"注册了但没有可执行 Handler"的假状态。
-- **注意**：`parse_tool_policies()` 用 `ToolRegistry.registered_names()` 当 allowlist；新增名称后，**旧用户 override 不应被静默改写**（override 只列 `selected_tools`，新增默认项不得自动加进去）。
+对照记录 → [`STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md`](STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md)
+
+- **改动**：
+  - `tools/registry.py`：新增名称常量 `SEARCH_FISHERY_KNOWLEDGE`、`KNOWLEDGE_DESCRIPTION`、`KNOWLEDGE_PARAMETERS`；`__init__` 增加 `knowledge: KnowledgeService | None = None`；**仅在注入服务时**绑定该 entry（含 `validate_arguments`）。
+  - `tools/handlers/knowledge_search.py`：新增 `validate_arguments()` 与 `MAX_QUERY_CHARS = 512`（正式 validator 落地）。
+- **决策（原待定项）**：**不拒绝组合、也不制造假状态**——未注入服务时该名称**不被这个实例暴露**；`lookup()` 与 `model_definitions()` 始终一致。
+- **语义细化（重要）**：`registered_names()` 现在是**全部已知名称的固定 allowlist**（Policy 默认文件 + Trace/公开输出白名单），**不等于**单个实例的绑定集合。`ADDING_A_TOOL.md` 的"三者一致"表述已同步修正。
+- **授权仍然关闭**：包内默认 Policy 未变（Assistant 只授权水质查询）；Catalog 仍只有两条 → 用户 override 选择 Knowledge 会被 `TOOL_NOT_EXECUTABLE` 拒绝（**注册存在 ≠ 已授权**）。
+- **验证**：新增 `tests/test_knowledge_registration.py`（17 项）；全量 `unittest discover -s tests` → **796 项通过**；`node --test tests/test_browser_streaming.cjs` → **183 项通过**。
+- **改了 4 行既有断言**：`test_tool_policy.py` ×2、`test_tool_policy_manager.py` ×2 —— 它们快照了 `registered_names()` 的内容，而"更新 `registered_names()`"本就是本步的既定动作（加第三项 + 一句注释说明 allowlist 与绑定集合的区别）。
 
 ### Step 6：Catalog 展示
 

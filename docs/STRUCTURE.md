@@ -47,7 +47,8 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │     ├─ STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md              # Step 3 NO_MATCH 合同的 before/after 对照记录
 │     ├─ STEP4_KNOWLEDGE_HANDLER_DESIGN.md                       # Step 4 薄 Knowledge Handler 设计与实施记录
 │     ├─ STEP4_KNOWLEDGE_HANDLER_BEFORE_AFTER.md                 # Step 4 Handler 的 before/after 对照记录
-│     └─ D1_MOCK_TOOL_GATEWAY_BEFORE_AFTER.md                    # D1 Mock 按工具名分派的 before/after 对照记录
+│     ├─ D1_MOCK_TOOL_GATEWAY_BEFORE_AFTER.md                    # D1 Mock 按工具名分派的 before/after 对照记录
+│     └─ STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md            # Step 5 注册与 query validator 的 before/after 对照记录
 ├─ outputs/                                                      # 本地生成数据，Git ignored，记录不逐项展开
 │  ├─ archive/                                                   # 用户本地历史运行数据，不展开
 │  ├─ capability-evidence/                                       # Managed 能力证据与验证记录
@@ -176,6 +177,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_execution.py                                          # 取消、资源释放与 Raw 请求隔离测试
    ├─ test_gateway_tool_contract.py                              # Tool 模型消息与 SDK 编解码测试
    ├─ test_knowledge_handler.py                                  # 薄 Knowledge Handler 映射、截断与 NO_MATCH 测试
+   ├─ test_knowledge_registration.py                             # Knowledge 注册、依赖注入与 query validator 测试
    ├─ test_local_preset_qualification.py                         # Local Preset 验证入口安全测试
    ├─ test_local_profile_capability_ui.py                        # 本地 metadata 与 Capability UI 测试
    ├─ test_manual_v2.py                                          # 实验 CRUD、独立凭据与 Raw 请求测试

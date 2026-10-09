@@ -30,7 +30,7 @@
 | --- | --- |
 | Domain / Service | 维护事实、规则与算法；先复用现有服务。 |
 | `tools/handlers/` | 受控输入 → 服务调用 → 有限 dict；不管理模型循环、授权或 Provider 参数。 |
-| `tools/registry.py` | 唯一静态定义与执行绑定；`lookup()`、`model_definitions()`、`registered_names()` 保持一致。 |
+| `tools/registry.py` | 唯一静态定义与执行绑定。`lookup()` 与 `model_definitions()` 始终一致（都来自本实例已绑定的 entry，不允许"注册了但没有可执行 Handler"）；`registered_names()` 是**全部已知名称**的固定 allowlist，供 Policy 默认文件与 Trace / 公开输出白名单使用，**不等于**单个实例的绑定集合。 |
 | `tools/catalog.py` | UI 名称、说明、参数摘要和实验标记；不注册函数、不授权。 |
 | `tools/policy.py` | Analysis / Assistant 的冻结授权；只能缩小 Registry allowlist。 |
 | `tools/executor.py` | 唯一执行入口：参数、权限、预算、重复 ID、取消、结果与安全错误。 |
@@ -85,7 +85,7 @@ Handler 必须经 Executor 调用。Web 或应用直接调用 Handler 会绕过�
 
 ## 7. 从“代码存在”到“模型能调用”的条件
 
-- Handler 与依赖可安全构造；定义、绑定、registered_names 一致。
+- Handler 与依赖可安全构造；`lookup()` 与 `model_definitions()` 一致（不得出现"注册了但没有可执行 Handler"的假状态），名称在 `registered_names()` 之内。
 - 参数执行入口支持其合同，有限结果可序列化。
 - 正式 UI 需要展示时有 Catalog，但展示不代替授权。
 - 本次应用 Policy 授权名称，任何模式限制通过。

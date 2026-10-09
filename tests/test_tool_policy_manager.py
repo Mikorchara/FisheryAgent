@@ -51,7 +51,10 @@ class ToolPolicyManagerTests(unittest.TestCase):
         self.assertEqual(len(catalog), 2)
         self.assertEqual([i["name"] for i in catalog if i["executable"]], [NAME, "score_current_water_quality"])
         self.assertTrue(all(not i["dev_only"] and not i["planned"] for i in catalog))
-        self.assertEqual(self.registry.registered_names(), (NAME, "score_current_water_quality"))
+        # Name allowlist includes every known tool; the Catalog is still two entries
+        # until Step 6, so nothing new is user-selectable yet.
+        self.assertEqual(self.registry.registered_names(),
+                         (NAME, "score_current_water_quality", "search_fishery_knowledge"))
 
     def test_absent_override_loads_builtin_without_creating_file(self):
         self.assertFalse(self.store.path.exists())
@@ -131,7 +134,8 @@ class ToolPolicyManagerTests(unittest.TestCase):
         catalog[0]["executable"]=True
         result=ToolExecutor(self.registry).execute(ModelToolCall("c1", "unregistered_fixture", "{}"))
         self.assertEqual(result.error_code.value,"UNKNOWN_TOOL")
-        self.assertEqual(self.registry.registered_names(),(NAME, "score_current_water_quality"))
+        self.assertEqual(self.registry.registered_names(),
+                         (NAME, "score_current_water_quality", "search_fishery_knowledge"))
 
     def test_web_returns_catalog_and_no_profile_or_secret(self):
         response=self.client.get("/api/tool-policies")

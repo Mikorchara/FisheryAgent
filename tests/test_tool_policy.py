@@ -52,7 +52,9 @@ class ToolPolicyTests(unittest.TestCase):
         self.assertEqual(self.policies["analysis"].model_definitions(self.registry), ())
         self.assertFalse(self.policies["analysis"].llm_tool_calling)
         self.assertEqual([item.name for item in self.policies["assistant"].model_definitions(self.registry)], [NAME])
-        self.assertEqual(self.registry.registered_names(), (NAME, "score_current_water_quality"))
+        # Name allowlist includes every known tool; this instance only binds two.
+        self.assertEqual(self.registry.registered_names(),
+                         (NAME, "score_current_water_quality", "search_fishery_knowledge"))
         self.assertFalse(hasattr(self.registry, "register"))
 
     def test_unknown_tool_name_fails_closed_without_echo(self):
@@ -62,7 +64,8 @@ class ToolPolicyTests(unittest.TestCase):
             parse_tool_policies(data)
         self.assertEqual(str(error.exception), "UNKNOWN_POLICY_TOOL")
         self.assertNotIn("private", str(error.exception))
-        self.assertEqual(self.registry.registered_names(), (NAME, "score_current_water_quality"))
+        self.assertEqual(self.registry.registered_names(),
+                         (NAME, "score_current_water_quality", "search_fishery_knowledge"))
 
     def test_policy_cannot_register_handler_import_module_or_function(self):
         for name in ("module", "handler", "import", "function_path", "eval", "exec"):
