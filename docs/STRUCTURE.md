@@ -46,7 +46,8 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │     ├─ STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md            # Step 2 受控参数合同的 before/after 对照记录
 │     ├─ STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md              # Step 3 NO_MATCH 合同的 before/after 对照记录
 │     ├─ STEP4_KNOWLEDGE_HANDLER_DESIGN.md                       # Step 4 薄 Knowledge Handler 设计与实施记录
-│     └─ STEP4_KNOWLEDGE_HANDLER_BEFORE_AFTER.md                 # Step 4 Handler 的 before/after 对照记录
+│     ├─ STEP4_KNOWLEDGE_HANDLER_BEFORE_AFTER.md                 # Step 4 Handler 的 before/after 对照记录
+│     └─ D1_MOCK_TOOL_GATEWAY_BEFORE_AFTER.md                    # D1 Mock 按工具名分派的 before/after 对照记录
 ├─ outputs/                                                      # 本地生成数据，Git ignored，记录不逐项展开
 │  ├─ archive/                                                   # 用户本地历史运行数据，不展开
 │  ├─ capability-evidence/                                       # Managed 能力证据与验证记录
@@ -178,6 +179,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_local_preset_qualification.py                         # Local Preset 验证入口安全测试
    ├─ test_local_profile_capability_ui.py                        # 本地 metadata 与 Capability UI 测试
    ├─ test_manual_v2.py                                          # 实验 CRUD、独立凭据与 Raw 请求测试
+   ├─ test_mock_tool_gateway.py                                  # 离线 Mock 按工具名分派与安全兜底测试
    ├─ test_off_streaming_combination.py                          # OFF 加 Streaming 组合证据测试
    ├─ test_ollama_reasoning.py                                   # 精确 Ollama Thinking 参数测试
    ├─ test_output_parity.py                                      # Normal 与 Streaming 输出边界测试

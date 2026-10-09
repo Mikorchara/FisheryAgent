@@ -267,7 +267,8 @@ Step 3 的消费者搜索发现三处"现在改是错的、但将来必须改"�
 
 | 编号 | 位置 | 分类 | 说明 |
 | --- | --- | --- | --- |
-| **D1** | `tool_conversation.py:47` `MockToolGateway.complete` 的 `payload["status"] == "NO_DATA"` 分支 | **BLOCKER BEFORE KNOWLEDGE REGISTRATION**（**不阻塞 Step 4**） | 该分支的 `else` 会读 `payload["water_quality"]`；一旦 Knowledge 注册并走 Mock 页面，`NO_MATCH` 会掉进 `else` → `KeyError`。**Step 4 可以先做；必须在 Step 5 注册 Knowledge Tool 之前解决。** |
+| **D1** | `tool_conversation.py` 的 `MockToolGateway` **按 payload 键猜形状**（`status` + `scoring_version` 启发式） | **已解决 2026-10-09** | 改为**按 tool name 分派**；未知/畸形结果返回安全兜底 `离线 Mock：该 Tool 尚无离线渲染。`；工具名通过 **`tool_call_id` 关联**取得（不再假设 `tool_calls[0]`）。见 [`D1_MOCK_TOOL_GATEWAY_BEFORE_AFTER.md`](D1_MOCK_TOOL_GATEWAY_BEFORE_AFTER.md) |
+| **D1b** | `tool_conversation.py` MockToolGateway **Request #1** 的 `request.tools[0]` fallback | **BLOCKER BEFORE MOCK KNOWLEDGE ENABLEMENT**（**不阻塞 Step 5 注册**） | 若策略只授权 Knowledge，问"现在…"会 fallback 到 Knowledge 并以 `"{}"` 调用 → 被 validator 拒（`INVALID_TOOL_ARGUMENTS`）。**最迟在 Knowledge Tool 的 Mock / 人工验收之前处理**；改它会变动现有行为（"只授权水质工具时问评分问题"走 `tools[0]`），需单独评审 |
 | **D2** | `application.py:47-49` `snapshot_comparison` | 当前不改 | NO_MATCH 会被判成 `not_called`。Knowledge Tool 仍是 **Assistant-only**；只有未来真的允许 Analysis 使用时才重新评审。 |
 | **D3** | `app.js:2759` 工具名白名单、`:2794` 硬编码文案"本轮已查询当前水质" | 当前不改，**Step 10 必须处理** | 否则 Knowledge 调用会被置 `null` / 误标成水质查询。 |
 | **B6** | `web.py:1127` 的 `"arguments"` 字段（`!= "ERROR"` 时写 `{}`） | 移入「**参数型 Knowledge Tool 接入前依赖**」 | 这是"带参数工具"带来的既有不精确，**不是 NO_MATCH 本身的问题**，本步不顺便修改；接入带参工具前必须重新评审该字段。 |

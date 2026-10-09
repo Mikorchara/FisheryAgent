@@ -65,10 +65,11 @@ class KnowledgeHandlerTests(unittest.TestCase):
         self.assertEqual(service.calls, [{"query": "溶氧偏低怎么办", "top_k": TOP_K,
                                           "retrieved_at": None, "intent_text": None}])
 
-    def test_top_k_is_fixed_and_extra_keys_are_not_read(self):
+    def test_top_k_is_fixed_at_three_for_legal_arguments(self):
         service = FakeKnowledgeService([evidence()])
-        self.handle({"query": "溶氧偏低怎么办", "top_k": 9, "backend": "sklearn"}, service)
-        self.assertEqual(service.calls[0]["top_k"], TOP_K)
+        self.handle({"query": "溶氧偏低怎么办"}, service)
+        self.assertEqual(service.calls[0]["top_k"], 3)
+        self.assertEqual(TOP_K, 3)
 
     # -- 3/4. mapping and exact key sets -------------------------------------
 

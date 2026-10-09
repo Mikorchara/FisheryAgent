@@ -27,7 +27,7 @@ def search_fishery_knowledge(arguments: dict, *, service: KnowledgeService) -> d
              for item in evidence]
     return {"status": "OK" if items else "NO_MATCH",
             # Effective backend, passed through as-is: it tells the model which
-            # retrieval scale produced these items. Never inferred or composed here.
+            # retrieval backend produced these items. Never inferred or composed here.
             "retrieval_mode": service.backend,
             "result_count": len(items),
             "evidence": items}
