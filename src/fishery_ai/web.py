@@ -42,7 +42,7 @@ from .tool_conversation import ToolCallingService, MockToolGateway
 from .assistant import ALLOWED_PRESET_IDS, AssistantError, AssistantRequest, AssistantService, assistant_profile
 from .tool_capability_probe import run_tool_calling_probe
 from .tools.policy import load_tool_policies, UserToolPolicyStore, ToolPolicyError
-from .tools.catalog import tool_catalog
+from .tools.catalog import argument_summary, tool_catalog
 from .tools import ToolRegistry
 from .manual import ManualRequest
 from .manual_experiments import (ManualExperimentStore, validate_experiment, experiment_runtime,
@@ -1119,16 +1119,31 @@ def create_app(*, trace_path: Path | None = None,
         # Deliberate browser allowlist: no RuntimeSnapshot, credential or internal messages.
         if body and body.get("water_quality"):
             body["water_quality"].pop("source", None)
+        definition = next((item for item in tool_registry.model_definitions()
+                           if item.name == result.tool_name), None)
+        if result.tool_call_id is None:
+            tool_call = None
+        else:
+            # Summary only: argument values are never echoed to the browser.
+            if tool is None:
+                arguments_summary = None
+            elif tool.status.value == "ERROR":
+                arguments_summary = ("参数已拒绝"
+                    if getattr(tool.error_code, "value", None) == "INVALID_TOOL_ARGUMENTS"
+                    else "调用失败（内容未展示）")
+            else:
+                arguments_summary = argument_summary(definition.parameters_dict() if definition else None)
+            tool_call = {"id": result.tool_call_id
+                         if re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", result.tool_call_id) else "unavailable",
+                         "name": result.tool_name if definition is not None else "unknown_tool",
+                         "arguments_summary": arguments_summary}
         public = {
             "status": result.status.value, "error_code": result.error_code,
             "request_id": result.request_id, "trace_id": result.trace_id,
             "generated_text": result.generated_text,
             "snapshot_status": "AVAILABLE" if snapshots.get_current() is not None else "NO_DATA",
             "request_1": _public_data(result.request_1), "request_2": _public_data(result.request_2),
-            "tool_call": ({"id": result.tool_call_id if re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", result.tool_call_id) else "unavailable",
-                           "name": result.tool_name if result.tool_name in {item.name for item in tool_registry.model_definitions()} else "unknown_tool",
-                           "arguments": {} if tool and tool.status.value != "ERROR" else None}
-                          if result.tool_call_id else None),
+            "tool_call": tool_call,
             "tool_result": body, "tool_duration_ms": result.tool_duration_ms,
             "final_finish_reason": result.final_finish_reason, "usage": _public_data(result.usage),
             "trace_recorded": result.trace_recorded,

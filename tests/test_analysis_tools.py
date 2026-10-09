@@ -24,6 +24,16 @@ from test_tool_conversation import RecordingGateway
 NAME = "get_current_water_quality"
 NOW = parse_time("2026-10-06T05:00:00Z")
 FINAL = '{"inference":"依据程序事实分析", "recommendations":["加强监测"], "uncertainty":[]}'
+KNOWLEDGE = "search_fishery_knowledge"
+
+
+class FakeKnowledge:
+    """Binds the Knowledge Tool without an index; no evidence means a NO_MATCH payload."""
+
+    backend = "portable"
+
+    def search(self, query, *, top_k=5, retrieved_at=None, intent_text=None):
+        return ()
 
 
 class AnalysisToolTests(unittest.TestCase):
@@ -74,6 +84,21 @@ class AnalysisToolTests(unittest.TestCase):
         self.assertFalse(result.tool_activity.called)
         self.assertEqual(result.tool_activity.request_1["outcome"], "final_answer")
         self.assertEqual(result.tool_activity.usage.request_count, 1)
+
+    def test_parameterized_tool_argument_summary_never_echoes_the_query(self):
+        # B6: a tool with declared parameters must not be reported as called with "{}" ,
+        # and the argument values must not reach the Activity projection at all.
+        secret_query = "鳗鲡适宜溶氧范围"
+        self.app.tool_registry = ToolRegistry(self.reader, self.app.diagnosis, knowledge=FakeKnowledge())
+        self.app.tool_policy = ToolPolicy("analysis", True, (KNOWLEDGE,))
+        result = self.run_analysis(self.call(KNOWLEDGE, json.dumps({"query": secret_query}, ensure_ascii=False)),
+                                   self.final())
+        data = result_to_dict(result)
+        activity = data["tool_activity"]
+        self.assertEqual(activity["tool_name"], KNOWLEDGE)
+        self.assertEqual(activity["arguments_summary"], "参数已提供（内容未展示）")
+        self.assertEqual(activity["result_status"], "NO_MATCH")
+        self.assertNotIn(secret_query, json.dumps(activity, ensure_ascii=False))
 
     def test_disabled_model_failure_is_recorded_without_tool_execution(self):
         self.app.tool_policy = ToolPolicy("analysis", False, ())

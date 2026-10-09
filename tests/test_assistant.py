@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import timedelta
 import json
 from pathlib import Path
+import re
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import Mock, patch
@@ -20,6 +21,7 @@ from fishery_ai.presets import preset_profiles
 from fishery_ai.telemetry import CurrentSnapshotStore, CurrentWaterQualityReader
 from fishery_ai.tool_conversation import ToolCallingService
 from fishery_ai.tools import ToolExecutor, ToolRegistry
+from fishery_ai.tools.catalog import CATALOG
 from fishery_ai.tools.policy import ToolPolicy
 from fishery_ai.web import create_app
 
@@ -27,7 +29,17 @@ from fishery_ai.web import create_app
 NOW = parse_time("2026-10-06T01:00:00Z")
 QUERY = "get_current_water_quality"
 SCORE = "score_current_water_quality"
+KNOWLEDGE = "search_fishery_knowledge"
 LOCAL = ALLOWED_PRESET_IDS[2]
+
+
+class FakeKnowledgeService:
+    """Binds the Knowledge Tool without an index; this module never calls it."""
+
+    backend = "portable"
+
+    def search(self, query, *, top_k=5, retrieved_at=None, intent_text=None):
+        return ()
 FAKE_KEY = "fictional-assistant-secret-not-real"
 
 
@@ -188,6 +200,39 @@ class AssistantTests(AssistantFixture):
         self.assertEqual([t.name for t in gateway.requests[0].tools], [QUERY, SCORE])
         self.assertEqual(result.to_dict()["tool_activity"]["tool_name"], SCORE)
         self.assertEqual(len(gateway.requests), 2)
+
+    def test_water_and_score_activity_labels_match_the_catalog(self):
+        # Step 10: response projections label tools from the Catalog, not from UI copies.
+        expected = {entry.name: (entry.display_name, entry.short_description) for entry in CATALOG}
+        self.store.set_current(self.reading(oxygen=2.2))
+        for name in (QUERY, SCORE):
+            with self.subTest(name=name):
+                gateway = RecordingGateway(call(name), final("已读取结果"))
+                activity = self.service(gateway, (QUERY, SCORE)).send(
+                    self.request("现在水质怎么样？"), self.runtime).to_dict()["tool_activity"]
+                self.assertEqual(activity["tool_name"], name)
+                self.assertEqual((activity["display_name"], activity["display_summary"]), expected[name])
+
+    def test_knowledge_activity_uses_catalog_labels_and_carries_no_water_fields(self):
+        # Step 10: a Knowledge call must never be described with water-snapshot semantics.
+        service = AssistantService(ToolCallingService(
+            RecordingGateway(call(KNOWLEDGE, '{"query":"鳗鲡适宜溶氧"}'), final("背景资料说明")),
+            ToolRegistry(self.reader, DiagnosisService(), knowledge=FakeKnowledgeService()),
+            self.traces, policy=ToolPolicy("assistant", True, (KNOWLEDGE,))))
+        public = service.send(self.request("鳗鲡适宜溶氧范围是多少？"), self.runtime).to_dict()
+        activity = public["tool_activity"]
+        self.assertTrue(public["successful_turn"])
+        self.assertEqual(activity["tool_name"], KNOWLEDGE)
+        self.assertEqual(activity["display_name"], "知识检索")
+        self.assertEqual(activity["display_summary"],
+            next(entry.short_description for entry in CATALOG if entry.name == KNOWLEDGE))
+        self.assertIn("不代表当前水质", activity["display_summary"])
+        # No service returned evidence, so this is the normal NO_MATCH outcome, not an error.
+        self.assertEqual(activity["tool_status"], "NO_MATCH")
+        self.assertIsNone(public["error_code"])
+        for key in ("observed_at", "evaluated_at", "quality", "freshness"):
+            self.assertNotIn(key, activity)
+        self.assertNotIn("query", json.dumps(activity, ensure_ascii=False))
 
     def test_disabled_policy_no_tool_definition_no_read(self):
         gateway = RecordingGateway(final("没有授权Tool，无法查询"))
@@ -391,6 +436,27 @@ class AssistantSelectionRulesTests(AssistantFixture):
             "当前事实追问", "必须本轮重新查询", "可以使用历史语境",
             "不得用旧历史值冒充当前事实", "不得伪造系统评分",
             "最多选择一个Tool、一个Tool round",
+            # Step 9: Knowledge selection rules, phrased around what is still missing.
+            "选择Tool看当前回答还缺什么信息",
+            "需要当前事实而本轮尚未掌握时用get_current_water_quality",
+            "需要项目特有的养殖背景资料时用search_fishery_knowledge",
+            "不调用任何Tool",
+            "只查询最关键的一项", "明确说明未查询的另一部分",
+            "不得用一般常识冒充项目资料或现场事实",
+            "不要仅因为Tool可用就试探性检索",
+            "用户明确要求查询项目资料", "可以调用search_fishery_knowledge",
+            "背景资料而非本轮观测", "不得表述为当前系统数据",
+            "不得据此推断当前值", "不得凭印象编造项目内数据或标准",
+            # Step 9 closeout: user-provided vs system-observed, tighter history rule,
+            # multi-tool wording, explicit NO_MATCH semantics.
+            "用户本轮明确提供的现场数值可作为用户提供的信息使用",
+            "不得表述为系统当前观测值",
+            "也未由get_current_water_quality返回时，不得声称系统掌握当前值",
+            "历史中的旧现场值、旧状态、旧评分不能用于回答现在、当前或最新的事实问题",
+            "或只是在解释历史内容本身时，不调用任何Tool",
+            "NO_MATCH表示检索正常完成但没有合格的项目知识证据",
+            "不是Tool执行错误", "不得编造命中内容",
+            "即使多个Tool同时可用", "不得并行或顺序请求多个Tool",
         )
         for question in ("现在水质怎么样？", "当前评分多少？", "什么是溶氧？",
                          "现在还是旧值吗？", "刚才旧值是什么意思？"):
@@ -401,6 +467,23 @@ class AssistantSelectionRulesTests(AssistantFixture):
                 self.assertIn(rule, system.content)
             self.assertEqual(context.model_request.messages[-1].content, question)
             self.assertFalse(context.model_request.tools)  # Policy supplies schema later.
+
+    def test_prompt_names_only_registered_tools_and_carries_no_schema_text(self):
+        # Every snake_case token in the prompt must be a real registered tool name, so a
+        # typo or a deleted tool cannot survive here. The reverse is deliberately not
+        # asserted: the prompt need not mention every name the codebase knows.
+        from fishery_ai.tools.registry import (CURRENT_WATER_QUALITY, SEARCH_FISHERY_KNOWLEDGE,
+                                               WATER_QUALITY_SCORE)
+        context = AssistantContextBuilder().build(self.request("什么是溶氧？", ()))
+        prompt = context.model_request.messages[0].content
+        # ASCII-only boundaries: CJK characters count as \w, so \b never fires here.
+        mentioned = set(re.findall(r"(?<![A-Za-z0-9_])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![A-Za-z0-9_])", prompt))
+        self.assertEqual(mentioned, {CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE, SEARCH_FISHERY_KNOWLEDGE})
+        for name in mentioned:
+            self.assertIn(name, ToolRegistry.registered_names())
+        # Argument shapes belong to the Registry schema, not to this prompt.
+        for token in ("additionalProperties", "minLength", "retrieved_at", "source_id", "raw score"):
+            self.assertNotIn(token, prompt)
 
     def test_registry_and_catalog_descriptions_distinguish_query_and_score(self):
         from fishery_ai.tools.catalog import tool_catalog

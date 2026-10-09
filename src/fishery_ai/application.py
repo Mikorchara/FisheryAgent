@@ -21,6 +21,8 @@ from .execution import check_cancelled, current_handle
 from .tools.policy import load_tool_policies, ToolPolicy
 from .tool_conversation import ToolCallingService, ModelStepOutcome, _aggregate_usage, _finish_reason
 from .tools import ToolRegistry
+# Display-only formatter for the public Activity projection; no execution or authorization role.
+from .tools.catalog import argument_summary
 
 
 ANALYSIS_TOOL_INSTRUCTION = (
@@ -39,7 +41,7 @@ ANALYSIS_FINAL_RESPONSE_INSTRUCTION = (
 )
 
 
-def _analysis_tool_activity(outcome, policy, reading):
+def _analysis_tool_activity(outcome, policy, reading, registry):
     payload = outcome.tool_result.payload if outcome.tool_result else None
     water = payload.get("water_quality") if payload else None
     original = _public_data(reading)
@@ -48,10 +50,21 @@ def _analysis_tool_activity(outcome, policy, reading):
     known = outcome.tool_name in policy.exposed_tools
     called = (payload.get("status") != "ERROR" or payload.get("error_code") == "TOOL_EXECUTION_ERROR") if payload else (
         None if outcome.tool_duration_ms is not None else False)
+    definition = next((item for item in registry.model_definitions() if item.name == outcome.tool_name), None)
+    # Summary only: argument values are never projected outwards.
+    if payload is None:
+        arguments_summary = None
+    elif payload.get("status") == "ERROR":
+        arguments_summary = ("参数已拒绝" if payload.get("error_code") == "INVALID_TOOL_ARGUMENTS"
+                             else "调用失败（内容未展示）")
+    elif definition is not None:
+        arguments_summary = argument_summary(definition.parameters_dict())
+    else:
+        arguments_summary = None
     return AnalysisToolActivity(
         enabled=True, allowed_tools=policy.exposed_tools, called=called, requested=outcome.tool_name is not None,
         tool_name=outcome.tool_name if known else "unknown_tool" if outcome.tool_name else None,
-        arguments_summary="{}" if payload and payload.get("status") != "ERROR" else "参数已拒绝" if outcome.tool_name else None,
+        arguments_summary=arguments_summary,
         result_status=payload.get("status") if payload else None, duration_ms=outcome.tool_duration_ms,
         request_1=asdict(outcome.request_1), request_2=asdict(outcome.request_2), usage=outcome.usage,
         final_finish_reason=outcome.final_finish_reason, tool_result=payload,
@@ -205,7 +218,7 @@ class Orchestrator:
                     clock=self.clock, policy=self.tool_policy).run_request(
                         model_request, replace(runtime, max_retries=0), request_id=request_id, trace_id=trace_id,
                         final_response_instruction=ANALYSIS_FINAL_RESPONSE_INSTRUCTION)
-                activity = _analysis_tool_activity(outcome, self.tool_policy, reading)
+                activity = _analysis_tool_activity(outcome, self.tool_policy, reading, self.tool_registry)
                 if outcome.error_code:
                     raise GatewayError(outcome.error_code)
                 response = ModelResponse(outcome.generated_text, outcome.usage.usage,

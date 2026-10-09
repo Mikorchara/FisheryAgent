@@ -40,3 +40,26 @@ def tool_catalog(registry):
                   "executable": not item.dev_only and item.name in registered
                     and callable(registry.lookup(item.name).handler),
                   "modes": ["analysis", "assistant"]} for item in CATALOG)
+
+
+def catalog_display(name: str) -> dict:
+    """Display-only labels for one tool name, for response projections.
+
+    Says how a tool should be *labelled* to a human. Never consulted when
+    deciding whether a tool may run, and never a source of handlers or schemas.
+    Unknown names yield no labels rather than an invented one.
+    """
+    for entry in CATALOG:
+        if entry.name == name:
+            return {"display_name": entry.display_name, "display_summary": entry.short_description}
+    return {}
+
+
+def argument_summary(parameters) -> str:
+    """Display-only summary of a tool's *declared* arguments.
+
+    Never includes argument values: a parameterized tool reports that arguments
+    were provided without echoing them. Not an authorization, validation or
+    execution input; status/rejection wording belongs to the caller.
+    """
+    return "参数已提供（内容未展示）" if (parameters or {}).get("properties") else "{}"

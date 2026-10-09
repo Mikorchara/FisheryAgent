@@ -14,8 +14,8 @@
 
 ## PAUSED
 
-- **Knowledge Tool**：只读检索项目内鲭鲡养殖背景知识。Step 2–8 已完成（参数合同、`NO_MATCH`、Handler、注册、Catalog 条目、Policy 默认核对、共享服务装配）；**真实 Runtime 中已 `executable`，用户可勾选，但默认不授权**。剩余：提示词选择规则（Step 9）、UI 文案（Step 10）、离线测试与人工验收（Step 11）。
-- **D1b（已于 2026-10-09 解决）**：`MockToolGateway` Request #1 原以 `request.tools[0]` 兼底，会以 `"{}"` 调用 Knowledge 而导致整轮失败；现改为显式方向性降级（`FALLBACK_TOOLS`），无可用工具时返回说明文本而非报错。
+- **Knowledge Tool**：只读检索项目内鳗鲡养殖背景知识。Step 2–10 已完成（参数合同、`NO_MATCH`、Handler、注册、Catalog 条目、Policy 默认核对、共享服务装配、Assistant 选择规则、UI 与公开活动信息准确性）；**真实 Runtime 中已 `executable`，用户可勾选，但默认不授权**。剩余：离线测试收口与人工验收（Step 11，含真实模型是否按规则选择工具的人工观察）。
+- **D1b（已于 2026-10-09 解决）**：`MockToolGateway` Request #1 原以 `request.tools[0]` 兜底，会以 `"{}"` 调用 Knowledge 而导致整轮失败；现改为显式方向性降级（`FALLBACK_TOOLS`），无可用工具时返回说明文本而非报错。
 
 ## RESEARCH
 

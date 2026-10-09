@@ -196,18 +196,29 @@ Executor / Policy / Registry / UI
 - **`functools.partial` 依赖边界**：全仓库只保留 **1 条**身份断言（`handler.keywords["service"] is <唯一实例>`），不再扩大到 partial 的其他形状。
 - **⚠️ 阻塞项 D1b（已于 2026-10-09 解决）**：本步后 Knowledge 已在真实 Runtime 中 **executable**。当时的 `MockToolGateway` Request #1 会以 `request.tools[0]` 兼底调用 Knowledge 并硬失败；现已改为**显式方向性降级**（`FALLBACK_TOOLS`），只授权 Knowledge 时不再发调用。见 [`D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md`](D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md)。
 
-### Step 9：Assistant 选择规则（提示词层，不做硬路由）
+### Step 9：Assistant 选择规则（提示词层）—— **已实施 2026-10-09**
 
-- **改** `assistant.py::AssistantContextBuilder.build()`：补"何时值得检索项目资料"的说明。
-- **不改**：仍然**不预注入** Snapshot / Diagnosis / RAG；模型自己决定是否调用。
-- **接受**：模型可能不调用，或该调用时没调用 —— 提示词不保证行为，需人工验收。
+对照记录 → [`STEP9_ASSISTANT_SELECTION_RULES_BEFORE_AFTER.md`](STEP9_ASSISTANT_SELECTION_RULES_BEFORE_AFTER.md)
 
-### Step 10：UI 文案与安全渲染
+- **改** `assistant.py::SYSTEM_INSTRUCTION`（**一处常量文本**，纯新增 12 行、0 删除）。`AssistantContextBuilder.build()` 逻辑未动。
+- **为何改这里**：发布 Assistant 的 system prompt **就是**这个常量——`AssistantService.send()` → `build()` 把它设为 messages[0]，而 `run_request()` 只替换 `tools`，不插入自己的 system message。
+- **新增 6 句**：① 按"还缺什么信息"选择（而非全局优先级）；② 两类信息都缺时**择一查询 + 明确说明未查询部分**；③ 不因 Tool 可用而试探性检索，但用户明确要求或确实依赖时可以调用；④ 检索结果是**背景资料而非本轮观测**；⑤ 本轮未调现场查询就没有当前数值；⑥ 未授权时说明无法查询，不得凭印象编造。
+- **修正**：**不写 `retrieved_at` 规则**（该字段不在 payload 里）；知识证据的实际字段是 **`id/category/source/source_version/text`** 5 个，无任何时间与传感器字段。
+- **不改**：Registry 三份 description、`ANALYSIS_TOOL_INSTRUCTION`、`tool_conversation.SYSTEM_INSTRUCTION`、Policy、Handler、`app.js`、Multi-Tool。
+- **验证**：短语契约 14 → **28 条**；新增结构不变式（prompt 里的 snake_case 名称必须都是已注册工具名；不含 schema/`retrieved_at`/`source_id` 文本）；全量 **822 项通过**（821 → +1）；浏览器 **183 项通过**。mutation check：插入错名 → 2 项失败。
+- **不做**：**不测试真实模型一定选择某个 Tool**；该验证留到 Step 11 的人工可观察环节。
+- **登记残余缺口**：Analysis 工具路径对 Knowledge 无专门说明（若用户为 Analysis 启用知识工具，只看到 registry description）；其自动 RAG 与 `ANALYSIS_TOOL_INSTRUCTION` 本步未动。
 
-- **改** `resources/web/app.js`：
-  - `safeAssistantActivity()` 的名称 / 状态白名单；
-  - `renderAssistantMessages()` 目前**对所有已调用 Tool 都显示"本轮已查询当前水质"** → 必须区分知识检索，不能误标成实时数据。
-- **不改**：安全文本渲染方式。
+### Step 10：UI 文案与安全渲染 —— **已实施 2026-10-09**
+
+对照记录 → [`STEP10_UI_ACCURACY_BEFORE_AFTER.md`](STEP10_UI_ACCURACY_BEFORE_AFTER.md)
+
+- **新发现问题 A（最高优先）**：`app.js::safeAssistantActivity` 的工具名白名单只有两个水质工具 → Knowledge 被抹成 `unavailable`；且活动面板**无条件**对所有已调用 Tool 标注「本轮已查询当前水质；读取快照，不等于新采样」。**已修**：名字改形状校验（后端权威）；文案改为**后端下发的 Catalog 标签** + 中性句「只读 Tool 调用；结果含义以工具说明为准」。
+- **U1 已修**：徽章分别投影 `registered` / `executable` 两个布尔值（三种组合：`Registered / Executable`、`Registered / NOT EXECUTABLE`、`Not Registered / NOT EXECUTABLE`），与详情区**共用同一表达式** `toolRegistration(item)`。
+- **U2 已修**：`适用模式` 读后端 `item.modes`，前端只保留 analysis / assistant 两项**标签**；`modes` 仍只是展示 metadata，不参与授权。
+- **B6 已修**：新增 `catalog.argument_summary(parameters)`（**只读展示**）：无参 → `{}`；有参 → `参数已提供（内容未展示）`。`web.py` 的 mock 响应字段更名为 `arguments_summary`（与 Analysis 一致）；`application.py::_analysis_tool_activity` 改为读**声明 schema**。**参数值从不外泄**（Trace 也不记）。
+- **复用 Catalog，不造第二套映射**：`assistant.py::to_dict()` 通过 `catalog_display(name)` 取 `display_name` / `display_summary`；`app.js` 不持有任何工具名称表。Catalog 仍只参与“如何展示”，不参与授权或执行。
+- **验证**：Python **827 项**（822 → +5）；浏览器 **187 项**（183 → +4）。mutation check：把名字校验改回两工具白名单 → 新用例失败并复现 `知识检索（null）`。
 
 ### Step 11：离线测试 + 人工验收
 

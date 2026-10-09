@@ -52,7 +52,9 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │     ├─ STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md            # Step 5 注册与 query validator 的 before/after 对照记录
 │     ├─ STEP6_CATALOG_BEFORE_AFTER.md                           # Step 6 Catalog 新增 Knowledge 条目的 before/after 对照记录
 │     ├─ STEP7_POLICY_DEFAULTS_BEFORE_AFTER.md                   # Step 7 Policy 默认与旧 override 兼容的核对记录
-│     └─ STEP8_KNOWLEDGE_ASSEMBLY_BEFORE_AFTER.md                # Step 8 共享 KnowledgeService 装配的 before/after 对照记录
+│     ├─ STEP8_KNOWLEDGE_ASSEMBLY_BEFORE_AFTER.md                # Step 8 共享 KnowledgeService 装配的 before/after 对照记录
+│     ├─ STEP9_ASSISTANT_SELECTION_RULES_BEFORE_AFTER.md         # Step 9 Assistant Tool 选择规则的 before/after 对照记录
+│     └─ STEP10_UI_ACCURACY_BEFORE_AFTER.md                      # Step 10 展示与公开活动信息准确性的 before/after 对照记录
 ├─ outputs/                                                      # 本地生成数据，Git ignored，记录不逐项展开
 │  ├─ archive/                                                   # 用户本地历史运行数据，不展开
 │  ├─ capability-evidence/                                       # Managed 能力证据与验证记录
@@ -167,7 +169,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_access_web.py                                         # Preset、Manual 与取消 Web 边界测试
    ├─ test_analysis_tool_web.py                                  # 正式 Analysis Tool Web 接入测试
    ├─ test_analysis_tools.py                                     # 固定 Analysis 与单轮 Tool 回归测试
-   ├─ test_assistant.py                                          # Assistant 合同、历史与执行回归测试
+   ├─ test_assistant.py                                          # Assistant 合同、选择规则 Prompt 契约、历史与执行回归测试
    ├─ test_browser_streaming.cjs                                 # 页面交互、状态与浏览器回归测试
    ├─ test_catalog_knowledge.py                                  # Catalog 条目 metadata、派生标志与授权边界测试
    ├─ test_clean_room_reset.py                                   # Clean-room 空目录启动测试

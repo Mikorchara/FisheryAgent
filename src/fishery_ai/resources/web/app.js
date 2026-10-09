@@ -2372,8 +2372,9 @@ function renderToolConversation(result, latency) {
   $("tool-snapshot-status").textContent = `当前 Snapshot：${result.snapshot_status}`;
   const lines = [`Request #1 → ${result.request_1?.outcome || "not_started"}`];
   if (result.tool_call) {
+    const summary = result.tool_call.arguments_summary;
     lines.push(`→ Tool Call: ${result.tool_call.name}`,
-      `  arguments: ${result.tool_call.arguments === null ? "未展示" : JSON.stringify(result.tool_call.arguments)}`);
+      `  arguments: ${typeof summary === "string" && summary ? summary : "未展示"}`);
   } else lines.push("→ 未执行 Tool");
   if (result.tool_result) lines.push("→ Tool Result:", JSON.stringify(result.tool_result, null, 2));
   if (result.tool_duration_ms !== null && result.tool_duration_ms !== undefined)
@@ -2541,6 +2542,19 @@ function setToolManagerData(data) {
   renderToolCatalog();
 }
 
+// "modes" is display metadata only: it never grants or narrows authorization.
+const TOOL_MODE_LABELS = {analysis: "Analysis（Normal）", assistant: "Assistant"};
+
+function toolRegistration(item) {
+  // Projects the two backend booleans separately; the UI never re-guesses the state.
+  return `${item.registered ? "Registered" : "Not Registered"} / ${item.executable ? "Executable" : "NOT EXECUTABLE"}`;
+}
+
+function toolModes(modes) {
+  const list = Array.isArray(modes) ? modes.filter(mode => TOOL_MODE_LABELS[mode]) : [];
+  return list.length ? list.map(mode => TOOL_MODE_LABELS[mode]).join(" / ") : "unavailable";
+}
+
 function renderToolCatalog() {
   if (!toolManagerData || !toolPolicyDraft) return;
   const analysis = toolPolicyMode === "analysis";
@@ -2560,13 +2574,13 @@ function renderToolCatalog() {
     check.disabled = toolPolicyBusy || check.toolUnavailable; check.checked = !check.toolUnavailable && selected.includes(item.name);
     const label = document.createElement("label"); label.htmlFor = check.id; label.textContent = item.display_name;
     const badge = document.createElement("span"); badge.classList.add("tool-catalog-badge");
-    badge.textContent = item.dev_only ? "DEV ONLY · NOT EXECUTABLE · UI PLACEHOLDER" : `${item.access_type} · ${item.experimental ? "Experimental · " : ""}Registered / Executable`;
+    badge.textContent = item.dev_only ? "DEV ONLY · NOT EXECUTABLE · UI PLACEHOLDER" : `${item.access_type} · ${item.experimental ? "Experimental · " : ""}${toolRegistration(item)}`;
     const expand = document.createElement("button"); expand.type = "button"; expand.classList.add("secondary", "compact-action"); expand.textContent = "展开";
     const detail = document.createElement("dl"); detail.classList.add("tool-catalog-detail"); detail.hidden = true;
     detail.id = `tool-detail-${item.name}`; expand.setAttribute("aria-controls", detail.id); expand.setAttribute("aria-expanded", "false");
     for (const [key, value] of [["用途",item.short_description],["说明",item.detailed_description],
-      ["类型",item.access_type],["执行状态",`${item.registered ? "Registered" : "Not Registered"} / ${item.executable ? "Executable" : "NOT EXECUTABLE"}`],
-      ["参数",item.parameter_summary],["适用模式","Analysis（Normal） / Assistant"],
+      ["类型",item.access_type],["执行状态",toolRegistration(item)],
+      ["参数",item.parameter_summary],["适用模式",toolModes(item.modes)],
       ["来源",item.dev_only ? "DEV ONLY · UI PLACEHOLDER" : "Built-in"],["实验性质",item.experimental ? "EXPERIMENTAL / NOT PROFESSIONAL STANDARD" : "否"],["规划状态",item.planned ? "Planned" : "非规划 Tool"]]) {
       const dt=document.createElement("dt"), dd=document.createElement("dd"); dt.textContent=key; dd.textContent=value; detail.append(dt,dd);
     }
@@ -2755,10 +2769,15 @@ function clearAssistantConversation() {
 }
 
 function safeAssistantActivity(value = {}) {
-  const names = ["get_current_water_quality", "score_current_water_quality"];
-  const activity = {used_tool: value.used_tool === true, tool_name: names.includes(value.tool_name) ? value.tool_name : null,
+  // Shape/defensive check only: whether the tool is really registered is enforced by the
+  // backend (ToolRegistry.registered_names()), not by this pattern.
+  const name = typeof value.tool_name === "string" && /^[a-z][a-z0-9_]{0,63}$/.test(value.tool_name) ? value.tool_name : null;
+  const activity = {used_tool: value.used_tool === true, tool_name: name,
     tool_status: ["OK", "NO_DATA", "NO_MATCH", "PARTIAL", "NOT_SCORABLE", "ERROR"].includes(value.tool_status) ? value.tool_status : null,
     duration_ms: Number.isFinite(value.duration_ms) ? value.duration_ms : null};
+  for (const key of ["display_name", "display_summary"]) {
+    if (typeof value[key] === "string" && value[key].length <= 200) activity[key] = value[key];
+  }
   for (const key of ["observed_at", "evaluated_at"]) {
     if (typeof value[key] === "string" && Number.isFinite(Date.parse(value[key]))) activity[key] = value[key];
   }
@@ -2791,10 +2810,14 @@ function renderAssistantMessages() {
       } else {
         const details = document.createElement("details"), summary = document.createElement("summary"), dl = document.createElement("dl");
         summary.textContent = "使用了 1 个 Tool"; dl.classList.add("facts-grid");
-        const rows = [["Tool Name", tool.tool_name], ["Result Status", tool.tool_status],
+        // Labels come from the backend (Catalog); this panel adds no per-tool wording of its own.
+        const label = tool.display_name && tool.display_name !== tool.tool_name
+          ? `${tool.display_name}（${tool.tool_name}）` : tool.tool_name;
+        const rows = [["Tool Name", label], ["Result Status", tool.tool_status],
           ["Duration", Number.isFinite(tool.duration_ms) ? `${tool.duration_ms.toFixed(1)} ms` : "unavailable"]];
         for (const key of ["quality", "freshness", "observed_at", "evaluated_at"]) if (tool[key] !== undefined) rows.push([key, tool[key]]);
-        rows.push(["查询", "本轮已查询当前水质；读取快照，不等于新采样"]);
+        if (tool.display_summary) rows.push(["用途", tool.display_summary]);
+        rows.push(["说明", "只读 Tool 调用；结果含义以工具说明为准"]);
         if (tool.tool_name === "score_current_water_quality") rows.push(["实验评分", "EXPERIMENTAL / NOT PROFESSIONAL STANDARD"]);
         assistantRows(dl, rows); details.append(summary, dl); article.append(details);
       }

@@ -112,7 +112,7 @@ class WebToolConversationTests(unittest.TestCase):
         self.assertEqual(response.status_code,200)
         result=response.get_json()["result"]
         self.assertEqual(result["tool_call"]["name"],name)
-        self.assertEqual(result["tool_call"]["arguments"],{})
+        self.assertEqual(result["tool_call"]["arguments_summary"],"{}")
         self.assertEqual(result["tool_result"]["score"],81.3)
         self.assertEqual(result["request_2"]["outcome"],"final_answer")
         self.assertIs(self.store.get_current(),before)
@@ -125,7 +125,7 @@ class WebToolConversationTests(unittest.TestCase):
         result = self.run_tool().get_json()["result"]
         self.assertEqual(result["snapshot_status"], "AVAILABLE")
         self.assertEqual(result["tool_call"]["name"], "get_current_water_quality")
-        self.assertEqual(result["tool_call"]["arguments"], {})
+        self.assertEqual(result["tool_call"]["arguments_summary"], "{}")
         self.assertEqual(result["tool_result"]["status"], "OK")
         self.assertEqual(result["tool_result"]["water_quality"]["freshness"], "fresh")
         self.assertEqual(result["tool_result"]["findings"], [])

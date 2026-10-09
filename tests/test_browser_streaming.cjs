@@ -986,10 +986,13 @@ test('reasoning deltas remain in folded debug area and never in final inference'
 function toolManagerFixture(analysis=[], assistant=['get_current_water_quality'], source='BUILTIN_DEFAULT') {
   return {catalog:[{name:'get_current_water_quality',display_name:'get_current_water_quality',
     short_description:'读取当前水质',detailed_description:'canonical Snapshot 与确定性 Findings',
-    access_type:'READ ONLY',registered:true,executable:true,dev_only:false,planned:false,parameter_summary:'无；{}'},
+    access_type:'READ ONLY',registered:true,executable:true,dev_only:false,planned:false,modes:['analysis','assistant'],parameter_summary:'无；{}'},
     {name:'score_current_water_quality',display_name:'水质评分',short_description:'实验评分',
       detailed_description:'EXPERIMENTAL / NOT PROFESSIONAL STANDARD',access_type:'READ ONLY',
-      registered:true,executable:true,dev_only:false,planned:false,experimental:true,parameter_summary:'无；{}'}],policy:{schema_version:1,source,
+      registered:true,executable:true,dev_only:false,planned:false,modes:['analysis','assistant'],experimental:true,parameter_summary:'无；{}'},
+    {name:'search_fishery_knowledge',display_name:'知识检索',short_description:'只读检索项目内鲭鲡养殖背景知识；不代表当前水质',
+      detailed_description:'背景证据而非现场事实；无命中时返回NO_MATCH',access_type:'READ ONLY',
+      registered:true,executable:true,dev_only:false,planned:false,modes:['analysis','assistant'],parameter_summary:'query: string（必填）'}],policy:{schema_version:1,source,
       modes:{analysis:{selected_tools:analysis},assistant:{selected_tools:assistant}},
       defaults:{analysis:{selected_tools:[]},assistant:{selected_tools:['get_current_water_quality']}},
       runtime_consumed:{analysis:true,assistant:true}}};
@@ -1013,7 +1016,7 @@ test('Tool Manager opens Analysis tab with collapsed entries and closes without 
   await page.element('open-tool-manager').dispatch('click');
   assert.equal(page.element('tool-manager').open,true);
   assert.match(page.element('tool-manager-title').textContent,/Analysis/);
-  assert.equal(page.element('tool-catalog-list').children.length,2);
+  assert.equal(page.element('tool-catalog-list').children.length,3);
   for(const row of page.element('tool-catalog-list').children)assert.equal(row.children[1].hidden,true);
   await page.element('tool-policy-close').dispatch('click');
   assert.equal(page.element('tool-manager').hidden,true);
@@ -1033,15 +1036,15 @@ test('Tool Manager expands details and collapses again without saving or fetchin
 test('Tool Manager both tabs retain independent drafts and mark Normal Analysis authorization',async()=>{
   const page=toolManagerPage();await page.element('open-tool-manager').dispatch('click');
   assert.match(page.element('tool-policy-note').textContent,/Normal Analysis.*模型|Normal Analysis.*Runtime/);
-  assert.match(page.element('tool-policy-count').textContent,/0 \/ 2/);
+  assert.match(page.element('tool-policy-count').textContent,/0 \/ 3/);
   let checkbox=page.element('tool-catalog-list').children[0].children[0].children[0];
   checkbox.checked=true;await checkbox.dispatch('change');
-  assert.match(page.element('tool-policy-count').textContent,/1 \/ 2/);
+  assert.match(page.element('tool-policy-count').textContent,/1 \/ 3/);
   assert.match(page.element('tool-policy-status').textContent,/未保存/);
   await page.element('tool-policy-assistant').dispatch('click');
   checkbox=page.element('tool-catalog-list').children[0].children[0].children[0];assert.equal(checkbox.checked,true);
   checkbox.checked=false;await checkbox.dispatch('change');
-  assert.match(page.element('tool-policy-count').textContent,/0 \/ 2/);
+  assert.match(page.element('tool-policy-count').textContent,/0 \/ 3/);
   await page.element('tool-policy-analysis').dispatch('click');
   assert.equal(page.element('tool-catalog-list').children[0].children[0].children[0].checked,true);
 });
@@ -1118,7 +1121,7 @@ test('Tool Manager Assistant workspace entry opens the shared Assistant policy t
   await page.element('assistant-tool').dispatch('click');
   assert.equal(vm.runInContext('toolPolicyMode',page.context),'assistant');
   assert.match(page.element('tool-manager-title').textContent,/Assistant/);
-  assert.equal(page.element('tool-catalog-list').children.length,2);
+  assert.equal(page.element('tool-catalog-list').children.length,3);
 });
 
 function assistantBootstrap(epoch='assistant-epoch') {
@@ -2849,7 +2852,7 @@ test('OFF combination default preference follows resolved conflict and latest su
 function toolConversationFixture(overrides={}) {
   return {status:'completed',error_code:null,snapshot_status:'AVAILABLE',generated_text:'当前溶氧 2.2 mg/L，请优先增氧。',
     request_1:{outcome:'tool_calls'},request_2:{outcome:'final_answer'},
-    tool_call:{id:'offline-call',name:'get_current_water_quality',arguments:{}},
+    tool_call:{id:'offline-call',name:'get_current_water_quality',arguments_summary:'{}'},
     tool_result:{status:'OK',water_quality:{temperature_c:28,ph:7.5,dissolved_oxygen_mg_l:2.2,
       quality:'valid',freshness:'fresh'},findings:[{code:'OXYGEN_CRITICAL_LOW',message:'低氧'}]},
     final_finish_reason:'stop',usage:{total_tokens:null},...overrides};
@@ -3416,4 +3419,77 @@ test('Analysis Tool Activity renders score and future tool result JSON generical
     assert.match(page.element('facts').children.map(n=>n.textContent).join(' '),/initial-fixture/);
     assert.equal(page.element('analysis-tool-activity').open,false);
   }
+});
+
+test('Assistant knowledge activity shows catalog labels and never water snapshot semantics',async()=>{
+  const activity={used_tool:true,tool_name:'search_fishery_knowledge',display_name:'知识检索',
+    display_summary:'只读检索项目内鳗鲡养殖背景知识；不代表当前水质，也不做现场诊断',
+    tool_status:'NO_MATCH',duration_ms:3};
+  const page=assistantPage(async()=>r2Reply({result:assistantResult({tool_activity:activity,
+    request_1:{outcome:'tool_calls'},request_2:{outcome:'final_answer'},usage:{request_count:2,usage:{}}})}));
+  await enterAssistant(page);await sendAssistantQuestion(page,'鳗鲡适宜溶氧范围是多少？');
+  const article=page.element('assistant-messages').children[1];
+  const detail=article.children.find(c=>c.children[0]?.textContent==='使用了 1 个 Tool');
+  assert.ok(detail);
+  const text=allElementText(detail);
+  assert.match(text,/Tool Name\s+知识检索（search_fishery_knowledge）/);
+  assert.match(text,/只读检索项目内鳗鲡养殖背景知识；不代表当前水质/);
+  assert.match(text,/只读 Tool 调用；结果含义以工具说明为准/);
+  assert.match(text,/NO_MATCH/);
+  assert.doesNotMatch(text,/本轮已查询当前水质|读取快照|快照/);
+  assert.doesNotMatch(text,/unavailable/);
+  assert.doesNotMatch(text,/observed_at|quality|freshness/);
+  const run=allElementText(page.element('assistant-run-details'));
+  assert.match(run,/Tool name\s+search_fishery_knowledge\s+Tool result status\s+NO_MATCH/);
+});
+
+test('Assistant water activity keeps its catalog summary and gains no knowledge wording',async()=>{
+  const activity={used_tool:true,tool_name:'get_current_water_quality',display_name:'get_current_water_quality',
+    display_summary:'当前水质数值、状态与告警；不负责评分',tool_status:'OK',quality:'valid',freshness:'fresh',
+    observed_at:'2026-10-06T01:00:00Z',duration_ms:2};
+  const page=assistantPage(async()=>r2Reply({result:assistantResult({tool_activity:activity,
+    request_1:{outcome:'tool_calls'},request_2:{outcome:'final_answer'},usage:{request_count:2,usage:{}}})}));
+  await enterAssistant(page);await sendAssistantQuestion(page,'现在水质怎么样？');
+  const detail=page.element('assistant-messages').children[1]
+    .children.find(c=>c.children[0]?.textContent==='使用了 1 个 Tool');
+  const text=allElementText(detail);
+  assert.match(text,/Tool Name\s+get_current_water_quality/);
+  assert.match(text,/当前水质数值、状态与告警；不负责评分/);
+  assert.match(text,/只读 Tool 调用；结果含义以工具说明为准/);
+  assert.match(text,/fresh/);
+  assert.doesNotMatch(text,/知识检索|不代表当前水质|背景资料/);
+});
+
+test('Tool Manager badge and mode row project the backend booleans without guessing',async()=>{
+  const state=toolManagerFixture();
+  state.catalog[0]={...state.catalog[0],modes:['assistant']};
+  state.catalog[2]={...state.catalog[2],registered:false,executable:false};
+  const page=toolManagerPage(async()=>r2Reply(state));
+  await page.element('open-tool-manager').dispatch('click');
+  const rows=page.element('tool-catalog-list').children;
+  assert.equal(rows.length,3);
+  const badge=index=>rows[index].children[0].children[2].textContent;
+  const detail=index=>rows[index].children[1].children.map(n=>n.textContent).join(' ');
+  assert.match(badge(0),/READ ONLY · Registered \/ Executable/);
+  assert.match(badge(2),/Not Registered \/ NOT EXECUTABLE/);
+  assert.doesNotMatch(badge(2),/Registered \/ Executable/);
+  assert.match(detail(2),/执行状态\s+Not Registered \/ NOT EXECUTABLE/);
+  assert.match(detail(0),/适用模式\s+Assistant/);
+  assert.doesNotMatch(detail(0),/Analysis（Normal）/);
+  assert.match(detail(1),/适用模式\s+Analysis（Normal） \/ Assistant/);
+  assert.equal(rows[2].children[0].children[0].disabled,true);
+  assert.match(rows[2].children[1].children.map(n=>n.textContent).join(' '),/query: string/);
+});
+
+test('Development tool trace shows a safe argument summary instead of a false empty object',async()=>{
+  const page=toolPage(async()=>r2Reply({result:toolConversationFixture({
+    tool_call:{id:'offline-call',name:'search_fishery_knowledge',arguments_summary:'参数已提供（内容未展示）'},
+    tool_result:{status:'NO_MATCH',retrieval_mode:'portable',result_count:0,evidence:[]}}),total_latency_ms:9}));
+  await page.element('tool-run').dispatch('click');
+  const trace=page.element('tool-trace').textContent;
+  assert.match(trace,/Tool Call: search_fishery_knowledge/);
+  assert.match(trace,/arguments: 参数已提供（内容未展示）/);
+  assert.doesNotMatch(trace,/arguments: \{\}/);
+  assert.match(trace,/NO_MATCH/);
+  assert.doesNotMatch(trace,/minLength|additionalProperties|C:\\\\|\.venv/);
 });

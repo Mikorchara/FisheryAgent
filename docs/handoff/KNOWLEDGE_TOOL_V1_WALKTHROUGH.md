@@ -10,8 +10,10 @@
 > 5. **Catalog 条目**（Step 6）：`tools/catalog.py` 已有第三条 `search_fishery_knowledge`（含 query 参数摘要）。注入服务的实例上该行**可勾选**；未注入的实例上该行**禁用**。**包内默认 Policy 仍未授权**。见 [`STEP6_CATALOG_BEFORE_AFTER.md`](../copilot/STEP6_CATALOG_BEFORE_AFTER.md)。
 > 6. **Policy 默认**（Step 7）：**验证完成，无产品代码改动**。实测确认两个模式默认都不授权 Knowledge、旧 override 不被迁移（文件字节与 mtime 不变）、新注册工具不自动进入 `exposed_tools`；补了 2 条回归保护测试。见 [`STEP7_POLICY_DEFAULTS_BEFORE_AFTER.md`](../copilot/STEP7_POLICY_DEFAULTS_BEFORE_AFTER.md)。
 > 7. **装配**（Step 8）：`create_app()` 把**已有唯一** `KnowledgeService` 注入 `ToolRegistry`（净改动 1 行）。Knowledge 在真实 Runtime 中已 `executable`，**用户可勾选**；包内默认仍未授权。见 [`STEP8_KNOWLEDGE_ASSEMBLY_BEFORE_AFTER.md`](../copilot/STEP8_KNOWLEDGE_ASSEMBLY_BEFORE_AFTER.md)。
+> 8. **Assistant 选择规则**（Step 9）：`assistant.py::SYSTEM_INSTRUCTION` 补 6 句（按时缺什么信息选择、择一查询并说明未查询部分、背景≠现场、未授权时不得编造）。**提示词不保证行为**，真实模型是否照做留待 Step 11 人工验收。见 [`STEP9_ASSISTANT_SELECTION_RULES_BEFORE_AFTER.md`](../copilot/STEP9_ASSISTANT_SELECTION_RULES_BEFORE_AFTER.md)。
+> 9. **UI 与公开活动信息准确性**（Step 10）：修掉“Knowledge 被显示成查询当前水质”（含工具名被抹成 `unavailable`）与参数摘要假 `{}`；工具标签统一取自 Catalog；徽章分别投影 `registered`/`executable`；“适用模式”改读后端 `modes`。见 [`STEP10_UI_ACCURACY_BEFORE_AFTER.md`](../copilot/STEP10_UI_ACCURACY_BEFORE_AFTER.md)。
 >
-> 本文其余内容（UI 文案、人工验收）仍是**未来工作**。**D1b 已于 2026-10-09 解决**：Mock 改为显式方向性降级，只授权 Knowledge 时不再调用它，也不会再硬失败。
+> 本文其余内容（UI 文案的安全渲染方式、人工验收）仍是**未来工作**。**D1b 已于 2026-10-09 解决**：Mock 改为显式方向性降级，只授权 Knowledge 时不再调用它，也不会再硬失败。
 
 阅读时把“当前事实”和“未来建议”分开。总体约束见[新增 Tool 规范](../deep-dive/tools/ADDING_A_TOOL.md)，尚待决策的研究见[Knowledge Tool 研究](../deep-dive/research/KNOWLEDGE_TOOL_DESIGN.md)。
 
@@ -80,7 +82,7 @@
 
 服务端仍需校验：trim 后非空、长度与 UTF-8 字节预算、非法 Unicode / 控制字符策略、额外字段。JSON Schema 是告诉模型的合同，当前 Gateway 不会替代服务端执行完整 schema 校验。
 
-建议结果：`status`、`retrieval_mode`、明确的检索版本、`result_count`、有限 `evidence[]`。条目保留 evidence ID、类别、来源、资源版本、检索时间与受限文本；无依据时不补造 source title。不必把 raw score 发给模型。
+建议结果：`status`、`retrieval_mode`、`result_count`、有限 `evidence[]`。**实际实现（Step 4）的条目字段恰好是 5 个**：`id` / `category` / `source`（逻辑来源标识，如 `legacy:eel_knowledge.json`）/ `source_version` / `text`。**不发送** `score`、`retrieved_at`、`source_title`（知识是静态资料，检索时间对模型无信息量）；因此 Tool 结果里**没有任何时间字段**，也无传感器字段。无依据时不补造 source title。
 
 未来可采用 `OK` / `NO_MATCH` / 安全 `ERROR`。**`ToolStatus.NO_MATCH` 已于 2026-10-09 加入合同并核对完全部消费者**（Handler 不能自己造枚举外的状态；无命中与其他业务状态同等对待）。Knowledge 无命中不同于水质的 NO_DATA。
 
@@ -88,7 +90,7 @@
 
 ## 4. 第三步：薄 Handler
 
-未来可能新增 `src/fishery_ai/tools/handlers/knowledge_search.py`；当前文件不存在。
+`src/fishery_ai/tools/handlers/knowledge_search.py` **已于 Step 4 创建**（当时未注册）；见 [`STEP4_KNOWLEDGE_HANDLER_BEFORE_AFTER.md`](../copilot/STEP4_KNOWLEDGE_HANDLER_BEFORE_AFTER.md)。
 
 Handler 只做：接收校验后的 query → 调用注入的 `KnowledgeService.search()` → 映射有限证据 → 返回可序列化 dict。知识内容作为不可信数据，即使其中含有“忽略系统指令”，也不能当指令执行。
 
@@ -190,7 +192,7 @@ check_cancelled
 | Registry | `test_read_only_tools.py`、新 `test_knowledge_tool.py` | 定义与绑定单一来源、未知名拒绝、依赖注入；旧工具仍无参数。 |
 | Policy | `test_tool_policy.py`、`test_tool_policy_manager.py` | 注册不等于授权；Assistant 开关、Analysis 限制、旧 override 不静默变化、Catalog 不能授权。 |
 | Executor | `test_read_only_tools.py`、新 `test_knowledge_tool.py` | 参数校验前不执行、有限结果、错误脱敏、调用预算、重复 ID、取消、禁止网络/路径入口。 |
-| Assistant | `test_assistant.py`、`test_tool_conversation.py` | 脚本化首轮 Knowledge call → role=tool → final；直答零检索、NO_MATCH、二轮限制、历史无 raw Evidence、Usage 两轮。 |
+| Assistant | `test_assistant.py`、`test_tool_conversation.py` | 脚本化首轮 Knowledge call → role=tool → final；直答零检索、NO_MATCH、二轮限制、历史无 raw Evidence、Usage 两轮。**（Prompt 契约与工具名结构不变式已于 Step 9 加入 `test_assistant.py`；上面的脚本化用例仍待实施，因为 Mock 尚未学习 Knowledge。）** |
 | UI | `test_browser_streaming.cjs`，按需 `test_web_tool_conversation.py` | Tool Manager 模式、轻量知识 Activity、无“已查询当前水质”误标；文本安全渲染。 |
 | Security / 回归 | 上述 tests；`test_analysis_tools.py`、`test_v011_a3_grounding.py` | 恶意 chunk 仍是 tool 数据；无 Secret/路径/trace 原文；Analysis RAG、查询/评分、三模式和取消不回归。 |
 

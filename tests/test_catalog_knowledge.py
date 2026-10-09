@@ -15,9 +15,9 @@ from fishery_ai.contracts import parse_time
 from fishery_ai.domain import DiagnosisService
 from fishery_ai.telemetry import CurrentSnapshotStore, CurrentWaterQualityReader
 from fishery_ai.tools import ToolRegistry
-from fishery_ai.tools.catalog import CATALOG, ToolCatalogEntry, tool_catalog
+from fishery_ai.tools.catalog import CATALOG, ToolCatalogEntry, argument_summary, catalog_display, tool_catalog
 from fishery_ai.tools.policy import ToolPolicyError, UserToolPolicyStore, load_tool_policies
-from fishery_ai.tools.registry import (CURRENT_WATER_QUALITY, SEARCH_FISHERY_KNOWLEDGE,
+from fishery_ai.tools.registry import (CURRENT_WATER_QUALITY, KNOWLEDGE_PARAMETERS, SEARCH_FISHERY_KNOWLEDGE,
                                        WATER_QUALITY_SCORE)
 
 
@@ -92,6 +92,23 @@ class CatalogFixture(unittest.TestCase):
     def test_entry_names_stay_inside_the_registry_name_allowlist(self):
         known = set(self.bound.registered_names())
         self.assertEqual({item.name for item in CATALOG}, known)
+
+    # -- E. display-only helpers (never authorization) -----------------------
+
+    def test_catalog_display_returns_labels_or_nothing_at_all(self):
+        display = catalog_display(SEARCH_FISHERY_KNOWLEDGE)
+        entry = next(item for item in CATALOG if item.name == SEARCH_FISHERY_KNOWLEDGE)
+        self.assertEqual(display["display_name"], entry.display_name)
+        self.assertEqual(display["display_summary"], entry.short_description)
+        self.assertIn("不代表当前水质", display["display_summary"])
+        self.assertEqual(catalog_display("not_a_registered_tool"), {})
+
+    def test_argument_summary_follows_the_schema_and_never_echoes_values(self):
+        self.assertEqual(argument_summary(None), "{}")
+        self.assertEqual(argument_summary({"type": "object", "properties": {}}), "{}")
+        self.assertEqual(argument_summary(KNOWLEDGE_PARAMETERS), "参数已提供（内容未展示）")
+        # Schema-driven only: no per-tool branch that could go stale or leak a value.
+        self.assertNotIn("query", argument_summary(KNOWLEDGE_PARAMETERS))
 
     def test_modes_have_one_authority_and_no_per_tool_rule(self):
         for registry in (self.bound, self.unbound):
