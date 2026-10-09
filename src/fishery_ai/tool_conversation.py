@@ -30,6 +30,15 @@ SYSTEM_INSTRUCTION = (
 
 NO_DATA_TEXT = "离线 Mock：没有当前水质数据，请先显式 Apply 情景或取得快照。"
 UNRENDERED_TEXT = "离线 Mock：该 Tool 尚无离线渲染。"
+UNAUTHORIZED_TOOL_TEXT = "离线 Mock：当前 Policy 未授权所需的水质 Tool，无法读取当前事实。"
+
+# Tools this fixture knows how to drive: it calls them with "{}" and can render
+# their results. Anything outside this set is neither chosen nor used as a fallback.
+MOCK_DRIVABLE_TOOLS = (CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE)
+# Directional degradation only: a scoring question may fall back to reading the
+# current facts, but a current-facts question never degrades to a score. Knowledge
+# is not a fallback for anything here.
+FALLBACK_TOOLS = {WATER_QUALITY_SCORE: (CURRENT_WATER_QUALITY,), CURRENT_WATER_QUALITY: ()}
 
 
 def _requested_tool_name(messages, tool_message) -> str | None:
@@ -114,8 +123,16 @@ class MockToolGateway(MockGateway):
         if re.search(r"现在|当前|目前|现场", question):
             if not request.tools:
                 return ModelResponse("离线 Mock：当前 Policy 未允许水质 Tool，无法读取当前事实。", finish_reason="stop")
-            desired = "score_current_water_quality" if re.search(r"评分|打分|打.*分", question) else "get_current_water_quality"
-            selected = next((t for t in request.tools if t.name == desired), request.tools[0])
+            desired = WATER_QUALITY_SCORE if re.search(r"评分|打分|打.*分", question) else CURRENT_WATER_QUALITY
+            # Priority order, not position: the wanted tool first, then only its own
+            # declared fallbacks. A missing tool never borrows an unrelated one.
+            selected = None
+            for name in (desired, *FALLBACK_TOOLS[desired]):
+                selected = next((tool for tool in request.tools if tool.name == name), None)
+                if selected is not None:
+                    break
+            if selected is None:
+                return ModelResponse(UNAUTHORIZED_TOOL_TEXT, finish_reason="stop")
             return ModelResponse(None, tool_calls=(ModelToolCall("mock_current_water_quality",
                 selected.name, "{}"),), finish_reason="tool_calls")
         text = ("离线 Mock：溶氧是水中溶解的氧气，通常以 mg/L 表示；本回答未读取当前水质。"

@@ -11,7 +11,7 @@
 > 6. **Policy 默认**（Step 7）：**验证完成，无产品代码改动**。实测确认两个模式默认都不授权 Knowledge、旧 override 不被迁移（文件字节与 mtime 不变）、新注册工具不自动进入 `exposed_tools`；补了 2 条回归保护测试。见 [`STEP7_POLICY_DEFAULTS_BEFORE_AFTER.md`](../copilot/STEP7_POLICY_DEFAULTS_BEFORE_AFTER.md)。
 > 7. **装配**（Step 8）：`create_app()` 把**已有唯一** `KnowledgeService` 注入 `ToolRegistry`（净改动 1 行）。Knowledge 在真实 Runtime 中已 `executable`，**用户可勾选**；包内默认仍未授权。见 [`STEP8_KNOWLEDGE_ASSEMBLY_BEFORE_AFTER.md`](../copilot/STEP8_KNOWLEDGE_ASSEMBLY_BEFORE_AFTER.md)。
 >
-> 本文其余内容（UI 文案、人工验收）仍是**未来工作**。**注意：Mock 路径下的人工使用前必须先解决 D1b**（`MockToolGateway` Request #1 的 `request.tools[0]` fallback）。
+> 本文其余内容（UI 文案、人工验收）仍是**未来工作**。**D1b 已于 2026-10-09 解决**：Mock 改为显式方向性降级，只授权 Knowledge 时不再调用它，也不会再硬失败。
 
 阅读时把“当前事实”和“未来建议”分开。总体约束见[新增 Tool 规范](../deep-dive/tools/ADDING_A_TOOL.md)，尚待决策的研究见[Knowledge Tool 研究](../deep-dive/research/KNOWLEDGE_TOOL_DESIGN.md)。
 

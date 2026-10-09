@@ -194,7 +194,7 @@ Executor / Policy / Registry / UI
 - **验证**：新增 `tests/test_knowledge_assembly.py`（7 项）；全量 **815 项通过**（808 → +7）；浏览器 **183 项通过**；**既有测试改动 0 处**。
 - **空过检查**：临时移除 `knowledge=knowledge` 重跑 → 3 failures + 2 errors（只落在依赖绑定的用例），已还原并复核。
 - **`functools.partial` 依赖边界**：全仓库只保留 **1 条**身份断言（`handler.keywords["service"] is <唯一实例>`），不再扩大到 partial 的其他形状。
-- **⚠️ 阻塞项 D1b**：本步后 Knowledge 已在真实 Runtime 中 **executable**，但 `MockToolGateway` Request #1 的 `request.tools[0]` fallback **必须在 Mock Knowledge 的人工使用/验收之前解决**。
+- **⚠️ 阻塞项 D1b（已于 2026-10-09 解决）**：本步后 Knowledge 已在真实 Runtime 中 **executable**。当时的 `MockToolGateway` Request #1 会以 `request.tools[0]` 兼底调用 Knowledge 并硬失败；现已改为**显式方向性降级**（`FALLBACK_TOOLS`），只授权 Knowledge 时不再发调用。见 [`D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md`](D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md)。
 
 ### Step 9：Assistant 选择规则（提示词层，不做硬路由）
 
@@ -302,7 +302,7 @@ Step 3 的消费者搜索发现三处"现在改是错的、但将来必须改"�
 | 编号 | 位置 | 分类 | 说明 |
 | --- | --- | --- | --- |
 | **D1** | `tool_conversation.py` 的 `MockToolGateway` **按 payload 键猜形状**（`status` + `scoring_version` 启发式） | **已解决 2026-10-09** | 改为**按 tool name 分派**；未知/畸形结果返回安全兜底 `离线 Mock：该 Tool 尚无离线渲染。`；工具名通过 **`tool_call_id` 关联**取得（不再假设 `tool_calls[0]`）。见 [`D1_MOCK_TOOL_GATEWAY_BEFORE_AFTER.md`](D1_MOCK_TOOL_GATEWAY_BEFORE_AFTER.md) |
-| **D1b** | `tool_conversation.py` MockToolGateway **Request #1** 的 `request.tools[0]` fallback | **BLOCKER BEFORE MOCK KNOWLEDGE ENABLEMENT**（**Step 11 前置**） | 若策略只授权 Knowledge，问"现在…"会 fallback 到 Knowledge 并以 `"{}"` 调用 → 被 validator 拒（`INVALID_TOOL_ARGUMENTS`）。**Step 8 后 Knowledge 已在真实 Runtime 中 executable、用户可勾选**，因此本项已成为人工/ Mock 验收的硬前置。改它会变动现有行为（"只授权水质工具时问评分问题"走 `tools[0]`），需单独评审 |
+| **D1b** | `tool_conversation.py` MockToolGateway **Request #1** 的 `request.tools[0]` fallback | **已于 2026-10-09 解决** | 原缺陷：只授权 Knowledge 时，"现在…"会 fallback 到 Knowledge 并以 `"{}"` 调用 → `INVALID_TOOL_ARGUMENTS` → **整轮 `Status.FAILED`、Request #2 不发**。现改为 `MOCK_DRIVABLE_TOOLS` + `FALLBACK_TOOLS` 显式方向性降级（评分→水质查询；水质→无；Knowledge 不参与），无可用工具时返回文本而非抛错。见 [`D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md`](D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md) |
 | **D2** | `application.py:47-49` `snapshot_comparison` | 当前不改 | NO_MATCH 会被判成 `not_called`。Knowledge Tool 仍是 **Assistant-only**；只有未来真的允许 Analysis 使用时才重新评审。 |
 | **D3** | `app.js:2759` 工具名白名单、`:2794` 硬编码文案"本轮已查询当前水质" | 当前不改，**Step 10 必须处理** | 否则 Knowledge 调用会被置 `null` / 误标成水质查询。 |
 | **B6** | `web.py:1127` 的 `"arguments"` 字段（`!= "ERROR"` 时写 `{}`） | 移入「**参数型 Knowledge Tool 接入前依赖**」 | 这是"带参数工具"带来的既有不精确，**不是 NO_MATCH 本身的问题**，本步不顺便修改；接入带参工具前必须重新评审该字段。 |

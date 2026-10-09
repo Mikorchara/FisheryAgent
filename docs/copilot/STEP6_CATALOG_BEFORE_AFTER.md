@@ -156,7 +156,7 @@ CATALOG = (
 
 | # | 项目 | 状态 |
 | --- | --- | --- |
-| **D1b** | `MockToolGateway` Request #1 的 `request.tools[0]` fallback | 仍是 **BLOCKER BEFORE MOCK KNOWLEDGE ENABLEMENT**（Step 5 起就有，本步未动） |
+| **D1b** | `MockToolGateway` Request #1 的 `request.tools[0]` fallback | 本步未动；当时仍为 **BLOCKER BEFORE MOCK KNOWLEDGE ENABLEMENT**。**已于 2026-10-09 解决**，见 [`D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md`](D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md) |
 | **U1** | UI 徽章忽略 `registered`/`executable`（§6） | 新增，Step 10 |
 | **U2** | UI"适用模式"与后端 `item["modes"]` 双来源（§6） | 新增，Step 10 |
 | **K1** | `KnowledgeService` 缺 `retrieval_version` | 未变 |

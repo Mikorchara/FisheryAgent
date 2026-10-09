@@ -48,6 +48,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │     ├─ STEP4_KNOWLEDGE_HANDLER_DESIGN.md                       # Step 4 薄 Knowledge Handler 设计与实施记录
 │     ├─ STEP4_KNOWLEDGE_HANDLER_BEFORE_AFTER.md                 # Step 4 Handler 的 before/after 对照记录
 │     ├─ D1_MOCK_TOOL_GATEWAY_BEFORE_AFTER.md                    # D1 Mock 按工具名分派的 before/after 对照记录
+│     ├─ D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md           # D1b Mock 方向性降级的 before/after 对照记录
 │     ├─ STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md            # Step 5 注册与 query validator 的 before/after 对照记录
 │     ├─ STEP6_CATALOG_BEFORE_AFTER.md                           # Step 6 Catalog 新增 Knowledge 条目的 before/after 对照记录
 │     ├─ STEP7_POLICY_DEFAULTS_BEFORE_AFTER.md                   # Step 7 Policy 默认与旧 override 兼容的核对记录
@@ -186,7 +187,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_local_preset_qualification.py                         # Local Preset 验证入口安全测试
    ├─ test_local_profile_capability_ui.py                        # 本地 metadata 与 Capability UI 测试
    ├─ test_manual_v2.py                                          # 实验 CRUD、独立凭据与 Raw 请求测试
-   ├─ test_mock_tool_gateway.py                                  # 离线 Mock 按工具名分派与安全兜底测试
+   ├─ test_mock_tool_gateway.py                                  # 离线 Mock 按工具名分派、方向性降级与安全兜底测试
    ├─ test_off_streaming_combination.py                          # OFF 加 Streaming 组合证据测试
    ├─ test_ollama_reasoning.py                                   # 精确 Ollama Thinking 参数测试
    ├─ test_output_parity.py                                      # Normal 与 Streaming 输出边界测试
@@ -199,7 +200,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_telemetry_simulator.py                                # Telemetry 合同、模拟与 Adapter 测试
    ├─ test_tool_argument_contract.py                             # Tool 受控参数合同与旧工具兼容测试
    ├─ test_tool_capability_probe.py                              # Tool 能力 Probe 与 Web 门禁测试
-   ├─ test_tool_conversation.py                                  # 单轮 Tool 闭环、Usage 与错误测试
+   ├─ test_tool_conversation.py                                  # 单轮 Tool 闭环、Usage、Mock 降级与错误测试
    ├─ test_tool_policy.py                                        # Analysis 与 Assistant 授权测试
    ├─ test_tool_policy_manager.py                                # Tool Manager、用户 Policy 存储与默认/override 不变性测试
    ├─ test_tool_status_no_match.py                               # NO_MATCH 非错误结果、二轮闭环与安全投影测试

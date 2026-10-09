@@ -170,7 +170,7 @@ unittest discover -s tests    → Ran 779 tests in 27.068s ... OK      (761 + 18
 
 | 编号 | 内容 | 分类 |
 | --- | --- | --- |
-| **D1b** | Request #1 的 `request.tools[0]` fallback：策略只授权 Knowledge 时，问"现在…"会以 `"{}"` 调用 Knowledge 并被 validator 拒 | **BLOCKER BEFORE MOCK KNOWLEDGE ENABLEMENT** —— 不阻塞 Step 5 注册本身；最迟在 Knowledge Tool 的 Mock / 人工验收之前处理 |
+| **D1b** | Request #1 的 `request.tools[0]` fallback：策略只授权 Knowledge 时，问"现在…"会以 `"{}"` 调用 Knowledge 并被 validator 拒 | **已于 2026-10-09 解决** —— 改为显式方向性降级（`FALLBACK_TOOLS`）；见 [`D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md`](D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md) |
 | — | 是否为 Knowledge 增加离线渲染器 | 明确**不在本步**（D1 只移除对水质 payload 的隐含假设）；Step 5 注册后再决定 |
 
 ## 8. 回滚

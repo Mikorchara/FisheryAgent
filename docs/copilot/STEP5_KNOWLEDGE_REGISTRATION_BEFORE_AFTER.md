@@ -203,7 +203,7 @@ node --test tests/test_browser_streaming.cjs → tests 183 / pass 183 / fail 0
 
 | 编号 | 内容 | 触发 |
 | --- | --- | --- |
-| **D1b** | `MockToolGateway` Request #1 的 `tools[0]` fallback | **BLOCKER BEFORE MOCK KNOWLEDGE ENABLEMENT** |
+| **D1b** | `MockToolGateway` Request #1 的 `tools[0]` fallback | **BLOCKER BEFORE MOCK KNOWLEDGE ENABLEMENT**（本行记录当时状态；**已于 2026-10-09 解决**，见 [`D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md`](D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md)） |
 | **K1** | `retrieval_version` 由 `KnowledgeService` 提供 metadata | RAG 研究重启 |
 | **K2** | Handler 侧总预算若引入，必须显式标识裁剪 | 需要更小总预算时 |
 | — | Catalog 条目（Step 6）会让用户**可以**勾选；届时"仅 Assistant"是否要服务端硬边界按下述决定：**不做**（只在 UI 默认不勾选），但 `modes` 必须保持单一权威来源 | Step 6 |

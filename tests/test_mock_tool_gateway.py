@@ -13,8 +13,9 @@ from fishery_ai.contracts import Mode, parse_time
 from fishery_ai.credentials import CredentialStore
 from fishery_ai.model_gateway import (ModelMessage, ModelRequest, ModelToolCall, ModelToolDefinition,
                                       ProfileRegistry)
-from fishery_ai.tool_conversation import UNRENDERED_TEXT, MockToolGateway
-from fishery_ai.tools.registry import CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE
+from fishery_ai.tool_conversation import (FALLBACK_TOOLS, MOCK_DRIVABLE_TOOLS, UNRENDERED_TEXT,
+                                         UNAUTHORIZED_TOOL_TEXT, MockToolGateway)
+from fishery_ai.tools.registry import CURRENT_WATER_QUALITY, KNOWLEDGE_PARAMETERS, WATER_QUALITY_SCORE
 
 
 LOCAL = ALLOWED_PRESET_IDS[2]
@@ -42,6 +43,13 @@ def score_payload(**changes):
 
 def definition(name):
     return ModelToolDefinition(name, "fixture definition", {"type": "object", "properties": {}})
+
+
+def offered(name):
+    """Real Knowledge parameters, so a fixture cannot hide a required argument."""
+    if name == KNOWLEDGE:
+        return ModelToolDefinition(name, "fixture definition", KNOWLEDGE_PARAMETERS)
+    return definition(name)
 
 
 def second_request(payload, *, name=CURRENT_WATER_QUALITY, call_id="call_1", assistant_call_id=None):
@@ -163,8 +171,8 @@ class MockToolGatewayTests(unittest.TestCase):
         self.assertEqual(response.tool_calls[0].function_name, WATER_QUALITY_SCORE)
 
     def test_desired_tool_fallback_stays_unchanged(self):
-        # Known current behavior: without the score tool, the first authorized tool
-        # is used. D1 deliberately does not change this (registered as D1b).
+        # Directional degradation (D1b): without the score tool, a scoring question
+        # reads the current facts instead. Still one call, still "{}".
         response = self.first("当前水质评分多少？", names=(CURRENT_WATER_QUALITY,))
         self.assertEqual(response.tool_calls[0].function_name, CURRENT_WATER_QUALITY)
 
@@ -174,6 +182,57 @@ class MockToolGatewayTests(unittest.TestCase):
         response = self.gateway.complete(request, self.runtime)
         self.assertFalse(response.tool_calls)
         self.assertIn("当前 Policy 未允许", response.text)
+
+    # -- D1b: directional fallback, never a positional substitute -------------
+
+    def test_current_question_never_degrades_to_the_score_tool(self):
+        # Regression the old request.tools[0] fallback got wrong: reading the current
+        # facts must not be answered from a score.
+        response = self.first("现在水质怎么样？", names=(WATER_QUALITY_SCORE,))
+        self.assertFalse(response.tool_calls)
+        self.assertEqual(response.finish_reason, "stop")
+        self.assertEqual(response.text, UNAUTHORIZED_TOOL_TEXT)
+
+    def test_desired_tool_is_checked_before_its_fallback(self):
+        # Offered order must not decide: the wanted tool wins wherever it sits.
+        response = self.first("当前水质评分多少？", names=(CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE))
+        self.assertEqual(response.tool_calls[0].function_name, WATER_QUALITY_SCORE)
+
+    def test_knowledge_is_never_chosen_or_borrowed(self):
+        for question in ("现在水质怎么样？", "当前水质评分多少？"):
+            with self.subTest(question=question):
+                response = self.first(question, names=(KNOWLEDGE,))
+                self.assertFalse(response.tool_calls)
+                self.assertEqual(response.finish_reason, "stop")
+                self.assertEqual(response.text, UNAUTHORIZED_TOOL_TEXT)
+
+    def test_knowledge_next_to_a_water_tool_is_still_ignored(self):
+        response = self.first("现在水质怎么样？", names=(KNOWLEDGE, CURRENT_WATER_QUALITY))
+        self.assertEqual(response.tool_calls[0].function_name, CURRENT_WATER_QUALITY)
+
+    def test_the_mock_never_emits_an_uncallable_tool_call(self):
+        # Invariant: every call this fixture produces targets a tool it can drive with
+        # "{}" - and offering a parameterized tool changes nothing about that.
+        questions = ("现在水质怎么样？", "当前水质评分多少？", "现在打分是多少", "什么是溶氧？")
+        # The empty offer is covered separately: tool_choice requires a non-empty list.
+        offers = ((CURRENT_WATER_QUALITY,), (WATER_QUALITY_SCORE,), (KNOWLEDGE,),
+                  (CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE), (WATER_QUALITY_SCORE, CURRENT_WATER_QUALITY),
+                  (CURRENT_WATER_QUALITY, KNOWLEDGE), (WATER_QUALITY_SCORE, KNOWLEDGE),
+                  (KNOWLEDGE, WATER_QUALITY_SCORE, CURRENT_WATER_QUALITY))
+        self.assertEqual(set(FALLBACK_TOOLS), set(MOCK_DRIVABLE_TOOLS))
+        catalog = {name: offered(name).parameters_dict() for name in
+                   (CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE, KNOWLEDGE)}
+        self.assertEqual(catalog[KNOWLEDGE].get("required"), ["query"])
+        produced = 0
+        for question in questions:
+            for names in offers:
+                response = self.first(question, names=names)
+                for call in response.tool_calls:
+                    produced += 1
+                    self.assertIn(call.function_name, MOCK_DRIVABLE_TOOLS)
+                    self.assertNotIn("required", catalog[call.function_name])
+                    self.assertEqual(call.arguments_json, "{}")
+        self.assertGreater(produced, 0)
 
 
 if __name__ == "__main__":

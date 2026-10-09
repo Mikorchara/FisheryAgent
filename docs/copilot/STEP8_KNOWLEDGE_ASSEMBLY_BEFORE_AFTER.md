@@ -88,7 +88,7 @@
 
 | # | 项目 | 状态与本步关系 |
 | --- | --- | --- |
-| **D1b** | `tool_conversation.py` `MockToolGateway` **Request #1** 的 `request.tools[0]` fallback | **仍未解决。** Step 8 后 Knowledge 已在真实 Runtime 中 **executable**，即用户"已可勾选"；但 **D1b 必须在 Mock Knowledge 的人工使用/验收之前解决**：若策略只授权 Knowledge 而用户问"现在水质怎么样"，fallback 会以 `"{}"` 调 Knowledge 并被 validator 拒（`INVALID_TOOL_ARGUMENTS`）。**这是进入 Step 11（人工验收）的阻塞项。** |
+| **D1b** | `tool_conversation.py` `MockToolGateway` **Request #1** 的 `request.tools[0]` fallback | 本步时**仍未解决**（Step 8 后 Knowledge 已在真实 Runtime 中 **executable**、用户可勾选，而 fallback 会以 `"{}"` 调 Knowledge → `INVALID_TOOL_ARGUMENTS` → 整轮 `FAILED`）。**已于 2026-10-09 解决**，见 [`D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md`](D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md) |
 | **U1** | `app.js` 徽章忽略 `registered`/`executable`，对未注册的非 dev_only 行会谎报 "Registered / Executable" | 本步之后**真实应用中该行确实可执行**，所以 U1 在真实应用里不再显现；但"某入口未绑定"的场景仍会谎报 → 仍归 Step 10 |
 | **U2** | UI"适用模式"与后端 `item["modes"]` 双来源 | 未变，归 Step 10 |
 | **K1** | `KnowledgeService` 缺 `retrieval_version` | 未变 |

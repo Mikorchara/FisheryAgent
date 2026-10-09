@@ -25,8 +25,10 @@ from fishery_ai.openai_compatible_adapter import OpenAICompatibleAdapter
 from fishery_ai.providers import AuthSpec
 from fishery_ai.telemetry.current import CurrentWaterQualityReader
 from fishery_ai.telemetry.snapshot import CurrentSnapshotStore
-from fishery_ai.tool_conversation import SYSTEM_INSTRUCTION, ToolCallingService
+from fishery_ai.tool_conversation import (SYSTEM_INSTRUCTION, MockToolGateway, ToolCallingService)
 from fishery_ai.tools import ToolDefinition, ToolExecutor, ToolRegistry
+from fishery_ai.tools.policy import ToolPolicy
+from fishery_ai.tools.registry import SEARCH_FISHERY_KNOWLEDGE
 
 
 NOW = parse_time("2026-10-05T02:00:00Z")
@@ -36,6 +38,15 @@ NAME = "get_current_water_quality"
 def tool_response(*calls, usage=None):
     return ModelResponse(None, usage or Usage(), tool_calls=calls or (ModelToolCall("call_t3", NAME, "{}"),),
                          finish_reason="tool_calls")
+
+
+class FakeKnowledge:
+    """Binds the Knowledge Tool without any index; the mock never calls it."""
+
+    backend = "portable"
+
+    def search(self, query, *, top_k=5, retrieved_at=None, intent_text=None):
+        return ()
 
 
 class RecordingGateway(MockGateway):
@@ -104,6 +115,24 @@ class ToolConversationTests(unittest.TestCase):
         self.assertEqual(result.generated_text, "水质正常。")
         self.assertEqual(len(gateway.requests), 2)
         self.assertIs(self.store.get_current(), original)
+
+    def test_mock_never_hard_fails_when_only_knowledge_is_authorized(self):
+        # D1b: borrowing "the first offered tool" used to call Knowledge with "{}" and
+        # raise INVALID_TOOL_ARGUMENTS, failing the whole turn before Request #2.
+        registry = ToolRegistry(self.reader, DiagnosisService(), knowledge=FakeKnowledge())
+        service = ToolCallingService(MockToolGateway(), registry, self.traces,
+            clock=lambda: self.now, policy=ToolPolicy("assistant", True, (SEARCH_FISHERY_KNOWLEDGE,)))
+        result = service.converse("现在水质怎么样？", self.runtime)
+        self.assertEqual(result.status, Status.COMPLETED)
+        self.assertEqual(result.request_1.outcome, "final_answer")
+        self.assertEqual(result.request_2.outcome, "not_started")
+        self.assertEqual(result.final_finish_reason, "stop")
+        self.assertIsNone(result.error_code)
+        self.assertIsNone(result.tool_result)
+        self.assertIsNone(result.tool_name)
+        self.assertIsNone(result.tool_call_id)
+        self.assertIn("未授权", result.generated_text)
+        self.assertNotIn("水温", result.generated_text)
 
     def test_first_request_has_no_current_facts_or_read(self):
         self.store.set_current(self.reading(oxygen=2.2))
