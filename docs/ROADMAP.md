@@ -9,13 +9,18 @@
 - Preset、Managed Custom、Manual Expert V1/V2 三种模型接入方式；OpenAI-compatible SDK Gateway、凭据快照、Usage、JSONL Trace 与请求取消。
 - Managed 精确 Identity 的 Capability Evidence / Resolver / 显式 Probe；Preset 使用维护者固定合同。
 - Assistant Model v1：三个发布 Preset，OFF + Normal，有界页面会话历史，最多一个只读 Tool / 一轮 / 两次模型请求。
-- Analysis Model 可按 Policy 显式启用 Normal 单轮只读 Tool；Development/Test 提供安全测试入口。当前两个 Tool 为水质查询和实验评分。Tool Calling 不等于 Agent。
+- Analysis Model 可按 Policy 显式启用 Normal 单轮只读 Tool；Development/Test 提供安全测试入口。水质查询和实验评分保持原流程；第三个 Knowledge Tool 的实现与验收状态见下节。Tool Calling 不等于 Agent。
 - 全离线 Python 与 Browser 回归测试。
+
+## IMPLEMENTED / VALIDATION PENDING
+
+- **Knowledge Tool v1**：参数合同、validator、Handler、NO_MATCH、Registry、Catalog、共享服务装配与 UI 已实现；Web 中可执行，必须由用户显式选择，包内默认关闭。
+- **待验收**：真实模型多 Tool 选择、History 干扰、无 Tool 却声称已查询 / 评分 / 检索，以及知识相关性；不能以协议可传输代替真实验收。四项 Qwen 首轮取证因正式凭据预检失败未启动。
+- 阶段依据见[Knowledge Tool 总结](records/2026-10-knowledge-tool-v1-summary.md)；当前合同见[只读 Tool 文档](deep-dive/tools/READ_ONLY_TOOL_CALLING.md)。
 
 ## PAUSED
 
-- **Knowledge Tool**：只读检索项目内鳗鲡养殖背景知识。Step 2–10 已完成（参数合同、`NO_MATCH`、Handler、注册、Catalog 条目、Policy 默认核对、共享服务装配、Assistant 选择规则、UI 与公开活动信息准确性）；**真实 Runtime 中已 `executable`，用户可勾选，但默认不授权**。剩余：离线测试收口与人工验收（Step 11，含真实模型是否按规则选择工具的人工观察）。
-- **D1b（已于 2026-10-09 解决）**：`MockToolGateway` Request #1 原以 `request.tools[0]` 兜底，会以 `"{}"` 调用 Knowledge 而导致整轮失败；现改为显式方向性降级（`FALLBACK_TOOLS`），无可用工具时返回说明文本而非报错。
+- RAG v2 / Retrieval Benchmark 未恢复开发；不因 Knowledge Tool 已注册而自动启动检索架构改造。
 
 ## RESEARCH
 
@@ -23,7 +28,7 @@
 
 ## NEXT
 
-- Copilot Handoff：整理源码学习路径与交接材料。
+- Tool 选择与来源声明问题：先完成有限 Provider 取证，再决定修复范围；不自动扩大请求或 Tool round。
 - Production Integration preparation：先审查正式项目的数据与服务边界，再提出渐进式集成方案；原型不直接替换生产流程。
 
 ## FUTURE

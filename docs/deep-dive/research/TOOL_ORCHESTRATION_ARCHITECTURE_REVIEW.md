@@ -4,7 +4,7 @@
 
 本报告只研究扩展方案。没有修改源码、测试、运行配置或 Preset 合同，没有调用真实模型。官方资料用于研究协议，不用于自动发布模型能力。文中的“建议”及未来类型、错误码均尚未实现。
 
-> **后续状态注记（2026-10-09，不改写上文基于 `6b9dad9` 的结论）**：本报告的源码基线是 `6b9dad9`。其后已实施两项地基变更 —— 受控参数合同（`ToolDefinition.validate_arguments`，Executor 在 Handler 之前完成拒绝/归一化）与 `ToolStatus.NO_MATCH`。因此文中"参数必须是空对象"与"status 仅 `OK/PARTIAL/NOT_SCORABLE/NO_DATA/ERROR`"两处描述**已非当前状态**。当前事实以 [`../tools/ADDING_A_TOOL.md`](../tools/ADDING_A_TOOL.md) 与 `docs/copilot/` 的两份 before/after 对照记录为准。
+> **HISTORICAL / 后续状态注记（2026-10-09）**：本文保留基于 `6b9dad9` 的审查结论，不是 CURRENT STATE。受控参数合同、NO_MATCH 与 Knowledge Tool 注册、装配、UI 已在其后实现；真实模型选择仍未验收。下文旧“两 Tool”“空参数”等表述属于当时基线，不改写原研究。当前接口以[如何新增 Tool](../tools/ADDING_A_TOOL.md)与[只读 Tool 文档](../tools/READ_ONLY_TOOL_CALLING.md)为准；before/after 施工记录已归档，见[阶段总结](../../records/2026-10-knowledge-tool-v1-summary.md)。
 
 ## 1. 当前真实架构
 

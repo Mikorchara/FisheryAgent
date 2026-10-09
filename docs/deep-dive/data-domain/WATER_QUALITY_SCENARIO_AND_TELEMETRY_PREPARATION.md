@@ -40,7 +40,7 @@ Web 组合创建一个共享 `CurrentSnapshotStore` / Reader；Apply、Normal / 
 - 固定 Analysis 捕获水质、运行 Diagnosis、再向 `KnowledgeService` 查询背景 Evidence，然后构建模型上下文。
 - Assistant 不自动读取 Snapshot、Diagnosis 或 RAG。当前事实只能由本轮 `get_current_water_quality` 查询提供。
 - 当前知识服务在 `knowledge.py`，使用包内 `resources/knowledge/eel_knowledge.json`；`resources/knowledge/SOURCE.md` 记录数据来源缺口。知识条目是背景依据，不是现场观测或疾病证据。
-- RAG 是当前 TF-IDF baseline；Knowledge Tool 暂停且未注册。设计另见 `../research/KNOWLEDGE_TOOL_DESIGN.md`。
+- RAG 是当前 TF-IDF baseline；Knowledge Tool 已注册，在共享 KnowledgeService 注入后可执行，默认关闭，真实模型集成仍待验收。接口与背景证据边界见[只读 Tool 当前实现](../tools/READ_ONLY_TOOL_CALLING.md)；检索不产生当前现场观测。
 - Detection Mock 是 `resources/scenarios/detection/` 中的静态事件 fixture。当前没有 Detection Simulator、硬件解析器或正式 Detection Tool。
 
 ## 边界与限制

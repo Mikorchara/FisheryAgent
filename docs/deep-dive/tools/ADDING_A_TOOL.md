@@ -7,7 +7,7 @@
 ```text
 领域服务 ← 薄 Handler ← Registry 静态绑定
                            ├─ ModelToolDefinition（模型协议 schema）
-                           └─ Catalog（仅 UI metadata）
+                           └─ Catalog（展示 metadata；override 校验引用 executable）
 用户问题 / 已捕获 Analysis Context
   → 应用捕获 Policy + RuntimeSnapshot + RequestHandle
   → ToolCallingService.run_request()
@@ -31,7 +31,7 @@
 | Domain / Service | 维护事实、规则与算法；先复用现有服务。 |
 | `tools/handlers/` | 受控输入 → 服务调用 → 有限 dict；不管理模型循环、授权或 Provider 参数。 |
 | `tools/registry.py` | 唯一静态定义与执行绑定。`lookup()` 与 `model_definitions()` 始终一致（都来自本实例已绑定的 entry，不允许"注册了但没有可执行 Handler"）；`registered_names()` 是**全部已知名称**的固定 allowlist，供 Policy 默认文件与 Trace / 公开输出白名单使用，**不等于**单个实例的绑定集合。 |
-| `tools/catalog.py` | UI 名称、说明、参数摘要和实验标记；不注册函数、不授权。`registered` / `executable` / `modes` 是 `tool_catalog()` 的**派生输出**（前两个查 Registry，故同一份 `CATALOG` 在不同实例上结果不同）。`experimental=True` 在 UI 里被渲染成"NOT PROFESSIONAL STANDARD"，是**评分口径**声明，只对做评分的工具使用。 |
+| `tools/catalog.py` | UI 名称、说明、参数摘要和实验标记；不注册函数或产生执行权，但现有用户 Policy override 校验使用其 executable 集合。`registered` / `executable` 由 Registry 派生，`modes` 由后端提供，不是额外授权门禁。`experimental=True` 的专业标准提示只用于评分工具。 |
 | `tools/policy.py` | Analysis / Assistant 的冻结授权；只能缩小 Registry allowlist。 |
 | `tools/executor.py` | 唯一执行入口：参数、权限、预算、重复 ID、取消、结果与安全错误。 |
 | `tool_conversation.py` | 唯一有限模型—工具—模型协调；判断是否结束、是否发 Request #2。 |
@@ -57,9 +57,9 @@ Handler 必须经 Executor 调用。Web 或应用直接调用 Handler 会绕过�
 
 ## 4. 当前参数与结果限制
 
-当前两个工具都无参数。`ToolExecutor.execute()` 限制 arguments JSON 为 object 且必须为空 `{}`，最多 4096 UTF-8 bytes；`ToolDefinition.handler` 为 `Callable[[], dict]`，调用时使用 `handler()`。
+当前水质查询和评分只接受 `{}`；Knowledge 接受必填 `query`。`ToolExecutor.execute()` 限制 arguments JSON 为 object，最多 4096 UTF-8 bytes。`ToolDefinition` 持有 model_definition、handler、可选 validate_arguments；`bind(arguments)` 在执行前校验 / 归一化并绑定参数，无 validator 的旧工具仍拒绝非空对象。
 
-新增带参数工具不能只写 JSON Schema，须明确服务端校验与传参合同。不通过全局变量、Web 状态或任意反射绕过 Executor；旧工具仍拒绝所有多余参数。
+新增带参数工具不能只写 JSON Schema，须绑定显式服务端 validator；归一化 dict 作为 Handler 位置参数，依赖由组合层注入。不通过全局变量、Web 状态或任意反射绕过 Executor；旧工具仍拒绝所有多余参数。Knowledge 的 query strip 后非空、最多 512 字符，拒绝归一化后的控制字符与 lone surrogate，不能携带其他字段。
 
 `ToolExecutionResult.from_payload()` 安全 JSON 序列化，默认结果上限 32768 bytes；status 必须属于 OK / PARTIAL / NOT_SCORABLE / NO_DATA / NO_MATCH / ERROR。其中 `ERROR` 才带 `error_code`；`NO_MATCH` 表示"请求合法但没有任何合格命中"，与"主体没有当前数据"的 `NO_DATA` 语义不同。新增状态要扩展合同并核对消费者。此检查不是完整领域 schema 验证；Handler 仍负责有限结果字段。
 
@@ -71,7 +71,7 @@ Handler 必须经 Executor 调用。Web 或应用直接调用 Handler 会绕过�
 
 协调器从 `ToolPolicy.model_definitions(registry)` 取正式定义，不在应用手写第二份 schema；Gateway 再要求精确 Runtime 的 tool_calling=SUPPORTED。
 
-当前 Policy 没有通用的“某名称仅允许某模式”限制，Catalog 也按两个模式展示。未来工具若只许 Assistant 使用，须落实服务端规则并同步 UI；仅默认关闭 Analysis 或隐藏按钮不构成授权边界。
+当前 Policy 没有通用的“某名称仅允许某模式”限制，UI 读取后端 item.modes。未来工具若只许 Assistant 使用，须落实服务端规则并同步 UI；仅默认关闭 Analysis 或隐藏按钮不构成授权边界。Knowledge 包内默认关闭，新注册不自动迁移用户 override。
 
 ## 6. Request #2 与失败路径
 
@@ -102,4 +102,4 @@ Handler 必须经 Executor 调用。Web 或应用直接调用 Handler 会绕过�
 
 Tool Result 是不可信数据，不能提升为 System 指令；不输出 Secret、私有凭据路径、traceback、完整 Prompt 或不必要原文。Assistant History 只保存成功文本对，不包含 raw Tool Result。UI 用安全文本渲染，Trace 仅记录允许的 metadata。
 
-详见[代码修改地图](../../handoff/TOOL_CHANGE_MAP.md)和[只读 Tool 当前实现](READ_ONLY_TOOL_CALLING.md)。
+详见[Knowledge Tool 阶段总结](../../records/2026-10-knowledge-tool-v1-summary.md)和[只读 Tool 当前实现](READ_ONLY_TOOL_CALLING.md)。旧代码修改地图已归档，不作为当前接口规范。

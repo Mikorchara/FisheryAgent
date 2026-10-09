@@ -14,47 +14,38 @@ Fishery_AI_Prototype/                                            # 项目工作�
 ├─ data/                                                         # 旧数据目录，当前为空目录结构
 │  ├─ knowledge/                                                 # 空目录，运行数据已在包内
 │  └─ mock/                                                      # 空目录，Mock 已在包内
-├─ docs/                                                         # 项目使用、技术与交接资料
-│  ├─ BUILD_RUN.md                                               # 构建、启动与验证命令
-│  ├─ CODE_REVIEW.md                                             # 工程复核与安全边界
-│  ├─ ROADMAP.md                                                 # 稳定功能与后续阶段路线
-│  ├─ STRUCTURE.md                                               # 完整项目文件地图
-│  ├─ TROUBLESHOOTING.md                                         # 模型、凭据与页面故障排查
-│  ├─ deep-dive/                                                 # 当前专项技术与研究文档
-│  │  ├─ architecture/                                           # 跨模块架构文档
-│  │  │  └─ ASSISTANT_MODEL_V1_DESIGN.md                         # Analysis 与 Assistant 稳定架构
-│  │  ├─ data-domain/                                            # 情景与领域数据文档
-│  │  │  └─ WATER_QUALITY_SCENARIO_AND_TELEMETRY_PREPARATION.md  # 情景、Telemetry 与水质数据边界
-│  │  ├─ models/                                                 # 模型合同与发布文档
-│  │  │  ├─ PRESET_PUBLICATION.md                                # 当前 Preset 发布合同与验证依据
-│  │  │  └─ STREAMING_THINKING_OFF_COMBINATION.md                # OFF 加 Streaming 组合能力说明
-│  │  ├─ operations/                                             # 凭据与运行数据位置文档
-│  │  │  ├─ PRIVATE_CREDENTIAL_STORAGE.md                        # 用户私有凭据安全存储
-│  │  │  └─ PROJECT_DATA_AND_CONFIG_LOCATIONS.md                 # 数据与配置实际位置地图
-│  │  ├─ research/                                               # 暂停或未实现的研究
-│  │  │  ├─ KNOWLEDGE_TOOL_DESIGN.md                             # 暂停的 Knowledge Tool 研究
-│  │  │  └─ others.md                                            # 用户补充的研究笔记
-│  │  └─ tools/                                                  # Tool 当前合同与新增规范
-│  │     ├─ ADDING_A_TOOL.md                                     # 新增正式只读 Tool 的通用规范
-│  │     └─ READ_ONLY_TOOL_CALLING.md                            # 当前 Tool 协议、执行与应用接入
-│  ├─ handoff/                                                   # 人工接手与 Copilot 学习资料
-│  │  ├─ KNOWLEDGE_TOOL_V1_WALKTHROUGH.md                        # 未实现 Knowledge Tool 的接手案例
-│  │  ├─ README.md                                               # 代码接手阅读顺序与安全边界
-│  │  └─ TOOL_CHANGE_MAP.md                                      # Tool 各层代码修改地图
-│  └─ copilot/                                                   # Copilot 协作的过程记录，不是产品文档
-│     ├─ KNOWLEDGE_TOOL_STEP_BY_STEP.md                          # Knowledge Tool 分步实施思路与已确认决定
-│     ├─ STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md            # Step 2 受控参数合同的 before/after 对照记录
-│     ├─ STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md              # Step 3 NO_MATCH 合同的 before/after 对照记录
-│     ├─ STEP4_KNOWLEDGE_HANDLER_DESIGN.md                       # Step 4 薄 Knowledge Handler 设计与实施记录
-│     ├─ STEP4_KNOWLEDGE_HANDLER_BEFORE_AFTER.md                 # Step 4 Handler 的 before/after 对照记录
-│     ├─ D1_MOCK_TOOL_GATEWAY_BEFORE_AFTER.md                    # D1 Mock 按工具名分派的 before/after 对照记录
-│     ├─ D1B_MOCK_DIRECTIONAL_FALLBACK_BEFORE_AFTER.md           # D1b Mock 方向性降级的 before/after 对照记录
-│     ├─ STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md            # Step 5 注册与 query validator 的 before/after 对照记录
-│     ├─ STEP6_CATALOG_BEFORE_AFTER.md                           # Step 6 Catalog 新增 Knowledge 条目的 before/after 对照记录
-│     ├─ STEP7_POLICY_DEFAULTS_BEFORE_AFTER.md                   # Step 7 Policy 默认与旧 override 兼容的核对记录
-│     ├─ STEP8_KNOWLEDGE_ASSEMBLY_BEFORE_AFTER.md                # Step 8 共享 KnowledgeService 装配的 before/after 对照记录
-│     ├─ STEP9_ASSISTANT_SELECTION_RULES_BEFORE_AFTER.md         # Step 9 Assistant Tool 选择规则的 before/after 对照记录
-│     └─ STEP10_UI_ACCURACY_BEFORE_AFTER.md                      # Step 10 展示与公开活动信息准确性的 before/after 对照记录
+├─ docs/                                                        # 使用指南、当前技术合同与阶段记录
+│  ├─ BUILD_RUN.md                                              # 构建、启动与验证命令
+│  ├─ CODE_REVIEW.md                                            # 工程复核与安全边界
+│  ├─ ROADMAP.md                                                # 已实现、待验收与后续路线
+│  ├─ STRUCTURE.md                                              # 完整项目文件地图
+│  ├─ TROUBLESHOOTING.md                                        # 模型、凭据与页面故障排查
+│  ├─ notes.md                                                  # 用户本地笔记，当前未跟踪
+│  ├─ deep-dive/                                                # 当前专项技术文档与历史研究
+│  │  ├─ architecture/                                          # Analysis / Assistant 等跨模块架构
+│  │  │  └─ ASSISTANT_MODEL_V1_DESIGN.md                        # Analysis 与 Assistant 当前架构
+│  │  ├─ data-domain/                                           # 情景、Telemetry 与领域数据
+│  │  │  └─ WATER_QUALITY_SCENARIO_AND_TELEMETRY_PREPARATION.md # 水质输入与领域合同边界
+│  │  ├─ models/                                                # 模型合同与发布方案
+│  │  │  ├─ PRESET_PUBLICATION.md                               # Preset 发布方案与资格依据
+│  │  │  └─ STREAMING_THINKING_OFF_COMBINATION.md               # OFF + Streaming 组合验证
+│  │  ├─ operations/                                            # 凭据与运行数据位置
+│  │  │  ├─ PRIVATE_CREDENTIAL_STORAGE.md                       # 用户私有凭据安全边界
+│  │  │  └─ PROJECT_DATA_AND_CONFIG_LOCATIONS.md                # 数据与配置实际位置地图
+│  │  ├─ research/                                              # 带历史标记的研究与未来议题
+│  │  │  ├─ KNOWLEDGE_TOOL_DESIGN.md                            # Knowledge 接入前历史设计
+│  │  │  └─ TOOL_ORCHESTRATION_ARCHITECTURE_REVIEW.md           # 旧基线 Tool 编排研究
+│  │  └─ tools/                                                 # Tool 当前合同与新增规范
+│  │     ├─ ADDING_A_TOOL.md                                    # 新增正式只读 Tool 的通用规范
+│  │     └─ READ_ONLY_TOOL_CALLING.md                           # 三个 Tool 的协议与执行边界
+│  └─ records/                                                  # 阶段记录、验收与独立审计
+│     ├─ README.md                                              # 记录入口与历史归档边界
+│     ├─ 2026-10-knowledge-tool-v1-summary.md                   # Tool 3 接入总结与待验收项
+│     ├─ 2026-10-codex-takeover-audit.md                        # 完整独立接管审计记录
+│     ├─ 2026-10-qwen-tool-provider-evidence.md                 # Qwen 首轮取证的凭据预检阻塞
+│     └─ archive/                                               # 只含文档的压缩历史
+│        ├─ copilot-tool3-records-2026-10.zip                   # 13 份施工记录，保留原目录结构
+│        └─ pre-codex-handoff-2026-10.zip                       # 3 份旧交接稿，保留原目录结构
 ├─ outputs/                                                      # 本地生成数据，Git ignored，记录不逐项展开
 │  ├─ archive/                                                   # 用户本地历史运行数据，不展开
 │  ├─ capability-evidence/                                       # Managed 能力证据与验证记录
@@ -154,7 +145,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │     └─ handlers/                                            # 薄领域 Tool Handler
 │  │        ├─ __init__.py                                       # 只读 Handler 子包入口
 │  │        ├─ current_water_quality.py                          # 当前水质查询与诊断 Handler
-│  │        ├─ knowledge_search.py                               # 只读知识检索 Handler（未注册，Step 4 已实现）
+│  │        ├─ knowledge_search.py                               # 只读知识检索 Handler 与 query validator（已注册）
 │  │        └─ water_quality_score.py                            # 当前水质实验评分 Handler
 │  └─ fishery_ai_prototype.egg-info/                             # 本地安装生成的包 metadata，Git ignored
 │     ├─ dependency_links.txt                                    # 安装生成的依赖链接 metadata
@@ -235,6 +226,6 @@ Fishery_AI_Prototype/                                            # 项目工作�
 
 **Development / Test：** tests 保留完整离线回归；scripts 是维护者辅助工具；.egg-info 是安装生成的 metadata。
 
-**Research / Handoff：** deep-dive 的六个分类保存专项资料，handoff 提供接手路径，copilot 保存 Copilot 协作的过程记录（含 before/after 对照），不是产品文档；Knowledge Tool 仍为 PAUSED / NOT IMPLEMENTED。
+**Research / Records：** deep-dive 保存当前技术合同与明确标记的历史研究；records 保存阶段总结、独立审计和压缩施工记录，不作为运行时真相来源。Knowledge Tool v1 已注册、默认关闭，真实模型选择仍待验收。
 
 **Generated / User-private：** outputs 的 JSON/JSONL 验证记录、用户配置与历史内容不逐项展开；.git、.venv、__pycache__ 等内部文件与缓存不展开。%LOCALAPPDATA% 不属于仓库树，正式凭据与 Manual V2 凭据在固定用户私有目录中分文件存放，不读取或列出其内容。

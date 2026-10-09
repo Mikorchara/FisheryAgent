@@ -22,7 +22,7 @@ python -m venv .venv
 
 当前 Preset：Qwen 3.8 Flash（默认）、DeepSeek Flash、Ollama Qwen3.5 4B。用户可用组合与合同版本见[Preset 发布合同](docs/deep-dive/models/PRESET_PUBLICATION.md)。
 
-Assistant Model v1 与 Analysis 分离；固定 Analysis 保留 Snapshot → Diagnosis → RAG。两个只读 Tool 为当前水质查询与实验评分；评分不是专业养殖标准。系统不是 Agent，不支持 Streaming Tool Calling，也不允许 Tool 直接操作设备、写数据库或修改诊断阈值。
+Assistant Model v1 与 Analysis 分离；固定 Analysis 保留 Snapshot → Diagnosis → RAG。当前注册三个只读 Tool：水质查询、实验评分与项目知识检索；Knowledge 默认关闭，真实模型选择稳定性尚未验收。评分不是专业养殖标准，背景知识不代表当前事实。系统不是 Agent，不支持 Streaming Tool Calling，也不允许 Tool 直接操作设备、写数据库或修改诊断阈值。
 
 ## 文档
 
@@ -33,6 +33,6 @@ Assistant Model v1 与 Analysis 分离；固定 Analysis 保留 Snapshot → Dia
 - [当前 Analysis / Assistant 结构](docs/deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)
 - [只读 Tool 当前实现](docs/deep-dive/tools/READ_ONLY_TOOL_CALLING.md)
 - [如何新增 Tool](docs/deep-dive/tools/ADDING_A_TOOL.md)
-- [代码接手 / Copilot 学习](docs/handoff/README.md)：面向代码接手 / Copilot 辅助学习的流程与代码地图。
+- [阶段记录与历史归档](docs/records/README.md)：验收、独立审计与已结束阶段记录；不作为 CURRENT STATE 来源。
 - [水质与 Telemetry 数据边界](docs/deep-dive/data-domain/WATER_QUALITY_SCENARIO_AND_TELEMETRY_PREPARATION.md)
 - [运行数据与凭据位置](docs/deep-dive/operations/PROJECT_DATA_AND_CONFIG_LOCATIONS.md)

@@ -19,12 +19,21 @@ T1 模型合同表达 tool definition、assistant tool call、tool_call_id、rol
 
 ## Registry、Policy 与执行
 
-- `src/fishery_ai/tools/registry.py` 是静态执行 allowlist，当前仅注册 `get_current_water_quality` 和 `score_current_water_quality`。
-- `catalog.py` 仅提供显示文案与通用 metadata，不注册 Handler、不授权执行。
+- `src/fishery_ai/tools/registry.py` 是静态执行 allowlist，当前有 `get_current_water_quality`、`score_current_water_quality`、`search_fishery_knowledge`。Knowledge 只在注入 KnowledgeService 的实例中绑定并暴露。
+- `catalog.py` 提供显示文案与通用 metadata，不注册 Handler、不校验参数、不产生执行权；当前用户 Policy override 校验还使用它的 executable 集合，并非完全与权限配置无关。
 - `policy.py` 只允许从 Registry 中筛选名称。用户设置写入固定的 Git ignored `outputs/tool-policies/tool_policies.json`；新请求捕获冻结 Policy。
 - `executor.py` 校验调用名、参数、预算、结果大小与取消；未知或未授权请求安全拒绝。Handler 不读取任意文件、Scenario 或原始模拟包，也不做网络、设备或数据库写操作。
 - `handlers/current_water_quality.py` 经共享 `CurrentWaterQualityReader` 获取 query-time view，再调用 `DiagnosisService`。
 - `handlers/water_quality_score.py` 经同一个 Reader 调用 `WaterQualityScoringService`。评分是 Experimental，不是专业养殖标准。
+- `handlers/knowledge_search.py` 使用 Web 组合层注入的同一个 KnowledgeService；先绑定 Registry，再创建 UserToolPolicyStore。Analysis 自动 RAG 与 Tool 检索共享服务，不另建索引。
+
+## Knowledge 参数与结果
+
+`search_fishery_knowledge({"query": "..."})` 只接受 query 字符串；strip 后非空、最多 512 字符，拒绝归一化后仍存在的控制字符和 lone surrogate。Schema 声明 required query 与 additionalProperties=false；Executor 在 Handler 前执行显式 validator，另限制 JSON object / 4096 UTF-8 bytes。
+
+Handler 固定 top_k=3，返回 status、retrieval_mode、result_count、evidence。Evidence 仅含 id、category、source、source_version、text；正文超过 800 字符时截断并另附省略号，不输出 score、retrieved_at、source_title 或 retrieval_version。无合格命中为 NO_MATCH，正常进入第二轮；执行失败为安全 ERROR，不能伪装成无命中。统一结果上限为 32768 bytes。
+
+包内默认 Analysis 关闭且无 Tool，Assistant 仅开放水质查询；Knowledge 默认不授权。用户 override 可显式选择已绑定 Tool，新注册不自动改写旧选择。UI 使用 Catalog 标签，参数只显示“参数已提供（内容未展示）”，query 原文不进入 Activity / Trace。
 
 ## 两种正式应用接入
 
@@ -47,10 +56,13 @@ Development/Test 可使用离线 Mock 或满足能力门禁的真实 Runtime，�
 ## 当前限制
 
 - 不支持 Streaming Tool Calling、tool delta 拼接或 Streaming Tool Execution。
-- Knowledge Tool 已暂停，未注册。
+- Knowledge 已注册并具备离线协议 / 执行支持，真实模型选择稳定性仍待验收。无 Tool 却声称已查询 / 评分 / 检索的正文目前仍可能被提交为成功回答；Prompt 不等于来源保证。
+- Assistant 按需 Knowledge 与 Analysis 自动 RAG 的双重来源问题、History 干扰和检索相关性仍待独立评审。
 - 没有第二轮以上循环、多个 Tool 并行、Agent、Detection Tool、设备控制或写入操作。
 - Protocol support、Preset 固定合同、Managed Evidence 和用户 Tool Policy 是不同层次，不能互相代替。
 
 ## 主要测试
 
 T1/T2/T3：`test_gateway_tool_contract.py`、`test_read_only_tools.py`、`test_tool_conversation.py`。应用与 UI：`test_analysis_tools.py`、`test_analysis_tool_web.py`、`test_web_tool_conversation.py`、`test_assistant.py`、`test_browser_streaming.cjs`。自动测试使用 Mock / 临时数据，不发送真实模型请求。
+
+参数与知识执行覆盖：`test_tool_argument_contract.py`、`test_tool_status_no_match.py`、`test_knowledge_handler.py`、`test_knowledge_registration.py`、`test_knowledge_assembly.py`。历史实施与独立审计见[阶段总结](../../records/2026-10-knowledge-tool-v1-summary.md)，不能把历史测试数量当作当前验收。
