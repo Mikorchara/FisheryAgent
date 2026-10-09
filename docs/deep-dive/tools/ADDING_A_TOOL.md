@@ -61,7 +61,7 @@ Handler 必须经 Executor 调用。Web 或应用直接调用 Handler 会绕过�
 
 新增带参数工具不能只写 JSON Schema，须明确服务端校验与传参合同。不通过全局变量、Web 状态或任意反射绕过 Executor；旧工具仍拒绝所有多余参数。
 
-`ToolExecutionResult.from_payload()` 安全 JSON 序列化，默认结果上限 32768 bytes；status 必须属于 OK / PARTIAL / NOT_SCORABLE / NO_DATA / ERROR。新增状态要扩展合同并核对消费者。此检查不是完整领域 schema 验证；Handler 仍负责有限结果字段。
+`ToolExecutionResult.from_payload()` 安全 JSON 序列化，默认结果上限 32768 bytes；status 必须属于 OK / PARTIAL / NOT_SCORABLE / NO_DATA / NO_MATCH / ERROR。其中 `ERROR` 才带 `error_code`；`NO_MATCH` 表示"请求合法但没有任何合格命中"，与"主体没有当前数据"的 `NO_DATA` 语义不同。新增状态要扩展合同并核对消费者。此检查不是完整领域 schema 验证；Handler 仍负责有限结果字段。
 
 ## 5. Assistant / Analysis 如何获得定义
 
@@ -79,7 +79,7 @@ Handler 必须经 Executor 调用。Web 或应用直接调用 Handler 会绕过�
 
 合法单调用经 Executor 执行；非 ERROR 结果保存为 `role=tool` JSON。协调器追加原 assistant 的 tool_calls，用同一 call ID 关联结果；Request #2 设置 tool_choice=none。第二轮继续要工具返回 TOOL_ROUND_LIMIT，不发第三轮。
 
-执行 ERROR 不继续第二轮。NO_DATA 等正常业务状态交给模型解释。两轮使用同一不可变 Runtime/Credential snapshot，Usage 分步保留并合并，缺失不伪装为零。
+执行 ERROR 不继续第二轮。NO_DATA / NO_MATCH 等正常业务状态交给模型解释。两轮使用同一不可变 Runtime/Credential snapshot，Usage 分步保留并合并，缺失不伪装为零。
 
 首轮后、Handler 前后及第二轮前后沿用 RequestHandle 检查取消；取消不提交半成品、不写能力证据。关闭本地 I/O 不证明远端停止计算/计费。
 

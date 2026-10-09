@@ -10,10 +10,20 @@ from ..model_gateway import ModelToolDefinition
 
 
 class ToolStatus(str, Enum):
+    """Business result of one tool execution.
+
+    Every non-error status carries ``error_code is None`` and does not stop the
+    follow-up model request; only ``ERROR`` does. ``NO_DATA`` means the subject
+    itself has no current data (for example no applied snapshot). ``NO_MATCH``
+    means the request was valid but nothing qualified (for example a read-only
+    search whose hits did not meet the minimum). They are deliberately distinct.
+    """
+
     OK = "OK"
     PARTIAL = "PARTIAL"
     NOT_SCORABLE = "NOT_SCORABLE"
     NO_DATA = "NO_DATA"
+    NO_MATCH = "NO_MATCH"
     ERROR = "ERROR"
 
 

@@ -1261,7 +1261,8 @@ test('Assistant failed cancelled truncated empty unknown-finish turns never ente
 test('Assistant lightweight tool activity shows query status time and experimental score without Raw Trace',async()=>{
   for(const [name,status,quality,freshness] of [['get_current_water_quality','OK','valid','fresh'],
     ['get_current_water_quality','OK','invalid','stale'],['get_current_water_quality','PARTIAL','partial','fresh'],
-    ['get_current_water_quality','NO_DATA',undefined,undefined],['score_current_water_quality','OK','valid','fresh']]) {
+    ['get_current_water_quality','NO_DATA',undefined,undefined],
+    ['get_current_water_quality','NO_MATCH',undefined,undefined],['score_current_water_quality','OK','valid','fresh']]) {
     const activity={used_tool:true,tool_name:name,tool_status:status,quality,freshness,duration_ms:2,
       evaluated_at:'2026-10-06T01:00:00Z'};
     const page=assistantPage(async()=>r2Reply({result:assistantResult({tool_activity:activity,

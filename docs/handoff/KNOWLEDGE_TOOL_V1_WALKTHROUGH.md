@@ -2,6 +2,12 @@
 
 **状态：PAUSED / NOT IMPLEMENTED。** 本文是基于当前代码的未来实施学习案例，不是已实现功能，也不授权 Copilot 开始开发。当前没有 `knowledge_search.py`、对应 Registry entry、参数化 Handler 或 Knowledge Policy 授权。
 
+> **前置步骤进度（2026-10-09）**：两个与 Knowledge 无关的地基已经完成，本案例的后续步骤可以直接依赖它们。
+> 1. **受控参数合同**（Step 2）：`ToolDefinition` 已支持声明 `validate_arguments`，Executor 会在 Handler 之前完成拒绝或归一化。旧两个无参工具行为不变。见 [`docs/copilot/STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md`](../copilot/STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md)。
+> 2. **`ToolStatus.NO_MATCH`**（Step 3）：合同已采纳该状态，前端安全投影同步认识它；非错误结果仍继续 Request #2。见 [`docs/copilot/STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md`](../copilot/STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md)。
+>
+> 本文其余内容（Handler、Registry、Catalog、Policy、UI 文案、人工验收）仍是**未来工作**。
+
 阅读时把“当前事实”和“未来建议”分开。总体约束见[新增 Tool 规范](../deep-dive/tools/ADDING_A_TOOL.md)，尚待决策的研究见[Knowledge Tool 研究](../deep-dive/research/KNOWLEDGE_TOOL_DESIGN.md)。
 
 ## 1. 最终目标
@@ -71,7 +77,7 @@
 
 建议结果：`status`、`retrieval_mode`、明确的检索版本、`result_count`、有限 `evidence[]`。条目保留 evidence ID、类别、来源、资源版本、检索时间与受限文本；无依据时不补造 source title。不必把 raw score 发给模型。
 
-未来可采用 `OK` / `NO_MATCH` / 安全 `ERROR`。**当前 ToolStatus 没有 NO_MATCH**，若采纳它，应先扩展 `tools/contracts.py` 并核对消费者，不能只在 Handler 返回该字符串。Knowledge 无命中不同于水质的 NO_DATA。
+未来可采用 `OK` / `NO_MATCH` / 安全 `ERROR`。**`ToolStatus.NO_MATCH` 已于 2026-10-09 加入合同并核对完全部消费者**（Handler 不能自己造枚举外的状态；无命中与其他业务状态同等对待）。Knowledge 无命中不同于水质的 NO_DATA。
 
 建议先定固定预算，如 top-3、每段最多 800 字符、结果总量不超过 8 KiB；这些不是当前合同，重新立项时需确认。裁剪不得丢掉来源标识或产生损坏 JSON。
 
@@ -201,7 +207,7 @@ Mock 采用可检查的 scripted Gateway，不扩展生产关键词路由来“�
 | `src/fishery_ai/contracts.py` | KnowledgeEvidence | 通常不改 | 保留来源/时间合同；Knowledge tests。 |
 | `resources/knowledge/*`（包内） | 数据与 provenance | 通常不改 | 不复制数据，不编造来源；Knowledge tests。 |
 | `tools/handlers/knowledge_search.py` | 未来薄 Handler | 新增 | query → Service → 安全结果；新 `test_knowledge_tool.py`。 |
-| `tools/contracts.py` | 当前无参数 Handler / 状态 | 需最小调整 | 参数执行合同，采纳时增加 NO_MATCH；Executor / Knowledge tests。 |
+| `tools/contracts.py` | 参数执行合同与 ToolStatus | **已完成前置调整**（参数合同 + `NO_MATCH`） | 除非需要新的状态，否则本轮不再改；`test_tool_argument_contract.py`、`test_tool_status_no_match.py`。 |
 | `tools/registry.py` | 定义与可执行绑定 | 需改 | schema、静态绑定、registered_names、依赖注入；Registry tests。 |
 | `tools/catalog.py` | UI metadata | 需改 | 描述、参数摘要；`test_tool_policy_manager.py`。 |
 | `tools/policy.py` | 服务端授权 | 评估并最小调整 | 若定为仅 Assistant，需实际模式门禁；Policy tests。 |
@@ -210,7 +216,7 @@ Mock 采用可检查的 scripted Gateway，不扩展生产关键词路由来“�
 | `web.py` | 共享 Service / Registry composition | 需改组合处 | 注入现有 KnowledgeService；Web / Assistant tests。 |
 | `assistant.py` | 上下文与 History | 可能补规则 | 区分实时事实、评分和项目知识；`test_assistant.py`。 |
 | `tool_conversation.py` | Request #1/#2 与预算 | 通常不改生产 loop | 复用；核对新增非错误状态；`test_tool_conversation.py`。 |
-| `resources/web/app.js`（包内） | Activity 名称/状态和水质提示 | 需最小调整 | Knowledge / NO_MATCH 识别及正确文案；Browser tests。 |
+| `resources/web/app.js`（包内） | Activity 名称/状态和水质提示 | 仍需改（Step 10） | 状态白名单已含 `NO_MATCH`（2026-10-09）；剩余：工具名白名单与"已查询当前水质"文案按工具区分；Browser tests。 |
 | `model_gateway.py` / `openai_compatible_adapter.py` | 已有通用协议 | 不应因新增此工具改协议 | 现有 JSON schema / call transport；Gateway tests。 |
 | `application.py` | 固定 Analysis 的 RAG | 不应改变流程 | Knowledge v1 不加入 Analysis；Analysis tests。 |
 | `observability.py` / `execution.py` / Credential 模块 | Trace / 取消 / Secret | 通常不改 | 保持安全边界；相关回归。 |

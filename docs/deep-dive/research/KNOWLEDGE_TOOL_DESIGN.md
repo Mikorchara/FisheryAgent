@@ -2,6 +2,8 @@
 
 **状态：PAUSED。** 当前没有 Knowledge Tool Handler、Registry entry 或 Policy 授权。本文记录以后重新评审时仍有用的设计决定，不构成当前功能或实现承诺。
 
+> **后续状态注记（2026-10-09）**：文中提出需先决策的两项前置已落地 —— `ToolStatus.NO_MATCH` 已加入合同并核对完全部消费者；受控参数合同已让 Executor 支持带参工具。本文其余内容（Handler、Registry、Policy、UI）仍暂停。
+
 ## 当前 Knowledge / RAG 基线
 
 - `src/fishery_ai/knowledge.py::KnowledgeService` 从包内 `resources/knowledge/eel_knowledge.json` 构造 31 个当前知识 chunk。数据版本为 1.0；来源与逐条 provenance 缺口见同目录 `SOURCE.md`。来源标记为 `legacy:eel_knowledge.json`，没有依据时不编造作者、标题或逐条文献。

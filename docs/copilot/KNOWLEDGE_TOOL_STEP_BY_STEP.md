@@ -49,7 +49,7 @@ Tool 的价值和检索质量无关：
 1. Tool 会把检索质量**直接暴露给用户**。以前 Analysis 的 RAG 有 system prompt 兜底（"RAG Evidence 仅是背景知识 / 不得诊断具体疾病 / 不得直接推荐具体药物"），Assistant 直答时没有这层护栏，检索不到就必须诚实说"资料不足"。
 2. `KNOWLEDGE_TOOL_DESIGN.md` 明确写了：**不要用"加入 Tool"来替代 RAG 评估**。两者是独立研究项。
 
-**建议顺序**：先用极低成本补一份 baseline（下面第 1 步），它同时服务"Tool 的验收"和"未来 RAG 升级的对照"。然后做 Tool。两者不互相阻塞。
+**建议顺序（2026-10-08 更新）**：**baseline 暂缓**（见 §2 决定 1 —— 本项目目标是学习并完成 Tool 接入，不启动 RAG 改进项目），直接进入 Tool 实现；baseline 留作 future / research。两者本来也不互相阻塞，随时可以补测。
 
 ### 0.3 以后升级 RAG，Tool 要跟着变吗
 
@@ -77,7 +77,7 @@ Executor / Policy / Registry / UI
 | 升级类型 | 是否改 Tool | 说明 |
 | --- | --- | --- |
 | 返回类型不再是 `KnowledgeEvidence` | 是 | 会改 `contracts.py` → 影响 Handler 映射与测试 |
-| 需要新参数（category 过滤、时间范围等） | 是 | 参数 schema 与 Executor 参数入口要跟着动 |
+| 需要新参数（category 过滤、时间范围等） | 是 | 参数 schema 与工具的 `validate_arguments` 要跟着动；**Executor 本身已支持带参数**（Step 2 已完成） |
 | 需要多跳检索（query rewrite → 再检索） | **是，且更严重** | 会撞上当前 **1 call / 1 round / 2 requests** 的预算；这不是"Tool 变了"，而是**预算模型要重新讨论**（可能被误当成 Agent） |
 | 索引需要异步重建 / 热更新 | 是 | Handler 要新增"索引未就绪"状态 |
 | 分数语义变化 | **不需要改合同，但必须改结果里的版本标识** | 否则无法解释"这次回答基于哪版检索" |
@@ -98,24 +98,31 @@ Executor / Policy / Registry / UI
 - **完成判据**：数字记录在测试输出里；成为后续任何检索改动的回归网。
 - **风险**：期望值靠人工标注，规则要写清楚（例如"只标一个最强期望 id，不标模糊项"）。
 
-### Step 2：Tool 框架最小演进 —— 受控参数合同（与 Knowledge 无关）
+### Step 2：Tool 框架最小演进 —— 受控参数合同（与 Knowledge 无关）—— **已实施 2026-10-08**
 
 这一步就是 Walkthrough §8 说的"最小框架改动点"，**先做它、先证明旧工具完全兼容**。
 
 - **目标**：让 Executor 支持"有参数的工具"。
-- **改**：`tools/contracts.py`（给 `ToolDefinition` 增加参数校验入口；调用约定统一为 `handler(validated_arguments)`）、`tools/executor.py`（解析 JSON → 交给该入口校验 → 再交给 Handler）。
-- **硬约束**：
-  - 旧两个工具**仍严格只接受 `{}`**（在 Registry 用固定包装提供兼容）；
-  - 不引入反射 / `getattr` / 任意 `**arguments` / 第二套 Executor；
-  - Cancellation、Policy、预算、错误清洗、结果大小规则仍由同一个 Executor 负责。
-- **测试**：`tests/test_read_only_tools.py` 补"旧工具仍拒绝非空参数、仍正常执行"；新用例证明带参数工具能收到已校验参数。
-- **完成判据**：全部现有测试通过 + 新用例通过；**此步单独提交**。
+- **实际改动（2 个源文件）**：
+  - `tools/contracts.py`：`ToolDefinition` 新增 `validate_arguments: Callable[[dict], dict] | None = None` 与 `bind()` 方法。
+  - `tools/executor.py`：`arguments` 必须为 JSON object（不再要求为空）→ `definition.bind(arguments)` → `invoke()`。
+- **实施时的关键修正**：原计划写的是"统一为 `handler(validated_arguments)`，旧工具用固定包装"。实际**不可行**——既有测试依赖 `handler` 仍是 `functools.partial`（`test_web_tool_conversation.py` 读 `.handler.keywords["reader"]`），并有零参 `def handler():`。最终改为**两种形状并存**：未声明参数 → `handler()`；已声明 → `handler(validated)`。结果**零测试改动**。
+- **硬约束（都已满足）**：旧两个工具仍严格只接受 `{}`；不引入反射 / `getattr` / 任意 `**arguments` / 第二套 Executor；Cancellation、Policy、预算、错误清洗、结果大小规则仍由同一个 Executor 负责。
+- **测试**：新增 `tests/test_tool_argument_contract.py`（14 项）；未修改任何既有测试。
+- **完成判据（已达成）**：`Ran 736 tests ... OK`。
+- **详细 before/after** → [`STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md`](STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md)
 
-### Step 3：新增 `ToolStatus.NO_MATCH`（**已决定采用**）
+### Step 3：新增 `ToolStatus.NO_MATCH` —— **已实施 2026-10-09**
 
-- **现状**：`ToolStatus` 只有 `OK / PARTIAL / NOT_SCORABLE / NO_DATA / ERROR`，且 `ToolExecutionResult.from_payload()` 用 `ToolStatus(payload["status"])` 严格反序列化 → **Handler 不能自己造状态**。
-- **第一步是核对消费者**（先于改代码）：`tools/contracts.py`、`tool_conversation.py`（只有 `ERROR` 会终止第二轮，`NO_MATCH` 必须继续交给模型解释）、`resources/web/app.js` 的状态白名单、`observability.py` 的 Trace、相关测试。
-- **完成判据**：枚举、全部消费者、测试、UI 四处一致。
+- **实际改动（2 个文件）**：
+  - `tools/contracts.py`：`ToolStatus` 新增 `NO_MATCH = "NO_MATCH"`，并在类文档串写明"非错误状态 `error_code is None`、只有 `ERROR` 终止第二轮"。
+  - `resources/web/app.js`：`safeAssistantActivity()` 的 `tool_status` 白名单加入 `NO_MATCH` —— 后端合同已接受该状态，前端安全投影也同步认识它（这不等于开放 Knowledge Tool）。
+- **明确未改动**：`tool_conversation.py`、`tools/executor.py`、`observability.py`、`assistant.py`、`web.py`、`tools/policy.py`、`tools/catalog.py`、`tools/registry.py`、`ToolErrorCode`、历史 Preset 证据。
+- **验证（实测）**：
+  - 新增 `tests/test_tool_status_no_match.py`（**10 项**），覆盖"非错误结果 → 继续 Request #2 → Assistant COMPLETED → Trace 安全记录 → UI 投影保留"，并证明旧五值语义不变；
+  - `tests/test_browser_streaming.cjs` 的状态参数表加入 `NO_MATCH` 一行；
+  - `unittest discover -s tests` → **746 项通过**；`node --test tests/test_browser_streaming.cjs` → **183 项通过**。
+- **详细 before/after** → [`STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md`](STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md)
 
 ### Step 4：新增薄 Handler
 
@@ -174,7 +181,7 @@ Executor / Policy / Registry / UI
 | # | 决定 | 对计划的影响 |
 | --- | --- | --- |
 | 1 | **RAG baseline 暂缓**，不作为 Knowledge Tool 的前置步骤；留作 future / research | Step 1 移出主路径；本轮不改 RAG、不建评测集 |
-| 2 | **新增 `NO_MATCH`**（同意），但实施前先核对全部消费者与测试 | Step 3 保留，且必须先产出消费者清单 |
+| 2 | **新增 `NO_MATCH`**（同意），但实施前先核对全部消费者与测试 | **已实施 2026-10-09**；消费者清单已产出并分类，见 §4 |
 | 3 | **不做服务端"仅 Assistant"硬边界**；`modes` 保持**单一权威来源**（`tools/catalog.py`）；Analysis 将来也可能开放 Knowledge，协调延后；现在只在 UI 默认**不勾选** | Step 7 降级为"不改 Policy 语义"；Step 6 不得新增第二份 modes 定义；默认 `tool_policies.json` 不含 Knowledge |
 | 4 | `top_k` **暂定 3**；每段/总量上限在实测后定 | 见 §2.1 |
 
@@ -207,7 +214,7 @@ Executor / Policy / Registry / UI
 5. **结果不带 raw score**（研究文档建议）：JSON 更小，也避免分数被当概率。
 6. 参数侧预算安全：512 个中文字符 = **1536 bytes** < Executor 的 4096 bytes 参数上限。
 
-## 3. Step 2 设计稿：受控参数合同（未实施）
+## 3. Step 2 设计稿与实施结果：受控参数合同（**已实施**）
 
 ### 3.1 现状（已核实）
 
@@ -225,25 +232,42 @@ Executor / Policy / Registry / UI
 
 1. **声明放哪**：`ToolDefinition` 增加一个参数校验入口（形如 `validate_arguments: Callable[[dict], dict]`，返回**归一化后**的参数）。绑定点在 Registry（静态声明），不从配置加载。
 2. **校验放哪**：仍然**只在 `ToolExecutor.execute()` 一处**。Executor 负责 UTF-8 字节上限 → JSON object → 交给 `validate_arguments` → 失败即 `INVALID_TOOL_ARGUMENTS`。
-3. **传给 Handler 什么**：统一为 `handler(validated_arguments)`。旧工具用一个固定包装保持"无参"调用形状，其 `validate_arguments` 只接受 `{}`。
+3. **传给 Handler 什么**：声明了参数 → `handler(validated_arguments)`（已归一化的单个 dict）；未声明参数 → 仍是 `handler()`。**实施时改为"两种形状并存"**，没有统一传参 —— 原因见 §3.7。
 
 ### 3.4 兼容与迁移
 
 - 旧工具：校验器只允许空 dict；调用形状由包装保持 → `tests/test_read_only_tools.py` 现有断言必须**一字不改地通过**。
 - 新工具：Handler 只收到**声明过的键**、已归一化的 dict。
 
-### 3.5 验证
+### 3.5 验证（已实施）
 
-新增：① 带参数工具能收到已校验参数；② 旧工具仍拒绝 `{"query":"x"}`；③ 参数超 4096 bytes 仍 `INVALID_TOOL_ARGUMENTS`；④ 校验器抛异常 → 安全 `ERROR`，不外泄 traceback；⑤ 未声明字段被拒。
+新增 `tests/test_tool_argument_contract.py`：① 带参数工具能收到已校验参数；② 旧工具仍拒绝 `{"query":"x"}`；③ 参数超 4096 bytes 在校验**之前**被拒；④ 校验器抛 `ValueError` → `INVALID_TOOL_ARGUMENTS`，抛其它异常 → 安全 `TOOL_EXECUTION_ERROR`，两者都不外泄 traceback 且都不执行 Handler；⑤ 未声明字段被拒（由校验器决定）。
 
-回归：`test_read_only_tools.py`、`test_tool_policy.py`、`test_tool_conversation.py`、`test_analysis_tools.py`、`test_web_tool_conversation.py`。
+回归：全量 `unittest discover -s tests` → **736 项通过**。
 
 ### 3.6 风险
 
-- 改 `ToolDefinition` 会触及所有构造点（Registry 及测试）→ 需一次性核对完整。
-- 若把 `handler(arguments)` 改成必填参数，旧 Handler 签名会破 → 用包装避免。
+- 改 `ToolDefinition` 会触及所有构造点（Registry 及测试）→ 需一次性核对完整。**已核对：现有测试零改动通过。**
+- 若把 `handler(arguments)` 改成必填参数，旧 Handler 签名会破 → **该风险已发生，改用"两种形状并存"规避**（见 §3.7）。
 
-## 4. 本方案的自我约束
+### 3.7 实施后的补充说明
+
+- 枚举值域被**放宽**：以前 Handler 返回 `{"status":"NO_MATCH"}` 会被兜成 `TOOL_EXECUTION_ERROR`；Step 3 之后会被当成合法状态。这是有意为之，且目前没有 Handler 返回该值。
+- `handler` 的类型注解由 `Callable[[], dict]` 放宽为 `Callable[..., dict]`，但**运行时形状不变**。
+- 本次踩坑：测试辅助方法命名为 `run` 会覆盖 `unittest.TestCase.run`，导致 `setUp` 不执行。详见对照记录 §6。
+
+## 4. 后续依赖登记（**本轮不改**，2026-10-09 分类）
+
+Step 3 的消费者搜索发现三处"现在改是错的、但将来必须改"的位置。按用户决定分类登记：
+
+| 编号 | 位置 | 分类 | 说明 |
+| --- | --- | --- | --- |
+| **D1** | `tool_conversation.py:47` `MockToolGateway.complete` 的 `payload["status"] == "NO_DATA"` 分支 | **BLOCKER BEFORE KNOWLEDGE REGISTRATION** | 该分支的 `else` 会读 `payload["water_quality"]`；一旦 Knowledge 注册并走 Mock 页面，`NO_MATCH` 会掉进 `else` → `KeyError`。**必须在 Step 5 注册 Knowledge Tool 之前解决。** |
+| **D2** | `application.py:47-49` `snapshot_comparison` | 当前不改 | NO_MATCH 会被判成 `not_called`。Knowledge Tool 仍是 **Assistant-only**；只有未来真的允许 Analysis 使用时才重新评审。 |
+| **D3** | `app.js:2759` 工具名白名单、`:2794` 硬编码文案"本轮已查询当前水质" | 当前不改，**Step 10 必须处理** | 否则 Knowledge 调用会被置 `null` / 误标成水质查询。 |
+| **B6** | `web.py:1127` 的 `"arguments"` 字段（`!= "ERROR"` 时写 `{}`） | 移入「**参数型 Knowledge Tool 接入前依赖**」 | 这是"带参数工具"带来的既有不精确，**不是 NO_MATCH 本身的问题**，本步不顺便修改；接入带参工具前必须重新评审该字段。 |
+
+## 5. 本方案的自我约束
 
 - 不复制 TF-IDF、不建第二份索引、不搬走 Analysis 的 RAG。
 - 不把 Knowledge 检索接进 Analysis（Analysis 已有自动 RAG，重复检索只会占用单 Tool 预算）。

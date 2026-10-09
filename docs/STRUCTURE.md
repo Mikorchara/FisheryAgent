@@ -37,10 +37,14 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  └─ tools/                                                  # Tool 当前合同与新增规范
 │  │     ├─ ADDING_A_TOOL.md                                     # 新增正式只读 Tool 的通用规范
 │  │     └─ READ_ONLY_TOOL_CALLING.md                            # 当前 Tool 协议、执行与应用接入
-│  └─ handoff/                                                   # 人工接手与 Copilot 学习资料
-│     ├─ KNOWLEDGE_TOOL_V1_WALKTHROUGH.md                        # 未实现 Knowledge Tool 的接手案例
-│     ├─ README.md                                               # 代码接手阅读顺序与安全边界
-│     └─ TOOL_CHANGE_MAP.md                                      # Tool 各层代码修改地图
+│  ├─ handoff/                                                   # 人工接手与 Copilot 学习资料
+│  │  ├─ KNOWLEDGE_TOOL_V1_WALKTHROUGH.md                        # 未实现 Knowledge Tool 的接手案例
+│  │  ├─ README.md                                               # 代码接手阅读顺序与安全边界
+│  │  └─ TOOL_CHANGE_MAP.md                                      # Tool 各层代码修改地图
+│  └─ copilot/                                                   # Copilot 协作的过程记录，不是产品文档
+│     ├─ KNOWLEDGE_TOOL_STEP_BY_STEP.md                          # Knowledge Tool 分步实施思路与已确认决定
+│     ├─ STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md            # Step 2 受控参数合同的 before/after 对照记录
+│     └─ STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md              # Step 3 NO_MATCH 合同的 before/after 对照记录
 ├─ outputs/                                                      # 本地生成数据，Git ignored，记录不逐项展开
 │  ├─ archive/                                                   # 用户本地历史运行数据，不展开
 │  ├─ capability-evidence/                                       # Managed 能力证据与验证记录
@@ -180,10 +184,12 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_read_only_tools.py                                    # Registry、Executor 与只读 Handler 测试
    ├─ test_scenario_templates.py                                 # 情景模板 CRUD 与显式 Apply 测试
    ├─ test_telemetry_simulator.py                                # Telemetry 合同、模拟与 Adapter 测试
+   ├─ test_tool_argument_contract.py                             # Tool 受控参数合同与旧工具兼容测试
    ├─ test_tool_capability_probe.py                              # Tool 能力 Probe 与 Web 门禁测试
    ├─ test_tool_conversation.py                                  # 单轮 Tool 闭环、Usage 与错误测试
    ├─ test_tool_policy.py                                        # Analysis 与 Assistant 授权测试
    ├─ test_tool_policy_manager.py                                # Tool Manager 与用户 Policy 存储测试
+   ├─ test_tool_status_no_match.py                               # NO_MATCH 非错误结果、二轮闭环与安全投影测试
    ├─ test_unknown_model_probe.py                                # 未知能力显式 Probe 与证据写入测试
    ├─ test_v01.py                                                # 基础合同、诊断、Knowledge 与 Gateway 测试
    ├─ test_v011_a1.py                                            # 多模型能力、选项与 Usage 合同测试
@@ -213,6 +219,6 @@ Fishery_AI_Prototype/                                            # 项目工作�
 
 **Development / Test：** tests 保留完整离线回归；scripts 是维护者辅助工具；.egg-info 是安装生成的 metadata。
 
-**Research / Handoff：** deep-dive 的六个分类保存专项资料，handoff 提供接手路径；Knowledge Tool 仍为 PAUSED / NOT IMPLEMENTED。
+**Research / Handoff：** deep-dive 的六个分类保存专项资料，handoff 提供接手路径，copilot 保存 Copilot 协作的过程记录（含 before/after 对照），不是产品文档；Knowledge Tool 仍为 PAUSED / NOT IMPLEMENTED。
 
 **Generated / User-private：** outputs 的 JSON/JSONL 验证记录、用户配置与历史内容不逐项展开；.git、.venv、__pycache__ 等内部文件与缓存不展开。%LOCALAPPDATA% 不属于仓库树，正式凭据与 Manual V2 凭据在固定用户私有目录中分文件存放，不读取或列出其内容。

@@ -2757,7 +2757,7 @@ function clearAssistantConversation() {
 function safeAssistantActivity(value = {}) {
   const names = ["get_current_water_quality", "score_current_water_quality"];
   const activity = {used_tool: value.used_tool === true, tool_name: names.includes(value.tool_name) ? value.tool_name : null,
-    tool_status: ["OK", "NO_DATA", "PARTIAL", "NOT_SCORABLE", "ERROR"].includes(value.tool_status) ? value.tool_status : null,
+    tool_status: ["OK", "NO_DATA", "NO_MATCH", "PARTIAL", "NOT_SCORABLE", "ERROR"].includes(value.tool_status) ? value.tool_status : null,
     duration_ms: Number.isFinite(value.duration_ms) ? value.duration_ms : null};
   for (const key of ["observed_at", "evaluated_at"]) {
     if (typeof value[key] === "string" && Number.isFinite(Date.parse(value[key]))) activity[key] = value[key];
