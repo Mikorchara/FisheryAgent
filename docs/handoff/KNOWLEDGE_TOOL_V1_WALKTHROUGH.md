@@ -6,9 +6,10 @@
 > 1. **受控参数合同**（Step 2）：`ToolDefinition` 已支持声明 `validate_arguments`，Executor 会在 Handler 之前完成拒绝或归一化。旧两个无参工具行为不变。见 [`STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md`](../copilot/STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md)。
 > 2. **`ToolStatus.NO_MATCH`**（Step 3）：合同已采纳该状态，前端安全投影同步认识它；非错误结果仍继续 Request #2。见 [`STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md`](../copilot/STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md)。
 > 3. **薄 Handler**（Step 4）：`tools/handlers/knowledge_search.py` 已实现（未注册）。见 [`STEP4_KNOWLEDGE_HANDLER_DESIGN.md`](../copilot/STEP4_KNOWLEDGE_HANDLER_DESIGN.md)。
-> 4. **Registry 注册与依赖注入**（Step 5）：`ToolRegistry` 已支持注入 `KnowledgeService`，并带有正式 `validate_arguments`；**未注入时该名称不被暴露**。**授权仍未开启**（Policy 默认不变、Catalog 还没有条目）。见 [`STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md`](../copilot/STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md)。
+> 4. **Registry 注册与依赖注入**（Step 5）：`ToolRegistry` 已支持注入 `KnowledgeService`，并带有正式 `validate_arguments`；**未注入时该名称不被暴露**。见 [`STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md`](../copilot/STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md)。
+> 5. **Catalog 条目**（Step 6）：`tools/catalog.py` 已有第三条 `search_fishery_knowledge`（含 query 参数摘要）。注入服务的实例上该行**可勾选**；未注入的实例上该行**禁用**。**包内默认 Policy 仍未授权**。见 [`STEP6_CATALOG_BEFORE_AFTER.md`](../copilot/STEP6_CATALOG_BEFORE_AFTER.md)。
 >
-> 本文其余内容（Catalog、Policy 默认、装配、UI 文案、人工验收）仍是**未来工作**。
+> 本文其余内容（Policy 默认、装配、UI 文案、人工验收）仍是**未来工作**。
 
 阅读时把“当前事实”和“未来建议”分开。总体约束见[新增 Tool 规范](../deep-dive/tools/ADDING_A_TOOL.md)，尚待决策的研究见[Knowledge Tool 研究](../deep-dive/research/KNOWLEDGE_TOOL_DESIGN.md)。
 
@@ -107,9 +108,16 @@ Handler 不负责 Tool loop、Policy、模型调用、UI、诊断、评分、独
 
 ## 6. 第五步：Catalog
 
-`tools/catalog.py::ToolCatalogEntry` / `tool_catalog(registry)` 为 Tool Manager 提供名称、介绍、参数摘要、READ ONLY 等 metadata。未来补 Knowledge 的条目和 query 说明，保留通用 metadata 能力。
+> 编号说明：本文的“第 N 步”与 `docs/copilot/KNOWLEDGE_TOOL_STEP_BY_STEP.md` 的“Step N”**不是同一套编号**（本文“第三步：薄 Handler”= 计划 Step 4；“第四步：Registry”= 计划 Step 5）。本节的 Catalog 对应计划 **Step 6**；下文提到 Step N 时一律沿用计划编号。
+
+`tools/catalog.py::ToolCatalogEntry` / `tool_catalog(registry)` 为 Tool Manager 提供名称、介绍、参数摘要、READ ONLY 等 metadata。Knowledge 的条目与 query 说明**已于 Step 6 补齐**。
 
 Catalog 不注册 Handler，不修改 Runtime Capability，也不授予 Policy 权限。只有 Catalog entry，没有 Registry callable，不会变成可执行 Tool。
+
+**两个容易误读的字段（实测结论）**：
+
+- `executable` 是**派生值**，不是存储字段：`not dev_only` 且 `name in registry.model_definitions()` 且绑定的是 callable。因此“条目存在”与“本实例能执行”是两件事。
+- `modes` 是 `tool_catalog()` 里**硬编码**的 `["analysis", "assistant"]`，且**当前无任何消费者**：`policy.py` 只读 `executable`，`app.js` 的“适用模式”是前端自己写死的字符串。详见 [`STEP6_CATALOG_BEFORE_AFTER.md`](../copilot/STEP6_CATALOG_BEFORE_AFTER.md) §2.2。
 
 ## 7. 第六步：Policy
 
@@ -210,9 +218,9 @@ Mock 采用可检查的 scripted Gateway，不扩展生产关键词路由来“�
 | `resources/knowledge/*`（包内） | 数据与 provenance | 通常不改 | 不复制数据，不编造来源；Knowledge tests。 |
 | `tools/handlers/knowledge_search.py` | 未来薄 Handler | 新增 | query → Service → 安全结果；新 `test_knowledge_tool.py`。 |
 | `tools/contracts.py` | 参数执行合同与 ToolStatus | **已完成前置调整**（参数合同 + `NO_MATCH`） | 除非需要新的状态，否则本轮不再改；`test_tool_argument_contract.py`、`test_tool_status_no_match.py`。 |
-| `tools/registry.py` | 定义与可执行绑定 | **已改（Step 5）** | 名称常量、schema、静态绑定、`registered_names()`、`knowledge=` 依赖注入；剩余工作只在 Catalog/Policy。`test_knowledge_registration.py`。 |
-| `tools/catalog.py` | UI metadata | 需改 | 描述、参数摘要；`test_tool_policy_manager.py`。 |
-| `tools/policy.py` | 服务端授权 | 评估并最小调整 | 若定为仅 Assistant，需实际模式门禁；Policy tests。 |
+| `tools/registry.py` | 定义与可执行绑定 | **已改（Step 5）** | 名称常量、schema、静态绑定、`registered_names()`、`knowledge=` 依赖注入；剩余工作只在 Policy/装配。`test_knowledge_registration.py`。 |
+| `tools/catalog.py` | UI metadata | **已改（Step 6）** | 第三条 Knowledge 条目（描述、`query` 参数摘要、`experimental=False`）；`tool_catalog()` 未改。`test_catalog_knowledge.py`。 |
+| `tools/policy.py` | 服务端授权 | 评估并最小调整（仅默认值） | **不做“仅 Assistant”硬边界**（已决定）；只处理默认授权与旧 override 兼容；Policy tests。 |
 | `resources/tools/tool_policies.json`（包内） | 默认授权 | 评估 | 默认不开启，旧配置保持；Policy tests。 |
 | `tools/executor.py` | 当前只允许空 object | 需最小调整 | 调用已校验参数；不复制执行器；`test_read_only_tools.py`。 |
 | `web.py` | 共享 Service / Registry composition | 需改组合处 | 注入现有 KnowledgeService；Web / Assistant tests。 |

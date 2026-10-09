@@ -1,7 +1,8 @@
 """Step 5 offline tests: Knowledge Tool registration, injection and its validator.
 
-Registration is not authorization: a bound tool stays invisible to Policy and to
-the Catalog until later steps. No network, no real model, no real index.
+Registration is not authorization: a bound tool stays unselected by the package
+default Policy. The Catalog lists it (Step 6) but still grants no permission.
+No network, no real model, no real index.
 """
 
 import json
@@ -15,7 +16,6 @@ from fishery_ai.domain import DiagnosisService
 from fishery_ai.model_gateway import ModelToolCall
 from fishery_ai.telemetry import CurrentSnapshotStore, CurrentWaterQualityReader
 from fishery_ai.tools import ToolError, ToolErrorCode, ToolExecutor, ToolRegistry, ToolStatus
-from fishery_ai.tools.catalog import tool_catalog
 from fishery_ai.tools.handlers.knowledge_search import MAX_QUERY_CHARS
 from fishery_ai.tools.handlers.knowledge_search import validate_arguments as handler_validator
 from fishery_ai.tools.policy import ToolPolicy, ToolPolicyError, UserToolPolicyStore, load_tool_policies
@@ -171,18 +171,22 @@ class RegistrationFixture(unittest.TestCase):
         self.assertEqual(builtin["analysis"].exposed_tools, ())
         self.assertFalse(builtin["analysis"].llm_tool_calling)
 
-    def test_catalog_exposes_no_knowledge_entry_yet(self):
-        executable = [item["name"] for item in tool_catalog(self.registry) if item["executable"]]
-        self.assertEqual(executable, [CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE])
-
-    def test_user_override_cannot_select_knowledge_yet(self):
+    def test_registration_alone_never_authorizes(self):
+        # A bound tool stays unauthorized until a Policy selects it.
+        self.assertFalse(load_tool_policies()["assistant"].allows(SEARCH_FISHERY_KNOWLEDGE))
         with TemporaryDirectory() as directory:
             store = UserToolPolicyStore(Path(directory), self.registry)
+            selected = store.default_selections()["modes"]["assistant"]["selected_tools"]
+        self.assertEqual(selected, [CURRENT_WATER_QUALITY])
+
+    def test_override_cannot_select_an_unbound_tool(self):
+        with TemporaryDirectory() as directory:
+            store = UserToolPolicyStore(Path(directory), self.bare)
             data = store.default_selections()
             data["modes"]["assistant"]["selected_tools"] = [SEARCH_FISHERY_KNOWLEDGE]
             with self.assertRaises(ToolPolicyError) as caught:
                 store.save(data)
-        self.assertEqual(caught.exception.code, "TOOL_NOT_EXECUTABLE")
+        self.assertEqual(caught.exception.code, "UNKNOWN_POLICY_TOOL")
 
 
 if __name__ == "__main__":

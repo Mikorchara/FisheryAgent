@@ -31,7 +31,7 @@
 | Domain / Service | 维护事实、规则与算法；先复用现有服务。 |
 | `tools/handlers/` | 受控输入 → 服务调用 → 有限 dict；不管理模型循环、授权或 Provider 参数。 |
 | `tools/registry.py` | 唯一静态定义与执行绑定。`lookup()` 与 `model_definitions()` 始终一致（都来自本实例已绑定的 entry，不允许"注册了但没有可执行 Handler"）；`registered_names()` 是**全部已知名称**的固定 allowlist，供 Policy 默认文件与 Trace / 公开输出白名单使用，**不等于**单个实例的绑定集合。 |
-| `tools/catalog.py` | UI 名称、说明、参数摘要和实验标记；不注册函数、不授权。 |
+| `tools/catalog.py` | UI 名称、说明、参数摘要和实验标记；不注册函数、不授权。`registered` / `executable` / `modes` 是 `tool_catalog()` 的**派生输出**（前两个查 Registry，故同一份 `CATALOG` 在不同实例上结果不同）。`experimental=True` 在 UI 里被渲染成"NOT PROFESSIONAL STANDARD"，是**评分口径**声明，只对做评分的工具使用。 |
 | `tools/policy.py` | Analysis / Assistant 的冻结授权；只能缩小 Registry allowlist。 |
 | `tools/executor.py` | 唯一执行入口：参数、权限、预算、重复 ID、取消、结果与安全错误。 |
 | `tool_conversation.py` | 唯一有限模型—工具—模型协调；判断是否结束、是否发 Request #2。 |

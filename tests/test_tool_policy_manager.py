@@ -46,13 +46,15 @@ class ToolPolicyManagerTests(unittest.TestCase):
         return {"schema_version":1, "modes": {"analysis":{"selected_tools":list(analysis)},
             "assistant":{"selected_tools":list(assistant)}}}
 
-    def test_catalog_only_two_real_tools(self):
+    def test_catalog_lists_every_known_tool_without_granting_execution(self):
         catalog = tool_catalog(self.registry)
-        self.assertEqual(len(catalog), 2)
+        self.assertEqual([i["name"] for i in catalog],
+                         [NAME, "score_current_water_quality", "search_fishery_knowledge"])
+        # This registry was built without a KnowledgeService, so that entry is
+        # catalogued but not registered and not executable here.
         self.assertEqual([i["name"] for i in catalog if i["executable"]], [NAME, "score_current_water_quality"])
         self.assertTrue(all(not i["dev_only"] and not i["planned"] for i in catalog))
-        # Name allowlist includes every known tool; the Catalog is still two entries
-        # until Step 6, so nothing new is user-selectable yet.
+        # Name allowlist includes every known tool; this instance only binds two. 
         self.assertEqual(self.registry.registered_names(),
                          (NAME, "score_current_water_quality", "search_fishery_knowledge"))
 
@@ -140,7 +142,8 @@ class ToolPolicyManagerTests(unittest.TestCase):
     def test_web_returns_catalog_and_no_profile_or_secret(self):
         response=self.client.get("/api/tool-policies")
         self.assertEqual(response.status_code,200)
-        self.assertEqual(len(response.get_json()["catalog"]),2)
+        self.assertEqual([item["name"] for item in response.get_json()["catalog"]],
+                         [NAME, "score_current_water_quality", "search_fishery_knowledge"])
         self.assertNotIn("credential",response.get_data(as_text=True).lower())
         self.assertNotIn("path",response.get_json())
         self.factory.assert_not_called()

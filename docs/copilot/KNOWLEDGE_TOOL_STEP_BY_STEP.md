@@ -151,18 +151,32 @@ Executor / Policy / Registry / UI
 - **验证**：新增 `tests/test_knowledge_registration.py`（17 项）；全量 `unittest discover -s tests` → **796 项通过**；`node --test tests/test_browser_streaming.cjs` → **183 项通过**。
 - **改了 4 行既有断言**：`test_tool_policy.py` ×2、`test_tool_policy_manager.py` ×2 —— 它们快照了 `registered_names()` 的内容，而"更新 `registered_names()`"本就是本步的既定动作（加第三项 + 一句注释说明 allowlist 与绑定集合的区别）。
 
-### Step 6：Catalog 展示
+### Step 6：Catalog 展示 —— **已实施 2026-10-09**
 
-- **改** `tools/catalog.py`：新增条目；`parameter_summary` 改为 `"query: string（必填，≤512 字符）"`。
-- **注意**：`tool_catalog()` 目前把 `"modes"` 硬编码为 `["analysis", "assistant"]`；若 Step 7 决定"仅 Assistant"，这里必须一起改。
-- Catalog **不授权**：只有条目、没有 Registry callable，就不是可执行 Tool。
+对照记录 → [`STEP6_CATALOG_BEFORE_AFTER.md`](STEP6_CATALOG_BEFORE_AFTER.md)
 
-### Step 7：Policy 模式边界（**决定：不做服务端硬边界**）
+- **改** `tools/catalog.py`：新增第三条 `search_fishery_knowledge`；`parameter_summary` = `"query: string（必填，1–512 字符）"`（不再用无参默认值）。**`tool_catalog()` 一行未改**（含硬编码的 `"modes"`），刻意不引入按工具分支。
+- **决定**：`experimental=False`。该字段在 UI 里被渲染成固定句子 `EXPERIMENTAL / NOT PROFESSIONAL STANDARD`，属**评分口径**声明；知识检索不做评分，套用即错标。真实风险（基线未评测、无逐条出处）写进 `detailed_description`。
+- **实测发现**：`item["modes"]` **当前没有任何消费者**（`policy.py` 只读 `executable`；`app.js` 的"适用模式"是前端写死的字符串）→ 本步"不动 `modes`"语义安全。详见报告 §2.2。
+- **授权仍然关闭**：包内默认 Policy 未变；未注入 `KnowledgeService` 的实例上该行**禁用**（`!registered`）；注入后用户**可以** override 勾选（测试已锁）。
+- **验证**：新增 `tests/test_catalog_knowledge.py`（10 项）；全量 **806 项通过**（796 → +10）；浏览器 **183 项通过**。
+- **改了 3 处既有断言**：`test_tool_policy_manager.py` ×3 行（`len(catalog)==2` → 名称列表）与 `test_knowledge_registration.py` 中 **2 个描述 Step 5 临时状态的测试**（被本步合法推翻）。
+- **本步暴露的既有 UI 缺陷（未修，登记待 Step 10）**：**U1** 徽章 `app.js:2563` 忽略 `registered/executable`，对未注册的非 dev_only 行会谎报 "Registered / Executable"（该分支此前从未被执行过）；**U2** 详情区"适用模式"与后端 `item["modes"]` 是两份互不相干的来源。
 
-- **已决定**：不为 Knowledge 增加"仅 Assistant"的服务端规则；`modes` 的**单一权威来源**保持为 `tools/catalog.py`，不得在 `policy.py` 再建一份映射。
-- **本轮做法**：只在 UI / 默认选择里**不勾选**（默认 `resources/tools/tool_policies.json` 的 assistant 列表不含 Knowledge Tool）。
-- **接受的后果**：Analysis 将来也可以被用户勾选开启 Knowledge —— 协调延后，但**不能**因此新增第二份 modes 定义。
-- **仍要遵守**：注册存在 ≠ 已授权；旧用户 override 不得被新增默认项静默改写。
+### Step 7：Policy 默认（**设计已定，尚未实施**）
+
+> **范围**：只决定**包内默认授权**与**旧 override 的兼容方式**。**不做**服务端"仅 Assistant"硬边界 —— 该议题按用户决定**暂缓**，列为后续独立架构议题，本轮**不得**因此扩展 `policy.py` / mode 权限模型。
+
+| # | 设计点 | 结论 |
+| --- | --- | --- |
+| 1 | 包内默认是否授权 Knowledge | **否，两个模式都不授权**（`analysis` 默认空、`assistant` 默认只有水质查询）。理由：未评测的检索基线不应默认开启；"注册存在 ≠ 已授权"在本步继续成立 |
+| 2 | 是否新增 `TOOL_NOT_EXECUTABLE` 之类的新错误码 | **否**。现有 `UNKNOWN_POLICY_TOOL` / `TOOL_NOT_EXECUTABLE` 足够；新增码等于扩大合同面 |
+| 3 | 旧用户 override 怎么办 | **不得静默改写**。`UserToolPolicyStore.load()` 命中已有文件就原样返回；新增默认项**不**回填、不迁移、不删除用户选择 |
+| 4 | `modes` 归谁 | 仍是 `tools/catalog.py` 那行硬编码，**单一权威来源**；`policy.py` 不得再建一份映射（§2 决定 3） |
+| 5 | Analysis 能不能选 Knowledge | 本步**不表态**（无服务端限制），但**默认勾选为否**；将来是否限制是独立议题 |
+| 6 | 需要哪些测试 | ①默认 `tool_policies.json` 仍只有水质工具；②存在 override 时 `load()` 不掺入新工具；③两个模式的默认 `selected_tools` 快照；④`policy.py` 不新增模式映射（AST/结构断言） |
+
+**已经完成的另一半**："用户能否勾选"由 Step 6 的 `executable` 门禁决定（**已完成**）；Step 7 只剩"默认值"这一件事。
 
 ### Step 8：装配
 

@@ -1,7 +1,7 @@
 """Static display metadata, never a source of handlers or execution permission."""
 
 from dataclasses import asdict, dataclass
-from .registry import CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE
+from .registry import CURRENT_WATER_QUALITY, SEARCH_FISHERY_KNOWLEDGE, WATER_QUALITY_SCORE
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,13 @@ CATALOG = (
     ToolCatalogEntry(WATER_QUALITY_SCORE, "水质评分", "当前水质实验评分、等级与分项评分",
         "内部已经读取当前Snapshot，计算实验评分、等级、分项评分；同一轮不要再调用get_current_water_quality。EXPERIMENTAL / NOT PROFESSIONAL STANDARD，不是专业水产养殖评分标准。",
         experimental=True),
+    # experimental=False is deliberate: that flag renders as "NOT PROFESSIONAL
+    # STANDARD", which is a scoring claim. Knowledge search makes no scoring
+    # claim; its caveats live in the description text instead.
+    ToolCatalogEntry(SEARCH_FISHERY_KNOWLEDGE, "知识检索",
+        "只读检索项目内鳗鲡养殖背景知识；不代表当前水质，也不做现场诊断",
+        "复用与 Analysis 相同的 KnowledgeService 与包内固定知识资源，来源标识为 legacy:eel_knowledge.json。结果是背景证据而非现场事实，无合格命中时返回NO_MATCH（不是错误）。检索基线尚未做评测，知识块也没有逐条文献出处，因此不得当作专业养殖或用药依据。",
+        parameter_summary="query: string（必填，1–512 字符）"),
 )
 
 

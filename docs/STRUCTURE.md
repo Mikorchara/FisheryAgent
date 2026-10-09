@@ -48,7 +48,8 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │     ├─ STEP4_KNOWLEDGE_HANDLER_DESIGN.md                       # Step 4 薄 Knowledge Handler 设计与实施记录
 │     ├─ STEP4_KNOWLEDGE_HANDLER_BEFORE_AFTER.md                 # Step 4 Handler 的 before/after 对照记录
 │     ├─ D1_MOCK_TOOL_GATEWAY_BEFORE_AFTER.md                    # D1 Mock 按工具名分派的 before/after 对照记录
-│     └─ STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md            # Step 5 注册与 query validator 的 before/after 对照记录
+│     ├─ STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md            # Step 5 注册与 query validator 的 before/after 对照记录
+│     └─ STEP6_CATALOG_BEFORE_AFTER.md                           # Step 6 Catalog 新增 Knowledge 条目的 before/after 对照记录
 ├─ outputs/                                                      # 本地生成数据，Git ignored，记录不逐项展开
 │  ├─ archive/                                                   # 用户本地历史运行数据，不展开
 │  ├─ capability-evidence/                                       # Managed 能力证据与验证记录
@@ -165,6 +166,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_analysis_tools.py                                     # 固定 Analysis 与单轮 Tool 回归测试
    ├─ test_assistant.py                                          # Assistant 合同、历史与执行回归测试
    ├─ test_browser_streaming.cjs                                 # 页面交互、状态与浏览器回归测试
+   ├─ test_catalog_knowledge.py                                  # Catalog 条目 metadata、派生标志与授权边界测试
    ├─ test_clean_room_reset.py                                   # Clean-room 空目录启动测试
    ├─ test_cloud_capability.py                                   # Cloud 能力声明与显式 Probe 测试
    ├─ test_credential_compatibility.py                           # 凭据迁移与 Runtime 兼容性测试
