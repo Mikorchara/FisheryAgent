@@ -1261,6 +1261,21 @@ test('Assistant failed cancelled truncated empty unknown-finish turns never ente
   }
 });
 
+test('Assistant P1 unmet source requirement cannot enter completed history or expose final text',async()=>{
+  const page=assistantPage(async()=>r2Reply({result:assistantResult({
+    successful_turn:false,status:'failed',error_code:'ASSISTANT_SOURCE_REQUIREMENT_UNMET',
+    final_text:'untrusted final must never commit'})},false));
+  await enterAssistant(page);await sendAssistantQuestion(page);
+  const state=assistantStateJson(page);
+  assert.equal(state.completedTurns.length,0);
+  assert.equal(state.displayEntries.filter(e=>e.kind==='assistant').length,0);
+  assert.doesNotMatch(allElementText(page.element('assistant-messages')),/untrusted final/);
+  assert.match(page.element('assistant-notice').textContent,/ASSISTANT_SOURCE_REQUIREMENT_UNMET/);
+  const body=JSON.parse(page.calls.find(c=>c.url==='/api/assistant/chat').options.body);
+  assert.equal(Object.hasOwn(body,'source_requirement'),false);
+  assert.equal(Object.hasOwn(body,'source_receipt'),false);
+});
+
 test('Assistant lightweight tool activity shows query status time and experimental score without Raw Trace',async()=>{
   for(const [name,status,quality,freshness] of [['get_current_water_quality','OK','valid','fresh'],
     ['get_current_water_quality','OK','invalid','stale'],['get_current_water_quality','PARTIAL','partial','fresh'],

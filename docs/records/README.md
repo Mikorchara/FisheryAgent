@@ -6,6 +6,8 @@ before/after、AI 实施日志和旧交接稿是历史证据，其中的“当�
 
 ## 可直接阅读的记录
 
+- [Assistant Turn Source Contract / Receipt P1 / P1.1](2026-10-assistant-turn-source-contract-p1.md)：操作完成与来源存在性分离、状态矩阵与受控资格验证接口设计；没有新增真实模型请求。
+- [Assistant History / Tool Reliability 研究](2026-10-assistant-history-tool-reliability-study.md)：Session / History 审计、来源边界与后续路线评估。
 - [2026-10 Knowledge Tool v1 阶段总结](2026-10-knowledge-tool-v1-summary.md)：已落地范围、边界与未验收问题。
 - [2026-10 Codex 接管审计](2026-10-codex-takeover-audit.md)：保留独立审计原文；其中的旧目录与文档冲突是审计发生时的历史事实。
 - [2026-10 Qwen 首轮取证阻塞](2026-10-qwen-tool-provider-evidence.md)：正式凭据预检失败，真实请求为 0，未得到 Provider 能力结论。
