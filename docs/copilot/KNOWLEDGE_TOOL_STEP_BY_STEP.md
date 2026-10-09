@@ -124,14 +124,19 @@ Executor / Policy / Registry / UI
   - `unittest discover -s tests` → **746 项通过**；`node --test tests/test_browser_streaming.cjs` → **183 项通过**。
 - **详细 before/after** → [`STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md`](STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md)
 
-### Step 4：新增薄 Handler
+### Step 4：新增薄 Handler —— **已实施 2026-10-09**
 
-- **新增**：`src/fishery_ai/tools/handlers/knowledge_search.py`
-- **职责（只做这些）**：接收**已校验**的 `query` → 调用注入的 `KnowledgeService.search(query, top_k=固定值)` → 裁剪文本 → 返回可序列化 `dict`。
-- **不负责**：Tool loop、Policy、模型调用、UI、诊断、评分、自己的检索算法、动态选择资源、接受文件路径 / URL / backend / top_k / 阈值。
-- **安全**：知识正文是**不可信数据**，即使某段文本写着"忽略系统指令"也不能执行。
-- **固定预算（建议值，待确认）**：`top_k=3`、每段 ≤800 字符、结果总量 ≤8 KiB、裁剪时**不得丢掉来源标识**、不得产生损坏 JSON。
-- **测试**：注入 fake `KnowledgeService`，断言调用次数与 top_k、字段完整性、空结果（→ `NO_MATCH`）、资源损坏（→ 安全 `ERROR`，不带路径与 traceback）。
+设计与实施记录：设计稿 [`STEP4_KNOWLEDGE_HANDLER_DESIGN.md`](STEP4_KNOWLEDGE_HANDLER_DESIGN.md)（含 §0 三条实施前调整）；对照记录 [`STEP4_KNOWLEDGE_HANDLER_BEFORE_AFTER.md`](STEP4_KNOWLEDGE_HANDLER_BEFORE_AFTER.md)。
+
+- **新增（只新增，未改任何既有文件）**：
+  - `src/fishery_ai/tools/handlers/knowledge_search.py` —— `search_fishery_knowledge(arguments, *, service)`
+  - `tests/test_knowledge_handler.py` —— 15 项
+- **预算**：`top_k=3` 写死 + 单条 800 **字符**（超出加 `…`）+ Executor 既有 32768 B 兜底。**没有** Handler 侧总量裁剪。
+- **版本信息**：`retrieval_mode` **纯透传** effective `service.backend`（已实测确认 sklearn 缺失时会就地变成 `keyword`）；**本步不提供** `retrieval_version`（Service 尚无稳定 metadata，见 §4 K1）。
+- **不暴露**：`score` / `retrieved_at` / `source_title` / 本机 filesystem path。`source`（`legacy:eel_knowledge.json`）是逻辑来源标识，**可以**给模型。
+- **异常**：服务异常**向上传播**，绝不被吞成 `NO_MATCH`。
+- **未做**：Registry 注册、Catalog、Policy、装配、提示词、UI、`tools/__init__.py` 导出。
+- **验证**：`tests.test_knowledge_handler` 15/15；全量 `unittest discover -s tests` → **761 项通过**；并用真实 `KnowledgeService` 冒烟（3 个查询 `OK` / 1 个 `NO_MATCH`，最大结果 2165 B）。
 
 ### Step 5：Registry 注册与依赖注入
 
@@ -183,7 +188,7 @@ Executor / Policy / Registry / UI
 | 1 | **RAG baseline 暂缓**，不作为 Knowledge Tool 的前置步骤；留作 future / research | Step 1 移出主路径；本轮不改 RAG、不建评测集 |
 | 2 | **新增 `NO_MATCH`**（同意），但实施前先核对全部消费者与测试 | **已实施 2026-10-09**；消费者清单已产出并分类，见 §4 |
 | 3 | **不做服务端"仅 Assistant"硬边界**；`modes` 保持**单一权威来源**（`tools/catalog.py`）；Analysis 将来也可能开放 Knowledge，协调延后；现在只在 UI 默认**不勾选** | Step 7 降级为"不改 Policy 语义"；Step 6 不得新增第二份 modes 定义；默认 `tool_policies.json` 不含 Knowledge |
-| 4 | `top_k` **暂定 3**；每段/总量上限在实测后定 | 见 §2.1 |
+| 4 | `top_k` **暂定 3**；每段/总量上限在实测后定 | **已实施**：`top_k=3` 写死；单条 **800 字符**（不是字节）；**不做** Handler 侧总量裁剪（见 §4 K2） |
 
 ### 2.1 结果预算实测（2026-10-08，portable 后端，31 块）
 
@@ -262,10 +267,12 @@ Step 3 的消费者搜索发现三处"现在改是错的、但将来必须改"�
 
 | 编号 | 位置 | 分类 | 说明 |
 | --- | --- | --- | --- |
-| **D1** | `tool_conversation.py:47` `MockToolGateway.complete` 的 `payload["status"] == "NO_DATA"` 分支 | **BLOCKER BEFORE KNOWLEDGE REGISTRATION** | 该分支的 `else` 会读 `payload["water_quality"]`；一旦 Knowledge 注册并走 Mock 页面，`NO_MATCH` 会掉进 `else` → `KeyError`。**必须在 Step 5 注册 Knowledge Tool 之前解决。** |
+| **D1** | `tool_conversation.py:47` `MockToolGateway.complete` 的 `payload["status"] == "NO_DATA"` 分支 | **BLOCKER BEFORE KNOWLEDGE REGISTRATION**（**不阻塞 Step 4**） | 该分支的 `else` 会读 `payload["water_quality"]`；一旦 Knowledge 注册并走 Mock 页面，`NO_MATCH` 会掉进 `else` → `KeyError`。**Step 4 可以先做；必须在 Step 5 注册 Knowledge Tool 之前解决。** |
 | **D2** | `application.py:47-49` `snapshot_comparison` | 当前不改 | NO_MATCH 会被判成 `not_called`。Knowledge Tool 仍是 **Assistant-only**；只有未来真的允许 Analysis 使用时才重新评审。 |
 | **D3** | `app.js:2759` 工具名白名单、`:2794` 硬编码文案"本轮已查询当前水质" | 当前不改，**Step 10 必须处理** | 否则 Knowledge 调用会被置 `null` / 误标成水质查询。 |
 | **B6** | `web.py:1127` 的 `"arguments"` 字段（`!= "ERROR"` 时写 `{}`） | 移入「**参数型 Knowledge Tool 接入前依赖**」 | 这是"带参数工具"带来的既有不精确，**不是 NO_MATCH 本身的问题**，本步不顺便修改；接入带参工具前必须重新评审该字段。 |
+| **K1** | `retrieval_version`（Step 4 新增登记） | 当前不提供 | `KnowledgeService` 目前没有稳定检索版本 metadata（只有 `source_version` = 知识资源版本）。理想形态是 Service 自己提供 `retrieval_mode` + `retrieval_version` + 参数指纹，Handler 纯透传。**等 RAG 研究重启时再做**，不为此扩大 Step 4 范围。 |
+| **K2** | Handler 侧总预算（Step 4 新增登记） | 当前不做 | 第一版预算 = `top_k=3` + 单条 800 字符 + Executor 32768 B。**若将来引入更小的总量预算，必须显式标识裁剪**（`PARTIAL` 或 `truncated: true`），不得静默丢条后仍报完整 `OK`。 |
 
 ## 5. 本方案的自我约束
 

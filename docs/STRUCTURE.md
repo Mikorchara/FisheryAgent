@@ -44,7 +44,9 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  └─ copilot/                                                   # Copilot 协作的过程记录，不是产品文档
 │     ├─ KNOWLEDGE_TOOL_STEP_BY_STEP.md                          # Knowledge Tool 分步实施思路与已确认决定
 │     ├─ STEP2_TOOL_ARGUMENT_CONTRACT_BEFORE_AFTER.md            # Step 2 受控参数合同的 before/after 对照记录
-│     └─ STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md              # Step 3 NO_MATCH 合同的 before/after 对照记录
+│     ├─ STEP3_TOOL_STATUS_NO_MATCH_BEFORE_AFTER.md              # Step 3 NO_MATCH 合同的 before/after 对照记录
+│     ├─ STEP4_KNOWLEDGE_HANDLER_DESIGN.md                       # Step 4 薄 Knowledge Handler 设计与实施记录
+│     └─ STEP4_KNOWLEDGE_HANDLER_BEFORE_AFTER.md                 # Step 4 Handler 的 before/after 对照记录
 ├─ outputs/                                                      # 本地生成数据，Git ignored，记录不逐项展开
 │  ├─ archive/                                                   # 用户本地历史运行数据，不展开
 │  ├─ capability-evidence/                                       # Managed 能力证据与验证记录
@@ -144,6 +146,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │     └─ handlers/                                            # 薄领域 Tool Handler
 │  │        ├─ __init__.py                                       # 只读 Handler 子包入口
 │  │        ├─ current_water_quality.py                          # 当前水质查询与诊断 Handler
+│  │        ├─ knowledge_search.py                               # 只读知识检索 Handler（未注册，Step 4 已实现）
 │  │        └─ water_quality_score.py                            # 当前水质实验评分 Handler
 │  └─ fishery_ai_prototype.egg-info/                             # 本地安装生成的包 metadata，Git ignored
 │     ├─ dependency_links.txt                                    # 安装生成的依赖链接 metadata
@@ -171,6 +174,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_evidence_resolver.py                                  # 精确 Identity 证据解析与冲突测试
    ├─ test_execution.py                                          # 取消、资源释放与 Raw 请求隔离测试
    ├─ test_gateway_tool_contract.py                              # Tool 模型消息与 SDK 编解码测试
+   ├─ test_knowledge_handler.py                                  # 薄 Knowledge Handler 映射、截断与 NO_MATCH 测试
    ├─ test_local_preset_qualification.py                         # Local Preset 验证入口安全测试
    ├─ test_local_profile_capability_ui.py                        # 本地 metadata 与 Capability UI 测试
    ├─ test_manual_v2.py                                          # 实验 CRUD、独立凭据与 Raw 请求测试

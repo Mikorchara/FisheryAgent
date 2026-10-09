@@ -10,13 +10,17 @@ from ..model_gateway import ModelToolDefinition
 
 
 class ToolStatus(str, Enum):
-    """Business result of one tool execution.
+    """Business result of one tool execution; it is not an error-code channel.
 
-    Every non-error status carries ``error_code is None`` and does not stop the
-    follow-up model request; only ``ERROR`` does. ``NO_DATA`` means the subject
-    itself has no current data (for example no applied snapshot). ``NO_MATCH``
-    means the request was valid but nothing qualified (for example a read-only
-    search whose hits did not meet the minimum). They are deliberately distinct.
+    ``ERROR`` is the only member describing a failed execution, so it is the only
+    one accompanied by a ``ToolErrorCode``. ``NO_DATA`` means the subject itself
+    has no current data (for example no applied snapshot). ``NO_MATCH`` means the
+    request was valid but nothing qualified (for example a read-only search whose
+    hits did not meet the minimum). The two are deliberately distinct.
+
+    How a caller reacts to a member - for example whether to continue a follow-up
+    conversation - is orchestration policy owned by that caller, not by this
+    contract.
     """
 
     OK = "OK"
