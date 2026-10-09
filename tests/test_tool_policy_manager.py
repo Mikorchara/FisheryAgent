@@ -14,9 +14,19 @@ from fishery_ai.telemetry import CurrentSnapshotStore, CurrentWaterQualityReader
 from fishery_ai.tools.policy import UserToolPolicyStore, ToolPolicyError, load_tool_policies
 from fishery_ai.tools import ToolRegistry, ToolExecutor
 from fishery_ai.tools.catalog import tool_catalog, ToolCatalogEntry
+from fishery_ai.tools.registry import SEARCH_FISHERY_KNOWLEDGE
 from fishery_ai.web import create_app
 
 NAME = "get_current_water_quality"
+
+
+class BoundKnowledge:
+    """Minimal stand-in so a Registry can bind the Knowledge Tool; never called here."""
+
+    backend = "portable"
+
+    def search(self, query, *, top_k=5, retrieved_at=None, intent_text=None):
+        return ()
 
 
 class ToolPolicyManagerTests(unittest.TestCase):
@@ -79,6 +89,44 @@ class ToolPolicyManagerTests(unittest.TestCase):
         self.assertFalse(self.store.path.exists())
         self.assertEqual(unrelated.read_text(), "keep")
         self.assertEqual(self.store.load(), self.selection())
+
+    def test_reading_an_override_never_rewrites_the_file(self):
+        # Step 7 regression guard: reading is not migrating. Fingerprint covers a
+        # same-content rewrite too, which the parsed value alone cannot detect.
+        self.store.save(self.selection((NAME,), ()))
+        path = self.store.path
+
+        def fingerprint():
+            info = path.stat()
+            return (info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+        before, bytes_before = fingerprint(), path.read_bytes()
+        self.store.load(); self.store.effective(); self.store.public()
+        self.assertEqual(fingerprint(), before)
+        self.assertEqual(path.read_bytes(), bytes_before)
+        restarted = UserToolPolicyStore(self.store.directory, self.registry)
+        restarted.load(); restarted.effective(); restarted.public()
+        self.assertEqual(fingerprint(), before)
+        self.assertEqual(path.read_bytes(), bytes_before)
+
+    def test_binding_a_new_tool_never_changes_an_existing_override(self):
+        # Step 7 regression guard: registering a tool widens what the user MAY
+        # select; it never widens what the user HAS selected.
+        self.store.save(self.selection((NAME,), ()))
+        bytes_before = self.store.path.read_bytes()
+        bound = ToolRegistry(self.reader, DiagnosisService(), knowledge=BoundKnowledge())
+        # Guard against a vacuous pass: the two Registries must really differ.
+        self.assertNotIn(SEARCH_FISHERY_KNOWLEDGE, [d.name for d in self.registry.model_definitions()])
+        self.assertIn(SEARCH_FISHERY_KNOWLEDGE, [d.name for d in bound.model_definitions()])
+        unbound = UserToolPolicyStore(self.store.directory, self.registry)
+        upgraded = UserToolPolicyStore(self.store.directory, bound)
+        for mode in ("analysis", "assistant"):
+            self.assertEqual(upgraded.effective()[mode].exposed_tools,
+                             unbound.effective()[mode].exposed_tools)
+        self.assertEqual(upgraded.effective()["analysis"].exposed_tools, (NAME,))
+        self.assertEqual(upgraded.effective()["assistant"].exposed_tools, ())
+        self.assertEqual(upgraded.load(), self.selection((NAME,), ()))
+        self.assertEqual(self.store.path.read_bytes(), bytes_before)
 
     def test_unknown_cannot_enter_policy(self):
         for name in ("unknown", "unregistered_fixture"):

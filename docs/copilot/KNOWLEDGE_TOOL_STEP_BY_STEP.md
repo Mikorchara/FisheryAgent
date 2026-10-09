@@ -163,25 +163,38 @@ Executor / Policy / Registry / UI
 - **改了 3 处既有断言**：`test_tool_policy_manager.py` ×3 行（`len(catalog)==2` → 名称列表）与 `test_knowledge_registration.py` 中 **2 个描述 Step 5 临时状态的测试**（被本步合法推翻）。
 - **本步暴露的既有 UI 缺陷（未修，登记待 Step 10）**：**U1** 徽章 `app.js:2563` 忽略 `registered/executable`，对未注册的非 dev_only 行会谎报 "Registered / Executable"（该分支此前从未被执行过）；**U2** 详情区"适用模式"与后端 `item["modes"]` 是两份互不相干的来源。
 
-### Step 7：Policy 默认（**设计已定，尚未实施**）
+### Step 7：Policy 默认 —— **已验证完成 2026-10-09（无产品代码改动）**
+
+对照记录 → [`STEP7_POLICY_DEFAULTS_BEFORE_AFTER.md`](STEP7_POLICY_DEFAULTS_BEFORE_AFTER.md)
 
 > **范围**：只决定**包内默认授权**与**旧 override 的兼容方式**。**不做**服务端"仅 Assistant"硬边界 —— 该议题按用户决定**暂缓**，列为后续独立架构议题，本轮**不得**因此扩展 `policy.py` / mode 权限模型。
 
 | # | 设计点 | 结论 |
 | --- | --- | --- |
-| 1 | 包内默认是否授权 Knowledge | **否，两个模式都不授权**（`analysis` 默认空、`assistant` 默认只有水质查询）。理由：未评测的检索基线不应默认开启；"注册存在 ≠ 已授权"在本步继续成立 |
-| 2 | 是否新增 `TOOL_NOT_EXECUTABLE` 之类的新错误码 | **否**。现有 `UNKNOWN_POLICY_TOOL` / `TOOL_NOT_EXECUTABLE` 足够；新增码等于扩大合同面 |
-| 3 | 旧用户 override 怎么办 | **不得静默改写**。`UserToolPolicyStore.load()` 命中已有文件就原样返回；新增默认项**不**回填、不迁移、不删除用户选择 |
-| 4 | `modes` 归谁 | 仍是 `tools/catalog.py` 那行硬编码，**单一权威来源**；`policy.py` 不得再建一份映射（§2 决定 3） |
-| 5 | Analysis 能不能选 Knowledge | 本步**不表态**（无服务端限制），但**默认勾选为否**；将来是否限制是独立议题 |
-| 6 | 需要哪些测试 | ①默认 `tool_policies.json` 仍只有水质工具；②存在 override 时 `load()` 不掺入新工具；③两个模式的默认 `selected_tools` 快照；④`policy.py` 不新增模式映射（AST/结构断言） |
+| 1 | 包内默认是否授权 Knowledge | **否，两个模式都不授权**（实测确认）；"注册存在 ≠ 已授权"继续成立 |
+| 2 | 是否新增错误码 | **否**。现有 `UNKNOWN_POLICY_TOOL` / `TOOL_NOT_EXECUTABLE` 足够 |
+| 3 | 旧用户 override 怎么办 | **不得静默改写**。实测：`load()` 原样返回，文件字节与 mtime 不变；无任何 schema 迁移路径 |
+| 4 | `modes` 归谁 | 仍是 `tools/catalog.py` 那行硬编码，**单一权威来源** |
+| 5 | Analysis 能不能选 Knowledge | 本步不表态（无服务端限制），默认不勾选 |
+| 6 | 测试 | **已补 2 条**：文件指纹不变、绑定新工具不改变已有 override 的 `exposed_tools` |
 
-**已经完成的另一半**："用户能否勾选"由 Step 6 的 `executable` 门禁决定（**已完成**）；Step 7 只剩"默认值"这一件事。
+**结论：Step 7 无需修改任何产品代码。** 4 条要求（Analysis/Assistant 默认不新增、旧 override 不迁移、新注册工具不自动进入 `exposed_tools`）均已由现有设计结构性满足，证据见对照记录 §1–§2。
 
-### Step 8：装配
+**本步暴露的运维后果（登记）**：已保存含 Knowledge 的 override 后，**任何未绑定 Knowledge 的实例启动即失败**（`UNKNOWN_POLICY_TOOL`），且文件完好无损（fail closed）。这是 Step 8 必须核对全部 `ToolRegistry(...)` 构造入口的具体理由。
 
-- **改** `web.py`：`create_app()` 已构造共享 `KnowledgeService`（`web.py:228`）与 `ToolRegistry(current_reader, diagnosis)`（`web.py:230`），只需把同一个实例注入 Registry。
-- **核对所有构造入口**：`web.py`、`preset_tool_qualification.py`、`tests/` 中的 `ToolRegistry(...)`；不要新建第二个 KnowledgeService 或第二份索引。
+### Step 8：装配 —— **已实施 2026-10-09**
+
+对照记录 → [`STEP8_KNOWLEDGE_ASSEMBLY_BEFORE_AFTER.md`](STEP8_KNOWLEDGE_ASSEMBLY_BEFORE_AFTER.md)
+
+- **改** `web.py` **一行**：`ToolRegistry(current_reader, diagnosis)` → `ToolRegistry(current_reader, diagnosis, knowledge=knowledge)`（+3 行注释）。净改动 `4 insertions(+), 1 deletion(-)`。
+- **不新建服务**：复用 `web.py:228` 已有的唯一 `KnowledgeService`（它同时服务 Analysis 路径与只读 Tool）。实测 `create_app()` 期间只构造 **1** 次；已绑定 handler 持有的就是该对象（`is`）。
+- **顺序是承载语义的**：`knowledge`(228) → `registry`(238) → `store`(243)。store 构造时用 `executable` 集合校验已存 override，若先建 store 再绑定，已保存过 Knowledge 选择的实例会启动即失败（Step 7 实测 `UNKNOWN_POLICY_TOOL`）。已写进注释并由测试锁定。
+- **本步唯一可见变化**：真实应用的 Knowledge 行从 `executable=False` 变为 **`executable=True`** → 用户**可以勾选**；**包内默认 Policy 仍未变**（不授权）。
+- **明确不做**：不动 `composition.py`（离线 demo 无 registry、永不走 Tool 路径）、`real_validation.py`（维护者专用独立进程）、qualification（复用 web registry，但 policy 是硬编码单工具）、任何无关测试 registry。
+- **验证**：新增 `tests/test_knowledge_assembly.py`（7 项）；全量 **815 项通过**（808 → +7）；浏览器 **183 项通过**；**既有测试改动 0 处**。
+- **空过检查**：临时移除 `knowledge=knowledge` 重跑 → 3 failures + 2 errors（只落在依赖绑定的用例），已还原并复核。
+- **`functools.partial` 依赖边界**：全仓库只保留 **1 条**身份断言（`handler.keywords["service"] is <唯一实例>`），不再扩大到 partial 的其他形状。
+- **⚠️ 阻塞项 D1b**：本步后 Knowledge 已在真实 Runtime 中 **executable**，但 `MockToolGateway` Request #1 的 `request.tools[0]` fallback **必须在 Mock Knowledge 的人工使用/验收之前解决**。
 
 ### Step 9：Assistant 选择规则（提示词层，不做硬路由）
 
@@ -289,7 +302,7 @@ Step 3 的消费者搜索发现三处"现在改是错的、但将来必须改"�
 | 编号 | 位置 | 分类 | 说明 |
 | --- | --- | --- | --- |
 | **D1** | `tool_conversation.py` 的 `MockToolGateway` **按 payload 键猜形状**（`status` + `scoring_version` 启发式） | **已解决 2026-10-09** | 改为**按 tool name 分派**；未知/畸形结果返回安全兜底 `离线 Mock：该 Tool 尚无离线渲染。`；工具名通过 **`tool_call_id` 关联**取得（不再假设 `tool_calls[0]`）。见 [`D1_MOCK_TOOL_GATEWAY_BEFORE_AFTER.md`](D1_MOCK_TOOL_GATEWAY_BEFORE_AFTER.md) |
-| **D1b** | `tool_conversation.py` MockToolGateway **Request #1** 的 `request.tools[0]` fallback | **BLOCKER BEFORE MOCK KNOWLEDGE ENABLEMENT**（**不阻塞 Step 5 注册**） | 若策略只授权 Knowledge，问"现在…"会 fallback 到 Knowledge 并以 `"{}"` 调用 → 被 validator 拒（`INVALID_TOOL_ARGUMENTS`）。**最迟在 Knowledge Tool 的 Mock / 人工验收之前处理**；改它会变动现有行为（"只授权水质工具时问评分问题"走 `tools[0]`），需单独评审 |
+| **D1b** | `tool_conversation.py` MockToolGateway **Request #1** 的 `request.tools[0]` fallback | **BLOCKER BEFORE MOCK KNOWLEDGE ENABLEMENT**（**Step 11 前置**） | 若策略只授权 Knowledge，问"现在…"会 fallback 到 Knowledge 并以 `"{}"` 调用 → 被 validator 拒（`INVALID_TOOL_ARGUMENTS`）。**Step 8 后 Knowledge 已在真实 Runtime 中 executable、用户可勾选**，因此本项已成为人工/ Mock 验收的硬前置。改它会变动现有行为（"只授权水质工具时问评分问题"走 `tools[0]`），需单独评审 |
 | **D2** | `application.py:47-49` `snapshot_comparison` | 当前不改 | NO_MATCH 会被判成 `not_called`。Knowledge Tool 仍是 **Assistant-only**；只有未来真的允许 Analysis 使用时才重新评审。 |
 | **D3** | `app.js:2759` 工具名白名单、`:2794` 硬编码文案"本轮已查询当前水质" | 当前不改，**Step 10 必须处理** | 否则 Knowledge 调用会被置 `null` / 误标成水质查询。 |
 | **B6** | `web.py:1127` 的 `"arguments"` 字段（`!= "ERROR"` 时写 `{}`） | 移入「**参数型 Knowledge Tool 接入前依赖**」 | 这是"带参数工具"带来的既有不精确，**不是 NO_MATCH 本身的问题**，本步不顺便修改；接入带参工具前必须重新评审该字段。 |

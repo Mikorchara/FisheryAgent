@@ -227,7 +227,10 @@ def create_app(*, trace_path: Path | None = None,
     diagnosis = DiagnosisService()
     knowledge = KnowledgeService(RESOURCE_ROOT.joinpath("knowledge/eel_knowledge.json"))
     traces = JsonlTraceSink(trace_path or Path.cwd() / "outputs/web-traces.jsonl")
-    tool_registry = ToolRegistry(current_reader, diagnosis)
+    # One shared KnowledgeService feeds the Analysis path and the read-only Knowledge Tool.
+    # Binding order is load-bearing: the Registry must own its entries before the Policy
+    # store validates stored overrides, otherwise an already saved selection fails closed.
+    tool_registry = ToolRegistry(current_reader, diagnosis, knowledge=knowledge)
     tool_policies = load_tool_policies()
     for policy in tool_policies.values():
         policy.validate_registry(tool_registry)  # Fail closed during app construction.

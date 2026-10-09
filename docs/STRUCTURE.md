@@ -49,7 +49,9 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │     ├─ STEP4_KNOWLEDGE_HANDLER_BEFORE_AFTER.md                 # Step 4 Handler 的 before/after 对照记录
 │     ├─ D1_MOCK_TOOL_GATEWAY_BEFORE_AFTER.md                    # D1 Mock 按工具名分派的 before/after 对照记录
 │     ├─ STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md            # Step 5 注册与 query validator 的 before/after 对照记录
-│     └─ STEP6_CATALOG_BEFORE_AFTER.md                           # Step 6 Catalog 新增 Knowledge 条目的 before/after 对照记录
+│     ├─ STEP6_CATALOG_BEFORE_AFTER.md                           # Step 6 Catalog 新增 Knowledge 条目的 before/after 对照记录
+│     ├─ STEP7_POLICY_DEFAULTS_BEFORE_AFTER.md                   # Step 7 Policy 默认与旧 override 兼容的核对记录
+│     └─ STEP8_KNOWLEDGE_ASSEMBLY_BEFORE_AFTER.md                # Step 8 共享 KnowledgeService 装配的 before/after 对照记录
 ├─ outputs/                                                      # 本地生成数据，Git ignored，记录不逐项展开
 │  ├─ archive/                                                   # 用户本地历史运行数据，不展开
 │  ├─ capability-evidence/                                       # Managed 能力证据与验证记录
@@ -178,6 +180,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_evidence_resolver.py                                  # 精确 Identity 证据解析与冲突测试
    ├─ test_execution.py                                          # 取消、资源释放与 Raw 请求隔离测试
    ├─ test_gateway_tool_contract.py                              # Tool 模型消息与 SDK 编解码测试
+   ├─ test_knowledge_assembly.py                                 # 共享 KnowledgeService 装配、单例与可执行性测试
    ├─ test_knowledge_handler.py                                  # 薄 Knowledge Handler 映射、截断与 NO_MATCH 测试
    ├─ test_knowledge_registration.py                             # Knowledge 注册、依赖注入与 query validator 测试
    ├─ test_local_preset_qualification.py                         # Local Preset 验证入口安全测试
@@ -198,7 +201,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_tool_capability_probe.py                              # Tool 能力 Probe 与 Web 门禁测试
    ├─ test_tool_conversation.py                                  # 单轮 Tool 闭环、Usage 与错误测试
    ├─ test_tool_policy.py                                        # Analysis 与 Assistant 授权测试
-   ├─ test_tool_policy_manager.py                                # Tool Manager 与用户 Policy 存储测试
+   ├─ test_tool_policy_manager.py                                # Tool Manager、用户 Policy 存储与默认/override 不变性测试
    ├─ test_tool_status_no_match.py                               # NO_MATCH 非错误结果、二轮闭环与安全投影测试
    ├─ test_unknown_model_probe.py                                # 未知能力显式 Probe 与证据写入测试
    ├─ test_v01.py                                                # 基础合同、诊断、Knowledge 与 Gateway 测试

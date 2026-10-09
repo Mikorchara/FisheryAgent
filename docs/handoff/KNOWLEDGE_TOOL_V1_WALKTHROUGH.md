@@ -8,8 +8,10 @@
 > 3. **薄 Handler**（Step 4）：`tools/handlers/knowledge_search.py` 已实现（未注册）。见 [`STEP4_KNOWLEDGE_HANDLER_DESIGN.md`](../copilot/STEP4_KNOWLEDGE_HANDLER_DESIGN.md)。
 > 4. **Registry 注册与依赖注入**（Step 5）：`ToolRegistry` 已支持注入 `KnowledgeService`，并带有正式 `validate_arguments`；**未注入时该名称不被暴露**。见 [`STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md`](../copilot/STEP5_KNOWLEDGE_REGISTRATION_BEFORE_AFTER.md)。
 > 5. **Catalog 条目**（Step 6）：`tools/catalog.py` 已有第三条 `search_fishery_knowledge`（含 query 参数摘要）。注入服务的实例上该行**可勾选**；未注入的实例上该行**禁用**。**包内默认 Policy 仍未授权**。见 [`STEP6_CATALOG_BEFORE_AFTER.md`](../copilot/STEP6_CATALOG_BEFORE_AFTER.md)。
+> 6. **Policy 默认**（Step 7）：**验证完成，无产品代码改动**。实测确认两个模式默认都不授权 Knowledge、旧 override 不被迁移（文件字节与 mtime 不变）、新注册工具不自动进入 `exposed_tools`；补了 2 条回归保护测试。见 [`STEP7_POLICY_DEFAULTS_BEFORE_AFTER.md`](../copilot/STEP7_POLICY_DEFAULTS_BEFORE_AFTER.md)。
+> 7. **装配**（Step 8）：`create_app()` 把**已有唯一** `KnowledgeService` 注入 `ToolRegistry`（净改动 1 行）。Knowledge 在真实 Runtime 中已 `executable`，**用户可勾选**；包内默认仍未授权。见 [`STEP8_KNOWLEDGE_ASSEMBLY_BEFORE_AFTER.md`](../copilot/STEP8_KNOWLEDGE_ASSEMBLY_BEFORE_AFTER.md)。
 >
-> 本文其余内容（Policy 默认、装配、UI 文案、人工验收）仍是**未来工作**。
+> 本文其余内容（UI 文案、人工验收）仍是**未来工作**。**注意：Mock 路径下的人工使用前必须先解决 D1b**（`MockToolGateway` Request #1 的 `request.tools[0]` fallback）。
 
 阅读时把“当前事实”和“未来建议”分开。总体约束见[新增 Tool 规范](../deep-dive/tools/ADDING_A_TOOL.md)，尚待决策的研究见[Knowledge Tool 研究](../deep-dive/research/KNOWLEDGE_TOOL_DESIGN.md)。
 
@@ -223,7 +225,7 @@ Mock 采用可检查的 scripted Gateway，不扩展生产关键词路由来“�
 | `tools/policy.py` | 服务端授权 | 评估并最小调整（仅默认值） | **不做“仅 Assistant”硬边界**（已决定）；只处理默认授权与旧 override 兼容；Policy tests。 |
 | `resources/tools/tool_policies.json`（包内） | 默认授权 | 评估 | 默认不开启，旧配置保持；Policy tests。 |
 | `tools/executor.py` | 当前只允许空 object | 需最小调整 | 调用已校验参数；不复制执行器；`test_read_only_tools.py`。 |
-| `web.py` | 共享 Service / Registry composition | 需改组合处 | 注入现有 KnowledgeService；Web / Assistant tests。 |
+| `web.py` | 共享 Service / Registry composition | **已改（Step 8，1 行）** | 把已有唯一 `KnowledgeService` 注入 `ToolRegistry`；不新建第二份；绑定顺序在 store 之前。`test_knowledge_assembly.py`。 |
 | `assistant.py` | 上下文与 History | 可能补规则 | 区分实时事实、评分和项目知识；`test_assistant.py`。 |
 | `tool_conversation.py` | Request #1/#2 与预算 | 通常不改生产 loop | 复用；核对新增非错误状态；`test_tool_conversation.py`。 |
 | `resources/web/app.js`（包内） | Activity 名称/状态和水质提示 | 仍需改（Step 10） | 状态白名单已含 `NO_MATCH`（2026-10-09）；剩余：工具名白名单与"已查询当前水质"文案按工具区分；Browser tests。 |

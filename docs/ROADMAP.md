@@ -14,7 +14,8 @@
 
 ## PAUSED
 
-- **Knowledge Tool**：有设计稿，当前未注册、未执行，也不属于当前 Assistant Tool Policy。
+- **Knowledge Tool**：只读检索项目内鲭鲡养殖背景知识。Step 2–8 已完成（参数合同、`NO_MATCH`、Handler、注册、Catalog 条目、Policy 默认核对、共享服务装配）；**真实 Runtime 中已 `executable`，用户可勾选，但默认不授权**。剩余：提示词选择规则（Step 9）、UI 文案（Step 10）、离线测试与人工验收（Step 11）。
+- **阻塞项 D1b**：`MockToolGateway` Request #1 的 `request.tools[0]` fallback，会以 `"{}"` 调用 Knowledge 而被 validator 拒。**必须在 Mock Knowledge 的人工使用/验收之前解决**（Step 11 前置）。
 
 ## RESEARCH
 
