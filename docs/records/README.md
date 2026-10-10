@@ -6,6 +6,7 @@ before/after、AI 实施日志和旧交接稿是历史证据，其中的“当�
 
 ## 可直接阅读的记录
 
+- [Controlled Assistant Qualification P2A-1](2026-10-controlled-assistant-qualification-p2a.md)：单次 manifest、默认 dry-run、有限真实请求入口和安全取证；实现阶段未联网。
 - [Assistant Turn Source Contract / Receipt P1 / P1.1](2026-10-assistant-turn-source-contract-p1.md)：操作完成与来源存在性分离、状态矩阵与受控资格验证接口设计；没有新增真实模型请求。
 - [Assistant History / Tool Reliability 研究](2026-10-assistant-history-tool-reliability-study.md)：Session / History 审计、来源边界与后续路线评估。
 - [2026-10 Knowledge Tool v1 阶段总结](2026-10-knowledge-tool-v1-summary.md)：已落地范围、边界与未验收问题。

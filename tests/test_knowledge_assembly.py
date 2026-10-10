@@ -22,7 +22,7 @@ from fishery_ai.web import create_app
 KNOWLEDGE = SEARCH_FISHERY_KNOWLEDGE
 WATER = "get_current_water_quality"
 SCORE = "score_current_water_quality"
-COMPOSITION_ROOTS = {"web.py", "composition.py", "real_validation.py"}
+COMPOSITION_ROOTS = {"web.py", "composition.py", "real_validation.py", "assistant_qualification.py"}
 
 
 class KnowledgeAssemblyTests(unittest.TestCase):
@@ -86,6 +86,7 @@ class KnowledgeAssemblyTests(unittest.TestCase):
 
     def test_no_second_service_is_constructed_in_the_package(self):
         # Structural guard: only composition roots may construct the service.
+        # The qualification CLI is an independent process, not a second Web service.
         root = Path(__file__).resolve().parents[1] / "src/fishery_ai"
         found = {}
         for path in root.rglob("*.py"):

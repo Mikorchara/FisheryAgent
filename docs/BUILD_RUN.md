@@ -27,7 +27,7 @@ Demo 使用 MockGateway。自动测试不发送真实网络请求；Cloud / Loca
 - **Managed Custom**：高级能力依赖精确 Identity 的 Evidence / Resolver；Probe 必须由用户逐项触发。
 - **Manual V1/V2**：Raw 请求路径；不进入 Fishery Analysis，不自动执行返回的 Tool Calls。
 
-只读 Tool 当前为 `get_current_water_quality` 和 Experimental `score_current_water_quality`。最多一个 Tool call、一轮、两次模型请求；不是 Agent。当前设计与限制见[Analysis / Assistant 当前架构](deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)和[只读 Tool 当前实现](deep-dive/tools/READ_ONLY_TOOL_CALLING.md)。
+只读 Tool 当前为 `get_current_water_quality`、Experimental `score_current_water_quality` 和默认关闭的 `search_fishery_knowledge`。最多一个 Tool call、一轮、两次模型请求；不是 Agent。当前设计与限制见[Analysis / Assistant 当前架构](deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)和[只读 Tool 当前实现](deep-dive/tools/READ_ONLY_TOOL_CALLING.md)。
 
 ## Tool / Preset 维护
 
@@ -40,6 +40,14 @@ Tool 管理入口在左侧 **01 · Analysis Model → Tool**，分 Analysis / As
 ```
 
 脚本 retry=0，不自动发布合同；输出写入被 Git 忽略的 `outputs/preset-qualification/`。该脚本不是普通启动或自动测试步骤。Presets 当前发布内容见[Preset 合同](deep-dive/models/PRESET_PUBLICATION.md)。
+
+Assistant 来源资格验证使用独立单次入口，默认 dry-run：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/qualify_assistant_turn.py --manifest scripts/manifests/assistant-Q3.json --dry-run
+```
+
+只有本次具体 manifest 获得用户明确授权后才加 `--confirm-network`。最多两次请求、每请求最多 256 输出 tokens、retry=0、空 History；安全结果写入 `outputs/assistant-qualification/`。CLI Snapshot 初始为空，不读取 Web 已 Apply 的状态。凭据受阻时安全停止，不改 ACL 或回退源码 `.env`；合同与安全字段见 [P2A-1 记录](records/2026-10-controlled-assistant-qualification-p2a.md)。
 
 ## Managed Custom 凭据与取消
 

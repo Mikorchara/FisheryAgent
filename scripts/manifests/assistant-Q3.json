@@ -1,0 +1,12 @@
+{
+  "case_id": "Q3",
+  "preset_id": "dashscope-qwen38-flash-r1",
+  "question": "请查询项目资料中鳗鲡低氧表现。",
+  "exposed_tools": ["search_fishery_knowledge"],
+  "source_requirement": "PROJECT_KNOWLEDGE_SEARCH",
+  "max_requests": 2,
+  "max_output_tokens": 256,
+  "retry": 0,
+  "history": [],
+  "confirm_network": false
+}

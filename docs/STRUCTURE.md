@@ -40,6 +40,9 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │     └─ READ_ONLY_TOOL_CALLING.md                           # 三个 Tool 的协议与执行边界
 │  └─ records/                                                  # 阶段记录、验收与独立审计
 │     ├─ README.md                                              # 记录入口与历史归档边界
+│     ├─ 2026-10-assistant-history-tool-reliability-study.md      # Assistant 历史与 Tool 可靠性研究
+│     ├─ 2026-10-assistant-turn-source-contract-p1.md             # 本轮来源 Receipt 与操作完成合同
+│     ├─ 2026-10-controlled-assistant-qualification-p2a.md         # 受控单次实验、dry-run 与安全报告
 │     ├─ 2026-10-knowledge-tool-v1-summary.md                   # Tool 3 接入总结与待验收项
 │     ├─ 2026-10-codex-takeover-audit.md                        # 完整独立接管审计记录
 │     ├─ 2026-10-qwen-tool-provider-evidence.md                 # Qwen 首轮取证的凭据预检阻塞
@@ -61,6 +64,12 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  ├─ mock-traces.jsonl                                          # 离线 Mock 请求 Trace
 │  └─ web-traces.jsonl                                           # Web 请求安全 Trace
 ├─ scripts/                                                      # 人工开发与资格验证辅助工具
+│  ├─ manifests/                                                 # 维护者单次实验计划，不包含凭据
+│  │  ├─ assistant-Q1.json                                       # 当前溶氧查询资格计划
+│  │  ├─ assistant-Q2.json                                       # 当前评分资格计划
+│  │  ├─ assistant-Q3.json                                       # 单 Knowledge Tool 资格计划
+│  │  └─ assistant-Q4.json                                       # 三 Tool 选择 Knowledge 的资格计划
+│  ├─ qualify_assistant_turn.py                                  # 单 manifest Assistant 资格入口，默认 dry-run
 │  ├─ qualify_local_preset_request.py                            # Local Preset 最小请求资格验证
 │  └─ qualify_preset_tools.py                                    # Preset Tool Calling 资格验证入口
 ├─ src/                                                          # Runtime/Core 应用源码与安装 metadata
@@ -69,6 +78,8 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ __main__.py                                             # CLI、Web 与真实验证入口
 │  │  ├─ application.py                                          # 固定 Analysis 上下文与执行主流程
 │  │  ├─ assistant.py                                            # Assistant 上下文、历史与执行服务
+│  │  ├─ assistant_qualification.py                              # 受控单次实验、请求预算与报告
+│  │  ├─ assistant_sources.py                                    # 来源操作要求、Receipt 与提交满足关系
 │  │  ├─ capability_probe.py                                     # 显式 Streaming 与 Thinking 验证
 │  │  ├─ capability_store.py                                     # 精确模型能力证据存储
 │  │  ├─ composition.py                                          # 离线 Demo 组合与包资源入口
@@ -92,6 +103,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ project_env.py                                          # 私有凭据原子写入与 revision 检查
 │  │  ├─ protocol_specs.py                                       # Provider 语义参数协议编码
 │  │  ├─ providers.py                                            # Service、连接与 Auth 元数据
+│  │  ├─ qualification_adapter.py                                # 实验专用输出预算与有限 Provider 观测
 │  │  ├─ real_validation.py                                      # 显式真实模型验证流程
 │  │  ├─ repositories.py                                         # 水质与 Detection Mock 资源读取
 │  │  ├─ secure_files.py                                         # 安全文件操作与 Windows ACL 检查
@@ -161,6 +173,8 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_analysis_tool_web.py                                  # 正式 Analysis Tool Web 接入测试
    ├─ test_analysis_tools.py                                     # 固定 Analysis 与单轮 Tool 回归测试
    ├─ test_assistant.py                                          # Assistant 合同、选择规则 Prompt 契约、历史与执行回归测试
+   ├─ test_assistant_qualification.py                            # 单次实验、预算、取消与报告脱敏测试
+   ├─ test_assistant_sources.py                                  # 真实执行来源 Receipt 与满足关系测试
    ├─ test_browser_streaming.cjs                                 # 页面交互、状态与浏览器回归测试
    ├─ test_catalog_knowledge.py                                  # Catalog 条目 metadata、派生标志与授权边界测试
    ├─ test_clean_room_reset.py                                   # Clean-room 空目录启动测试

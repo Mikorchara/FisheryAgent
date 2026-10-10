@@ -1,6 +1,7 @@
 - Tool 不支持 Streaming Tool Calling、tool delta 拼接或 Streaming Tool Execution.
 - 多 Tool 调用, 多轮调用. 
 - UI整理, 优化.
-- AI 回答评估系统.
-- 做一个细致的测试脚本,检测每次找到的知识块.
+- AI 回答评估系统.                              ---正在进行
+- 做一个细致的测试脚本,检测每次找到的知识块.    
 - 尝试添加一个服务商
+- assistant.py    中的内置提示词有问题
