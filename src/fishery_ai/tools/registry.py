@@ -19,8 +19,9 @@ WATER_QUALITY_SCORE = "score_current_water_quality"
 SEARCH_FISHERY_KNOWLEDGE = "search_fishery_knowledge"
 
 KNOWLEDGE_DESCRIPTION = (
-    "只读检索项目内鳗鲡养殖背景知识。不代表当前传感器状态，不诊断现场疾病，不负责当前评分；"
-    "结果是有限背景证据而非现场事实，无合格命中时返回NO_MATCH。"
+    "只读检索项目内鳗鲡养殖背景知识；用于用户明确要求查询项目资料，或回答依赖项目特有资料的问题。"
+    "query应表达要检索的主题。返回有限背景证据及来源，不代表当前水质或现场事实，不诊断现场疾病，不负责当前评分。"
+    "NO_MATCH表示检索正常完成但无合格命中，不是执行错误；不得编造命中内容。"
 )
 KNOWLEDGE_PARAMETERS = {
     "type": "object",
@@ -47,11 +48,17 @@ class ToolRegistry:
                  knowledge: KnowledgeService | None = None):
         definition = ModelToolDefinition(
             name=CURRENT_WATER_QUALITY,
-            description="只读查询当前水质数值、状态、告警、数据质量、新鲜度和确定性诊断；不负责评分。当前评分、等级、分项评分应使用score_current_water_quality，不要同时调用两个Tool。无快照时返回NO_DATA。",
+            description=("只读查询当前水质数值、状态、告警；用于确认当前系统水质及其追问，不负责评分、等级或分项评分。"
+                         "返回当前快照的水质观测、数据质量、新鲜度、观测与评估时间及确定性诊断。"
+                         "NO_DATA表示查询完成但无快照；存在快照时OK不代表数据一定有效、完整或新鲜，须按quality/freshness说明INVALID、PARTIAL或STALE。"
+                         "查询不等于重新采样。"),
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
         score_definition = ModelToolDefinition(name=WATER_QUALITY_SCORE,
-            description="只读为当前水质计算实验评分、等级和分项评分；用于当前评分、打分、评级问题。内部已经读取当前Snapshot，同一轮不要再调用get_current_water_quality。EXPERIMENTAL / NOT PROFESSIONAL STANDARD；不是专业养殖标准。无参数，无快照时NO_DATA。",
+            description=("只读计算当前水质的实验评分、等级和分项评分；用于查询当前系统评分、打分或评级。"
+                         "内部读取当前快照，同时返回参与评分的水质观测、质量、新鲜度及时间，无需再调用水质查询。"
+                         "NO_DATA表示无快照；NOT_SCORABLE表示数据无效、没有可用评分；PARTIAL表示仅按可用分项评分，不是完整评分。"
+                         "不提供疾病诊断。EXPERIMENTAL / NOT PROFESSIONAL STANDARD；不是专业养殖标准。"),
             parameters={"type": "object", "properties": {}, "additionalProperties": False})
         entries = {definition.name: ToolDefinition(
             definition, partial(get_current_water_quality, reader=reader, diagnosis=diagnosis)),
