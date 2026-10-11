@@ -51,3 +51,5 @@ before/after、AI 实施日志和旧交接稿是历史证据，其中的“当�
 - README.md
 - TOOL_CHANGE_MAP.md
 - KNOWLEDGE_TOOL_V1_WALKTHROUGH.md
+
+- [History v2 产品迁移（P2F）](2026-10-history-v2-product-migration.md)：正式默认 B、内部 A 回滚与离线验证。

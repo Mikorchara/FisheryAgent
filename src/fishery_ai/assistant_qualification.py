@@ -443,7 +443,8 @@ def run_qualification(manifest, root, *, credential_store=None, registry=None, g
             bounded = _BoundedGateway(adapter, manifest, runtime.model, registry)
             coordinator = ToolCallingService(bounded, registry, traces, policy=policy)
             service = AssistantService(_ProjectionCoordinator(coordinator, projection)
-                                       if projection is not None else coordinator)
+                                       if projection is not None else coordinator,
+                                       history_projection=ProjectionId.CURRENT_NATIVE)
             result = service.send(AssistantRequest(manifest.preset_id, manifest.question,
                 history=qualification_history(manifest.history_fixture_id),
                 source_requirement=manifest.source_requirement), runtime)

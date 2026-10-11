@@ -19,6 +19,7 @@ from .application import Orchestrator, result_to_dict, _public_data
 from .capability_store import CapabilityStore
 from .capability_probe import run_capability_probe
 from .official_capabilities import apply_official_capabilities
+from .history_projection import DEFAULT_HISTORY_PROJECTION, ProjectionId
 from .contracts import AnalysisRequest, Mode, Status, utcnow
 from .custom_profiles import CustomProfileStore, ProfileFieldError
 from .credentials import CredentialFileError, CredentialStore
@@ -166,7 +167,8 @@ def _builtin_profiles() -> tuple[ModelProfile, ...]:
     return (mock, *(apply_official_capabilities(profile) for profile in real))
 
 
-def create_app(*, trace_path: Path | None = None,
+def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_PROJECTION,
+               trace_path: Path | None = None,
                custom_profiles_dir: Path | None = None,
                capability_evidence_dir: Path | None = None,
                credential_store: CredentialStore | None = None,
@@ -181,6 +183,8 @@ def create_app(*, trace_path: Path | None = None,
                allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1"),
                real_gateway_factory: Callable[[], ModelGateway] = OpenAICompatibleAdapter) -> Flask:
     """Construct without loading .env or making a network request."""
+    if not isinstance(assistant_history_projection, ProjectionId):
+        raise ValueError("INVALID_HISTORY_PROJECTION")
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
     credentials = credential_store if credential_store is not None else CredentialStore()
@@ -1053,7 +1057,7 @@ def create_app(*, trace_path: Path | None = None,
         try:
             with request_scope(handle):
                 coordinator = ToolCallingService(real_gateway_factory(), tool_registry, traces, policy=policy)
-                result = AssistantService(coordinator).send(turn, runtime)
+                result = AssistantService(coordinator, history_projection=assistant_history_projection).send(turn, runtime)
             return jsonify(result=result.to_dict()), (200 if result.status == Status.COMPLETED else
                 409 if result.status == Status.CANCELLED else 502)
         except (AssistantError, GatewayError) as exc:
@@ -1527,7 +1531,8 @@ def create_app(*, trace_path: Path | None = None,
     return app
 
 
-def run_web(*, port: int = 8765) -> None:
+def run_web(*, port: int = 8765,
+            assistant_history_projection: ProjectionId = DEFAULT_HISTORY_PROJECTION) -> None:
     """Fix the credential path at startup; each request resolves a fresh snapshot."""
     try:
         location = private_project_location(Path.cwd())
@@ -1537,7 +1542,8 @@ def run_web(*, port: int = 8765) -> None:
     credentials = CredentialStore(location.env_path, private_location=location)
     manual_location = private_manual_location(Path.cwd())
     manual_credentials = CredentialStore(manual_location.env_path, process_env={}, private_location=manual_location)
-    app = create_app(credential_store=credentials,
+    app = create_app(assistant_history_projection=assistant_history_projection,
+                     credential_store=credentials,
                      credential_writer=ProjectEnvWriter(location.env_path.parent, credentials,
                                                         require_git_ignored=False),
                      manual_credential_store=manual_credentials,

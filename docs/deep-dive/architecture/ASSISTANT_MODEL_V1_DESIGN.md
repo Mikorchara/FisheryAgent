@@ -33,6 +33,8 @@ Analysis 可显式授权只读 Tool。授权后请求仍先携带开始时捕获
 - Assistant 固定使用已发布的 Thinking OFF + Normal。Analysis 的模型选择、结果、Scenario 与运行状态互相独立。
 - 首轮 Context 不预读当前水质、评分、Detection 或 RAG。当前事实问题必须由模型在本轮选择相应 Tool；历史中旧数值只能作为历史语境，不能代替新的当前查询。
 - 前端页面内保存历史，刷新清空；后端不保存会话。后端只接受完整成功的 user / assistant 文本对，最多 6 轮且序列化上下文最多 6 KiB；裁剪整轮。Tool Call、Tool Result、Trace 不进入后续历史。
+- 正式 History Projection 为 `UNTRUSTED_TRANSCRIPT_V1@1`：原有完整 pair 裁剪后，将保留对话转换为单个 `role=user` JSON transcript，包含 speaker / completed_at / 顺序 / 原文；当前问题是独立最后一条 user 消息。空历史不添加 transcript。6 KiB 是裁剪前对话 pair 的预算，JSON 包装会增加少量上下文字节。
+- `CURRENT_NATIVE@1` 保留为维护者启动配置回滚；同一 app epoch 配置固定，Web 不可覆盖。历史声明不生成本轮 Receipt；投影不是防注入沙箱或模型合规保证。见[P2F 记录](../../records/2026-10-history-v2-product-migration.md)。
 - 完整成功要求非空正文、完成状态且 `finish_reason=stop`。失败、取消、截断不作为成功轮次提交。后端 epoch 不匹配时清理旧会话但保留输入，不自动重发。
 
 ## Tool 规则与预算

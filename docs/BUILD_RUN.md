@@ -96,7 +96,7 @@ P2E多轮History迁移资格实验当前仅准备，不迁移正式产品；冻�
 .\scripts\run_product_migration_qualification.ps1 -ConfirmNetwork
 ```
 
-固定跨模型顺序来自冻结索引，每个position独立Python进程、retry=0、最多两次请求。普通模型行为失败保留并继续；凭据、网络、安全或报告异常立即停止。已有真实P2E样本时拒绝重启；中断后先盘点，不resume、不补跑。矩阵、预算、固定顺序及判定见[P2E准备报告](records/2026-10-history-projection-product-migration-qualification.md)。不要用P2D runner运行P2E。当前真实P2E结果仍未执行。
+固定跨模型顺序来自冻结索引，每个position独立Python进程、retry=0、最多两次请求。普通模型行为失败保留并继续；凭据、网络、安全或报告异常立即停止。已有真实P2E样本时拒绝重启；中断后先盘点，不resume、不补跑。矩阵、预算、固定顺序及判定见[P2E准备报告](records/2026-10-history-projection-product-migration-qualification.md)。不要用P2D runner运行P2E。P2E 真实结果已完成，迁移决策见[History v2 判定](records/2026-10-history-v2-migration-decision.md)。
 
 ## Managed Custom 凭据与取消
 
@@ -113,3 +113,15 @@ node --check src/fishery_ai/resources/web/app.js
 ```
 
 测试只使用 Mock、临时文件和虚构凭据。完整路径、运行目录与数据保留规则见[项目结构](STRUCTURE.md)及[数据位置地图](deep-dive/operations/PROJECT_DATA_AND_CONFIG_LOCATIONS.md)。
+
+## Assistant History v2
+
+正式默认 `UNTRUSTED_TRANSCRIPT_V1@1`：先沿用完整 pair 裁剪（6 轮 / 6 KiB），再投影为未受信任 JSON 历史；当前问题独立。Web 无配置开关。
+
+维护者回滚需先停止 Web，再以启动配置选择旧原生投影，重启产生新 epoch：
+
+```powershell
+python -c "from fishery_ai.web import run_web; from fishery_ai.history_projection import ProjectionId; run_web(assistant_history_projection=ProjectionId.CURRENT_NATIVE)"
+```
+
+恢复 B 使用正常 `python -m fishery_ai web`。不在进行中的会话内切换，不因请求失败自动回滚或重发。见[P2F 迁移记录](records/2026-10-history-v2-product-migration.md)。

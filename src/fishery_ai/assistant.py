@@ -6,6 +6,7 @@ import json
 import re
 import time
 
+from .history_projection import DEFAULT_HISTORY_PROJECTION, ProjectionId, project_retained_history
 from .contracts import Mode, Status, utcnow
 from .assistant_sources import SourceRequirement, TurnSourceReceipt, receipt_from_execution, requirement_satisfied
 from .execution import current_handle
@@ -232,10 +233,14 @@ class AssistantResult:
 
 class AssistantService:
     """History + final commit gate around the existing one-round coordinator."""
-    def __init__(self, coordinator: ToolCallingService):
+    def __init__(self, coordinator: ToolCallingService, *,
+                 history_projection: ProjectionId = DEFAULT_HISTORY_PROJECTION):
         if coordinator.policy.mode != "assistant":
             raise AssistantError()
+        if not isinstance(history_projection, ProjectionId):
+            raise AssistantError("INVALID_HISTORY_PROJECTION")
         self.coordinator = coordinator
+        self._history_projection = history_projection
 
     def send(self, request: AssistantRequest, runtime):
         expected = assistant_profile(request.preset_id)
@@ -248,7 +253,8 @@ class AssistantService:
                 or runtime.default_response_mode != "normal" or runtime.max_retries != 0
                 or runtime.capabilities.tool_calling != Support.SUPPORTED):
             raise AssistantError("ASSISTANT_PRESET_NOT_ALLOWED")
-        context = AssistantContextBuilder().build(request)
+        native = AssistantContextBuilder().build(request)
+        context, _ = project_retained_history(request, native, self._history_projection)
         started_at, started = utcnow(), time.monotonic()
         handle = current_handle()
         run = self.coordinator.run_request(context.model_request, runtime,

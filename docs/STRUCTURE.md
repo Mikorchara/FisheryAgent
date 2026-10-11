@@ -39,6 +39,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │     ├─ ADDING_A_TOOL.md                                    # 新增正式只读 Tool 的通用规范
 │  │     └─ READ_ONLY_TOOL_CALLING.md                           # 三个 Tool 的协议与执行边界
 │  └─ records/                                                  # 阶段记录、验收与独立审计
+│     ├─ 2026-10-history-v2-product-migration.md                 # P2F 产品默认 B 与内部 A 回滚记录
 │     ├─ README.md                                              # 记录入口与历史归档边界
 │     ├─ 2026-10-assistant-history-tool-reliability-study.md      # Assistant 历史与 Tool 可靠性研究
 │     ├─ 2026-10-assistant-history-projection-research.md         # P2B 固定历史实验与投影方案研究
@@ -110,6 +111,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ __init__.py                                             # 应用包初始化
 │  │  ├─ __main__.py                                             # CLI、Web 与真实验证入口
 │  │  ├─ application.py                                          # 固定 Analysis 上下文与执行主流程
+│  │  ├─ history_projection.py                                   # 产品默认 B 与原生 A 回滚的共享历史投影
 │  │  ├─ assistant.py                                            # Assistant 上下文、历史与执行服务
 │  │  ├─ assistant_qualification.py                              # 受控单次实验、请求预算与报告
 │  │  ├─ assistant_sources.py                                    # 来源操作要求、Receipt 与提交满足关系
@@ -138,7 +140,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ providers.py                                            # Service、连接与 Auth 元数据
 │  │  ├─ qualification_adapter.py                                # 实验专用输出预算与有限 Provider 观测
 │  │  ├─ qualification_history.py                                # 实验专用固定历史白名单与 H case 合同
-│  │  ├─ qualification_projection.py                             # 仅 qualification 使用的模型无关历史 A/B
+│  │  ├─ qualification_projection.py                             # qualification 包装及冻结历史 A/B 指纹
 │  │  ├─ real_validation.py                                      # 显式真实模型验证流程
 │  │  ├─ repositories.py                                         # 水质与 Detection Mock 资源读取
 │  │  ├─ secure_files.py                                         # 安全文件操作与 Windows ACL 检查
@@ -207,6 +209,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_access_web.py                                         # Preset、Manual 与取消 Web 边界测试
    ├─ test_analysis_tool_web.py                                  # 正式 Analysis Tool Web 接入测试
    ├─ test_analysis_tools.py                                     # 固定 Analysis 与单轮 Tool 回归测试
+   ├─ test_history_product_migration.py                           # 正式默认 B、回滚、裁剪与 Web 隔离回归
    ├─ test_assistant.py                                          # Assistant 合同、选择规则 Prompt 契约、历史与执行回归测试
    ├─ test_assistant_qualification.py                            # 单次实验、预算、取消与报告脱敏测试
    ├─ test_qualification_history.py                              # 固定历史、投影、来源与实验隔离测试

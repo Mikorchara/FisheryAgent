@@ -248,7 +248,7 @@ class AssistantTests(AssistantFixture):
         self.store.set_current(self.reading(oxygen=6.5))
         gateway = RecordingGateway(call(), final("本轮查询DO6.5，不是旧2.2"))
         second = self.service(gateway).send(self.request("现在仍然是2.2吗？", history), self.runtime)
-        self.assertIn("历史DO为2.2", gateway.requests[0].messages[2].content)
+        self.assertIn("历史DO为2.2", gateway.requests[0].messages[1].content)
         self.assertFalse(any(m.role == "tool" or m.tool_calls for m in gateway.requests[0].messages))
         data = json.loads(gateway.requests[1].messages[-1].content)
         self.assertEqual(data["water_quality"]["dissolved_oxygen_mg_l"], 6.5)
@@ -528,7 +528,7 @@ class AssistantSelectionRulesTests(AssistantFixture):
                     self.assertEqual(len(gateway.requests), 2 if selected else 1)
                     self.assertEqual([t.name for t in gateway.requests[0].tools], [QUERY, SCORE])
                     self.assertEqual([m.role for m in gateway.requests[0].messages],
-                                     ["system", "user", "assistant", "user"])
+                                     ["system", "user", "user"])
                     if selected:
                         self.assertEqual(gateway.requests[1].tool_choice, "none")
                         tool_data = json.loads(gateway.requests[1].messages[-1].content)
