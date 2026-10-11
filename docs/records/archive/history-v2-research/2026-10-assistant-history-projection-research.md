@@ -19,15 +19,15 @@
 
 | 位置 | 代码事实 |
 |---|---|
-| [assistant.py](../../src/fishery_ai/assistant.py)，23–26、87–146 | 模型历史上限 6 turns / 6 KiB；History 只接受 `user / assistant / completed_at`，无任意 role、系统指令或 Tool 字段。客户端时间只校验格式，不认证来源。 |
+| [assistant.py](../../../../src/fishery_ai/assistant.py)，23–26、87–146 | 模型历史上限 6 turns / 6 KiB；History 只接受 `user / assistant / completed_at`，无任意 role、系统指令或 Tool 字段。客户端时间只校验格式，不认证来源。 |
 | 同文件 172–186 | 每次 `build()` 都重新加入完整 `SYSTEM_INSTRUCTION`；历史 user 为 user，历史 assistant 为 assistant；最后追加当前 user question。 |
 | 同文件 174–184 | 先保留最近 6 个完整 pair，再按 UTF-8 JSON 字节超限移除最旧 pair。两条历史消息均附程序生成的历史/客户端时间标签。 |
 | 同文件 199–234、240 后 | Receipt 来自实际执行，成功提交由最终正文、finish reason、取消状态和 Requirement 决定；公开 Assistant Result 当前不输出内部 Receipt。 |
-| [assistant_sources.py](../../src/fishery_ai/assistant_sources.py) | 操作完成与来源 payload 存在性独立；NO_DATA 可以认证查询完成，NO_MATCH 可以认证搜索完成，均不认证实际值/命中。 |
-| [tool_conversation.py](../../src/fishery_ai/tool_conversation.py)，`run_request` | 本轮追加 assistant.tool_calls 与匹配 role=tool；第二轮 `tool_choice=none`；预算 1 call / 1 round / 2 requests。这些协议消息不进入下一轮 History pair。 |
-| [app.js](../../src/fishery_ai/resources/web/app.js)，2648、2897–2950 | `displayEntries` 与 `completedTurns` 分开；仅完整成功 pair 提交，completed 保留最近 20，display 最多 60 entries，发送时进一步裁剪为 6 turns / 6 KiB。 |
-| [web.py](../../src/fishery_ai/web.py)，1040–1056 | Web 通过 `AssistantRequest.from_dict` 和正式 AssistantService；不接受 qualification fixture、SourceRequirement、Receipt 等客户端升级字段。 |
-| [application.py](../../src/fishery_ai/application.py)，97–124 | Analysis 自己构建固定事实/规则/RAG ModelRequest，不使用 AssistantContextBuilder、AssistantHistoryTurn 或 Assistant SYSTEM_INSTRUCTION。 |
+| [assistant_sources.py](../../../../src/fishery_ai/assistant_sources.py) | 操作完成与来源 payload 存在性独立；NO_DATA 可以认证查询完成，NO_MATCH 可以认证搜索完成，均不认证实际值/命中。 |
+| [tool_conversation.py](../../../../src/fishery_ai/tool_conversation.py)，`run_request` | 本轮追加 assistant.tool_calls 与匹配 role=tool；第二轮 `tool_choice=none`；预算 1 call / 1 round / 2 requests。这些协议消息不进入下一轮 History pair。 |
+| [app.js](../../../../src/fishery_ai/resources/web/app.js)，2648、2897–2950 | `displayEntries` 与 `completedTurns` 分开；仅完整成功 pair 提交，completed 保留最近 20，display 最多 60 entries，发送时进一步裁剪为 6 turns / 6 KiB。 |
+| [web.py](../../../../src/fishery_ai/web.py)，1040–1056 | Web 通过 `AssistantRequest.from_dict` 和正式 AssistantService；不接受 qualification fixture、SourceRequirement、Receipt 等客户端升级字段。 |
+| [application.py](../../../../src/fishery_ai/application.py)，97–124 | Analysis 自己构建固定事实/规则/RAG ModelRequest，不使用 AssistantContextBuilder、AssistantHistoryTurn 或 Assistant SYSTEM_INSTRUCTION。 |
 
 6 KiB 是历史 pair 的序列化字节预算，**不是 token 预算**；后加历史标签、System、当前问题、Tools schema 和第二轮 Tool Result 不包含在这项历史预算中。此处是未来预算评估点，本轮未改变。
 
@@ -64,9 +64,9 @@ UI Activity 可以显示本轮查询时间、freshness、工具与耗时；下�
 | H5 | OLD_DO_2_2 | 刚才 2.2 是什么意思？ | AUTO | 无 Tool 直接回答合法 |
 | H6 | OLD_KNOWLEDGE_CLAIM | 项目资料里鳗鲡低氧有什么表现？ | PROJECT_KNOWLEDGE_SEARCH | 本轮重新搜索；旧声明不是 Receipt |
 
-新增 [qualification_history.py](../../src/fishery_ai/qualification_history.py)：固定时间 `2026-10-01T00:00:00+00:00`、固定文本、tuple + frozen turn + MappingProxyType 白名单。非 EMPTY fixture 均只有一个 pair、小于 512 bytes。不读取外部历史文件，不接受自由 role/System/历史文本。
+新增 [qualification_history.py](../../../../src/fishery_ai/qualification_history.py)：固定时间 `2026-10-01T00:00:00+00:00`、固定文本、tuple + frozen turn + MappingProxyType 白名单。非 EMPTY fixture 均只有一个 pair、小于 512 bytes。不读取外部历史文件，不接受自由 role/System/历史文本。
 
-[assistant_qualification.py](../../src/fishery_ai/assistant_qualification.py) 只接受 `history_fixture_id`；`history` 仍必须为空。H case ID 同时校验固定问题、fixture、Preset、工具集合、Requirement 和 2-request 预算，防止结果被误标为另一个条件。报表增加 fixture ID/hash、turn count、System hash，以及实际 Context 裁剪计数；不保存 fixture 正文。
+[assistant_qualification.py](../../../../src/fishery_ai/assistant_qualification.py) 只接受 `history_fixture_id`；`history` 仍必须为空。H case ID 同时校验固定问题、fixture、Preset、工具集合、Requirement 和 2-request 预算，防止结果被误标为另一个条件。报表增加 fixture ID/hash、turn count、System hash，以及实际 Context 裁剪计数；不保存 fixture 正文。
 
 H fixture 真正通过当前正式 AssistantContextBuilder。Q3/Q4 EMPTY 的 safe plan / plan_sha256 保持原值：Q3 `82502a1fccc5a6af53cf9f184bd20cf6d4aa2134f4284302ab1e60950dc27849`，Q4 `3660d5515b3e7d2701a62b176139b40e0b7e8c18ca6e29114f9b9dc1ed041c69`。仍一进程一 manifest，不添加批处理 Harness。
 

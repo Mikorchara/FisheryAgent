@@ -43,7 +43,9 @@ Handler 固定 top_k=3，返回 status、retrieval_mode、result_count、evidenc
 
 ### Assistant
 
-仅三个已发布 Preset 的 OFF + Normal 连接可用。首轮不注入 Snapshot / Diagnosis / RAG；请求中的工具定义由 Assistant Policy 过滤。历史只携带完整成功 user / assistant 文本对，不包含 Tool 协议消息或原始 Result。
+仅三个已发布 Preset 的 OFF + Normal 连接可用。首轮不注入 Snapshot / Diagnosis / RAG；请求中的工具定义由 Assistant Policy 过滤。历史只接收完整成功 user / assistant 文本对，整轮裁剪后默认投影为一个未受信任的 user JSON transcript；当前问题独立。Tool 协议消息、原始 Result 与 Receipt 不进入历史。
+
+真实执行结果另外生成有限来源 Receipt，区分查询/评分/搜索完成与实际观测/评分/Evidence 是否存在。NO_DATA / NOT_SCORABLE / NO_MATCH 可以完成对应操作而不产生正向来源；ERROR 或文字仿调用不能满足操作要求。内部非 AUTO 要求不满足时拒绝成功提交；普通 Web 仍为 AUTO，不根据正文或用户自然语言自动授予来源。详见[Assistant 当前来源合同](../architecture/ASSISTANT_MODEL_V1_DESIGN.md#本轮来源与提交合同)。
 
 ### 有界执行与取消
 
@@ -56,8 +58,8 @@ Development/Test 可使用离线 Mock 或满足能力门禁的真实 Runtime，�
 ## 当前限制
 
 - 不支持 Streaming Tool Calling、tool delta 拼接或 Streaming Tool Execution。
-- Knowledge 已注册并具备离线协议 / 执行支持，真实模型选择稳定性仍待验收。无 Tool 却声称已查询 / 评分 / 检索的正文目前仍可能被提交为成功回答；Prompt 不等于来源保证。
-- Assistant 按需 Knowledge 与 Analysis 自动 RAG 的双重来源问题、History 干扰和检索相关性仍待独立评审。
+- Knowledge 已注册，真实受控资格实验与 History v2 迁移已完成；有限样本不代表长期 Tool 选择稳定性。普通 AUTO 下无 Tool 却声称已查询 / 评分 / 检索的正文仍可能提交成功；Prompt 与历史文字不构成执行证明。
+- Assistant 按需 Knowledge 与 Analysis 自动 RAG 的双重来源、检索相关性和产品 AUTO 的来源保证仍待评估；History 默认 B 可内部回滚，不会因失败自动改投影或重发。
 - 没有第二轮以上循环、多个 Tool 并行、Agent、Detection Tool、设备控制或写入操作。
 - Protocol support、Preset 固定合同、Managed Evidence 和用户 Tool Policy 是不同层次，不能互相代替。
 
@@ -65,4 +67,4 @@ Development/Test 可使用离线 Mock 或满足能力门禁的真实 Runtime，�
 
 T1/T2/T3：`test_gateway_tool_contract.py`、`test_read_only_tools.py`、`test_tool_conversation.py`。应用与 UI：`test_analysis_tools.py`、`test_analysis_tool_web.py`、`test_web_tool_conversation.py`、`test_assistant.py`、`test_browser_streaming.cjs`。自动测试使用 Mock / 临时数据，不发送真实模型请求。
 
-参数与知识执行覆盖：`test_tool_argument_contract.py`、`test_tool_status_no_match.py`、`test_knowledge_handler.py`、`test_knowledge_registration.py`、`test_knowledge_assembly.py`。历史实施与独立审计见[阶段总结](../../records/2026-10-knowledge-tool-v1-summary.md)，不能把历史测试数量当作当前验收。
+参数与知识执行覆盖：`test_tool_argument_contract.py`、`test_tool_status_no_match.py`、`test_knowledge_handler.py`、`test_knowledge_registration.py`、`test_knowledge_assembly.py`。历史实施与独立审计见[阶段总结](../../records/archive/knowledge-tool-v1/2026-10-knowledge-tool-v1-summary.md)，不能把历史测试数量当作当前验收。

@@ -22,6 +22,9 @@
 | Credential Writer 辅助文件 | 凭据写入锁、staging 与恢复资料 | 同一私有 `credentials/` 目录下的 `.env.writer.lock` / 对应 stage 文件 | 否；工作区外 | 是 | 写入 / 恢复期间 | 仅 writer 已停止且无恢复状态后人工处置 |
 | Trace | Web、Mock Demo、真实验证的安全运行事件 | `outputs/web-traces.jsonl`、`mock-traces.jsonl`、`real-validation-traces.jsonl` | 否（Git 忽略） | 否；字段受白名单限制 | 相应运行路径产生 | 历史不可自动重建；清理前备份 |
 | Preset Qualification 记录 | 维护者单项/Tool Qualification 安全摘要 | `outputs/preset-qualification/` | 否（Git 忽略） | 否；不含 Secret | 维护者脚本运行时产生 | 重测可产生新记录；旧证据不可自动重建，先备份 |
+| Assistant Qualification 记录 | 单次来源验证与已结束的 History A/B 安全报告 | `outputs/assistant-qualification/` 下 `history/`、`projection-ab/`、`cross-model/`、`product-migration/`、`archive/` 等分区 | 否（Git 忽略） | 否；不保存模型正文或凭据 | 日常 Web 不需要；研究/审计产生 | 原样本不可自动重建；不可按旧授权重跑或自动清理 |
+| History Projection / Source Contract | 默认 B、内部 A 回滚；真实执行 Receipt 与来源要求 | `src/fishery_ai/history_projection.py`、`src/fishery_ai/assistant_sources.py` | 是 | 否 | Assistant 需要 | 不应删除；当前产品合同 |
+| 当前文档 / 历史记录 | 当前架构与运行说明；已结束阶段的证据原文 | `docs/deep-dive/`、`docs/records/`、`docs/records/archive/` | 是；新文档须显式纳入 Git | 否 | 运行时不读取 | 历史研究与独立审计先判断唯一信息，不自动删除 |
 | 维护者脚本 | 显式单项 / Preset Tool Qualification | `scripts/qualify_local_preset_request.py`、`scripts/qualify_preset_tools.py` | 是 | 否 | 日常 Web 不需要 | 源码可从 Git 恢复；请求需用户显式确认 |
 | 自动测试与 Fixtures | Python / Browser 回归和历史兼容性夹具 | `tests/`、`tests/fixtures/` | 是 | 否 | 正常运行不需要；开发回归需要 | 保留测试；夹具用途见 `tests/fixtures/historical_model_assets/README.md` |
 | 虚拟环境 / Python 缓存 | 本机依赖与字节码 | `.venv/`、`__pycache__/`、`*.pyc` | 否（Git 忽略） | 否 | 仅开发环境 | 可重建；删除 venv 后按 BUILD_RUN 重装依赖 |

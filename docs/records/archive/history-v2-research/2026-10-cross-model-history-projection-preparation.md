@@ -18,7 +18,7 @@
 
 A=CURRENT_NATIVE@1；B=UNTRUSTED_TRANSCRIPT_V1@1。复用未修改的qualification_projection.py、AssistantService、ToolCallingService、Policy、Registry、Executor、Receipt、Requirement和Commit Gate。没有模型专用投影、framing、Tool描述、来源要求、评分标准或业务router。
 
-仅[assistant_qualification.py](../../src/fishery_ai/assistant_qualification.py)增加固定CrossModelTarget / CrossModelCase登记、身份核对与报告分区。固定模型名字只用于实验identity。报告来源仍是正式Runtime / CredentialSnapshot / QualificationAdapter；现有Gateway和Adapter未改。
+仅[assistant_qualification.py](../../../../src/fishery_ai/assistant_qualification.py)增加固定CrossModelTarget / CrossModelCase登记、身份核对与报告分区。固定模型名字只用于实验identity。报告来源仍是正式Runtime / CredentialSnapshot / QualificationAdapter；现有Gateway和Adapter未改。
 
 ## 3. 正式Preset身份核对
 
@@ -43,7 +43,7 @@ A=CURRENT_NATIVE@1；B=UNTRUSTED_TRANSCRIPT_V1@1。复用未修改的qualificati
 
 ## 4. Test matrix 与预算
 
-十个固定manifest在[scripts/manifests](../../scripts/manifests/)；case前缀DEEPSEEK- / OLLAMA-，禁止跨模型重标。
+十个固定manifest在[scripts/manifests](../../../../scripts/manifests)；case前缀DEEPSEEK- / OLLAMA-，禁止跨模型重标。
 
 | 条件 | History fixture | Projection | 固定问题 | Requirement | 每模型计划 |
 |---|---|---|---|---|---|
@@ -140,7 +140,7 @@ outputs/assistant-qualification/cross-model/
 
 ## 8. Offline validation
 
-新增[test_cross_model_qualification.py](../../tests/test_cross_model_qualification.py)：十manifest合法/反例、固定身份与版本漂移、消息等价、EMPTY parity、schema、来源/提交、NO_DATA、无预取、预算/取消、报告分区与脱敏、Web拒绝实验字段、旧18个计划hash、PS runner固定顺序/停止/防重跑。
+新增[test_cross_model_qualification.py](../../../../tests/test_cross_model_qualification.py)：十manifest合法/反例、固定身份与版本漂移、消息等价、EMPTY parity、schema、来源/提交、NO_DATA、无预取、预算/取消、报告分区与脱敏、Web拒绝实验字段、旧18个计划hash、PS runner固定顺序/停止/防重跑。
 
 PowerShell调度的“联网分支”测试替换进程调用为内存fake，只生成临时虚构安全JSON；没有调用SDK或真实Provider。两个真实工作区runner只以默认不联网模式运行，检查五个plan并保存order。
 
@@ -160,7 +160,7 @@ symlink跳过源于Windows环境不能建立测试所需目录链接；模拟rep
 
 ## 9. DeepSeek runner
 
-入口：[run_deepseek_projection_qualification.ps1](../../scripts/run_deepseek_projection_qualification.ps1)。
+入口：[run_deepseek_projection_qualification.ps1](../../../../scripts/run_deepseek_projection_qualification.ps1)。
 
 以下为停止前的启动命令记录，**当前不得重新执行**。现有真实样本会触发防重跑门禁：
 
@@ -176,7 +176,7 @@ symlink跳过源于Windows环境不能建立测试所需目录链接；模拟rep
 
 ## 10. Ollama runner
 
-入口：[run_ollama_projection_qualification.ps1](../../scripts/run_ollama_projection_qualification.ps1)。
+入口：[run_ollama_projection_qualification.ps1](../../../../scripts/run_ollama_projection_qualification.ps1)。
 
 ```powershell
 # 只核对准备，Provider请求0
@@ -188,13 +188,13 @@ symlink跳过源于Windows环境不能建立测试所需目录链接；模拟rep
 
 状态：**PREPARED — USER MAY CONFIRM LOCAL RUN**。DeepSeek新批次已完成；Ollama使用相同H2F、H2-A/B、H5-A/B五条件，每条件六次，最多30 runs / 60请求，OFF / Normal、retry=0、每请求输出上限256 tokens。采用现有共用runner与各case固定plan hash，B投影和H5 AUTO不被统一条件错误拦截。显式开关覆盖该固定本地批次；不自动执行或与DeepSeek联动。沿用正式Auth.NONE / RuntimeSnapshot，不安装/pull/启动Ollama、不改端口或URL。默认准备已验证，真实样本尚未产生。
 
-两个模型的完整五case合同均进入离线30项模拟，报告plan直接来自实际manifest；另有跨模型消息、Tool Schema、Source Requirement与A/B语义等价测试。运行说明见[BUILD_RUN](../BUILD_RUN.md)。
+两个模型的完整五case合同均进入离线30项模拟，报告plan直接来自实际manifest；另有跨模型消息、Tool Schema、Source Requirement与A/B语义等价测试。运行说明见[BUILD_RUN](../../../BUILD_RUN.md)。
 
 本次Ollama准备验证：cross-model targeted 39/39通过；真实入口默认准备通过（Provider请求0）；PowerShell语法、19个相关本地文档链接与diff检查通过。活动Ollama目录无真实JSON，固定顺序30项；未commit/push。
 
 ## 11. Runner共同边界
 
-[projection_qualification_runner.ps1](../../scripts/projection_qualification_runner.ps1)只复用调度、文件/计划检查，不是第二套Assistant Harness。每个wrapper拥有独立固定model key/hash表；不调用另一个wrapper。
+[projection_qualification_runner.ps1](../../../../scripts/projection_qualification_runner.ps1)只复用调度、文件/计划检查，不是第二套Assistant Harness。每个wrapper拥有独立固定model key/hash表；不调用另一个wrapper。
 
 - 检查项目根/venv/五manifest，真实开始前先核对全部五plan；每run还单独dry-run。
 - 扫描只限本模型安全报告；已有actual_network_requests>0立即拒绝重启批次，需先盘点剩余授权。不因普通失败补run。
@@ -262,7 +262,7 @@ DeepSeek/Ollama适用相同来源与提交合同，不降低4B模型标准。可
 
 ## 17. 一次性 DeepSeek continuation（历史入口，本轮重置后不使用）
 
-新增[scripts/run_deepseek_projection_qualification_remaining.ps1](../../scripts/run_deepseek_projection_qualification_remaining.ps1)，只接受当前已审计的1/30状态；不修改原30项runner，也不是通用Resume。它验证原`run-order.txt`固定哈希、唯一真实报告及报告内容、Identity / ProtocolSpec / Preset / plan / question / fixture / projection /预算、报告目录和reparse边界，并对全部5个manifest执行无网络dry-run。任一条件不符就停止。
+新增[scripts/run_deepseek_projection_qualification_remaining.ps1](../../../../scripts/run_deepseek_projection_qualification_remaining.ps1)，只接受当前已审计的1/30状态；不修改原30项runner，也不是通用Resume。它验证原`run-order.txt`固定哈希、唯一真实报告及报告内容、Identity / ProtocolSpec / Preset / plan / question / fixture / projection /预算、报告目录和reparse边界，并对全部5个manifest执行无网络dry-run。任一条件不符就停止。
 
 默认运行只审计并dry-run。显式`-ConfirmNetwork`时，读取原固定顺序的索引#2至#30，每项使用独立CLI进程，先dry-run核对plan，再执行一次confirmed CLI。普通失败占用当前slot并继续；报告、身份、预算、credential/安全及取消错误立即停止。它永远不调度#1，不删除或覆盖原报告。若中途再次停止，状态不再符合此一次性脚本的入口条件；需重新盘点并另行批准，不能重跑或把它当通用resume。
 

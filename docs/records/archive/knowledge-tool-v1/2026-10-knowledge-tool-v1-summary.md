@@ -1,6 +1,6 @@
 # Knowledge Tool v1 阶段总结
 
-记录日期：2026-10-09；实现核对基线：44992a0。本文保存 Tool 3 接入阶段结论，不替代当前源码、测试与[正式 Tool 文档](../deep-dive/tools/READ_ONLY_TOOL_CALLING.md)。
+记录日期：2026-10-09；实现核对基线：44992a0。本文保存 Tool 3 接入阶段结论，不替代当前源码、测试与[正式 Tool 文档](../../../deep-dive/tools/READ_ONLY_TOOL_CALLING.md)。
 
 ## 1. 最终结构
 
@@ -59,4 +59,4 @@ Catalog 不注册 Handler 或验证参数；但当前 UserToolPolicyStore 的 ov
 
 ## 5. 施工记录归档
 
-Copilot Step 2–10 与 D1/D1b 的逐步施工记录已收口归档，旧 handoff 学习材料同样归档；入口见 [records README](README.md)。这些文件不再作为 CURRENT STATE 文档。后续修复以源码、测试和正式 architecture / tools 文档为准，不从 ZIP 内文件推导运行行为。
+Copilot Step 2–10 与 D1/D1b 的逐步施工记录已收口归档，旧 handoff 学习材料同样归档；入口见 [records README](../../README.md)。这些文件不再作为 CURRENT STATE 文档。后续修复以源码、测试和正式 architecture / tools 文档为准，不从 ZIP 内文件推导运行行为。

@@ -1,6 +1,6 @@
 # 完整项目文件地图
 
-按当前磁盘实际文件生成；含未跟踪文档与本地安装 metadata。目录数不含项目根；缓存不展开，outputs 仅列实际一级目录与两个固定 Trace 文件。
+文件地图按当前目录核对；docs、scripts 与 tests 已按实际文件重新列出，含未提交文档。缓存不展开，outputs 仅标运行数据类别，不读取生成记录或凭据内容。
 
 ```text
 Fishery_AI_Prototype/                                            # 项目工作区
@@ -14,45 +14,52 @@ Fishery_AI_Prototype/                                            # 项目工作�
 ├─ data/                                                         # 旧数据目录，当前为空目录结构
 │  ├─ knowledge/                                                 # 空目录，运行数据已在包内
 │  └─ mock/                                                      # 空目录，Mock 已在包内
-├─ docs/                                                        # 使用指南、当前技术合同与阶段记录
-│  ├─ BUILD_RUN.md                                              # 构建、启动与验证命令
-│  ├─ CODE_REVIEW.md                                            # 工程复核与安全边界
-│  ├─ ROADMAP.md                                                # 已实现、待验收与后续路线
-│  ├─ STRUCTURE.md                                              # 完整项目文件地图
-│  ├─ TROUBLESHOOTING.md                                        # 模型、凭据与页面故障排查
-│  ├─ notes.md                                                  # 用户本地笔记，当前未跟踪
-│  ├─ deep-dive/                                                # 当前专项技术文档与历史研究
-│  │  ├─ architecture/                                          # Analysis / Assistant 等跨模块架构
-│  │  │  └─ ASSISTANT_MODEL_V1_DESIGN.md                        # Analysis 与 Assistant 当前架构
-│  │  ├─ data-domain/                                           # 情景、Telemetry 与领域数据
-│  │  │  └─ WATER_QUALITY_SCENARIO_AND_TELEMETRY_PREPARATION.md # 水质输入与领域合同边界
-│  │  ├─ models/                                                # 模型合同与发布方案
-│  │  │  ├─ PRESET_PUBLICATION.md                               # Preset 发布方案与资格依据
-│  │  │  └─ STREAMING_THINKING_OFF_COMBINATION.md               # OFF + Streaming 组合验证
-│  │  ├─ operations/                                            # 凭据与运行数据位置
-│  │  │  ├─ PRIVATE_CREDENTIAL_STORAGE.md                       # 用户私有凭据安全边界
-│  │  │  └─ PROJECT_DATA_AND_CONFIG_LOCATIONS.md                # 数据与配置实际位置地图
-│  │  ├─ research/                                              # 带历史标记的研究与未来议题
-│  │  │  ├─ KNOWLEDGE_TOOL_DESIGN.md                            # Knowledge 接入前历史设计
-│  │  │  └─ TOOL_ORCHESTRATION_ARCHITECTURE_REVIEW.md           # 旧基线 Tool 编排研究
-│  │  └─ tools/                                                 # Tool 当前合同与新增规范
-│  │     ├─ ADDING_A_TOOL.md                                    # 新增正式只读 Tool 的通用规范
-│  │     └─ READ_ONLY_TOOL_CALLING.md                           # 三个 Tool 的协议与执行边界
-│  └─ records/                                                  # 阶段记录、验收与独立审计
-│     ├─ 2026-10-history-v2-product-migration.md                 # P2F 产品默认 B 与内部 A 回滚记录
-│     ├─ README.md                                              # 记录入口与历史归档边界
-│     ├─ 2026-10-assistant-history-tool-reliability-study.md      # Assistant 历史与 Tool 可靠性研究
-│     ├─ 2026-10-assistant-history-projection-research.md         # P2B 固定历史实验与投影方案研究
-│     ├─ 2026-10-assistant-history-projection-ab.md               # P2C 模型无关投影 A/B 资格对照
-│     ├─ 2026-10-cross-model-history-projection-preparation.md     # P2D 双模型实验准备与独立授权边界
-│     ├─ 2026-10-assistant-turn-source-contract-p1.md             # 本轮来源 Receipt 与操作完成合同
-│     ├─ 2026-10-controlled-assistant-qualification-p2a.md         # 受控单次实验、dry-run 与安全报告
-│     ├─ 2026-10-knowledge-tool-v1-summary.md                   # Tool 3 接入总结与待验收项
-│     ├─ 2026-10-codex-takeover-audit.md                        # 完整独立接管审计记录
-│     ├─ 2026-10-qwen-tool-provider-evidence.md                 # Qwen 首轮取证的凭据预检阻塞
-│     └─ archive/                                               # 只含文档的压缩历史
-│        ├─ copilot-tool3-records-2026-10.zip                   # 13 份施工记录，保留原目录结构
-│        └─ pre-codex-handoff-2026-10.zip                       # 3 份旧交接稿，保留原目录结构
+├─ docs/                                                                    # 当前说明、专项技术合同与历史记录
+│  ├─ deep-dive/                                                            # 当前专项技术文档与历史研究
+│  │  ├─ architecture/                                                      # Analysis / Assistant 等跨模块架构
+│  │  │  └─ ASSISTANT_MODEL_V1_DESIGN.md                                    # Analysis 与 Assistant 当前架构
+│  │  ├─ data-domain/                                                       # 情景、Telemetry 与领域数据
+│  │  │  └─ WATER_QUALITY_SCENARIO_AND_TELEMETRY_PREPARATION.md             # 水质输入与领域合同边界
+│  │  ├─ models/                                                            # 模型合同与发布方案
+│  │  │  ├─ PRESET_PUBLICATION.md                                           # Preset 发布方案与资格依据
+│  │  │  └─ STREAMING_THINKING_OFF_COMBINATION.md                           # OFF + Streaming 组合验证
+│  │  ├─ operations/                                                        # 凭据与运行数据位置
+│  │  │  ├─ PRIVATE_CREDENTIAL_STORAGE.md                                   # 用户私有凭据安全边界
+│  │  │  └─ PROJECT_DATA_AND_CONFIG_LOCATIONS.md                            # 数据与配置实际位置地图
+│  │  ├─ research/                                                          # 带历史标记的研究与未来议题
+│  │  │  ├─ DEVELOPMENT_BACKLOG.md                                          # 未立项候选与用户原始笔记，保留历史
+│  │  │  └─ TOOL_ORCHESTRATION_ARCHITECTURE_REVIEW.md                       # 旧基线 Tool 编排研究
+│  │  └─ tools/                                                             # 静态只读 Tool 执行层
+│  │     ├─ ADDING_A_TOOL.md                                                # 新增正式只读 Tool 的通用规范
+│  │     └─ READ_ONLY_TOOL_CALLING.md                                       # 三个 Tool 的协议与执行边界
+│  ├─ records/                                                              # 迁移决策、独立审计与已结束阶段的归档
+│  │  ├─ archive/                                                           # 历史 Markdown 与只含文档的 ZIP，不作为当前合同
+│  │  │  ├─ history-v2-research/                                            # P1–P2E 已结束研究、真实结果及停止审计
+│  │  │  │  ├─ 2026-10-assistant-history-projection-ab.md                   # P2C 模型无关投影 A/B 资格对照
+│  │  │  │  ├─ 2026-10-assistant-history-projection-research.md             # P2B 固定历史实验与投影方案研究
+│  │  │  │  ├─ 2026-10-assistant-history-tool-reliability-study.md          # Assistant 历史与 Tool 可靠性研究
+│  │  │  │  ├─ 2026-10-assistant-turn-source-contract-p1.md                 # 本轮来源 Receipt 与操作完成合同
+│  │  │  │  ├─ 2026-10-controlled-assistant-qualification-p2a.md            # 受控单次实验、dry-run 与安全报告
+│  │  │  │  ├─ 2026-10-cross-model-history-projection-preparation.md        # P2D 双模型实验准备与独立授权边界
+│  │  │  │  ├─ 2026-10-deepseek-history-projection-results.md               # DeepSeek 已完成的 30 run / 48 请求结果
+│  │  │  │  ├─ 2026-10-history-projection-product-migration-qualification.md # P2E 冻结方案与执行合同，历史记录
+│  │  │  │  └─ 2026-10-ollama-history-projection-results.md                 # Ollama 已完成的 30 run / 44 请求结果
+│  │  │  ├─ knowledge-tool-v1/                                              # Tool 3 接入前设计、阶段总结与独立取证
+│  │  │  │  ├─ 2026-10-codex-takeover-audit.md                              # 完整独立接管审计记录
+│  │  │  │  ├─ 2026-10-knowledge-tool-v1-summary.md                         # Tool 3 接入范围与当时未验收项
+│  │  │  │  ├─ 2026-10-qwen-tool-provider-evidence.md                       # Qwen 首轮取证的凭据预检阻塞
+│  │  │  │  └─ KNOWLEDGE_TOOL_DESIGN.md                                     # Knowledge 接入前设计，历史 PAUSED 基线
+│  │  │  ├─ copilot-tool3-records-2026-10.zip                               # 13 份施工记录，保留原目录结构
+│  │  │  └─ pre-codex-handoff-2026-10.zip                                   # 3 份旧交接稿，保留原目录结构
+│  │  ├─ 2026-10-history-v2-migration-decision.md                           # P2E 最终结果、证据边界与迁移判定
+│  │  ├─ 2026-10-history-v2-product-migration.md                            # P2F 产品默认 B 与内部 A 回滚记录
+│  │  ├─ 2026-10-repository-cleanup-audit.md                                # 未提交的只读仓库盘点，保留唯一信息
+│  │  └─ README.md                                                          # 当前决策导航、历史归档边界与文件索引
+│  ├─ BUILD_RUN.md                                                          # 构建、启动与验证命令
+│  ├─ CODE_REVIEW.md                                                        # 工程复核与安全边界
+│  ├─ ROADMAP.md                                                            # 稳定能力、剩余风险与研究路线
+│  ├─ STRUCTURE.md                                                          # 完整项目文件地图
+│  └─ TROUBLESHOOTING.md                                                    # 模型、凭据与页面故障排查
 ├─ outputs/                                                      # 本地生成数据，Git ignored，记录不逐项展开
 │  ├─ assistant-qualification/                                   # 资格报告与 history、projection-ab、cross-model 分区
 │  ├─ archive/                                                   # 用户本地历史运行数据，不展开
@@ -68,44 +75,77 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  ├─ tool-policies/                                             # 用户 Analysis 与 Assistant Tool 选择
 │  ├─ mock-traces.jsonl                                          # 离线 Mock 请求 Trace
 │  └─ web-traces.jsonl                                           # Web 请求安全 Trace
-├─ scripts/                                                      # 人工开发与资格验证辅助工具
-│  ├─ manifests/                                                 # 维护者单次实验计划，不包含凭据
-│  │  ├─ assistant-H0.json                                       # 空历史当前溶氧实验
-│  │  ├─ assistant-H1.json                                       # 旧溶氧与当前值比较实验
-│  │  ├─ assistant-H2.json                                       # 旧 NO_DATA 后重新查询实验
-│  │  ├─ assistant-H3.json                                       # 空历史当前评分实验
-│  │  ├─ assistant-H4.json                                       # 旧评分后重新评估实验
-│  │  ├─ assistant-H5.json                                       # 历史数值解释实验
-│  │  ├─ assistant-H6.json                                       # 旧检索声明后重新搜索实验
-│  │  ├─ assistant-H6F.json                                      # 与 H6 同问题的空历史严格对照
-│  │  ├─ assistant-H2-A.json                                     # 旧 NO_DATA 原生投影对照
-│  │  ├─ assistant-H2-B.json                                     # 旧 NO_DATA 不可信历史投影
-│  │  ├─ assistant-H6-A.json                                     # 旧知识声明原生投影对照
-│  │  ├─ assistant-H6-B.json                                     # 旧知识声明不可信历史投影
-│  │  ├─ assistant-H5-A.json                                     # 历史解释原生投影对照
-│  │  ├─ assistant-H5-B.json                                     # 历史解释不可信历史投影
-│  │  ├─ assistant-DEEPSEEK-H2F.json                              # DeepSeek 空历史当前查询控制
-│  │  ├─ assistant-DEEPSEEK-H2-A.json                             # DeepSeek 旧 NO_DATA 原生对照
-│  │  ├─ assistant-DEEPSEEK-H2-B.json                             # DeepSeek 旧 NO_DATA 不可信投影
-│  │  ├─ assistant-DEEPSEEK-H5-A.json                             # DeepSeek 历史解释原生对照
-│  │  ├─ assistant-DEEPSEEK-H5-B.json                             # DeepSeek 历史解释不可信投影
-│  │  ├─ assistant-OLLAMA-H2F.json                                # Ollama 空历史当前查询控制
-│  │  ├─ assistant-OLLAMA-H2-A.json                               # Ollama 旧 NO_DATA 原生对照
-│  │  ├─ assistant-OLLAMA-H2-B.json                               # Ollama 旧 NO_DATA 不可信投影
-│  │  ├─ assistant-OLLAMA-H5-A.json                               # Ollama 历史解释原生对照
-│  │  ├─ assistant-OLLAMA-H5-B.json                               # Ollama 历史解释不可信投影
-│  │  ├─ assistant-Q1.json                                       # 当前溶氧查询资格计划
-│  │  ├─ assistant-Q2.json                                       # 当前评分资格计划
-│  │  ├─ assistant-Q3.json                                       # 单 Knowledge Tool 资格计划
-│  │  └─ assistant-Q4.json                                       # 三 Tool 选择 Knowledge 的资格计划
-│  ├─ qualify_assistant_turn.py                                  # 单 manifest Assistant 资格入口，默认 dry-run
-│  ├─ qualify_local_preset_request.py                            # Local Preset 最小请求资格验证
-│  ├─ projection_qualification_runner.ps1                        # 独立模型批次的共同调度与停止检查
-│  ├─ prepare_product_migration_qualification.py                  # P2E 冻结计划只读检查，不能联网
-│  ├─ run_product_migration_qualification.ps1                     # P2E 固定跨模型30项，默认 dry-run
-│  ├─ run_deepseek_projection_qualification.ps1                   # DeepSeek 固定30次实验，默认不联网
-│  ├─ run_ollama_projection_qualification.ps1                     # Ollama 固定30次实验，默认不联网、待单独批准
-│  └─ qualify_preset_tools.py                                    # Preset Tool Calling 资格验证入口
+├─ scripts/                                                                 # 人工开发与资格验证辅助工具
+│  ├─ manifests/                                                            # 维护者单次实验计划，不包含凭据
+│  │  ├─ product-migration/                                                 # P2E 已结束实验的冻结 manifest 与顺序索引
+│  │  │  ├─ assistant-P2E-DEEPSEEK-S1-A.json                                # DEEPSEEK 多轮旧 NO_DATA，冻结 A 投影
+│  │  │  ├─ assistant-P2E-DEEPSEEK-S1-B.json                                # DEEPSEEK 多轮旧 NO_DATA，冻结 B 投影
+│  │  │  ├─ assistant-P2E-DEEPSEEK-S3-A.json                                # DEEPSEEK 旧数值解释，冻结 A 投影
+│  │  │  ├─ assistant-P2E-DEEPSEEK-S3-B.json                                # DEEPSEEK 旧数值解释，冻结 B 投影
+│  │  │  ├─ assistant-P2E-DEEPSEEK-S7-A.json                                # DEEPSEEK 长历史整轮裁剪，冻结 A 投影
+│  │  │  ├─ assistant-P2E-DEEPSEEK-S7-B.json                                # DEEPSEEK 长历史整轮裁剪，冻结 B 投影
+│  │  │  ├─ assistant-P2E-OLLAMA-S1-A.json                                  # OLLAMA 多轮旧 NO_DATA，冻结 A 投影
+│  │  │  ├─ assistant-P2E-OLLAMA-S1-B.json                                  # OLLAMA 多轮旧 NO_DATA，冻结 B 投影
+│  │  │  ├─ assistant-P2E-OLLAMA-S3-A.json                                  # OLLAMA 旧数值解释，冻结 A 投影
+│  │  │  ├─ assistant-P2E-OLLAMA-S3-B.json                                  # OLLAMA 旧数值解释，冻结 B 投影
+│  │  │  ├─ assistant-P2E-OLLAMA-S4-A.json                                  # OLLAMA 当前省略追问，冻结 A 投影
+│  │  │  ├─ assistant-P2E-OLLAMA-S4-B.json                                  # OLLAMA 当前省略追问，冻结 B 投影
+│  │  │  ├─ assistant-P2E-OLLAMA-S7-A.json                                  # OLLAMA 长历史整轮裁剪，冻结 A 投影
+│  │  │  ├─ assistant-P2E-OLLAMA-S7-B.json                                  # OLLAMA 长历史整轮裁剪，冻结 B 投影
+│  │  │  ├─ assistant-P2E-QWEN-S1-A.json                                    # QWEN 多轮旧 NO_DATA，冻结 A 投影
+│  │  │  ├─ assistant-P2E-QWEN-S1-B.json                                    # QWEN 多轮旧 NO_DATA，冻结 B 投影
+│  │  │  ├─ assistant-P2E-QWEN-S2-A.json                                    # QWEN 旧值与 NO_DATA 混合，冻结 A 投影
+│  │  │  ├─ assistant-P2E-QWEN-S2-B.json                                    # QWEN 旧值与 NO_DATA 混合，冻结 B 投影
+│  │  │  ├─ assistant-P2E-QWEN-S3-A.json                                    # QWEN 旧数值解释，冻结 A 投影
+│  │  │  ├─ assistant-P2E-QWEN-S3-B.json                                    # QWEN 旧数值解释，冻结 B 投影
+│  │  │  ├─ assistant-P2E-QWEN-S4-A.json                                    # QWEN 当前省略追问，冻结 A 投影
+│  │  │  ├─ assistant-P2E-QWEN-S4-B.json                                    # QWEN 当前省略追问，冻结 B 投影
+│  │  │  ├─ assistant-P2E-QWEN-S5K-A.json                                   # QWEN 历史知识来源声明，冻结 A 投影
+│  │  │  ├─ assistant-P2E-QWEN-S5K-B.json                                   # QWEN 历史知识来源声明，冻结 B 投影
+│  │  │  ├─ assistant-P2E-QWEN-S5O-A.json                                   # QWEN 历史观测来源声明，冻结 A 投影
+│  │  │  ├─ assistant-P2E-QWEN-S5O-B.json                                   # QWEN 历史观测来源声明，冻结 B 投影
+│  │  │  ├─ assistant-P2E-QWEN-S6-A.json                                    # QWEN 文字仿 Tool Call，冻结 A 投影
+│  │  │  ├─ assistant-P2E-QWEN-S6-B.json                                    # QWEN 文字仿 Tool Call，冻结 B 投影
+│  │  │  ├─ assistant-P2E-QWEN-S7-A.json                                    # QWEN 长历史整轮裁剪，冻结 A 投影
+│  │  │  ├─ assistant-P2E-QWEN-S7-B.json                                    # QWEN 长历史整轮裁剪，冻结 B 投影
+│  │  │  └─ qualification-plan.json                                         # P2E 固定 30 position、预算与计划 hash
+│  │  ├─ assistant-DEEPSEEK-H2-A.json                                       # DeepSeek 旧 NO_DATA 原生对照
+│  │  ├─ assistant-DEEPSEEK-H2-B.json                                       # DeepSeek 旧 NO_DATA 不可信投影
+│  │  ├─ assistant-DEEPSEEK-H2F.json                                        # DeepSeek 空历史当前查询控制
+│  │  ├─ assistant-DEEPSEEK-H5-A.json                                       # DeepSeek 历史解释原生对照
+│  │  ├─ assistant-DEEPSEEK-H5-B.json                                       # DeepSeek 历史解释不可信投影
+│  │  ├─ assistant-H0.json                                                  # 空历史当前溶氧实验
+│  │  ├─ assistant-H1.json                                                  # 旧溶氧与当前值比较实验
+│  │  ├─ assistant-H2-A.json                                                # 旧 NO_DATA 原生投影对照
+│  │  ├─ assistant-H2-B.json                                                # 旧 NO_DATA 不可信历史投影
+│  │  ├─ assistant-H2.json                                                  # 旧 NO_DATA 后重新查询实验
+│  │  ├─ assistant-H3.json                                                  # 空历史当前评分实验
+│  │  ├─ assistant-H4.json                                                  # 旧评分后重新评估实验
+│  │  ├─ assistant-H5-A.json                                                # 历史解释原生投影对照
+│  │  ├─ assistant-H5-B.json                                                # 历史解释不可信历史投影
+│  │  ├─ assistant-H5.json                                                  # 历史数值解释实验
+│  │  ├─ assistant-H6-A.json                                                # 旧知识声明原生投影对照
+│  │  ├─ assistant-H6-B.json                                                # 旧知识声明不可信历史投影
+│  │  ├─ assistant-H6.json                                                  # 旧检索声明后重新搜索实验
+│  │  ├─ assistant-H6F.json                                                 # 与 H6 同问题的空历史严格对照
+│  │  ├─ assistant-OLLAMA-H2-A.json                                         # Ollama 旧 NO_DATA 原生对照
+│  │  ├─ assistant-OLLAMA-H2-B.json                                         # Ollama 旧 NO_DATA 不可信投影
+│  │  ├─ assistant-OLLAMA-H2F.json                                          # Ollama 空历史当前查询控制
+│  │  ├─ assistant-OLLAMA-H5-A.json                                         # Ollama 历史解释原生对照
+│  │  ├─ assistant-OLLAMA-H5-B.json                                         # Ollama 历史解释不可信投影
+│  │  ├─ assistant-Q1.json                                                  # 当前溶氧查询资格计划
+│  │  ├─ assistant-Q2.json                                                  # 当前评分资格计划
+│  │  ├─ assistant-Q3.json                                                  # 单 Knowledge Tool 资格计划
+│  │  └─ assistant-Q4.json                                                  # 三 Tool 选择 Knowledge 的资格计划
+│  ├─ prepare_product_migration_qualification.py                            # P2E 冻结计划只读检查，不能联网
+│  ├─ projection_qualification_runner.ps1                                   # 独立模型批次的共同调度与停止检查
+│  ├─ qualify_assistant_turn.py                                             # 单 manifest Assistant 资格入口，默认 dry-run
+│  ├─ qualify_local_preset_request.py                                       # Local Preset 最小请求资格验证
+│  ├─ qualify_preset_tools.py                                               # Preset Tool Calling 资格验证入口
+│  ├─ run_deepseek_projection_qualification.ps1                             # DeepSeek 固定历史批次入口，旧批次已结束
+│  ├─ run_deepseek_projection_qualification_remaining.ps1                   # 历史一次性续跑入口，禁止按旧授权执行
+│  ├─ run_ollama_projection_qualification.ps1                               # Ollama 固定历史批次入口，旧批次已结束
+│  └─ run_product_migration_qualification.ps1                               # P2E 冻结批次 runner，旧批次已结束
 ├─ src/                                                          # Runtime/Core 应用源码与安装 metadata
 │  ├─ fishery_ai/                                                # 可安装 Python 应用包
 │  │  ├─ __init__.py                                             # 应用包初始化
@@ -202,86 +242,88 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │     ├─ requires.txt                                            # 安装生成的依赖清单
 │     ├─ SOURCES.txt                                             # 安装生成的打包文件清单
 │     └─ top_level.txt                                           # 安装生成的顶层包名称
-└─ tests/                                                        # Development/Test 离线回归体系
-   ├─ historical_model_fixtures.py                               # 历史模型测试夹具加载辅助
-   ├─ manual_edge_mock_probe.cjs                                 # 离线页面边界 Mock 验证辅助
-   ├─ test_a316_runtime_defaults.py                              # 运行默认偏好与安全回退测试
-   ├─ test_access_web.py                                         # Preset、Manual 与取消 Web 边界测试
-   ├─ test_analysis_tool_web.py                                  # 正式 Analysis Tool Web 接入测试
-   ├─ test_analysis_tools.py                                     # 固定 Analysis 与单轮 Tool 回归测试
-   ├─ test_history_product_migration.py                           # 正式默认 B、回滚、裁剪与 Web 隔离回归
-   ├─ test_assistant.py                                          # Assistant 合同、选择规则 Prompt 契约、历史与执行回归测试
-   ├─ test_assistant_qualification.py                            # 单次实验、预算、取消与报告脱敏测试
-   ├─ test_qualification_history.py                              # 固定历史、投影、来源与实验隔离测试
-   ├─ test_qualification_projection.py                           # A/B parity、模型无关、注入形状与边界测试
-   ├─ test_cross_model_qualification.py                           # 跨模型登记、消息一致与 runner 离线检查
-   ├─ test_assistant_sources.py                                  # 真实执行来源 Receipt 与满足关系测试
-   ├─ test_browser_streaming.cjs                                 # 页面交互、状态与浏览器回归测试
-   ├─ test_catalog_knowledge.py                                  # Catalog 条目 metadata、派生标志与授权边界测试
-   ├─ test_clean_room_reset.py                                   # Clean-room 空目录启动测试
-   ├─ test_cloud_capability.py                                   # Cloud 能力声明与显式 Probe 测试
-   ├─ test_credential_compatibility.py                           # 凭据迁移与 Runtime 兼容性测试
-   ├─ test_credential_writer.py                                  # 凭据写入、revision 与安全回归测试
-   ├─ test_credentials.py                                        # 凭据优先级与快照测试
-   ├─ test_credentials_private_storage.py                        # 私有凭据路径、ACL 与隔离测试
-   ├─ test_current_water_quality.py                              # 当前水质查询与 Freshness 测试
-   ├─ test_default_preference_ui.py                              # 默认偏好与能力门禁同步测试
-   ├─ test_evidence_resolver.py                                  # 精确 Identity 证据解析与冲突测试
-   ├─ test_execution.py                                          # 取消、资源释放与 Raw 请求隔离测试
-   ├─ test_gateway_tool_contract.py                              # Tool 模型消息与 SDK 编解码测试
-   ├─ test_knowledge_assembly.py                                 # 共享 KnowledgeService 装配、单例与可执行性测试
-   ├─ test_knowledge_handler.py                                  # 薄 Knowledge Handler 映射、截断与 NO_MATCH 测试
-   ├─ test_knowledge_registration.py                             # Knowledge 注册、依赖注入与 query validator 测试
-   ├─ test_local_preset_qualification.py                         # Local Preset 验证入口安全测试
-   ├─ test_local_profile_capability_ui.py                        # 本地 metadata 与 Capability UI 测试
-   ├─ test_manual_v2.py                                          # 实验 CRUD、独立凭据与 Raw 请求测试
-   ├─ test_mock_tool_gateway.py                                  # 离线 Mock 按工具名分派、方向性降级与安全兜底测试
-   ├─ test_off_streaming_combination.py                          # OFF 加 Streaming 组合证据测试
-   ├─ test_ollama_reasoning.py                                   # 精确 Ollama Thinking 参数测试
-   ├─ test_output_parity.py                                      # Normal 与 Streaming 输出边界测试
-   ├─ test_preset.py                                             # Preset 固定合同与证据隔离测试
-   ├─ test_preset_publication.py                                 # Preset 发布选项与默认模型测试
-   ├─ test_preset_tool_qualification.py                          # Preset Tool 完整资格流程测试
-   ├─ test_protocol_specs.py                                     # Provider 请求体编码一致性测试
-   ├─ test_read_only_tools.py                                    # Registry、Executor 与只读 Handler 测试
-   ├─ test_scenario_templates.py                                 # 情景模板 CRUD 与显式 Apply 测试
-   ├─ test_telemetry_simulator.py                                # Telemetry 合同、模拟与 Adapter 测试
-   ├─ test_tool_argument_contract.py                             # Tool 受控参数合同与旧工具兼容测试
-   ├─ test_tool_capability_probe.py                              # Tool 能力 Probe 与 Web 门禁测试
-   ├─ test_tool_conversation.py                                  # 单轮 Tool 闭环、Usage、Mock 降级与错误测试
-   ├─ test_tool_policy.py                                        # Analysis 与 Assistant 授权测试
-   ├─ test_tool_policy_manager.py                                # Tool Manager、用户 Policy 存储与默认/override 不变性测试
-   ├─ test_tool_status_no_match.py                               # NO_MATCH 非错误结果、二轮闭环与安全投影测试
-   ├─ test_unknown_model_probe.py                                # 未知能力显式 Probe 与证据写入测试
-   ├─ test_v01.py                                                # 基础合同、诊断、Knowledge 与 Gateway 测试
-   ├─ test_v011_a1.py                                            # 多模型能力、选项与 Usage 合同测试
-   ├─ test_v011_a2.py                                            # 真实验证入口的离线安全测试
-   ├─ test_v011_a2_1.py                                          # 安全诊断与 Cloud 兼容性测试
-   ├─ test_v011_a313_capability_identity.py                      # Service、Model Identity 与能力隔离测试
-   ├─ test_v011_a31_streaming.py                                 # 应用 Streaming 与 SSE 回归测试
-   ├─ test_v011_a3_grounding.py                                  # 检索相关性、Grounding 与 Profile 测试
-   ├─ test_v011_a3_profile_manager.py                            # Profile CRUD、连接与门禁测试
-   ├─ test_v011_a3_web.py                                        # 开发 Web 页面与安全错误测试
-   ├─ test_water_quality_matrix.py                               # 水质边界研究场景离线测试
-   ├─ test_water_quality_scoring.py                              # 实验评分与评分 Tool 测试
-   ├─ test_product_migration_runner.py                           # P2E runner 顺序、报告与停止门禁测试
-   ├─ test_web_tool_conversation.py                              # 开发 Tool Conversation、Trace 与 Stop 测试
-   └─ fixtures/                                                  # 虚构数据与历史兼容性夹具
-      ├─ r0_runtime_baseline.json                                # Runtime 兼容性基准夹具
-      └─ historical_model_assets/                                # 仅测试使用的历史模型资源
-         ├─ official_declarations.json                           # 历史官方能力声明测试夹具
-         ├─ README.md                                            # 历史夹具用途与运行隔离说明
-         └─ profiles/                                            # 历史 Profile 与 Preset 夹具
-            ├─ deepseek_experimental.json                        # 历史 DeepSeek Profile 测试夹具
-            ├─ ollama_qwen35_local.json                          # 历史 Ollama Profile 测试夹具
-            ├─ presets.json                                      # 历史 Preset 固定合同测试夹具
-            └─ qwen_experimental.json                            # 历史 Qwen Profile 测试夹具
+└─ tests/                                                                   # Development/Test 离线回归体系
+   ├─ fixtures/                                                             # 虚构数据与历史兼容性夹具
+   │  ├─ historical_model_assets/                                           # 仅测试使用的历史模型资源
+   │  │  ├─ profiles/                                                       # 历史 Profile 与 Preset 夹具
+   │  │  │  ├─ deepseek_experimental.json                                   # 历史 DeepSeek Profile 测试夹具
+   │  │  │  ├─ ollama_qwen35_local.json                                     # 历史 Ollama Profile 测试夹具
+   │  │  │  ├─ presets.json                                                 # 历史 Preset 固定合同测试夹具
+   │  │  │  └─ qwen_experimental.json                                       # 历史 Qwen Profile 测试夹具
+   │  │  ├─ official_declarations.json                                      # 历史官方能力声明测试夹具
+   │  │  └─ README.md                                                       # 历史夹具用途与运行隔离说明
+   │  └─ r0_runtime_baseline.json                                           # Runtime 兼容性基准夹具
+   ├─ historical_model_fixtures.py                                          # 历史模型测试夹具加载辅助
+   ├─ manual_edge_mock_probe.cjs                                            # 离线页面边界 Mock 验证辅助
+   ├─ test_a316_runtime_defaults.py                                         # 运行默认偏好与安全回退测试
+   ├─ test_access_web.py                                                    # Preset、Manual 与取消 Web 边界测试
+   ├─ test_analysis_tool_web.py                                             # 正式 Analysis Tool Web 接入测试
+   ├─ test_analysis_tools.py                                                # 固定 Analysis 与单轮 Tool 回归测试
+   ├─ test_assistant.py                                                     # Assistant 合同、选择规则 Prompt 契约、历史与执行回归测试
+   ├─ test_assistant_qualification.py                                       # 单次实验、预算、取消与报告脱敏测试
+   ├─ test_assistant_sources.py                                             # 真实执行来源 Receipt 与满足关系测试
+   ├─ test_browser_streaming.cjs                                            # 页面交互、状态与浏览器回归测试
+   ├─ test_catalog_knowledge.py                                             # Catalog 条目 metadata、派生标志与授权边界测试
+   ├─ test_clean_room_reset.py                                              # Clean-room 空目录启动测试
+   ├─ test_cloud_capability.py                                              # Cloud 能力声明与显式 Probe 测试
+   ├─ test_credential_compatibility.py                                      # 凭据迁移与 Runtime 兼容性测试
+   ├─ test_credential_writer.py                                             # 凭据写入、revision 与安全回归测试
+   ├─ test_credentials.py                                                   # 凭据优先级与快照测试
+   ├─ test_credentials_private_storage.py                                   # 私有凭据路径、ACL 与隔离测试
+   ├─ test_cross_model_qualification.py                                     # 跨模型登记、消息一致与 runner 离线检查
+   ├─ test_current_water_quality.py                                         # 当前水质查询与 Freshness 测试
+   ├─ test_deepseek_projection_continuation.py                              # 历史续跑授权、固定顺序与停止门禁测试
+   ├─ test_default_preference_ui.py                                         # 默认偏好与能力门禁同步测试
+   ├─ test_evidence_resolver.py                                             # 精确 Identity 证据解析与冲突测试
+   ├─ test_execution.py                                                     # 取消、资源释放与 Raw 请求隔离测试
+   ├─ test_gateway_tool_contract.py                                         # Tool 模型消息与 SDK 编解码测试
+   ├─ test_history_product_migration.py                                     # 正式默认 B、回滚、裁剪与 Web 隔离回归
+   ├─ test_knowledge_assembly.py                                            # 共享 KnowledgeService 装配、单例与可执行性测试
+   ├─ test_knowledge_handler.py                                             # 薄 Knowledge Handler 映射、截断与 NO_MATCH 测试
+   ├─ test_knowledge_registration.py                                        # Knowledge 注册、依赖注入与 query validator 测试
+   ├─ test_local_preset_qualification.py                                    # Local Preset 验证入口安全测试
+   ├─ test_local_profile_capability_ui.py                                   # 本地 metadata 与 Capability UI 测试
+   ├─ test_manual_v2.py                                                     # 实验 CRUD、独立凭据与 Raw 请求测试
+   ├─ test_mock_tool_gateway.py                                             # 离线 Mock 按工具名分派、方向性降级与安全兜底测试
+   ├─ test_off_streaming_combination.py                                     # OFF 加 Streaming 组合证据测试
+   ├─ test_ollama_reasoning.py                                              # 精确 Ollama Thinking 参数测试
+   ├─ test_output_parity.py                                                 # Normal 与 Streaming 输出边界测试
+   ├─ test_preset.py                                                        # Preset 固定合同与证据隔离测试
+   ├─ test_preset_publication.py                                            # Preset 发布选项与默认模型测试
+   ├─ test_preset_tool_qualification.py                                     # Preset Tool 完整资格流程测试
+   ├─ test_product_migration_runner.py                                      # P2E runner 顺序、报告与停止门禁测试
+   ├─ test_protocol_specs.py                                                # Provider 请求体编码一致性测试
+   ├─ test_qualification_history.py                                         # 固定历史、投影、来源与实验隔离测试
+   ├─ test_qualification_migration.py                                       # 多轮 fixture、裁剪与投影资格合同回归
+   ├─ test_qualification_projection.py                                      # A/B parity、模型无关、注入形状与边界测试
+   ├─ test_read_only_tools.py                                               # Registry、Executor 与只读 Handler 测试
+   ├─ test_scenario_templates.py                                            # 情景模板 CRUD 与显式 Apply 测试
+   ├─ test_telemetry_simulator.py                                           # Telemetry 合同、模拟与 Adapter 测试
+   ├─ test_tool_argument_contract.py                                        # Tool 受控参数合同与旧工具兼容测试
+   ├─ test_tool_capability_probe.py                                         # Tool 能力 Probe 与 Web 门禁测试
+   ├─ test_tool_conversation.py                                             # 单轮 Tool 闭环、Usage、Mock 降级与错误测试
+   ├─ test_tool_policy.py                                                   # Analysis 与 Assistant 授权测试
+   ├─ test_tool_policy_manager.py                                           # Tool Manager、用户 Policy 存储与默认/override 不变性测试
+   ├─ test_tool_status_no_match.py                                          # NO_MATCH 非错误结果、二轮闭环与安全投影测试
+   ├─ test_unknown_model_probe.py                                           # 未知能力显式 Probe 与证据写入测试
+   ├─ test_v01.py                                                           # 基础合同、诊断、Knowledge 与 Gateway 测试
+   ├─ test_v011_a1.py                                                       # 多模型能力、选项与 Usage 合同测试
+   ├─ test_v011_a2.py                                                       # 真实验证入口的离线安全测试
+   ├─ test_v011_a2_1.py                                                     # 安全诊断与 Cloud 兼容性测试
+   ├─ test_v011_a313_capability_identity.py                                 # Service、Model Identity 与能力隔离测试
+   ├─ test_v011_a31_streaming.py                                            # 应用 Streaming 与 SSE 回归测试
+   ├─ test_v011_a3_grounding.py                                             # 检索相关性、Grounding 与 Profile 测试
+   ├─ test_v011_a3_profile_manager.py                                       # Profile CRUD、连接与门禁测试
+   ├─ test_v011_a3_web.py                                                   # 开发 Web 页面与安全错误测试
+   ├─ test_water_quality_matrix.py                                          # 水质边界研究场景离线测试
+   ├─ test_water_quality_scoring.py                                         # 实验评分与评分 Tool 测试
+   └─ test_web_tool_conversation.py                                         # 开发 Tool Conversation、Trace 与 Stop 测试
 ```
 
 **Runtime / Core：** src/fishery_ai 是运行源码，resources 是包内固定资源；源码根 .env 只标位置，不读取内容，也不参与运行时。
 
 **Development / Test：** tests 保留完整离线回归；scripts 是维护者辅助工具；.egg-info 是安装生成的 metadata。
 
-**Research / Records：** deep-dive 保存当前技术合同与明确标记的历史研究；records 保存阶段总结、独立审计和压缩施工记录，不作为运行时真相来源。Knowledge Tool v1 已注册、默认关闭，真实模型选择仍待验收。
+**Research / Records：** deep-dive 保存当前技术合同及明确标记的未来研究；records 根目录保留迁移依据与独立审计，已结束阶段进入 archive。历史文件中的状态、路径和测试数量适用于当时基线。History v2 已默认 B；有限真实资格实验不证明长期模型选择可靠性。
 
 **Generated / User-private：** outputs 的 JSON/JSONL 验证记录、用户配置与历史内容不逐项展开；.git、.venv、__pycache__ 等内部文件与缓存不展开。%LOCALAPPDATA% 不属于仓库树，正式凭据与 Manual V2 凭据在固定用户私有目录中分文件存放，不读取或列出其内容。

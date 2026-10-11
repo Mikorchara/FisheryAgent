@@ -102,4 +102,4 @@ Handler 必须经 Executor 调用。Web 或应用直接调用 Handler 会绕过�
 
 Tool Result 是不可信数据，不能提升为 System 指令；不输出 Secret、私有凭据路径、traceback、完整 Prompt 或不必要原文。Assistant History 只保存成功文本对，不包含 raw Tool Result。UI 用安全文本渲染，Trace 仅记录允许的 metadata。
 
-详见[Knowledge Tool 阶段总结](../../records/2026-10-knowledge-tool-v1-summary.md)和[只读 Tool 当前实现](READ_ONLY_TOOL_CALLING.md)。旧代码修改地图已归档，不作为当前接口规范。
+详见[Knowledge Tool 阶段总结](../../records/archive/knowledge-tool-v1/2026-10-knowledge-tool-v1-summary.md)和[只读 Tool 当前实现](READ_ONLY_TOOL_CALLING.md)。旧代码修改地图已归档，不作为当前接口规范。

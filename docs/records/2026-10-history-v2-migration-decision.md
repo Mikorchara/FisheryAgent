@@ -133,7 +133,7 @@ S7全部6个run均合法查询NO_DATA、Requirement满足、completed。报告�
 
 ## 7. Cross-Model Evidence
 
-依据：[Qwen P2C](2026-10-assistant-history-projection-ab.md)、[DeepSeek P2D](2026-10-deepseek-history-projection-results.md)、[Ollama P2D](2026-10-ollama-history-projection-results.md)。跨阶段只比较方向，不累加为统计显著率。
+依据：[Qwen P2C](archive/history-v2-research/2026-10-assistant-history-projection-ab.md)、[DeepSeek P2D](archive/history-v2-research/2026-10-deepseek-history-projection-results.md)、[Ollama P2D](archive/history-v2-research/2026-10-ollama-history-projection-results.md)。跨阶段只比较方向，不累加为统计显著率。
 
 | 模型 | 既有阶段 | P2E | 解读 |
 |---|---|---|---|
@@ -252,7 +252,7 @@ Qwen/Ollama B的whole-run总tokens略增，主要混入了A漏查时没有发生
 
 ## 15. Work Tree / Validation
 
-本次只新增本决策报告，更新[P2E准备与完成记录](2026-10-history-projection-product-migration-qualification.md)的当前状态及追加结果，不重写准备阶段历史。已有未提交P2B–P2E代码/脚本/测试/文档完整保留；历史0-request预检和P2D归档不计入本次30份分母。
+本次只新增本决策报告，更新[P2E准备与完成记录](archive/history-v2-research/2026-10-history-projection-product-migration-qualification.md)的当前状态及追加结果，不重写准备阶段历史。已有未提交P2B–P2E代码/脚本/测试/文档完整保留；历史0-request预检和P2D归档不计入本次30份分母。
 
 执行了只读safe JSON/manifest/source审计与纯确定性投影、Receipt/Requirement/Usage校验；没有运行qualification CLI或Provider。未重跑Python/Browser：本轮仅Markdown，P2E-RUN既有全量结果仍为1,044通过/1跳过、Browser188通过，不能冒充本轮新回归。
 

@@ -1,6 +1,6 @@
 # Knowledge Tool 研究（暂停）
 
-> **HISTORICAL（2026-10-09 标记）**：本文保留 Knowledge Tool 接入前的研究与当时 PAUSED 状态，后续注记同样属于历史。Handler、参数合同、NO_MATCH、Registry、共享装配与 UI 现在已实现，真实模型集成未验收；本文不是 CURRENT STATE。当前接口见[只读 Tool 文档](../tools/READ_ONLY_TOOL_CALLING.md)，阶段边界见[阶段总结](../../records/2026-10-knowledge-tool-v1-summary.md)。不从下文旧建议推导当前字段或权限。
+> **HISTORICAL（2026-10-09 标记）**：本文保留 Knowledge Tool 接入前的研究与当时 PAUSED 状态，后续注记同样属于历史。Handler、参数合同、NO_MATCH、Registry、共享装配与 UI 现在已实现，真实模型集成未验收；本文不是 CURRENT STATE。当前接口见[只读 Tool 文档](../../../deep-dive/tools/READ_ONLY_TOOL_CALLING.md)，阶段边界见[阶段总结](2026-10-knowledge-tool-v1-summary.md)。不从下文旧建议推导当前字段或权限。
 
 **状态：PAUSED。** 当前没有 Knowledge Tool Handler、Registry entry 或 Policy 授权。本文记录以后重新评审时仍有用的设计决定，不构成当前功能或实现承诺。
 

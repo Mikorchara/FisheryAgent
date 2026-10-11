@@ -14,5 +14,7 @@
 | Usage unavailable | Provider 未返回或当前流式路径没有统计；不是 0。 |
 | structured_parse_ok=false | 原始模型文本仍保留供调试；程序不会让另一个模型自动修复 JSON。检查 Raw Output，不要把它当成可信事实。 |
 | 水质出现 partial / stale / invalid | 检查观测时间、取回时间、缺失字段和 Quality/Freshness。Mock 场景是固定 fixture，不代表现场实时数据。 |
+| ASSISTANT_SESSION_EXPIRED | Web 后端 epoch 已变化。清除旧成功历史、保留当前输入，重新获取 bootstrap；不要自动重发模型请求。 |
+| ASSISTANT_SOURCE_REQUIREMENT_UNMET | 内部/qualification 的非 AUTO 来源要求没有真实完成；不要从正文或历史补 Receipt，不重试、不自动执行另一 Tool。NO_DATA / NOT_SCORABLE / NO_MATCH 可表示对应操作合法完成，不能笼统当作来源失败。普通 Web 请求仍为 AUTO。 |
 
 更多操作见[构建与运行](BUILD_RUN.md)、[数据位置](deep-dive/operations/PROJECT_DATA_AND_CONFIG_LOCATIONS.md)和[凭据存储](deep-dive/operations/PRIVATE_CREDENTIAL_STORAGE.md)。

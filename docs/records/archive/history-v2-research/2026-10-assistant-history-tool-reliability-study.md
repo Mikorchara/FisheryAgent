@@ -21,11 +21,11 @@
 | B4 | Ollama 明确知识调用成功；用户观察其他模型更稳定 | 值得按精确模型分别测量可靠性 | 已得到跨模型统计排名 |
 | K1 | 新页面没有 Knowledge 调用，却声称“根据项目检索结果” | 来源伪造不只发生在有历史时 | 内容必然错误，或已证明内容来自特定训练资料 |
 
-这些是人工观察，不登记为本轮自动测试通过。[接管审计](2026-10-codex-takeover-audit.md)中的 SDK 模拟与无 Tool 来源反例是既有离线证据；[四项 Provider 取证记录](2026-10-qwen-tool-provider-evidence.md)实际为凭据预检阻塞、0 次模型请求，不能用作真实 Provider 报文对照。
+这些是人工观察，不登记为本轮自动测试通过。[接管审计](../knowledge-tool-v1/2026-10-codex-takeover-audit.md)中的 SDK 模拟与无 Tool 来源反例是既有离线证据；[四项 Provider 取证记录](../knowledge-tool-v1/2026-10-qwen-tool-provider-evidence.md)实际为凭据预检阻塞、0 次模型请求，不能用作真实 Provider 报文对照。
 
 ## 2. Session lifecycle：当前实际行为
 
-依据 [app.js](../../src/fishery_ai/resources/web/app.js) 的 `assistantState`、`switchApplicationMode()`、`resetAssistantSession()`、`changeAssistantPreset()`、`sendAssistant()`，以及 [Web API](../../src/fishery_ai/web.py) 的 bootstrap / epoch 检查。
+依据 [app.js](../../../../src/fishery_ai/resources/web/app.js) 的 `assistantState`、`switchApplicationMode()`、`resetAssistantSession()`、`changeAssistantPreset()`、`sendAssistant()`，以及 [Web API](../../../../src/fishery_ai/web.py) 的 bootstrap / epoch 检查。
 
 ```text
 新文档加载，执行 app.js
@@ -68,7 +68,7 @@ displayEntries 加入最终回答与安全 Activity
 
 ## 3. History projection：真正发给模型的内容
 
-依据 [assistant.py](../../src/fishery_ai/assistant.py) 的 `AssistantHistoryTurn`、`AssistantContextBuilder.build()`，以及前端 `boundedAssistantHistory()`。
+依据 [assistant.py](../../../../src/fishery_ai/assistant.py) 的 `AssistantHistoryTurn`、`AssistantContextBuilder.build()`，以及前端 `boundedAssistantHistory()`。
 
 假设历史是虚构示例，完成时间为 `2026-10-09T02:00:00Z`。服务端 `_timestamp()` 校验时区并规范为 `2026-10-09T02:00:00+00:00`。下一次请求投影如下：
 
@@ -325,9 +325,9 @@ P1 不需要先改变 Reader、Handler、Registry、Credential、Capability、An
 - **Browser tests**：工作区保留、真实 reload 初始化与清空、模型切换确认、epoch 过期不重发；实际 Activity 与声明区别；失败不进成功 History；显示历史可多于模型 Context；textContent 与安全错误不回归。真实浏览器恢复缓存须另测，VM DOM fixture 不足以证明该行为。
 - **用户人工真实模型验收**：固定精确模型、OFF + Normal、授权集合与预算；对 fresh / history、旧值 / NO_DATA、auto / 已验证 exact 分组，记录请求数、实际调用、结果状态和虚构来源。后续另行制定有限请求预算，本轮不发请求，不测试未授权模型。
 
-现有 [Assistant tests](../../tests/test_assistant.py) 的 question matrix 预先选择正确 scripted response；未授权 score 测试预先返回合规拒绝正文。现有 [Browser tests](../../tests/test_browser_streaming.cjs) 的旧值追问 fixture 根据问题返回新值，验证了 UI 与历史传输，不证明真实模型必然重新调用。应补入“模型不遵守规则”的反例，而非继续只测正确回答。
+现有 [Assistant tests](../../../../tests/test_assistant.py) 的 question matrix 预先选择正确 scripted response；未授权 score 测试预先返回合规拒绝正文。现有 [Browser tests](../../../../tests/test_browser_streaming.cjs) 的旧值追问 fixture 根据问题返回新值，验证了 UI 与历史传输，不证明真实模型必然重新调用。应补入“模型不遵守规则”的反例，而非继续只测正确回答。
 
-[T1 tests](../../tests/test_gateway_tool_contract.py) 已检查字符串 choice 编码与标准调用协议；[Coordinator tests](../../tests/test_tool_conversation.py) 覆盖限额、取消、错误和 follow-up。未来修改需保持这些行为，但本轮只阅读断言，未执行测试，不能引用旧通过数量为本轮结果。
+[T1 tests](../../../../tests/test_gateway_tool_contract.py) 已检查字符串 choice 编码与标准调用协议；[Coordinator tests](../../../../tests/test_tool_conversation.py) 覆盖限额、取消、错误和 follow-up。未来修改需保持这些行为，但本轮只阅读断言，未执行测试，不能引用旧通过数量为本轮结果。
 
 ## 11. 风险与限制
 
@@ -344,7 +344,7 @@ P1 不需要先改变 Reader、Handler、Registry、Credential、Capability、An
 
 本轮不修改产品代码、Prompt、History、Policy、Registry、Handler、Adapter、Capability / Preset 合同或 UI；不增加 Tool、Multi-Tool、Multi-Round、Agent、长期 Memory、RAG v2、Analysis + Knowledge 双重来源改造、Credential / ACL 操作。不访问正式凭据、不自动请求真实 Provider、不修改生产项目、不 commit / push。
 
-只新增本文；正式 deep-dive 与 STRUCTURE 保持原状。依据包含 [ROADMAP](../ROADMAP.md)、[阶段总结](2026-10-knowledge-tool-v1-summary.md)、[当前 Assistant 架构](../deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)、[只读 Tool 实现](../deep-dive/tools/READ_ONLY_TOOL_CALLING.md)和[新增 Tool 规范](../deep-dive/tools/ADDING_A_TOOL.md)。
+只新增本文；正式 deep-dive 与 STRUCTURE 保持原状。依据包含 [ROADMAP](../../../ROADMAP.md)、[阶段总结](../knowledge-tool-v1/2026-10-knowledge-tool-v1-summary.md)、[当前 Assistant 架构](../../../deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)、[只读 Tool 实现](../../../deep-dive/tools/READ_ONLY_TOOL_CALLING.md)和[新增 Tool 规范](../../../deep-dive/tools/ADDING_A_TOOL.md)。
 
 交付检查：14 个本地链接全部存在；4 个外部链接为本轮已查阅的官方文档。本文无尾随空白，常见凭据字面量扫描无命中，`git diff --check` 无错误。开始时工作树干净，结束时仅本文为 untracked；跟踪文件没有 diff。新增文件另行检查空白，不把 `git diff --stat` 不显示 untracked 误写成没有新增内容。
 

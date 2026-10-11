@@ -14,7 +14,7 @@ Codex 早先 run `ee239f5bf61f4a9d903e314e7fe6eae0` 返回 CREDENTIAL_FILE_ERROR
 
 ## 2. Why this is model-agnostic
 
-[qualification_projection.py](../../src/fishery_ai/qualification_projection.py) 只接收 AssistantRequest，输出现有 AssistantContext / ModelMessage；没有 Provider/model 名称、专用 token、关键词路由或正文 regex，不查询 Snapshot、不执行 Tool、不生成 Requirement 或 Receipt。
+[qualification_projection.py](../../../../src/fishery_ai/qualification_projection.py) 只接收 AssistantRequest，输出现有 AssistantContext / ModelMessage；没有 Provider/model 名称、专用 token、关键词路由或正文 regex，不查询 Snapshot、不执行 Tool、不生成 Requirement 或 Receipt。
 
 真实实验绑定 Qwen 是本轮实验范围，由 Harness 的固定 case 校验；不是产品业务分支。离线测试通过三个发布 Preset 的相同消息投影、schema、capability gate 与现有 Adapter body composition，不调用真实 DeepSeek/Ollama。
 
@@ -47,7 +47,7 @@ JSON结构不能被历史字符串改写，不等于模型一定忽略其中的�
 
 ## 6. Offline parity 与执行接入
 
-[assistant_qualification.py](../../src/fishery_ai/assistant_qualification.py) 中窄的 `_ProjectionCoordinator` 校验输入确实等于正式 native Context，仅替换首次 ModelRequest，然后委托原 ToolCallingService。Request #2 的 tool_calls / role=tool / none 仍由共享 Coordinator 构造；AssistantService 的取消、来源推导、脱敏和提交门禁全部复用。
+[assistant_qualification.py](../../../../src/fishery_ai/assistant_qualification.py) 中窄的 `_ProjectionCoordinator` 校验输入确实等于正式 native Context，仅替换首次 ModelRequest，然后委托原 ToolCallingService。Request #2 的 tool_calls / role=tool / none 仍由共享 Coordinator 构造；AssistantService 的取消、来源推导、脱敏和提交门禁全部复用。
 
 AssistantService 返回的 Context 计数仍表示原历史裁剪；实际发送消息的表示及成本由额外 projection metadata 记录。不会把B上下文暴露给Web或修改产品ContextBuilder。
 

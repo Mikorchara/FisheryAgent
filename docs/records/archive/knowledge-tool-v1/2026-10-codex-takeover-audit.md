@@ -295,7 +295,7 @@ research 中明确针对 `6b9dad9` 的旧审计可以作为历史研究；应保
 
 本轮交付为这一审计报告；等待用户决定下一轮取证与修复范围。
 
-核对入口：[Assistant](../../src/fishery_ai/assistant.py)、[Coordinator](../../src/fishery_ai/tool_conversation.py)、[Registry](../../src/fishery_ai/tools/registry.py)、[Executor](../../src/fishery_ai/tools/executor.py)、[Knowledge Handler](../../src/fishery_ai/tools/handlers/knowledge_search.py)、[Policy](../../src/fishery_ai/tools/policy.py)、[Preset](../../src/fishery_ai/resources/profiles/presets.json)。
+核对入口：[Assistant](../../../../src/fishery_ai/assistant.py)、[Coordinator](../../../../src/fishery_ai/tool_conversation.py)、[Registry](../../../../src/fishery_ai/tools/registry.py)、[Executor](../../../../src/fishery_ai/tools/executor.py)、[Knowledge Handler](../../../../src/fishery_ai/tools/handlers/knowledge_search.py)、[Policy](../../../../src/fishery_ai/tools/policy.py)、[Preset](../../../../src/fishery_ai/resources/profiles/presets.json)。
 
 ## 14. 交付检查
 

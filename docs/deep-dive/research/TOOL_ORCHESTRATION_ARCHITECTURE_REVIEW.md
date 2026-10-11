@@ -1,10 +1,12 @@
 # Tool Orchestration 架构研究
 
+> **阅读范围**：这是旧基线研究，保留尚未实现的 Streaming / Multi-Tool 编排讨论；不作为当前合同。Knowledge 接入与受控 History 实验已结束，正式 History 默认 B。当前实现见[只读 Tool 文档](../tools/READ_ONLY_TOOL_CALLING.md)和[Assistant 架构](../architecture/ASSISTANT_MODEL_V1_DESIGN.md)，历史阶段结论见[记录索引](../../records/README.md)。下方带日期的状态注记维持历史原文。
+
 审查日期：2026-10-08。源码基线：`6b9dad9`，以当前工作树源码和测试为准。
 
 本报告只研究扩展方案。没有修改源码、测试、运行配置或 Preset 合同，没有调用真实模型。官方资料用于研究协议，不用于自动发布模型能力。文中的“建议”及未来类型、错误码均尚未实现。
 
-> **HISTORICAL / 后续状态注记（2026-10-09）**：本文保留基于 `6b9dad9` 的审查结论，不是 CURRENT STATE。受控参数合同、NO_MATCH 与 Knowledge Tool 注册、装配、UI 已在其后实现；真实模型选择仍未验收。下文旧“两 Tool”“空参数”等表述属于当时基线，不改写原研究。当前接口以[如何新增 Tool](../tools/ADDING_A_TOOL.md)与[只读 Tool 文档](../tools/READ_ONLY_TOOL_CALLING.md)为准；before/after 施工记录已归档，见[阶段总结](../../records/2026-10-knowledge-tool-v1-summary.md)。
+> **HISTORICAL / 后续状态注记（2026-10-09）**：本文保留基于 `6b9dad9` 的审查结论，不是 CURRENT STATE。受控参数合同、NO_MATCH 与 Knowledge Tool 注册、装配、UI 已在其后实现；真实模型选择仍未验收。下文旧“两 Tool”“空参数”等表述属于当时基线，不改写原研究。当前接口以[如何新增 Tool](../tools/ADDING_A_TOOL.md)与[只读 Tool 文档](../tools/READ_ONLY_TOOL_CALLING.md)为准；before/after 施工记录已归档，见[阶段总结](../../records/archive/knowledge-tool-v1/2026-10-knowledge-tool-v1-summary.md)。
 
 ## 1. 当前真实架构
 
