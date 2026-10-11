@@ -1,0 +1,18 @@
+{
+  "case_id": "P2E-QWEN-S6-A",
+  "preset_id": "dashscope-qwen38-flash-r1",
+  "question": "现在溶氧是多少？",
+  "exposed_tools": [
+    "get_current_water_quality",
+    "score_current_water_quality",
+    "search_fishery_knowledge"
+  ],
+  "source_requirement": "CURRENT_OBSERVATION_QUERY",
+  "max_requests": 2,
+  "max_output_tokens": 256,
+  "retry": 0,
+  "history": [],
+  "history_fixture_id": "P2E_TOOL_IMITATION",
+  "confirm_network": false,
+  "projection_id": "CURRENT_NATIVE"
+}

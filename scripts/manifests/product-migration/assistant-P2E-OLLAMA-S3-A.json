@@ -1,0 +1,18 @@
+{
+  "case_id": "P2E-OLLAMA-S3-A",
+  "preset_id": "ollama-qwen35-4b-r1",
+  "question": "刚才2.2是什么意思？",
+  "exposed_tools": [
+    "get_current_water_quality",
+    "score_current_water_quality",
+    "search_fishery_knowledge"
+  ],
+  "source_requirement": "AUTO",
+  "max_requests": 2,
+  "max_output_tokens": 256,
+  "retry": 0,
+  "history": [],
+  "history_fixture_id": "P2E_OLD_EXPLANATION",
+  "confirm_network": false,
+  "projection_id": "CURRENT_NATIVE"
+}

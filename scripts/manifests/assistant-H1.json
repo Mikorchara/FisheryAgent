@@ -1,0 +1,17 @@
+{
+  "case_id": "H1",
+  "preset_id": "dashscope-qwen38-flash-r1",
+  "question": "现在还是 2.2 吗？",
+  "exposed_tools": [
+    "get_current_water_quality",
+    "score_current_water_quality",
+    "search_fishery_knowledge"
+  ],
+  "source_requirement": "CURRENT_OBSERVATION_QUERY",
+  "max_requests": 2,
+  "max_output_tokens": 256,
+  "retry": 0,
+  "history": [],
+  "history_fixture_id": "OLD_DO_2_2",
+  "confirm_network": false
+}

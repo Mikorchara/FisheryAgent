@@ -1,0 +1,17 @@
+{
+  "case_id": "H3",
+  "preset_id": "dashscope-qwen38-flash-r1",
+  "question": "当前水质评分多少？",
+  "exposed_tools": [
+    "get_current_water_quality",
+    "score_current_water_quality",
+    "search_fishery_knowledge"
+  ],
+  "source_requirement": "CURRENT_SCORE_EVALUATION",
+  "max_requests": 2,
+  "max_output_tokens": 256,
+  "retry": 0,
+  "history": [],
+  "history_fixture_id": "EMPTY",
+  "confirm_network": false
+}

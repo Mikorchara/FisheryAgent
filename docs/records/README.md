@@ -6,6 +6,12 @@ before/after、AI 实施日志和旧交接稿是历史证据，其中的“当�
 
 ## 可直接阅读的记录
 
+- [P2E History Projection 产品迁移资格准备](2026-10-history-projection-product-migration-qualification.md)：多轮/混合来源/仿调用/裁剪，30个固定A/B run，最多60请求；真实Provider未执行。
+- [Ollama History Projection 真实结果](2026-10-ollama-history-projection-results.md)：30 runs / 44请求，25 completed；H2-A查询2/6、B查询5/6，H5-B有一次额外查询。
+- [DeepSeek History Projection 真实结果](2026-10-deepseek-history-projection-results.md)：新批次30 runs / 48请求全部完成；H2 Fresh/A/B均查询，H5 A/B均直接回答。
+- [Cross-Model History Projection P2D 准备](2026-10-cross-model-history-projection-preparation.md)：DeepSeek/Ollama 独立计划、固定顺序和Runner停止记录；两个真实批次均已执行完毕。
+- [Assistant History Projection A/B P2C](2026-10-assistant-history-projection-ab.md)：模型无关的 qualification-only A/B、Fresh严格对照与冻结产品边界。
+- [Assistant History Projection P2B](2026-10-assistant-history-projection-research.md)：固定 synthetic History 实验、42个真实样本对照、公开项目调研与候选方案；零请求预检单独排除。
 - [Controlled Assistant Qualification P2A-1](2026-10-controlled-assistant-qualification-p2a.md)：单次 manifest、默认 dry-run、有限真实请求入口和安全取证；实现阶段未联网。
 - [Assistant Turn Source Contract / Receipt P1 / P1.1](2026-10-assistant-turn-source-contract-p1.md)：操作完成与来源存在性分离、状态矩阵与受控资格验证接口设计；没有新增真实模型请求。
 - [Assistant History / Tool Reliability 研究](2026-10-assistant-history-tool-reliability-study.md)：Session / History 审计、来源边界与后续路线评估。

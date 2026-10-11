@@ -41,6 +41,9 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  └─ records/                                                  # 阶段记录、验收与独立审计
 │     ├─ README.md                                              # 记录入口与历史归档边界
 │     ├─ 2026-10-assistant-history-tool-reliability-study.md      # Assistant 历史与 Tool 可靠性研究
+│     ├─ 2026-10-assistant-history-projection-research.md         # P2B 固定历史实验与投影方案研究
+│     ├─ 2026-10-assistant-history-projection-ab.md               # P2C 模型无关投影 A/B 资格对照
+│     ├─ 2026-10-cross-model-history-projection-preparation.md     # P2D 双模型实验准备与独立授权边界
 │     ├─ 2026-10-assistant-turn-source-contract-p1.md             # 本轮来源 Receipt 与操作完成合同
 │     ├─ 2026-10-controlled-assistant-qualification-p2a.md         # 受控单次实验、dry-run 与安全报告
 │     ├─ 2026-10-knowledge-tool-v1-summary.md                   # Tool 3 接入总结与待验收项
@@ -50,6 +53,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │        ├─ copilot-tool3-records-2026-10.zip                   # 13 份施工记录，保留原目录结构
 │        └─ pre-codex-handoff-2026-10.zip                       # 3 份旧交接稿，保留原目录结构
 ├─ outputs/                                                      # 本地生成数据，Git ignored，记录不逐项展开
+│  ├─ assistant-qualification/                                   # 资格报告与 history、projection-ab、cross-model 分区
 │  ├─ archive/                                                   # 用户本地历史运行数据，不展开
 │  ├─ capability-evidence/                                       # Managed 能力证据与验证记录
 │  ├─ custom_profiles/                                           # 用户 Managed Custom 连接
@@ -65,12 +69,41 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  └─ web-traces.jsonl                                           # Web 请求安全 Trace
 ├─ scripts/                                                      # 人工开发与资格验证辅助工具
 │  ├─ manifests/                                                 # 维护者单次实验计划，不包含凭据
+│  │  ├─ assistant-H0.json                                       # 空历史当前溶氧实验
+│  │  ├─ assistant-H1.json                                       # 旧溶氧与当前值比较实验
+│  │  ├─ assistant-H2.json                                       # 旧 NO_DATA 后重新查询实验
+│  │  ├─ assistant-H3.json                                       # 空历史当前评分实验
+│  │  ├─ assistant-H4.json                                       # 旧评分后重新评估实验
+│  │  ├─ assistant-H5.json                                       # 历史数值解释实验
+│  │  ├─ assistant-H6.json                                       # 旧检索声明后重新搜索实验
+│  │  ├─ assistant-H6F.json                                      # 与 H6 同问题的空历史严格对照
+│  │  ├─ assistant-H2-A.json                                     # 旧 NO_DATA 原生投影对照
+│  │  ├─ assistant-H2-B.json                                     # 旧 NO_DATA 不可信历史投影
+│  │  ├─ assistant-H6-A.json                                     # 旧知识声明原生投影对照
+│  │  ├─ assistant-H6-B.json                                     # 旧知识声明不可信历史投影
+│  │  ├─ assistant-H5-A.json                                     # 历史解释原生投影对照
+│  │  ├─ assistant-H5-B.json                                     # 历史解释不可信历史投影
+│  │  ├─ assistant-DEEPSEEK-H2F.json                              # DeepSeek 空历史当前查询控制
+│  │  ├─ assistant-DEEPSEEK-H2-A.json                             # DeepSeek 旧 NO_DATA 原生对照
+│  │  ├─ assistant-DEEPSEEK-H2-B.json                             # DeepSeek 旧 NO_DATA 不可信投影
+│  │  ├─ assistant-DEEPSEEK-H5-A.json                             # DeepSeek 历史解释原生对照
+│  │  ├─ assistant-DEEPSEEK-H5-B.json                             # DeepSeek 历史解释不可信投影
+│  │  ├─ assistant-OLLAMA-H2F.json                                # Ollama 空历史当前查询控制
+│  │  ├─ assistant-OLLAMA-H2-A.json                               # Ollama 旧 NO_DATA 原生对照
+│  │  ├─ assistant-OLLAMA-H2-B.json                               # Ollama 旧 NO_DATA 不可信投影
+│  │  ├─ assistant-OLLAMA-H5-A.json                               # Ollama 历史解释原生对照
+│  │  ├─ assistant-OLLAMA-H5-B.json                               # Ollama 历史解释不可信投影
 │  │  ├─ assistant-Q1.json                                       # 当前溶氧查询资格计划
 │  │  ├─ assistant-Q2.json                                       # 当前评分资格计划
 │  │  ├─ assistant-Q3.json                                       # 单 Knowledge Tool 资格计划
 │  │  └─ assistant-Q4.json                                       # 三 Tool 选择 Knowledge 的资格计划
 │  ├─ qualify_assistant_turn.py                                  # 单 manifest Assistant 资格入口，默认 dry-run
 │  ├─ qualify_local_preset_request.py                            # Local Preset 最小请求资格验证
+│  ├─ projection_qualification_runner.ps1                        # 独立模型批次的共同调度与停止检查
+│  ├─ prepare_product_migration_qualification.py                  # P2E 冻结计划只读检查，不能联网
+│  ├─ run_product_migration_qualification.ps1                     # P2E 固定跨模型30项，默认 dry-run
+│  ├─ run_deepseek_projection_qualification.ps1                   # DeepSeek 固定30次实验，默认不联网
+│  ├─ run_ollama_projection_qualification.ps1                     # Ollama 固定30次实验，默认不联网、待单独批准
 │  └─ qualify_preset_tools.py                                    # Preset Tool Calling 资格验证入口
 ├─ src/                                                          # Runtime/Core 应用源码与安装 metadata
 │  ├─ fishery_ai/                                                # 可安装 Python 应用包
@@ -104,6 +137,8 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ protocol_specs.py                                       # Provider 语义参数协议编码
 │  │  ├─ providers.py                                            # Service、连接与 Auth 元数据
 │  │  ├─ qualification_adapter.py                                # 实验专用输出预算与有限 Provider 观测
+│  │  ├─ qualification_history.py                                # 实验专用固定历史白名单与 H case 合同
+│  │  ├─ qualification_projection.py                             # 仅 qualification 使用的模型无关历史 A/B
 │  │  ├─ real_validation.py                                      # 显式真实模型验证流程
 │  │  ├─ repositories.py                                         # 水质与 Detection Mock 资源读取
 │  │  ├─ secure_files.py                                         # 安全文件操作与 Windows ACL 检查
@@ -174,6 +209,9 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_analysis_tools.py                                     # 固定 Analysis 与单轮 Tool 回归测试
    ├─ test_assistant.py                                          # Assistant 合同、选择规则 Prompt 契约、历史与执行回归测试
    ├─ test_assistant_qualification.py                            # 单次实验、预算、取消与报告脱敏测试
+   ├─ test_qualification_history.py                              # 固定历史、投影、来源与实验隔离测试
+   ├─ test_qualification_projection.py                           # A/B parity、模型无关、注入形状与边界测试
+   ├─ test_cross_model_qualification.py                           # 跨模型登记、消息一致与 runner 离线检查
    ├─ test_assistant_sources.py                                  # 真实执行来源 Receipt 与满足关系测试
    ├─ test_browser_streaming.cjs                                 # 页面交互、状态与浏览器回归测试
    ├─ test_catalog_knowledge.py                                  # Catalog 条目 metadata、派生标志与授权边界测试
@@ -223,6 +261,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ test_v011_a3_web.py                                        # 开发 Web 页面与安全错误测试
    ├─ test_water_quality_matrix.py                               # 水质边界研究场景离线测试
    ├─ test_water_quality_scoring.py                              # 实验评分与评分 Tool 测试
+   ├─ test_product_migration_runner.py                           # P2E runner 顺序、报告与停止门禁测试
    ├─ test_web_tool_conversation.py                              # 开发 Tool Conversation、Trace 与 Stop 测试
    └─ fixtures/                                                  # 虚构数据与历史兼容性夹具
       ├─ r0_runtime_baseline.json                                # Runtime 兼容性基准夹具

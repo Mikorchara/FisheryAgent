@@ -1,4 +1,4 @@
-"""One approved Assistant experiment; no publisher, discovery or history loading."""
+"""One approved Assistant experiment; only fixed synthetic history is allowed."""
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -11,9 +11,10 @@ import os
 import re
 import stat
 import time
+from types import MappingProxyType
 import uuid
 
-from .assistant import AssistantError, AssistantRequest, AssistantService, assistant_profile
+from .assistant import AssistantError, AssistantRequest, AssistantService, SYSTEM_INSTRUCTION, assistant_profile
 from .assistant_sources import SourceRequirement, TurnSourceReceipt, requirement_satisfied
 from .contracts import Usage
 from .credential_paths import CredentialLocationError, private_project_location
@@ -24,6 +25,9 @@ from .knowledge import KnowledgeService
 from .model_gateway import GatewayError, ModelResponse, ProfileRegistry
 from .observability import JsonlTraceSink
 from .qualification_adapter import FINISH_REASONS, QualificationAdapter, response_summary
+from .qualification_history import HISTORY_CASES, HISTORY_PRESET, HISTORY_TOOLS, HistoryCase, qualification_history
+from .qualification_projection import ProjectionId, build_projection, tool_schema_hash
+from .qualification_migration import MIGRATION_CASES
 from .telemetry import CurrentSnapshotStore, CurrentWaterQualityReader
 from .tool_conversation import ToolCallingService, _aggregate_usage
 from .tools.policy import ToolPolicy
@@ -32,7 +36,86 @@ from .tools.registry import ToolRegistry
 
 MAX_OUTPUT_TOKENS = 256
 MAX_MANIFEST_BYTES = 8192
-KNOWN_CASE_IDS = frozenset({"Q1", "Q2", "Q3", "Q4"})
+# These model/fixture bindings describe this approved experiment, not business
+# semantics. The projection helper itself has no provider/model branches.
+PROJECTION_CASES = MappingProxyType({
+    **{f"{case}-{arm}": (HISTORY_CASES[case], projection)
+       for case in ("H2", "H6", "H5")
+       for arm, projection in (("A", ProjectionId.CURRENT_NATIVE),
+                               ("B", ProjectionId.UNTRUSTED_TRANSCRIPT_V1))},
+    "H6F": (HISTORY_CASES["H6"], ProjectionId.CURRENT_NATIVE),
+})
+
+@dataclass(frozen=True)
+class CrossModelTarget:
+    """Preregistered experiment identity, never model-specific business rules."""
+    preset_id: str
+    identity: tuple[str, str, str, str]
+    contract_version: str
+    protocol_id: str
+    protocol_version: str
+    auth: str
+
+    def validate(self, profile):
+        actual = (profile.service_id, profile.adapter_id, profile.base_url, profile.model)
+        if (actual != self.identity or profile.preset_contract_version != self.contract_version
+                or profile.preset_protocol_spec.spec_id != self.protocol_id
+                or profile.preset_protocol_spec.version != self.protocol_version
+                or profile.auth_spec.value != self.auth
+                or profile.capabilities.tool_calling.value != "supported"
+                or profile.default_reasoning.mode.value != "off"
+                or profile.default_reasoning.effort is not None
+                or profile.default_response_mode != "normal" or profile.max_retries != 0):
+            raise QualificationError("QUALIFICATION_IDENTITY_MISMATCH")
+
+
+CROSS_MODEL_TARGETS = MappingProxyType({
+    "deepseek": CrossModelTarget("deepseek-flash-r1",
+        ("deepseek_api", "openai_chat", "https://api.deepseek.com", "deepseek-flash"),
+        "1.0.2", "deepseek_chat", "1", "REQUIRED_BEARER"),
+    "ollama": CrossModelTarget("ollama-qwen35-4b-r1",
+        ("ollama", "generic_openai_chat", "http://127.0.0.1:11434/v1", "qwen3.5:4b"),
+        "1.0.2", "ollama_openai_chat", "1", "NONE"),
+})
+
+
+@dataclass(frozen=True)
+class CrossModelCase:
+    model_key: str
+    condition: str
+    case: HistoryCase = field(repr=False)
+    projection_id: ProjectionId
+
+    @property
+    def target(self):
+        return CROSS_MODEL_TARGETS[self.model_key]
+
+    @property
+    def report_parts(self):
+        parts = ("h2fresh",) if self.condition == "H2F" else (
+            self.condition[:2].lower(), self.condition[-1].lower())
+        return ("cross-model", self.model_key, *parts)
+
+
+CROSS_MODEL_CASES = MappingProxyType({
+    f"{model_key.upper()}-{condition}": CrossModelCase(model_key, condition, HISTORY_CASES[source], projection)
+    for model_key in CROSS_MODEL_TARGETS
+    for condition, source, projection in (
+        ("H2F", "H0", ProjectionId.CURRENT_NATIVE),
+        ("H2-A", "H2", ProjectionId.CURRENT_NATIVE),
+        ("H2-B", "H2", ProjectionId.UNTRUSTED_TRANSCRIPT_V1),
+        ("H5-A", "H5", ProjectionId.CURRENT_NATIVE),
+        ("H5-B", "H5", ProjectionId.UNTRUSTED_TRANSCRIPT_V1),
+    )
+})
+MIGRATION_TARGETS = MappingProxyType({
+    "qwen": CrossModelTarget("dashscope-qwen38-flash-r1",
+        ("dashscope", "openai_chat", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen3.8-flash"),
+        "1.0.2", "dashscope_chat", "1", "REQUIRED_BEARER"),
+    **CROSS_MODEL_TARGETS,
+})
+KNOWN_CASE_IDS = frozenset({"Q1", "Q2", "Q3", "Q4", *HISTORY_CASES, *PROJECTION_CASES,
+                           *CROSS_MODEL_CASES, *MIGRATION_CASES})
 SAFE_CODES = frozenset({
     "CREDENTIAL_FILE_ERROR", "SECRET_MISSING", "USER_CANCELLED", "CONNECT_TIMEOUT", "READ_TIMEOUT",
     "TOTAL_TIMEOUT", "TIMEOUT", "DNS_ERROR", "TLS_ERROR", "PROXY_ERROR", "CONNECTION_ERROR", "SDK_ERROR",
@@ -46,6 +129,7 @@ SAFE_CODES = frozenset({
     "QUALIFICATION_NORMALIZATION_MISMATCH", "QUALIFICATION_INVALID_TRANSPORT",
     "QUALIFICATION_TOKEN_BUDGET_UNAVAILABLE", "QUALIFICATION_FAILED", "QUALIFICATION_REPORT_ERROR",
     "QUALIFICATION_UNSAFE_LOGGING",
+    "QUALIFICATION_PROJECTION_MISMATCH",
 })
 
 
@@ -71,6 +155,8 @@ class QualificationManifest:
     history: tuple = field(default=(), repr=False)
     confirm_network: bool = False
     case_id: str | None = None
+    history_fixture_id: str = "EMPTY"
+    projection_id: ProjectionId | None = None
 
     def __post_init__(self):
         try:
@@ -90,11 +176,53 @@ class QualificationManifest:
             raise QualificationError()
         object.__setattr__(self, "exposed_tools", tuple(self.exposed_tools))
         object.__setattr__(self, "history", ())
+        try:
+            qualification_history(self.history_fixture_id)
+        except ValueError:
+            raise QualificationError("QUALIFICATION_HISTORY_FIXTURE_INVALID") from None
+        if self.projection_id is not None and not isinstance(self.projection_id, ProjectionId):
+            raise QualificationError("QUALIFICATION_PROJECTION_INVALID")
+        case = HISTORY_CASES.get(self.case_id)
+        if case is not None and (
+                self.preset_id != HISTORY_PRESET or self.exposed_tools != HISTORY_TOOLS
+                or self.history_fixture_id != case.fixture_id or self.question != case.question
+                or self.source_requirement != case.requirement or self.max_requests != 2
+                or self.projection_id is not None):
+            raise QualificationError("QUALIFICATION_HISTORY_CASE_MISMATCH")
+        study = PROJECTION_CASES.get(self.case_id)
+        if study is not None:
+            case, projection = study
+            fixture = "EMPTY" if self.case_id == "H6F" else case.fixture_id
+            if (self.preset_id != HISTORY_PRESET or self.exposed_tools != HISTORY_TOOLS
+                    or self.history_fixture_id != fixture or self.question != case.question
+                    or self.source_requirement != case.requirement or self.projection_id != projection
+                    or self.max_requests != 2 or self.max_output_tokens != 256):
+                raise QualificationError("QUALIFICATION_PROJECTION_CASE_MISMATCH")
+        cross = CROSS_MODEL_CASES.get(self.case_id)
+        if cross is not None:
+            if (self.preset_id != cross.target.preset_id or self.exposed_tools != HISTORY_TOOLS
+                    or self.history_fixture_id != cross.case.fixture_id or self.question != cross.case.question
+                    or self.source_requirement != cross.case.requirement or self.projection_id != cross.projection_id
+                    or self.max_requests != 2 or self.max_output_tokens != 256):
+                raise QualificationError("QUALIFICATION_PROJECTION_CASE_MISMATCH")
+            cross.target.validate(assistant_profile(self.preset_id))
+        migration = MIGRATION_CASES.get(self.case_id)
+        if migration is not None:
+            target = MIGRATION_TARGETS[migration.model_key]
+            if (self.preset_id != target.preset_id or self.exposed_tools != HISTORY_TOOLS
+                    or self.history_fixture_id != migration.case.fixture_id
+                    or self.question != migration.case.question
+                    or self.source_requirement != migration.case.requirement
+                    or self.projection_id != migration.projection_id
+                    or self.max_requests != 2 or self.max_output_tokens != 256):
+                raise QualificationError("QUALIFICATION_PROJECTION_CASE_MISMATCH")
+            target.validate(assistant_profile(self.preset_id))
 
     @classmethod
     def from_dict(cls, data):
         allowed = {"preset_id", "question", "exposed_tools", "source_requirement", "max_requests",
-                   "max_output_tokens", "retry", "history", "confirm_network", "case_id"}
+                   "max_output_tokens", "retry", "history", "confirm_network", "case_id", "history_fixture_id",
+                   "projection_id"}
         if not isinstance(data, dict) or set(data) - allowed or not {"preset_id", "question", "exposed_tools"} <= set(data):
             raise QualificationError()
         # A saved file cannot grant permanent network permission. CLI consent is
@@ -104,6 +232,8 @@ class QualificationManifest:
         try:
             values = dict(data)
             values["source_requirement"] = SourceRequirement(values.get("source_requirement", "AUTO"))
+            if values.get("projection_id") is not None:
+                values["projection_id"] = ProjectionId(values["projection_id"])
             return cls(**values)
         except (ValueError, TypeError, RecursionError):
             raise QualificationError() from None
@@ -128,6 +258,12 @@ class QualificationManifest:
 
     def safe_plan(self):
         profile = assistant_profile(self.preset_id)
+        cross = CROSS_MODEL_CASES.get(self.case_id)
+        if cross is not None:
+            cross.target.validate(profile)  # Fail closed if a published contract drifts before execution.
+        migration = MIGRATION_CASES.get(self.case_id)
+        if migration is not None:
+            MIGRATION_TARGETS[migration.model_key].validate(profile)
         plan = {"preset_id": self.preset_id, "preset_display_name": profile.display_name,
                 "identity": {"service_id": profile.service_id, "adapter_id": profile.adapter_id,
                              "base_url": profile.base_url, "model": profile.model},
@@ -139,9 +275,33 @@ class QualificationManifest:
                 "max_output_tokens_per_request": self.max_output_tokens, "retry": 0, "history": "EMPTY",
                 "case_id": self.case_id, "question_sha256": hashlib.sha256(self.question.encode("utf-8")).hexdigest(),
                 "network": "AUTHORIZED_FOR_THIS_RUN" if self.confirm_network else "NOT_YET_AUTHORIZED"}
+        # Preserve existing EMPTY Q1-Q4 plans/hashes, for baseline comparability.
+        if self.case_id in HISTORY_CASES or self.history_fixture_id != "EMPTY" or self.projection_id is not None:
+            history = qualification_history(self.history_fixture_id)
+            encoded = json.dumps([asdict(turn) for turn in history], ensure_ascii=False).encode("utf-8")
+            plan.update(history="SYNTHETIC" if history else "EMPTY",
+                history_fixture_id=self.history_fixture_id, history_fixture_sha256=hashlib.sha256(encoded).hexdigest(),
+                history_fixture_turns=len(history),
+                system_instruction_sha256=hashlib.sha256(SYSTEM_INSTRUCTION.encode("utf-8")).hexdigest())
+        if self.projection_id is not None:
+            plan.update(self.projection().safe_metadata())
+        if migration is not None:
+            projected = self.projection()
+            count = projected.native.history_turns_sent
+            retained = qualification_history(self.history_fixture_id)[-count:] if count else ()
+            plan.update(history_turns_received=projected.native.history_turns_received,
+                history_turns_sent=count, history_trimmed=projected.native.history_trimmed,
+                history_bytes_sent=projected.native.history_bytes_sent,
+                retained_pair_sha256=[hashlib.sha256(json.dumps(asdict(turn), ensure_ascii=False,
+                    sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest() for turn in retained])
         approved = {key:value for key,value in plan.items() if key != "network"}
         plan["plan_sha256"] = hashlib.sha256(json.dumps(approved,sort_keys=True,separators=(",", ":")).encode("utf-8")).hexdigest()
         return plan
+
+    def projection(self):
+        return build_projection(AssistantRequest(self.preset_id, self.question,
+            history=qualification_history(self.history_fixture_id), source_requirement=self.source_requirement),
+            self.projection_id)
 
 
 def _credentials(root):
@@ -188,6 +348,8 @@ class _BoundedGateway:
                "tool_choice": request.tool_choice, "outcome": "started", "error_code": None,
                "provider_observation": {"available": False, "normalized_call_consistent": None}}
         self.rows.append(row)  # Consume the attempt before forwarding; no retry.
+        if self.manifest.projection_id is not None:
+            row["tool_schema_sha256"] = tool_schema_hash(request.tools)
         observation_index = len(getattr(self.gateway, "observations", ()))
         try:
             response = self.gateway.complete(request, runtime)
@@ -219,6 +381,19 @@ class _BoundedGateway:
             raise GatewayError("QUALIFICATION_FAILED") from None
 
 
+class _ProjectionCoordinator:
+    """Replace only initial context; delegate the entire lifecycle to T3/S1."""
+
+    def __init__(self, coordinator, projection):
+        self.coordinator, self.projection = coordinator, projection
+        self.policy, self.traces = coordinator.policy, coordinator.traces
+
+    def run_request(self, request, runtime, **options):
+        if request != self.projection.native.model_request:
+            raise GatewayError("QUALIFICATION_PROJECTION_MISMATCH")
+        return self.coordinator.run_request(self.projection.context.model_request, runtime, **options)
+
+
 def run_qualification(manifest, root, *, credential_store=None, registry=None, gateway=None, handle=None):
     """Trusted composition injections are for offline tests, never manifest inputs."""
     if not isinstance(manifest, QualificationManifest):
@@ -230,6 +405,10 @@ def run_qualification(manifest, root, *, credential_store=None, registry=None, g
               "requirement_satisfied": requirement_satisfied(manifest.source_requirement, TurnSourceReceipt()),
               "tool_execution_status": None, "tool_duration_ms": None,
               "success": False, "error_code": "NETWORK_CONFIRMATION_REQUIRED", "status": "not_executed"}
+    projection = manifest.projection() if manifest.projection_id is not None else None
+    if projection is not None:
+        report["projection"] = projection.safe_metadata()
+        report["tool_schema_sha256"] = None  # Not available until the actual Registry is composed.
     if not manifest.confirm_network:
         return report  # No credential resolution, Registry construction or SDK client.
     start = time.monotonic()
@@ -244,6 +423,12 @@ def run_qualification(manifest, root, *, credential_store=None, registry=None, g
                     "openai", "openai._base_client", "httpx", "httpcore")):
                 raise GatewayError("QUALIFICATION_UNSAFE_LOGGING")
             profile = assistant_profile(manifest.preset_id)
+            cross = CROSS_MODEL_CASES.get(manifest.case_id)
+            if cross is not None:
+                cross.target.validate(profile)
+            migration = MIGRATION_CASES.get(manifest.case_id)
+            if migration is not None:
+                MIGRATION_TARGETS[migration.model_key].validate(profile)
             credentials = credential_store if credential_store is not None else _credentials(Path(root))
             runtime = ProfileRegistry([profile], credentials).snapshot(profile.profile_id)
             if runtime.credential.status.availability not in ("PRESENT", "NONE_REQUIRED"):
@@ -251,12 +436,23 @@ def run_qualification(manifest, root, *, credential_store=None, registry=None, g
             registry = registry if registry is not None else _registry()
             policy = ToolPolicy("assistant", bool(manifest.exposed_tools), manifest.exposed_tools)
             policy.validate_registry(registry)
+            if projection is not None:
+                report["tool_schema_sha256"] = tool_schema_hash(policy.model_definitions(registry))
             adapter = gateway if gateway is not None else QualificationAdapter(runtime.model, registry,
                 manifest.exposed_tools, manifest.max_output_tokens)
             bounded = _BoundedGateway(adapter, manifest, runtime.model, registry)
-            service = AssistantService(ToolCallingService(bounded, registry, traces, policy=policy))
+            coordinator = ToolCallingService(bounded, registry, traces, policy=policy)
+            service = AssistantService(_ProjectionCoordinator(coordinator, projection)
+                                       if projection is not None else coordinator)
             result = service.send(AssistantRequest(manifest.preset_id, manifest.question,
+                history=qualification_history(manifest.history_fixture_id),
                 source_requirement=manifest.source_requirement), runtime)
+            if manifest.case_id in HISTORY_CASES or manifest.history_fixture_id != "EMPTY" or projection is not None:
+                report["history_projection"] = {
+                    "turns_received": result.context.history_turns_received,
+                    "turns_sent": result.context.history_turns_sent,
+                    "trimmed": result.context.history_trimmed,
+                    "bytes_sent": result.context.history_bytes_sent}
             report.update(success=result.status.value == "completed", status=result.status.value,
                 error_code=safe_code(result.error_code) if result.error_code else None,
                 receipt=result.source_receipt.to_dict(),
@@ -298,12 +494,46 @@ def write_report(root, report):
     root = Path(root).absolute()
     folder = root / "outputs" / "assistant-qualification"
     try:
-        for path in (root, root / "outputs", folder):
+        boundaries = [root, root / "outputs", folder]
+        case = report.get("plan", {}).get("case_id")
+        cross = CROSS_MODEL_CASES.get(case)
+        migration = MIGRATION_CASES.get(case)
+        if migration is not None:
+            plan = report["plan"]
+            target = MIGRATION_TARGETS[migration.model_key]
+            if (plan.get("projection_id") != migration.projection_id.value
+                    or plan.get("preset_id") != target.preset_id
+                    or tuple(plan.get("identity", {}).get(key) for key in (
+                        "service_id", "adapter_id", "base_url", "model")) != target.identity):
+                raise ValueError
+            for part in migration.report_parts:
+                folder = folder / part
+                boundaries.append(folder)
+        elif cross is not None:
+            plan = report["plan"]
+            if (plan.get("projection_id") != cross.projection_id.value
+                    or plan.get("preset_id") != cross.target.preset_id
+                    or tuple(plan.get("identity", {}).get(key) for key in (
+                        "service_id", "adapter_id", "base_url", "model")) != cross.target.identity):
+                raise ValueError
+            for part in cross.report_parts:
+                folder = folder / part
+                boundaries.append(folder)
+        elif case in PROJECTION_CASES:
+            expected = PROJECTION_CASES[case][1].value
+            if report["plan"].get("projection_id") != expected:
+                raise ValueError
+            parts = ("h6fresh",) if case == "H6F" else (case[:2].lower(), case[-1].lower())
+            for part in ("projection-ab", *parts):
+                folder = folder / part
+                boundaries.append(folder)
+        for path in boundaries:
             if path.exists() or path.is_symlink():
                 info = path.lstat()
                 if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
                     raise OSError
-        folder.mkdir(parents=True, exist_ok=True)
+            else:
+                path.mkdir()
         identifier = report["run_id"]
         if not re.fullmatch(r"[a-f0-9]{32}", identifier):
             raise ValueError
@@ -312,6 +542,6 @@ def write_report(root, report):
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
-        return identifier + ".json"
+        return (folder / (identifier + ".json")).relative_to(root / "outputs" / "assistant-qualification").as_posix()
     except (OSError, ValueError, KeyError, TypeError):
         raise QualificationError("QUALIFICATION_REPORT_ERROR") from None
