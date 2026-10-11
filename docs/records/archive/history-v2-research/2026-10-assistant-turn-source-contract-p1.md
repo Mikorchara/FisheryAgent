@@ -104,7 +104,7 @@ Web 返回结构与 UI 不变；安全 Receipt 暂不公开。模型可以生成
 
 ### 6.1 现有入口可复用什么
 
-[qualify_preset_tools.py](../../../../scripts/qualify_preset_tools.py) 已有显式 `--confirm-network`、单个 Preset 选择、正式私有 CredentialStore → ProfileRegistry.snapshot、RequestHandle、Gateway 和 Git ignored 输出位置，可复用其 composition / 安全错误 / JSON 输出模式。正常入口不读取源码根 .env，不直接打开 / 打印 Key。
+[qualify_preset_tools.py](../../../../scripts/qualification/qualify_preset_tools.py) 已有显式 `--confirm-network`、单个 Preset 选择、正式私有 CredentialStore → ProfileRegistry.snapshot、RequestHandle、Gateway 和 Git ignored 输出位置，可复用其 composition / 安全错误 / JSON 输出模式。正常入口不读取源码根 .env，不直接打开 / 打印 Key。
 
 [preset_tool_qualification.py](../../../../src/fishery_ai/preset_tool_qualification.py) 提供单轮 Coordinator 和计数 Gateway 思路，但当前固定查询 Tool、固定问题，并另发概念题，最多 3 次请求；使用诊断 Runtime 的局部 capability 设置。**不能直接调用它来声称满足新的任意来源要求 / 两次请求预算**，不能照搬诊断授权去更改发布合同。
 

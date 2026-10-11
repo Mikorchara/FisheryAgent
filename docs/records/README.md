@@ -4,6 +4,9 @@ records 保存已结束阶段的记录、验收、事故与独立审计。CURREN
 
 before/after、AI 实施日志和旧交接稿是历史证据，其中的“当前”“未实现”、行号及测试数量只适用于当时基线，不代表现在的系统状态。
 
+
+历史执行资产清理：P2B–P2F 的一次性实验测试、H / P2E manifests、index、preparation generator 与 PowerShell batch / continuation 已删除。本文及各记录中的旧路径、hash、命令和测试数保留为当时事实；需要原资产应查看对应 Git 基线。当前维护入口与测试层级见 [BUILD_RUN](../BUILD_RUN.md) 和 [测试说明](../../tests/README.md)，不能直接执行归档中的旧批次命令。
+
 ## 当前维护依据
 
 - [History v2 迁移决策（P2E）](2026-10-history-v2-migration-decision.md)：30 个真实 run / 50 次请求，有限筛选支持可回滚迁移，不证明长期可靠性。

@@ -55,4 +55,4 @@ Web 组合创建一个共享 `CurrentSnapshotStore` / Reader；Apply、Normal / 
 - 合同与规则：`src/fishery_ai/contracts.py`、`src/fishery_ai/domain.py`。
 - Telemetry：`src/fishery_ai/telemetry/{models,simulator,adapter,snapshot,current,scenario_templates}.py`。
 - 知识：`src/fishery_ai/knowledge.py` 与 `src/fishery_ai/resources/knowledge/`。
-- 回归：`tests/test_water_quality_matrix.py`、`test_telemetry_simulator.py`、`test_scenario_templates.py`、`test_current_water_quality.py`、`test_water_quality_scoring.py`、`test_v01.py`。
+- 回归：`tests/domain/test_water_quality_matrix.py`、`test_telemetry_simulator.py`、`test_scenario_templates.py`、`test_current_water_quality.py`、`test_water_quality_scoring.py`、`test_v01.py`。

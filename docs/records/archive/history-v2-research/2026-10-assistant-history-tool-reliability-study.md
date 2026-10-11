@@ -325,9 +325,9 @@ P1 不需要先改变 Reader、Handler、Registry、Credential、Capability、An
 - **Browser tests**：工作区保留、真实 reload 初始化与清空、模型切换确认、epoch 过期不重发；实际 Activity 与声明区别；失败不进成功 History；显示历史可多于模型 Context；textContent 与安全错误不回归。真实浏览器恢复缓存须另测，VM DOM fixture 不足以证明该行为。
 - **用户人工真实模型验收**：固定精确模型、OFF + Normal、授权集合与预算；对 fresh / history、旧值 / NO_DATA、auto / 已验证 exact 分组，记录请求数、实际调用、结果状态和虚构来源。后续另行制定有限请求预算，本轮不发请求，不测试未授权模型。
 
-现有 [Assistant tests](../../../../tests/test_assistant.py) 的 question matrix 预先选择正确 scripted response；未授权 score 测试预先返回合规拒绝正文。现有 [Browser tests](../../../../tests/test_browser_streaming.cjs) 的旧值追问 fixture 根据问题返回新值，验证了 UI 与历史传输，不证明真实模型必然重新调用。应补入“模型不遵守规则”的反例，而非继续只测正确回答。
+现有 [Assistant tests](../../../../tests/assistant/test_assistant.py) 的 question matrix 预先选择正确 scripted response；未授权 score 测试预先返回合规拒绝正文。现有 [Browser tests](../../../../tests/web/test_browser_streaming.cjs) 的旧值追问 fixture 根据问题返回新值，验证了 UI 与历史传输，不证明真实模型必然重新调用。应补入“模型不遵守规则”的反例，而非继续只测正确回答。
 
-[T1 tests](../../../../tests/test_gateway_tool_contract.py) 已检查字符串 choice 编码与标准调用协议；[Coordinator tests](../../../../tests/test_tool_conversation.py) 覆盖限额、取消、错误和 follow-up。未来修改需保持这些行为，但本轮只阅读断言，未执行测试，不能引用旧通过数量为本轮结果。
+[T1 tests](../../../../tests/providers/test_gateway_tool_contract.py) 已检查字符串 choice 编码与标准调用协议；[Coordinator tests](../../../../tests/tools/test_tool_conversation.py) 覆盖限额、取消、错误和 follow-up。未来修改需保持这些行为，但本轮只阅读断言，未执行测试，不能引用旧通过数量为本轮结果。
 
 ## 11. 风险与限制
 

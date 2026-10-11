@@ -75,77 +75,20 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  ├─ tool-policies/                                             # 用户 Analysis 与 Assistant Tool 选择
 │  ├─ mock-traces.jsonl                                          # 离线 Mock 请求 Trace
 │  └─ web-traces.jsonl                                           # Web 请求安全 Trace
-├─ scripts/                                                                 # 人工开发与资格验证辅助工具
-│  ├─ manifests/                                                            # 维护者单次实验计划，不包含凭据
-│  │  ├─ product-migration/                                                 # P2E 已结束实验的冻结 manifest 与顺序索引
-│  │  │  ├─ assistant-P2E-DEEPSEEK-S1-A.json                                # DEEPSEEK 多轮旧 NO_DATA，冻结 A 投影
-│  │  │  ├─ assistant-P2E-DEEPSEEK-S1-B.json                                # DEEPSEEK 多轮旧 NO_DATA，冻结 B 投影
-│  │  │  ├─ assistant-P2E-DEEPSEEK-S3-A.json                                # DEEPSEEK 旧数值解释，冻结 A 投影
-│  │  │  ├─ assistant-P2E-DEEPSEEK-S3-B.json                                # DEEPSEEK 旧数值解释，冻结 B 投影
-│  │  │  ├─ assistant-P2E-DEEPSEEK-S7-A.json                                # DEEPSEEK 长历史整轮裁剪，冻结 A 投影
-│  │  │  ├─ assistant-P2E-DEEPSEEK-S7-B.json                                # DEEPSEEK 长历史整轮裁剪，冻结 B 投影
-│  │  │  ├─ assistant-P2E-OLLAMA-S1-A.json                                  # OLLAMA 多轮旧 NO_DATA，冻结 A 投影
-│  │  │  ├─ assistant-P2E-OLLAMA-S1-B.json                                  # OLLAMA 多轮旧 NO_DATA，冻结 B 投影
-│  │  │  ├─ assistant-P2E-OLLAMA-S3-A.json                                  # OLLAMA 旧数值解释，冻结 A 投影
-│  │  │  ├─ assistant-P2E-OLLAMA-S3-B.json                                  # OLLAMA 旧数值解释，冻结 B 投影
-│  │  │  ├─ assistant-P2E-OLLAMA-S4-A.json                                  # OLLAMA 当前省略追问，冻结 A 投影
-│  │  │  ├─ assistant-P2E-OLLAMA-S4-B.json                                  # OLLAMA 当前省略追问，冻结 B 投影
-│  │  │  ├─ assistant-P2E-OLLAMA-S7-A.json                                  # OLLAMA 长历史整轮裁剪，冻结 A 投影
-│  │  │  ├─ assistant-P2E-OLLAMA-S7-B.json                                  # OLLAMA 长历史整轮裁剪，冻结 B 投影
-│  │  │  ├─ assistant-P2E-QWEN-S1-A.json                                    # QWEN 多轮旧 NO_DATA，冻结 A 投影
-│  │  │  ├─ assistant-P2E-QWEN-S1-B.json                                    # QWEN 多轮旧 NO_DATA，冻结 B 投影
-│  │  │  ├─ assistant-P2E-QWEN-S2-A.json                                    # QWEN 旧值与 NO_DATA 混合，冻结 A 投影
-│  │  │  ├─ assistant-P2E-QWEN-S2-B.json                                    # QWEN 旧值与 NO_DATA 混合，冻结 B 投影
-│  │  │  ├─ assistant-P2E-QWEN-S3-A.json                                    # QWEN 旧数值解释，冻结 A 投影
-│  │  │  ├─ assistant-P2E-QWEN-S3-B.json                                    # QWEN 旧数值解释，冻结 B 投影
-│  │  │  ├─ assistant-P2E-QWEN-S4-A.json                                    # QWEN 当前省略追问，冻结 A 投影
-│  │  │  ├─ assistant-P2E-QWEN-S4-B.json                                    # QWEN 当前省略追问，冻结 B 投影
-│  │  │  ├─ assistant-P2E-QWEN-S5K-A.json                                   # QWEN 历史知识来源声明，冻结 A 投影
-│  │  │  ├─ assistant-P2E-QWEN-S5K-B.json                                   # QWEN 历史知识来源声明，冻结 B 投影
-│  │  │  ├─ assistant-P2E-QWEN-S5O-A.json                                   # QWEN 历史观测来源声明，冻结 A 投影
-│  │  │  ├─ assistant-P2E-QWEN-S5O-B.json                                   # QWEN 历史观测来源声明，冻结 B 投影
-│  │  │  ├─ assistant-P2E-QWEN-S6-A.json                                    # QWEN 文字仿 Tool Call，冻结 A 投影
-│  │  │  ├─ assistant-P2E-QWEN-S6-B.json                                    # QWEN 文字仿 Tool Call，冻结 B 投影
-│  │  │  ├─ assistant-P2E-QWEN-S7-A.json                                    # QWEN 长历史整轮裁剪，冻结 A 投影
-│  │  │  ├─ assistant-P2E-QWEN-S7-B.json                                    # QWEN 长历史整轮裁剪，冻结 B 投影
-│  │  │  └─ qualification-plan.json                                         # P2E 固定 30 position、预算与计划 hash
-│  │  ├─ assistant-DEEPSEEK-H2-A.json                                       # DeepSeek 旧 NO_DATA 原生对照
-│  │  ├─ assistant-DEEPSEEK-H2-B.json                                       # DeepSeek 旧 NO_DATA 不可信投影
-│  │  ├─ assistant-DEEPSEEK-H2F.json                                        # DeepSeek 空历史当前查询控制
-│  │  ├─ assistant-DEEPSEEK-H5-A.json                                       # DeepSeek 历史解释原生对照
-│  │  ├─ assistant-DEEPSEEK-H5-B.json                                       # DeepSeek 历史解释不可信投影
-│  │  ├─ assistant-H0.json                                                  # 空历史当前溶氧实验
-│  │  ├─ assistant-H1.json                                                  # 旧溶氧与当前值比较实验
-│  │  ├─ assistant-H2-A.json                                                # 旧 NO_DATA 原生投影对照
-│  │  ├─ assistant-H2-B.json                                                # 旧 NO_DATA 不可信历史投影
-│  │  ├─ assistant-H2.json                                                  # 旧 NO_DATA 后重新查询实验
-│  │  ├─ assistant-H3.json                                                  # 空历史当前评分实验
-│  │  ├─ assistant-H4.json                                                  # 旧评分后重新评估实验
-│  │  ├─ assistant-H5-A.json                                                # 历史解释原生投影对照
-│  │  ├─ assistant-H5-B.json                                                # 历史解释不可信历史投影
-│  │  ├─ assistant-H5.json                                                  # 历史数值解释实验
-│  │  ├─ assistant-H6-A.json                                                # 旧知识声明原生投影对照
-│  │  ├─ assistant-H6-B.json                                                # 旧知识声明不可信历史投影
-│  │  ├─ assistant-H6.json                                                  # 旧检索声明后重新搜索实验
-│  │  ├─ assistant-H6F.json                                                 # 与 H6 同问题的空历史严格对照
-│  │  ├─ assistant-OLLAMA-H2-A.json                                         # Ollama 旧 NO_DATA 原生对照
-│  │  ├─ assistant-OLLAMA-H2-B.json                                         # Ollama 旧 NO_DATA 不可信投影
-│  │  ├─ assistant-OLLAMA-H2F.json                                          # Ollama 空历史当前查询控制
-│  │  ├─ assistant-OLLAMA-H5-A.json                                         # Ollama 历史解释原生对照
-│  │  ├─ assistant-OLLAMA-H5-B.json                                         # Ollama 历史解释不可信投影
-│  │  ├─ assistant-Q1.json                                                  # 当前溶氧查询资格计划
-│  │  ├─ assistant-Q2.json                                                  # 当前评分资格计划
-│  │  ├─ assistant-Q3.json                                                  # 单 Knowledge Tool 资格计划
-│  │  └─ assistant-Q4.json                                                  # 三 Tool 选择 Knowledge 的资格计划
-│  ├─ prepare_product_migration_qualification.py                            # P2E 冻结计划只读检查，不能联网
-│  ├─ projection_qualification_runner.ps1                                   # 独立模型批次的共同调度与停止检查
-│  ├─ qualify_assistant_turn.py                                             # 单 manifest Assistant 资格入口，默认 dry-run
-│  ├─ qualify_local_preset_request.py                                       # Local Preset 最小请求资格验证
-│  ├─ qualify_preset_tools.py                                               # Preset Tool Calling 资格验证入口
-│  ├─ run_deepseek_projection_qualification.ps1                             # DeepSeek 固定历史批次入口，旧批次已结束
-│  ├─ run_deepseek_projection_qualification_remaining.ps1                   # 历史一次性续跑入口，禁止按旧授权执行
-│  ├─ run_ollama_projection_qualification.ps1                               # Ollama 固定历史批次入口，旧批次已结束
-│  └─ run_product_migration_qualification.ps1                               # P2E 冻结批次 runner，旧批次已结束
+├─ scripts/                                                                 # 开发辅助与长期单次资格工具，不参与正常 Web 启动
+│  ├─ dev/                                                                  # 离线测试入口与人工页面调试辅助
+│  │  ├─ manual_edge_mock_probe.cjs                                         # 离线页面边界 Mock 验证辅助
+│  │  └─ run_tests.py                                                       # FAST / 子系统 / FULL PRODUCT / FULL QUALIFICATION 入口
+│  ├─ qualification/                                                        # 长期单次资格验证；默认不联网，无历史 batch
+│  │  ├─ manifests/                                                         # Q1–Q4 单次维护计划示例，不含 H / P2E 批次
+│  │  │  ├─ assistant-Q1.json                                               # 当前溶氧查询资格计划
+│  │  │  ├─ assistant-Q2.json                                               # 当前评分资格计划
+│  │  │  ├─ assistant-Q3.json                                               # 单 Knowledge Tool 资格计划
+│  │  │  └─ assistant-Q4.json                                               # 三 Tool 选择 Knowledge 的资格计划
+│  │  ├─ qualify_assistant_turn.py                                          # 单 manifest Assistant 资格入口，默认 dry-run
+│  │  ├─ qualify_local_preset_request.py                                    # Local Preset 最小请求资格验证
+│  │  └─ qualify_preset_tools.py                                            # Preset Tool Calling 资格验证入口
+│  └─ README.md                                                             # 辅助工具用途与逐次真实联网授权边界
 ├─ src/                                                          # Runtime/Core 应用源码与安装 metadata
 │  ├─ fishery_ai/                                                # 可安装 Python 应用包
 │  │  ├─ __init__.py                                             # 应用包初始化
@@ -180,6 +123,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ providers.py                                            # Service、连接与 Auth 元数据
 │  │  ├─ qualification_adapter.py                                # 实验专用输出预算与有限 Provider 观测
 │  │  ├─ qualification_history.py                                # 实验专用固定历史白名单与 H case 合同
+│  │  ├─ qualification_migration.py                                         # 旧资格多轮 fixture 与冻结矩阵兼容接口，非产品 History
 │  │  ├─ qualification_projection.py                             # qualification 包装及冻结历史 A/B 指纹
 │  │  ├─ real_validation.py                                      # 显式真实模型验证流程
 │  │  ├─ repositories.py                                         # 水质与 Detection Mock 资源读取
@@ -242,7 +186,21 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │     ├─ requires.txt                                            # 安装生成的依赖清单
 │     ├─ SOURCES.txt                                             # 安装生成的打包文件清单
 │     └─ top_level.txt                                           # 安装生成的顶层包名称
-└─ tests/                                                                   # Development/Test 离线回归体系
+└─ tests/                                                                   # Development/Test 离线合同，产品与资格分层
+   ├─ assistant/                                                            # Assistant、来源 Receipt 与正式 History 产品合同
+   │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
+   │  ├─ test_assistant.py                                                  # Assistant 合同、选择规则 Prompt 契约、历史与执行回归测试
+   │  ├─ test_assistant_sources.py                                          # 真实执行来源 Receipt 与满足关系测试
+   │  └─ test_history_projection.py                                         # 产品默认 B、A 回滚、裁剪、JSON 与来源隔离回归
+   ├─ domain/                                                               # 水质、Diagnosis、评分与 Scenario / Telemetry 回归
+   │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
+   │  ├─ test_current_water_quality.py                                      # 当前水质查询与 Freshness 测试
+   │  ├─ test_scenario_templates.py                                         # 情景模板 CRUD 与显式 Apply 测试
+   │  ├─ test_telemetry_simulator.py                                        # Telemetry 合同、模拟与 Adapter 测试
+   │  ├─ test_v01.py                                                        # 基础合同、诊断、Knowledge 与 Gateway 测试
+   │  ├─ test_v011_a3_grounding.py                                          # 检索相关性、Grounding 与 Profile 测试
+   │  ├─ test_water_quality_matrix.py                                       # 水质边界研究场景离线测试
+   │  └─ test_water_quality_scoring.py                                      # 实验评分与评分 Tool 测试
    ├─ fixtures/                                                             # 虚构数据与历史兼容性夹具
    │  ├─ historical_model_assets/                                           # 仅测试使用的历史模型资源
    │  │  ├─ profiles/                                                       # 历史 Profile 与 Preset 夹具
@@ -253,77 +211,84 @@ Fishery_AI_Prototype/                                            # 项目工作�
    │  │  ├─ official_declarations.json                                      # 历史官方能力声明测试夹具
    │  │  └─ README.md                                                       # 历史夹具用途与运行隔离说明
    │  └─ r0_runtime_baseline.json                                           # Runtime 兼容性基准夹具
-   ├─ historical_model_fixtures.py                                          # 历史模型测试夹具加载辅助
-   ├─ manual_edge_mock_probe.cjs                                            # 离线页面边界 Mock 验证辅助
-   ├─ test_a316_runtime_defaults.py                                         # 运行默认偏好与安全回退测试
-   ├─ test_access_web.py                                                    # Preset、Manual 与取消 Web 边界测试
-   ├─ test_analysis_tool_web.py                                             # 正式 Analysis Tool Web 接入测试
-   ├─ test_analysis_tools.py                                                # 固定 Analysis 与单轮 Tool 回归测试
-   ├─ test_assistant.py                                                     # Assistant 合同、选择规则 Prompt 契约、历史与执行回归测试
-   ├─ test_assistant_qualification.py                                       # 单次实验、预算、取消与报告脱敏测试
-   ├─ test_assistant_sources.py                                             # 真实执行来源 Receipt 与满足关系测试
-   ├─ test_browser_streaming.cjs                                            # 页面交互、状态与浏览器回归测试
-   ├─ test_catalog_knowledge.py                                             # Catalog 条目 metadata、派生标志与授权边界测试
-   ├─ test_clean_room_reset.py                                              # Clean-room 空目录启动测试
-   ├─ test_cloud_capability.py                                              # Cloud 能力声明与显式 Probe 测试
-   ├─ test_credential_compatibility.py                                      # 凭据迁移与 Runtime 兼容性测试
-   ├─ test_credential_writer.py                                             # 凭据写入、revision 与安全回归测试
-   ├─ test_credentials.py                                                   # 凭据优先级与快照测试
-   ├─ test_credentials_private_storage.py                                   # 私有凭据路径、ACL 与隔离测试
-   ├─ test_cross_model_qualification.py                                     # 跨模型登记、消息一致与 runner 离线检查
-   ├─ test_current_water_quality.py                                         # 当前水质查询与 Freshness 测试
-   ├─ test_deepseek_projection_continuation.py                              # 历史续跑授权、固定顺序与停止门禁测试
-   ├─ test_default_preference_ui.py                                         # 默认偏好与能力门禁同步测试
-   ├─ test_evidence_resolver.py                                             # 精确 Identity 证据解析与冲突测试
-   ├─ test_execution.py                                                     # 取消、资源释放与 Raw 请求隔离测试
-   ├─ test_gateway_tool_contract.py                                         # Tool 模型消息与 SDK 编解码测试
-   ├─ test_history_product_migration.py                                     # 正式默认 B、回滚、裁剪与 Web 隔离回归
-   ├─ test_knowledge_assembly.py                                            # 共享 KnowledgeService 装配、单例与可执行性测试
-   ├─ test_knowledge_handler.py                                             # 薄 Knowledge Handler 映射、截断与 NO_MATCH 测试
-   ├─ test_knowledge_registration.py                                        # Knowledge 注册、依赖注入与 query validator 测试
-   ├─ test_local_preset_qualification.py                                    # Local Preset 验证入口安全测试
-   ├─ test_local_profile_capability_ui.py                                   # 本地 metadata 与 Capability UI 测试
-   ├─ test_manual_v2.py                                                     # 实验 CRUD、独立凭据与 Raw 请求测试
-   ├─ test_mock_tool_gateway.py                                             # 离线 Mock 按工具名分派、方向性降级与安全兜底测试
-   ├─ test_off_streaming_combination.py                                     # OFF 加 Streaming 组合证据测试
-   ├─ test_ollama_reasoning.py                                              # 精确 Ollama Thinking 参数测试
-   ├─ test_output_parity.py                                                 # Normal 与 Streaming 输出边界测试
-   ├─ test_preset.py                                                        # Preset 固定合同与证据隔离测试
-   ├─ test_preset_publication.py                                            # Preset 发布选项与默认模型测试
-   ├─ test_preset_tool_qualification.py                                     # Preset Tool 完整资格流程测试
-   ├─ test_product_migration_runner.py                                      # P2E runner 顺序、报告与停止门禁测试
-   ├─ test_protocol_specs.py                                                # Provider 请求体编码一致性测试
-   ├─ test_qualification_history.py                                         # 固定历史、投影、来源与实验隔离测试
-   ├─ test_qualification_migration.py                                       # 多轮 fixture、裁剪与投影资格合同回归
-   ├─ test_qualification_projection.py                                      # A/B parity、模型无关、注入形状与边界测试
-   ├─ test_read_only_tools.py                                               # Registry、Executor 与只读 Handler 测试
-   ├─ test_scenario_templates.py                                            # 情景模板 CRUD 与显式 Apply 测试
-   ├─ test_telemetry_simulator.py                                           # Telemetry 合同、模拟与 Adapter 测试
-   ├─ test_tool_argument_contract.py                                        # Tool 受控参数合同与旧工具兼容测试
-   ├─ test_tool_capability_probe.py                                         # Tool 能力 Probe 与 Web 门禁测试
-   ├─ test_tool_conversation.py                                             # 单轮 Tool 闭环、Usage、Mock 降级与错误测试
-   ├─ test_tool_policy.py                                                   # Analysis 与 Assistant 授权测试
-   ├─ test_tool_policy_manager.py                                           # Tool Manager、用户 Policy 存储与默认/override 不变性测试
-   ├─ test_tool_status_no_match.py                                          # NO_MATCH 非错误结果、二轮闭环与安全投影测试
-   ├─ test_unknown_model_probe.py                                           # 未知能力显式 Probe 与证据写入测试
-   ├─ test_v01.py                                                           # 基础合同、诊断、Knowledge 与 Gateway 测试
-   ├─ test_v011_a1.py                                                       # 多模型能力、选项与 Usage 合同测试
-   ├─ test_v011_a2.py                                                       # 真实验证入口的离线安全测试
-   ├─ test_v011_a2_1.py                                                     # 安全诊断与 Cloud 兼容性测试
-   ├─ test_v011_a313_capability_identity.py                                 # Service、Model Identity 与能力隔离测试
-   ├─ test_v011_a31_streaming.py                                            # 应用 Streaming 与 SSE 回归测试
-   ├─ test_v011_a3_grounding.py                                             # 检索相关性、Grounding 与 Profile 测试
-   ├─ test_v011_a3_profile_manager.py                                       # Profile CRUD、连接与门禁测试
-   ├─ test_v011_a3_web.py                                                   # 开发 Web 页面与安全错误测试
-   ├─ test_water_quality_matrix.py                                          # 水质边界研究场景离线测试
-   ├─ test_water_quality_scoring.py                                         # 实验评分与评分 Tool 测试
-   └─ test_web_tool_conversation.py                                         # 开发 Tool Conversation、Trace 与 Stop 测试
+   ├─ providers/                                                            # Gateway、Provider / Protocol、能力与 Preset 回归
+   │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
+   │  ├─ test_cloud_capability.py                                           # Cloud 能力声明与显式 Probe 测试
+   │  ├─ test_evidence_resolver.py                                          # 精确 Identity 证据解析与冲突测试
+   │  ├─ test_gateway_tool_contract.py                                      # Tool 模型消息与 SDK 编解码测试
+   │  ├─ test_off_streaming_combination.py                                  # OFF 加 Streaming 组合证据测试
+   │  ├─ test_ollama_reasoning.py                                           # 精确 Ollama Thinking 参数测试
+   │  ├─ test_output_parity.py                                              # Normal 与 Streaming 输出边界测试
+   │  ├─ test_preset.py                                                     # Preset 固定合同与证据隔离测试
+   │  ├─ test_preset_publication.py                                         # Preset 发布选项与默认模型测试
+   │  ├─ test_protocol_specs.py                                             # Provider 请求体编码一致性测试
+   │  ├─ test_tool_capability_probe.py                                      # Tool 能力 Probe 与 Web 门禁测试
+   │  ├─ test_unknown_model_probe.py                                        # 未知能力显式 Probe 与证据写入测试
+   │  ├─ test_v011_a1.py                                                    # 多模型能力、选项与 Usage 合同测试
+   │  ├─ test_v011_a2.py                                                    # 真实验证入口的离线安全测试
+   │  ├─ test_v011_a2_1.py                                                  # 安全诊断与 Cloud 兼容性测试
+   │  └─ test_v011_a313_capability_identity.py                              # Service、Model Identity 与能力隔离测试
+   ├─ qualification/                                                        # 长期单次资格验证；默认不联网，无历史 batch
+   │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
+   │  ├─ test_assistant_qualification.py                                    # 单次实验、预算、取消与报告脱敏测试
+   │  ├─ test_local_preset_qualification.py                                 # Local Preset 验证入口安全测试
+   │  └─ test_preset_tool_qualification.py                                  # Preset Tool 完整资格流程测试
+   ├─ security/                                                             # Credential、安全写入、ACL、快照与请求取消
+   │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
+   │  ├─ test_credential_compatibility.py                                   # 凭据迁移与 Runtime 兼容性测试
+   │  ├─ test_credential_writer.py                                          # 凭据写入、revision 与安全回归测试
+   │  ├─ test_credentials.py                                                # 凭据优先级与快照测试
+   │  ├─ test_credentials_private_storage.py                                # 私有凭据路径、ACL 与隔离测试
+   │  └─ test_execution.py                                                  # 取消、资源释放与 Raw 请求隔离测试
+   ├─ support/                                                              # 共享路径与显式兼容性 fixture，零测试用例
+   │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
+   │  ├─ historical_model_fixtures.py                                       # 历史模型测试夹具加载辅助
+   │  └─ paths.py                                                           # 固定 PROJECT_ROOT / TESTS_ROOT，不依赖 cwd
+   ├─ tools/                                                                # 静态只读 Tool 执行层
+   │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
+   │  ├─ test_analysis_tools.py                                             # 固定 Analysis 与单轮 Tool 回归测试
+   │  ├─ test_catalog_knowledge.py                                          # Catalog 条目 metadata、派生标志与授权边界测试
+   │  ├─ test_knowledge_assembly.py                                         # 共享 KnowledgeService 装配、单例与可执行性测试
+   │  ├─ test_knowledge_handler.py                                          # 薄 Knowledge Handler 映射、截断与 NO_MATCH 测试
+   │  ├─ test_knowledge_registration.py                                     # Knowledge 注册、依赖注入与 query validator 测试
+   │  ├─ test_mock_tool_gateway.py                                          # 离线 Mock 按工具名分派、方向性降级与安全兜底测试
+   │  ├─ test_read_only_tools.py                                            # Registry、Executor 与只读 Handler 测试
+   │  ├─ test_tool_argument_contract.py                                     # Tool 受控参数合同与旧工具兼容测试
+   │  ├─ test_tool_conversation.py                                          # 单轮 Tool 闭环、Usage、Mock 降级与错误测试
+   │  ├─ test_tool_policy.py                                                # Analysis 与 Assistant 授权测试
+   │  ├─ test_tool_policy_manager.py                                        # Tool Manager、用户 Policy 存储与默认/override 不变性测试
+   │  └─ test_tool_status_no_match.py                                       # NO_MATCH 非错误结果、二轮闭环与安全投影测试
+   ├─ web/                                                                  # Web API、Session、Manual 与 Node 页面回归
+   │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
+   │  ├─ test_a316_runtime_defaults.py                                      # 运行默认偏好与安全回退测试
+   │  ├─ test_access_web.py                                                 # Preset、Manual 与取消 Web 边界测试
+   │  ├─ test_analysis_tool_web.py                                          # 正式 Analysis Tool Web 接入测试
+   │  ├─ test_browser_streaming.cjs                                         # 页面交互、状态与浏览器回归测试
+   │  ├─ test_clean_room_reset.py                                           # Clean-room 空目录启动测试
+   │  ├─ test_default_preference_ui.py                                      # 默认偏好与能力门禁同步测试
+   │  ├─ test_local_profile_capability_ui.py                                # 本地 metadata 与 Capability UI 测试
+   │  ├─ test_manual_v2.py                                                  # 实验 CRUD、独立凭据与 Raw 请求测试
+   │  ├─ test_v011_a31_streaming.py                                         # 应用 Streaming 与 SSE 回归测试
+   │  ├─ test_v011_a3_profile_manager.py                                    # Profile CRUD、连接与门禁测试
+   │  ├─ test_v011_a3_web.py                                                # 开发 Web 页面与安全错误测试
+   │  └─ test_web_tool_conversation.py                                      # 开发 Tool Conversation、Trace 与 Stop 测试
+   ├─ __init__.py                                                           # 测试子包标记，支持规范 unittest discovery
+   └─ README.md                                                             # 测试分类、四层策略与覆盖边界
 ```
 
 **Runtime / Core：** src/fishery_ai 是运行源码，resources 是包内固定资源；源码根 .env 只标位置，不读取内容，也不参与运行时。
 
-**Development / Test：** tests 保留完整离线回归；scripts 是维护者辅助工具；.egg-info 是安装生成的 metadata。
+**Development / Test：** tests 分为正式子系统与 qualification，support / fixtures 为共享测试资料。scripts/dev 保存开发辅助，scripts/qualification 保存单次维护验证；.egg-info 为安装生成 metadata。已删除 H / P2E manifests、历史 batch / continuation、preparation generator 和六份实验测试；产品 History 与安全合同仍在正式测试中，历史见 records 与 Git。
 
 **Research / Records：** deep-dive 保存当前技术合同及明确标记的未来研究；records 根目录保留迁移依据与独立审计，已结束阶段进入 archive。历史文件中的状态、路径和测试数量适用于当时基线。History v2 已默认 B；有限真实资格实验不证明长期模型选择可靠性。
 
 **Generated / User-private：** outputs 的 JSON/JSONL 验证记录、用户配置与历史内容不逐项展开；.git、.venv、__pycache__ 等内部文件与缓存不展开。%LOCALAPPDATA% 不属于仓库树，正式凭据与 Manual V2 凭据在固定用户私有目录中分文件存放，不读取或列出其内容。
+
+## 推荐测试层级
+
+- **FAST**：`python scripts/dev/run_tests.py fast`，显式核心合同集合。
+- **TARGETED**：`python scripts/dev/run_tests.py assistant`（或 domain / providers / security / tools / web），单模块可用规范 tests 包名。
+- **FULL PRODUCT**：`python scripts/dev/run_tests.py` 默认不收集 qualification；Browser 用 `node --test tests/web/test_browser_streaming.cjs`。
+- **FULL QUALIFICATION**：`python scripts/dev/run_tests.py qualification`，仅基础设施改动时离线运行。
+
+标准全部发现：`python -m unittest discover -s tests -t .`，包括产品与资格两层；不要省略 top-level 参数。详见[测试说明](../tests/README.md)与[维护工具](../scripts/README.md)。

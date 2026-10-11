@@ -17,7 +17,7 @@ B的15个run全部completed：12个来源操作要求全部满足，3个历史�
 安全报告目录：`outputs/assistant-qualification/product-migration/<model>/<scenario>/<arm>/<run_id>.json`。
 
 - JSON总数30，`actual_network_requests>0`恰好30，0-request报告0，无法解析0；run_id唯一，无重复/遗漏/第31项。
-- 按`started_at`排序的case与[冻结索引](../../scripts/manifests/product-migration/qualification-plan.json)position 1–30完全一致；相邻run无时间重叠。
+- 按`started_at`排序的case与冻结索引（历史文件：`scripts/manifests/product-migration/qualification-plan.json`，执行资产已移除，原文见 Git history）position 1–30完全一致；相邻run无时间重叠。
 - 每份plan与其当前冻结manifest的safe_plan逐字段相等，唯一预期授权变化为`network=AUTHORIZED_FOR_THIS_RUN`；30个plan_sha256与索引一致。
 - OFF / Normal / retry=0 / max_requests=2 / 每请求输出上限256；实际每run为1或2请求，每次Usage报告的输出均未超过256。
 - 首轮auto、第二轮none；每请求暴露同样三个正式Tool，Knowledge schema包含required query。20个实际调用均只有一个合法Tool Call；第二轮Tool Call为0。

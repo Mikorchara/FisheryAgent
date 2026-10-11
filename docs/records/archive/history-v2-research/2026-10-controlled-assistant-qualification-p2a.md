@@ -4,7 +4,7 @@
 
 ## 1. 新入口与边界
 
-入口：[qualify_assistant_turn.py](../../../../scripts/qualify_assistant_turn.py)。它不是 CI、Capability 自动 Probe、Publisher、Agent 或永久联网许可。一次进程只接收一个 manifest，没有批量参数或下一案例循环。
+入口：[qualify_assistant_turn.py](../../../../scripts/qualification/qualify_assistant_turn.py)。它不是 CI、Capability 自动 Probe、Publisher、Agent 或永久联网许可。一次进程只接收一个 manifest，没有批量参数或下一案例循环。
 
 ```text
 Manifest（正式 Preset / Registry 白名单）
@@ -21,7 +21,7 @@ Manifest（正式 Preset / Registry 白名单）
 
 [assistant_qualification.py](../../../../src/fishery_ai/assistant_qualification.py) 负责 manifest、composition、预算与报告；[qualification_adapter.py](../../../../src/fishery_ai/qualification_adapter.py) 是仅该 run 使用的小型 Adapter 子类，继承现有编码、HTTP、错误映射、retry=0 和 AsyncOpenAI Cancellation。没有重写 Tool loop、Credential loader、Registry、Executor 或 Policy machinery。
 
-旧 [Preset qualification](../../../../scripts/qualify_preset_tools.py) / [服务](../../../../src/fishery_ai/preset_tool_qualification.py)保持原行为：固定水质闭环加概念题，最多三次请求；新入口不调用其三请求流程。`real_validation.py`、Web 和正式 Assistant 入口均未修改。
+旧 [Preset qualification](../../../../scripts/qualification/qualify_preset_tools.py) / [服务](../../../../src/fishery_ai/preset_tool_qualification.py)保持原行为：固定水质闭环加概念题，最多三次请求；新入口不调用其三请求流程。`real_validation.py`、Web 和正式 Assistant 入口均未修改。
 
 ## 2. Manifest 合同
 
@@ -122,10 +122,10 @@ CLI 与 Flask 是独立进程，默认 Reader 绑定新的空 CurrentSnapshotSto
 
 | 案例 | 文件 | 工具 | Requirement | 问题 |
 | --- | --- | --- | --- | --- |
-| Q1 | [assistant-Q1.json](../../../../scripts/manifests/assistant-Q1.json) | get_current_water_quality | CURRENT_OBSERVATION_QUERY | 请查询当前溶氧。 |
-| Q2 | [assistant-Q2.json](../../../../scripts/manifests/assistant-Q2.json) | score_current_water_quality | CURRENT_SCORE_EVALUATION | 请查询当前系统水质评分。 |
-| Q3 | [assistant-Q3.json](../../../../scripts/manifests/assistant-Q3.json) | search_fishery_knowledge | PROJECT_KNOWLEDGE_SEARCH | 请查询项目资料中鳗鲡低氧表现。 |
-| Q4 | [assistant-Q4.json](../../../../scripts/manifests/assistant-Q4.json) | 全部三个定义 | PROJECT_KNOWLEDGE_SEARCH | 与 Q3 相同 |
+| Q1 | [assistant-Q1.json](../../../../scripts/qualification/manifests/assistant-Q1.json) | get_current_water_quality | CURRENT_OBSERVATION_QUERY | 请查询当前溶氧。 |
+| Q2 | [assistant-Q2.json](../../../../scripts/qualification/manifests/assistant-Q2.json) | score_current_water_quality | CURRENT_SCORE_EVALUATION | 请查询当前系统水质评分。 |
+| Q3 | [assistant-Q3.json](../../../../scripts/qualification/manifests/assistant-Q3.json) | search_fishery_knowledge | PROJECT_KNOWLEDGE_SEARCH | 请查询项目资料中鳗鲡低氧表现。 |
+| Q4 | [assistant-Q4.json](../../../../scripts/qualification/manifests/assistant-Q4.json) | 全部三个定义 | PROJECT_KNOWLEDGE_SEARCH | 与 Q3 相同 |
 
 均为当前 Qwen 3.8 Flash 发布 Preset，OFF / Normal、history=[]、retry=0、最多两请求、每请求最多 256 output tokens。Q4 只增加可选定义，执行仍最多一个 Tool。System / history / Handler / Policy 默认 / Registry / Capability / RAG 均没有修改。
 
@@ -133,7 +133,7 @@ CLI 与 Flask 是独立进程，默认 Reader 绑定新的空 CurrentSnapshotSto
 
 ## 8. 测试与交付
 
-新增 [test_assistant_qualification.py](../../../../tests/test_assistant_qualification.py)：manifest / consent / credential boundary、预算、实际来源 Receipt、raw / normalized 对照、错误、Stop、JSON 脱敏、Web 不获得 Requirement 输入、原 Preset qualification 不回归。参数必须是 JSON object，空数组也不能被安全摘要误记为合法；未知 finish_reason 不复制进报告。
+新增 [test_assistant_qualification.py](../../../../tests/qualification/test_assistant_qualification.py)：manifest / consent / credential boundary、预算、实际来源 Receipt、raw / normalized 对照、错误、Stop、JSON 脱敏、Web 不获得 Requirement 输入、原 Preset qualification 不回归。参数必须是 JSON object，空数组也不能被安全摘要误记为合法；未知 finish_reason 不复制进报告。
 
 完整回归发现旧 Knowledge 装配结构检查只有三个 composition root 白名单，新独立 CLI 不在名单中。将 `assistant_qualification.py` 作为第四个 root 登记，并补测此入口只创建、绑定一个 KnowledgeService；没有改变 Web 共享实例、Registry 或 Handler。Dry-run 仍不构建任何服务。
 

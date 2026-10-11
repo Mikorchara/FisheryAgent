@@ -177,7 +177,7 @@ CLI进程使用空CurrentSnapshotStore，与P2C/P2D相同，不读取Web Snapsho
 
 **历史：P2E-RUN准备时REAL PROVIDER RESULTS: NOT RUN**。当时Codex只准备执行入口和离线验证，没有使用`-ConfirmNetwork`执行真实Provider批次，也不包含未来批次的联网授权。以下命令保留为已结束批次的执行说明，用户现已完成全部30项，不再执行；最新结果见§12。
 
-入口：[run_product_migration_qualification.ps1](../../../../scripts/run_product_migration_qualification.ps1)。仅支持一个可选`-ConfirmNetwork`开关，没有模型选择、case选择、resume或追加样本功能。复用既有单manifest CLI进程调用和路径防护，不创建第二套Assistant/Tool执行栈。
+入口：run_product_migration_qualification.ps1（历史文件：`scripts/run_product_migration_qualification.ps1`，执行资产已移除，原文见 Git history）。仅支持一个可选`-ConfirmNetwork`开关，没有模型选择、case选择、resume或追加样本功能。复用既有单manifest CLI进程调用和路径防护，不创建第二套Assistant/Tool执行栈。
 
 默认命令：
 
@@ -193,7 +193,7 @@ CLI进程使用空CurrentSnapshotStore，与P2C/P2D相同，不读取Web Snapsho
 .\scripts\run_product_migration_qualification.ps1 -ConfirmNetwork
 ```
 
-顺序唯一来源为[qualification-plan.json](../../../../scripts/manifests/product-migration/qualification-plan.json)。固定索引字节SHA256：`5153dd52f3f0e335493c1abe9b8ab2a1d5579cd29a82b515bd48960e98bd1718`；PowerShell不复制第二份顺序。Qwen16、DeepSeek6、Ollama8，共30run，理论最多60次请求，无第31项。
+顺序唯一来源为qualification-plan.json（历史文件：`scripts/manifests/product-migration/qualification-plan.json`，执行资产已移除，原文见 Git history）。固定索引字节SHA256：`5153dd52f3f0e335493c1abe9b8ab2a1d5579cd29a82b515bd48960e98bd1718`；PowerShell不复制第二份顺序。Qwen16、DeepSeek6、Ollama8，共30run，理论最多60次请求，无第31项。
 
 每个position重新检查索引、System/schema和该manifest dry-run，然后启动一个独立Python进程，只处理该manifest、显式`--confirm-network`、retry=0。请求运行合同仍由原Harness执行：最多一个Tool Call、一个round、两次模型请求；首轮auto、第二轮none。
 
@@ -203,7 +203,7 @@ CLI进程使用空CurrentSnapshotStore，与P2C/P2D相同，不读取Web Snapsho
 
 已有`actual_network_requests>0`的P2E报告时，默认和确认入口均拒绝重新启动。允许0-request preflight报告存在，不把它算成真实样本。中断后保留报告，先盘点已消费position/请求并等用户审阅，不能从头重跑或自动resume。runner不会启动Ollama、pull模型、改地址、改ACL或复制Secret。
 
-离线测试：[test_product_migration_runner.py](../../../../tests/test_product_migration_runner.py)在临时工作区使用真实冻结safe plan与虚构报告，只替换子进程边界，不调用SDK/Provider、不读真实凭据。覆盖默认零请求、正确固定顺序、缺失/重复/重排/追加position、plan/case/System/schema漂移、已消费样本、0-request报告、普通失败继续、凭据/取消/网络停止、报告路径/损坏/身份/预算/normalization与多余报告。
+离线测试：test_product_migration_runner.py（历史文件：`tests/test_product_migration_runner.py`，执行资产已移除，原文见 Git history）在临时工作区使用真实冻结safe plan与虚构报告，只替换子进程边界，不调用SDK/Provider、不读真实凭据。覆盖默认零请求、正确固定顺序、缺失/重复/重排/追加position、plan/case/System/schema漂移、已消费样本、0-request报告、普通失败继续、凭据/取消/网络停止、报告路径/损坏/身份/预算/normalization与多余报告。
 
 本轮没有修改正式Assistant、Prompt、Projection B、SourceRequirement/Receipt、History、Policy、Tool、Analysis、Preset、Adapter或Credential。此前P2E准备阶段的Harness改动仍在原工作树中，不能把既有tracked diff误认为本轮修改。所有冻结manifest与索引保持原内容。
 

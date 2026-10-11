@@ -36,7 +36,7 @@ Tool 管理入口在左侧 **01 · Analysis Model → Tool**，分 Analysis / As
 维护者资格脚本需单独确认网络并一次指定一个 Preset：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/qualify_preset_tools.py --preset-id ollama-qwen35-4b-r1 --confirm-network
+.\.venv\Scripts\python.exe scripts/qualification/qualify_preset_tools.py --preset-id ollama-qwen35-4b-r1 --confirm-network
 ```
 
 脚本 retry=0，不自动发布合同；输出写入被 Git 忽略的 `outputs/preset-qualification/`。该脚本不是普通启动或自动测试步骤。Presets 当前发布内容见[Preset 合同](deep-dive/models/PRESET_PUBLICATION.md)。
@@ -44,12 +44,12 @@ Tool 管理入口在左侧 **01 · Analysis Model → Tool**，分 Analysis / As
 Assistant 来源资格验证使用独立单次入口，默认 dry-run：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/qualify_assistant_turn.py --manifest scripts/manifests/assistant-Q3.json --dry-run
+.\.venv\Scripts\python.exe scripts/qualification/qualify_assistant_turn.py --manifest scripts/qualification/manifests/assistant-Q3.json --dry-run
 ```
 
-这个 Q3 示例使用空 History；其他冻结 manifest 的历史、投影、来源要求与预算以各自计划为准。真实运行必须针对具体计划和次数获得本轮明确授权，才使用 `--confirm-network`。Harness 最多两次请求、每请求最多 256 输出 tokens、retry=0；安全结果写入 `outputs/assistant-qualification/`。CLI Snapshot 初始为空，不读取 Web 已 Apply 的状态。凭据受阻时安全停止，不改 ACL 或回退源码 `.env`。
+Q1–Q4 保留为单次维护计划示例，使用空 History；不包含已结束的 H / P2E 批次。真实运行必须针对具体计划和次数获得本轮明确授权，才使用 `--confirm-network`。Harness 最多两次请求、每请求最多 256 输出 tokens、retry=0；安全结果写入 `outputs/assistant-qualification/`。CLI Snapshot 初始为空，不读取 Web 已 Apply 的状态。凭据受阻时安全停止，不改 ACL 或回退源码 `.env`。
 
-History 的 Qwen、DeepSeek、Ollama A/B 批次和 P2E 多轮资格实验均已结束，正式产品迁移也已完成。旧 runner / manifest 保留用于复现与回归，不是日常启动步骤，不得按旧授权重跑或补样本。实验合同、结果及停止事故见[记录索引](records/README.md)；迁移依据见[History v2 判定](records/2026-10-history-v2-migration-decision.md)。
+History 的 Qwen、DeepSeek、Ollama A/B 批次和 P2E 多轮资格实验均已结束，正式产品迁移也已完成；对应一次性 runner、manifest / index / generator 和实验测试已移除。实验合同、结果及停止事故保留在[记录索引](records/README.md)与 Git；迁移依据见[History v2 判定](records/2026-10-history-v2-migration-decision.md)。不得按旧授权重跑或补样本。
 
 ## Managed Custom 凭据与取消
 
@@ -60,12 +60,20 @@ Stop 会关闭本地 SDK I/O；不能据此断言远端服务已停止推理或�
 ## 离线回归
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests
-node --test tests/test_browser_streaming.cjs
+# 日常核心；按改动选 assistant / tools / providers / domain / security / web
+.\.venv\Scripts\python.exe scripts/dev/run_tests.py fast
+
+# 完整产品回归（默认入口），不包含资格基础设施
+.\.venv\Scripts\python.exe scripts/dev/run_tests.py product
+node --test tests/web/test_browser_streaming.cjs
+
+# 仅资格基础设施修改时；仍然全离线
+.\.venv\Scripts\python.exe scripts/dev/run_tests.py qualification
+
 node --check src/fishery_ai/resources/web/app.js
 ```
 
-测试只使用 Mock、临时文件和虚构凭据。完整路径、运行目录与数据保留规则见[项目结构](STRUCTURE.md)及[数据位置地图](deep-dive/operations/PROJECT_DATA_AND_CONFIG_LOCATIONS.md)。
+测试只使用 Mock、临时文件和虚构凭据。标准全发现命令为 `python -m unittest discover -s tests -t .`，包括产品与 qualification；单模块可用 `python -m unittest tests.assistant.test_history_projection`。层级、发现路径与覆盖边界见[测试说明](../tests/README.md)。完整路径、运行目录与数据保留规则见[项目结构](STRUCTURE.md)及[数据位置地图](deep-dive/operations/PROJECT_DATA_AND_CONFIG_LOCATIONS.md)。
 
 ## Assistant History v2
 

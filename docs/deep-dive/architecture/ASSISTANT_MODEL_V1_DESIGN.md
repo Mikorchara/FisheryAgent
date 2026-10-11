@@ -83,4 +83,4 @@ NO_DATA 不授予观测或评分来源；ERROR、未调用、关联不符或畸�
 - `src/fishery_ai/tool_conversation.py`：共享单轮协调器。
 - `src/fishery_ai/tools/`：Registry、Policy、Executor、Catalog 与 Handler。
 - `src/fishery_ai/resources/web/`：Analysis / Assistant 独立工作区及 Development/Test UI。
-- `tests/test_assistant.py`、`tests/test_assistant_sources.py`、`tests/test_history_product_migration.py`、`tests/test_analysis_tools.py`、`tests/test_analysis_tool_web.py`、`tests/test_browser_streaming.cjs`：主要回归覆盖。
+- `tests/assistant/test_assistant.py`、`tests/assistant/test_assistant_sources.py`、`tests/assistant/test_history_projection.py`、`tests/tools/test_analysis_tools.py`、`tests/web/test_analysis_tool_web.py`、`tests/web/test_browser_streaming.cjs`：主要回归覆盖。
