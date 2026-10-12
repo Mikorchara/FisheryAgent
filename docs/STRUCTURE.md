@@ -208,6 +208,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
    │  ├─ test_assistant.py                                                  # Assistant 合同、选择规则 Prompt 契约、历史与执行回归测试
    │  ├─ test_assistant_activity.py                                         # 累积步骤、执行证明、取消与最终提交回归
+   │  ├─ test_assistant_multi_round.py                                      # 内部 Assistant 两轮、Ledger、整 Turn deadline 与单轮兼容
    │  ├─ test_assistant_sources.py                                          # Receipt、Ledger 与来源提交合同测试
    │  └─ test_history_projection.py                                         # 产品默认 B、A 回滚、裁剪、JSON 与来源隔离回归
    ├─ domain/                                                               # 水质、Diagnosis、评分与 Scenario / Telemetry 回归
@@ -259,7 +260,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    │  ├─ test_credential_writer.py                                          # 凭据写入、revision 与安全回归测试
    │  ├─ test_credentials.py                                                # 凭据优先级与快照测试
    │  ├─ test_credentials_private_storage.py                                # 私有凭据路径、ACL 与隔离测试
-   │  └─ test_execution.py                                                  # 取消、资源释放与 Raw 请求隔离测试
+   │  └─ test_execution.py                                                  # 取消、整轮超时、资源释放与 Raw 请求隔离测试
    ├─ support/                                                              # 共享路径与显式兼容性 fixture，零测试用例
    │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
    │  ├─ historical_model_fixtures.py                                       # 历史模型测试夹具加载辅助

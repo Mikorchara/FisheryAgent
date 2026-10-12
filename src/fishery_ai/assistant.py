@@ -3,6 +3,7 @@
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 import json
+import math
 import re
 import time
 
@@ -11,7 +12,7 @@ from .assistant_activity import project_activity, tool_summary
 from .contracts import Mode, Status, utcnow
 from .assistant_sources import (SourceRequirement, TurnSourceLedger, TurnSourceReceipt,
                                ledger_from_execution, requirement_satisfied_by_ledger)
-from .execution import current_handle
+from .execution import current_handle, turn_deadline_scope
 from .model_gateway import GatewayError, ModelMessage, ModelRequest
 from .model_options import ReasoningMode, Support
 from .presets import preset_profiles
@@ -40,6 +41,13 @@ SYSTEM_INSTRUCTION = (
     "背景知识不能证明现场疾病或当前状态。缺乏症状、检测等直接支持证据时，不诊断具体疾病，不给出具体药物、剂量或治疗方案；可建议进一步观察和检测。"
     "最终回答使用简洁纯文本，可分段；不要输出Markdown表格、Markdown粗体或代码围栏。"
 )
+SINGLE_ROUND_PROMPT_ID = "ASSISTANT_V2@1"
+MULTI_ROUND_PROMPT_ID = "ASSISTANT_BOUNDED_MULTI_ROUND@1"
+MULTI_ROUND_SYSTEM_INSTRUCTION = SYSTEM_INSTRUCTION.replace(
+    "如需Tool，只选择一个最相关的Tool，取得结果后直接回答，并说明仍未获取的信息。",
+    "如需Tool，每轮只选择一个最相关的Tool；看到实际结果后重新判断：信息足够就直接回答，"
+    "仍缺关键来源且预算允许时才请求下一个Tool。最多两个Tool、两轮Tool和三次模型请求；"
+    "不重复已经完成的同一查询。预算用尽时依据已取得的结果回答，并说明仍未获取的信息。")
 
 
 class AssistantError(ValueError):
@@ -154,11 +162,13 @@ class AssistantContext:
 
 
 class AssistantContextBuilder:
-    def build(self, request: AssistantRequest):
+    def build(self, request: AssistantRequest, *, execution_mode=ToolExecutionMode.SINGLE_ROUND):
         turns = list(request.history[-MAX_HISTORY_TURNS:])
         while turns and _history_bytes(turns) > MAX_HISTORY_BYTES:
             turns.pop(0)  # Always discard complete pairs, never one message.
-        messages = [ModelMessage("system", SYSTEM_INSTRUCTION)]
+        instruction = (MULTI_ROUND_SYSTEM_INSTRUCTION if execution_mode == ToolExecutionMode.BOUNDED_MULTI_ROUND
+                       else SYSTEM_INSTRUCTION)
+        messages = [ModelMessage("system", instruction)]
         for turn in turns:
             # Labels are program-generated framing, not a trusted timestamp claim.
             label = f"[历史对话；客户端报告完成时间 {turn.completed_at}；不代表当前数据]"
@@ -182,6 +192,7 @@ class AssistantResult:
     trace_recorded: bool = False
     source_ledger: TurnSourceLedger = field(default_factory=TurnSourceLedger)
     activity_revision: int = 0
+    prompt_id: str = SINGLE_ROUND_PROMPT_ID  # Maintainer version, never model/client supplied.
 
     @property
     def source_receipt(self) -> TurnSourceReceipt:
@@ -211,19 +222,41 @@ class AssistantResult:
 
 
 class AssistantService:
-    """History + final commit gate around the existing one-round coordinator."""
+    """History + commit gate; bounded mode requires explicit internal configuration."""
     def __init__(self, coordinator: ToolCallingService, *,
-                 history_projection: ProjectionId = DEFAULT_HISTORY_PROJECTION):
+                 history_projection: ProjectionId = DEFAULT_HISTORY_PROJECTION,
+                 execution_mode: ToolExecutionMode = ToolExecutionMode.SINGLE_ROUND,
+                 turn_timeout_s: float | None = None):
         if coordinator.policy.mode != "assistant":
             raise AssistantError()
-        if getattr(coordinator, "execution_mode", ToolExecutionMode.SINGLE_ROUND) != ToolExecutionMode.SINGLE_ROUND:
+        if (not isinstance(execution_mode, ToolExecutionMode)
+                or getattr(coordinator, "execution_mode", ToolExecutionMode.SINGLE_ROUND) != execution_mode):
             raise AssistantError("ASSISTANT_MULTI_ROUND_NOT_ENABLED")
+        if turn_timeout_s is not None and (execution_mode != ToolExecutionMode.BOUNDED_MULTI_ROUND
+                or type(turn_timeout_s) not in (int, float)
+                or not math.isfinite(turn_timeout_s) or turn_timeout_s <= 0):
+            raise AssistantError("INVALID_TURN_TIMEOUT")
         if not isinstance(history_projection, ProjectionId):
             raise AssistantError("INVALID_HISTORY_PROJECTION")
         self.coordinator = coordinator
         self._history_projection = history_projection
+        self._execution_mode = execution_mode
+        self._turn_timeout_s = turn_timeout_s
+
+    @property
+    def prompt_id(self):
+        return (MULTI_ROUND_PROMPT_ID if self._execution_mode == ToolExecutionMode.BOUNDED_MULTI_ROUND
+                else SINGLE_ROUND_PROMPT_ID)
 
     def send(self, request: AssistantRequest, runtime):
+        if self._execution_mode == ToolExecutionMode.BOUNDED_MULTI_ROUND:
+            timeout = min(runtime.total_timeout_s, self._turn_timeout_s or runtime.total_timeout_s)
+            with turn_deadline_scope(timeout):
+                return self._send(request, runtime)
+        return self._send(request, runtime)
+
+    def _send(self, request: AssistantRequest, runtime):
+        started_at, started = utcnow(), time.monotonic()
         expected = assistant_profile(request.preset_id)
         if (runtime.access_mode != "preset" or runtime.profile_id != expected.profile_id
                 or runtime.preset_id != expected.preset_id or runtime.preset_variant != expected.preset_variant
@@ -234,9 +267,10 @@ class AssistantService:
                 or runtime.default_response_mode != "normal" or runtime.max_retries != 0
                 or runtime.capabilities.tool_calling != Support.SUPPORTED):
             raise AssistantError("ASSISTANT_PRESET_NOT_ALLOWED")
-        native = AssistantContextBuilder().build(request)
+        builder = AssistantContextBuilder()
+        native = (builder.build(request) if self._execution_mode == ToolExecutionMode.SINGLE_ROUND else
+                  builder.build(request, execution_mode=self._execution_mode))
         context, _ = project_retained_history(request, native, self._history_projection)
-        started_at, started = utcnow(), time.monotonic()
         handle = current_handle()
         run = self.coordinator.run_request(context.model_request, runtime,
             on_progress=handle.report_phase if handle else None,
@@ -257,21 +291,48 @@ class AssistantService:
 
         def record_result(cancelled):
             final_code = "USER_CANCELLED" if cancelled else code
+            if handle:
+                try:
+                    handle.check()
+                except GatewayError as exc:
+                    final_code = exc.code
             status = Status.CANCELLED if final_code == "USER_CANCELLED" else Status.FAILED if final_code else run.status
             text = run.generated_text if status == Status.COMPLETED else ""
             if secret:
                 text = text.replace(secret, "[REDACTED]")
             result = AssistantResult(request.preset_id, status, final_code, text,
                 utcnow().isoformat() if status == Status.COMPLETED else None, context, run,
-                round((time.monotonic() - started) * 1000, 3), source_ledger=ledger)
+                round((time.monotonic() - started) * 1000, 3), source_ledger=ledger, prompt_id=self.prompt_id)
             if handle:
                 handle.report_steps(run.steps, budget=self.coordinator.budget,
                                     total_latency_ms=result.total_latency_ms)
             try:
                 self.coordinator.traces.record_assistant(result, started_at=started_at, finished_at=utcnow())
             except Exception:
+                if handle:
+                    try:
+                        handle.check()
+                    except GatewayError as exc:
+                        final_code = exc.code
                 return replace(result, status=Status.CANCELLED if final_code == "USER_CANCELLED" else Status.FAILED,
                     error_code=final_code or "TRACE_WRITE_ERROR", final_text="", completed_at=None)
+            if handle:
+                try:
+                    handle.check()
+                except GatewayError as exc:
+                    if result.error_code == exc.code:
+                        return replace(result, trace_recorded=True)
+                    # An append-only correction is the authoritative final commit outcome
+                    # if a synchronous trace write crossed the deadline. No model retry.
+                    result = replace(result, status=Status.CANCELLED if exc.code == "USER_CANCELLED" else Status.FAILED,
+                                     error_code=exc.code, final_text="", completed_at=None,
+                                     total_latency_ms=round((time.monotonic() - started) * 1000, 3))
+                    handle.report_steps(run.steps, budget=self.coordinator.budget,
+                                        total_latency_ms=result.total_latency_ms)
+                    try:
+                        self.coordinator.traces.record_assistant(result, started_at=started_at, finished_at=utcnow())
+                    except Exception:
+                        return result
             return replace(result, trace_recorded=True)
 
         if handle:

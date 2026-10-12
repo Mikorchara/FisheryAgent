@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
 import secrets
+import math
 import threading
 import time
 import uuid
@@ -29,6 +30,7 @@ class RequestHandle:
         self._activity = None  # Allowlisted derived metadata only, no arguments/results/receipts.
         self._activity_revision = 0
         self._committing = False
+        self._deadline = None  # Internal Turn scope only; never accepted from Web input.
 
     def __repr__(self):
         return f"RequestHandle(state={self.state})"
@@ -45,6 +47,35 @@ class RequestHandle:
         if self._cancel.is_set():
             from .model_gateway import GatewayError
             raise GatewayError("USER_CANCELLED")
+        if self._deadline is not None and time.monotonic() >= self._deadline:
+            from .model_gateway import GatewayError
+            raise GatewayError("TOTAL_TIMEOUT")
+
+    def limit_turn(self, timeout_s):
+        """Arm once from execution, never renew the budget between model requests."""
+        if type(timeout_s) not in (int, float) or not math.isfinite(timeout_s) or timeout_s <= 0:
+            raise ValueError("invalid Turn timeout")
+        with self._lock:
+            deadline = time.monotonic() + timeout_s
+            self._deadline = deadline if self._deadline is None else min(self._deadline, deadline)
+
+    def remaining_timeout(self, request_timeout_s):
+        return max(0.0, self.request_deadline(request_timeout_s) - time.monotonic())
+
+    def request_deadline(self, request_timeout_s):
+        self.check()
+        deadline = time.monotonic() + request_timeout_s
+        return deadline if self._deadline is None else min(deadline, self._deadline)
+
+    def abort_io(self):
+        """Close owned I/O without inventing a user Stop (e.g. timeout/cleanup)."""
+        with self._lock:
+            hook = self._hook
+        if hook:
+            try:
+                hook()
+            except RuntimeError:
+                pass
 
     def bind(self, hook):
         with self._lock:
@@ -181,3 +212,15 @@ def request_scope(handle):
         yield
     finally:
         _current.reset(token)
+
+
+@contextmanager
+def turn_deadline_scope(timeout_s):
+    """Reuse the caller's cancellation owner, or own one for internal scripted use."""
+    handle = current_handle()
+    if handle is None:
+        handle = RequestHandle()
+        handle.start()
+    handle.limit_turn(timeout_s)
+    with request_scope(handle):
+        yield handle

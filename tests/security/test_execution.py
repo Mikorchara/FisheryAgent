@@ -110,6 +110,97 @@ class ExecutionTests(unittest.TestCase):
     def test_stream_blocked_read_is_cancelled_and_resources_close(self):
         self.cancel_call(True)
 
+    def test_shared_turn_deadline_aborts_blocked_sdk_without_user_cancel(self):
+        closed, timeout_values = threading.Event(), []
+        class Client:
+            def __init__(self):
+                self.chat = NS(completions=NS(create=self.create))
+            async def create(self, **kwargs):
+                await asyncio.Event().wait()
+            async def close(self):
+                closed.set()
+        def factory(runtime, remaining):
+            timeout_values.append(remaining)
+            return Client()
+        handle = RequestHandle(); handle.start(); handle.limit_turn(0.05)
+        adapter = OpenAICompatibleAdapter(async_client_factory=factory)
+        with request_scope(handle), self.assertRaises(GatewayError) as error:
+            adapter.complete(ModelRequest(Mode.CHAT, ()), self.runtime)
+        handle.finish(error.exception.code)
+        self.assertEqual(error.exception.code, "TOTAL_TIMEOUT")
+        self.assertEqual(handle.state, "FAILED")
+        self.assertFalse(handle._cancel.is_set())
+        self.assertTrue(closed.is_set())
+        self.assertTrue(handle.io_closed)
+        self.assertEqual(adapter.request_attempts, 1)  # No retry after timeout.
+        self.assertTrue(0 < timeout_values[0] <= 0.051)
+
+    def test_two_sdk_requests_use_remaining_turn_time_not_two_full_timeouts(self):
+        calls, timeout_values, closed = [], [], []
+        class Client:
+            def __init__(self):
+                self.chat = NS(completions=NS(create=self.create))
+            async def create(self, **kwargs):
+                calls.append(kwargs)
+                if len(calls) == 1:
+                    await asyncio.sleep(0.02)
+                    return NS(choices=[NS(message=NS(content="OK", tool_calls=()), finish_reason="stop")], usage=None)
+                await asyncio.Event().wait()
+            async def close(self):
+                closed.append(True)
+        def factory(runtime, remaining):
+            timeout_values.append(remaining)
+            return Client()
+        handle = RequestHandle(); handle.start(); handle.limit_turn(0.15)
+        adapter = OpenAICompatibleAdapter(async_client_factory=factory)
+        runtime = replace(self.runtime, max_retries=0)
+        with request_scope(handle):
+            self.assertEqual(adapter.complete(ModelRequest(Mode.CHAT, ()), runtime).text, "OK")
+            with self.assertRaises(GatewayError) as error:
+                adapter.complete(ModelRequest(Mode.CHAT, ()), runtime)
+        self.assertEqual(error.exception.code, "TOTAL_TIMEOUT")
+        self.assertLess(timeout_values[1], timeout_values[0])
+        self.assertEqual(len(closed), 2)
+        self.assertEqual(adapter.request_attempts, 2)
+
+    def test_provider_error_before_turn_deadline_keeps_provider_code(self):
+        from openai import BadRequestError
+        class Client:
+            def __init__(self):
+                self.chat = NS(completions=NS(create=self.create))
+            async def create(self, **kwargs):
+                raise BadRequestError("fictional", response=httpx.Response(400,
+                    request=httpx.Request("POST", "http://mock.invalid/v1")), body={})
+            async def close(self):
+                pass
+        handle = RequestHandle(); handle.start(); handle.limit_turn(2)
+        with request_scope(handle), self.assertRaises(GatewayError) as error:
+            OpenAICompatibleAdapter(async_client_factory=lambda *_: Client()).complete(
+                ModelRequest(Mode.CHAT, ()), self.runtime)
+        self.assertEqual(error.exception.code, "HTTP_400")
+        self.assertFalse(handle._cancel.is_set())
+
+    def test_turn_deadline_cannot_be_renewed_or_set_from_prepare_time(self):
+        handle = RequestHandle()
+        with patch("fishery_ai.execution.time.monotonic", return_value=100):
+            handle.start(); handle.limit_turn(10)
+        with patch("fishery_ai.execution.time.monotonic", return_value=105):
+            handle.limit_turn(10)
+            self.assertEqual(handle.remaining_timeout(30), 5)
+        with patch("fishery_ai.execution.time.monotonic", return_value=111), self.assertRaises(GatewayError) as error:
+            handle.check()
+        self.assertEqual(error.exception.code, "TOTAL_TIMEOUT")
+
+    def test_timeout_cleanup_abort_does_not_set_user_cancel_event(self):
+        handle = RequestHandle(); handle.start()
+        aborted = []
+        handle.bind(lambda: aborted.append(True))
+        handle.abort_io()
+        self.assertEqual(aborted, [True])
+        self.assertFalse(handle._cancel.is_set())
+        handle.finish("TOTAL_TIMEOUT")
+        self.assertEqual(handle.state, "FAILED")
+
     def test_cancel_before_sdk_sends_no_request(self):
         handle = RequestHandle()
         handle.cancel()

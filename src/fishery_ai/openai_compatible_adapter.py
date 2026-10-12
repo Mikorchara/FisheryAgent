@@ -131,6 +131,7 @@ class OpenAICompatibleAdapter:
         handle.io_closed = True
         inbox = queue.Queue(maxsize=32)
         stopped = threading.Event()
+        deadline = handle.request_deadline(runtime.total_timeout_s)
 
         async def put(item):
             while not stopped.is_set():
@@ -143,9 +144,8 @@ class OpenAICompatibleAdapter:
 
         async def operation():
             emitted = False
-            deadline = time.monotonic() + runtime.total_timeout_s
             attempts = 0 if manual else runtime.max_retries
-            async with asyncio.timeout(runtime.total_timeout_s):
+            async with asyncio.timeout(self._remaining(deadline)):
                 for attempt in range(attempts + 1):
                     handle.check()
                     client = self._async_client_factory(runtime, self._remaining(deadline))
@@ -205,7 +205,12 @@ class OpenAICompatibleAdapter:
                 await task
                 await put(("done", None))
             except asyncio.CancelledError:
-                await put(("error", GatewayError("USER_CANCELLED")))
+                try:
+                    handle.check()
+                except GatewayError as exc:
+                    await put(("error", exc))
+                else:
+                    await put(("error", GatewayError("SDK_ERROR")))
             except TimeoutError:
                 await put(("error", GatewayError("TOTAL_TIMEOUT")))
             except GatewayError as exc:
@@ -232,13 +237,14 @@ class OpenAICompatibleAdapter:
 
         thread = threading.Thread(target=worker, name="fishery-sdk-request", daemon=True)
         thread.start()
-        consumer_deadline = time.monotonic() + runtime.total_timeout_s + 5
+        consumer_deadline = deadline + 5  # Cleanup grace is not a renewed generation budget.
         ended = False
         try:
             while True:
                 try:
                     kind, item = inbox.get(timeout=0.2)
                 except queue.Empty:
+                    handle.check()
                     if not thread.is_alive():
                         raise GatewayError("SDK_ERROR") from None
                     if time.monotonic() > consumer_deadline:
@@ -254,7 +260,7 @@ class OpenAICompatibleAdapter:
                 yield item
         finally:
             if not ended:
-                handle.cancel()
+                handle.abort_io()
             stopped.set()
             thread.join(timeout=5)
             if thread.is_alive():

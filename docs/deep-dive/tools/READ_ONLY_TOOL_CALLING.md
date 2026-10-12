@@ -79,9 +79,9 @@ Request #1(auto)
 
 ERROR、未授权、畸形/截断调用、Provider 失败和取消立即停止。已有执行结果与 Ledger 保留审计，但失败/取消 Turn 不返回成功正文；缺失 Usage 保持 unknown。多轮 Final 要求非空正文和 stop，截断不能成功。每次请求、进度回调后、Tool 前后都沿用 RequestHandle 的取消检查；内部第三次请求使用安全 REQUEST_3 阶段。Trace 写失败也不能成功提交。
 
-SourceRequirement / Receipt / Ledger 满足语义未改。协调器输出的是执行结果，**不能只凭 COMPLETED 替代来源 Commit Gate**：内部消费者仍需对本轮 Ledger 检查 Requirement；历史文字不补来源，Tool ERROR 不授予完成。正式 Assistant 明确拒绝多轮协调器，Analysis / Web / qualification 仍构造默认 1/1/2；History 只保存原有成功 user / assistant pair。
+SourceRequirement / Receipt / Ledger 满足语义未改。协调器输出的是执行结果，**不能只凭 COMPLETED 替代来源 Commit Gate**：内部消费者仍需对本轮 Ledger 检查 Requirement；历史文字不补来源，Tool ERROR 不授予完成。Assistant 默认拒绝多轮协调器，内部显式配置可复用同一循环执行 2/2/3，并使用独立版本化 Prompt 与整 Turn deadline；Analysis / Web / 原单轮 qualification 仍构造默认 1/1/2。History 只保存原有成功 user / final assistant pair，多个 Receipt 不进入 History，也不投影成最后一个 Tool。
 
-当前内部预算限制次数，不新增整 Turn deadline；各请求沿用冻结 Runtime 的现有 timeout，不能声称有跨三次请求的统一剩余时限。多轮未做真实模型资格验证，不更改 Preset / Capability 合同，也未开放 Streaming、并行 Tool 或 Agent。
+单独调用协调器时，预算只限制次数，不自行创建整 Turn deadline；内部 Assistant 显式模式在同一个 RequestHandle 上设置统一截止时间，Adapter 裁剪剩余时间。独立 Phase 3 qualification 仍沿用原逐请求 timeout，不随 Assistant 接入自动改变。正式多轮 Prompt 尚无真实资格结论，不更改 Preset / Capability 合同，也未开放 Web 多轮、Streaming、并行 Tool 或 Agent。
 
 ### 单案例多轮资格入口
 
@@ -123,5 +123,7 @@ Development/Test 可使用离线 Mock 或满足能力门禁的真实 Runtime，�
 T1/T2/T3：`test_gateway_tool_contract.py`、`test_read_only_tools.py`、`test_tool_conversation.py`。应用与 UI：`test_analysis_tools.py`、`test_analysis_tool_web.py`、`test_web_tool_conversation.py`、`test_assistant.py`、`test_browser_streaming.cjs`。自动测试使用 Mock / 临时数据，不发送真实模型请求。
 
 `test_bounded_multi_round.py` 覆盖内部三种路径、真实结果驱动下一模型决策、提前 Final、固定预算、同轮多调用拒绝、归一参数去重、逐执行 Ledger、取消/Usage/安全 Trace 与默认 1/1/2 请求编码兼容。
+
+`tests/assistant/test_assistant_multi_round.py` 覆盖内部 Assistant 显式启用、独立 Prompt、History/来源门禁、多步骤安全投影、失败与取消、整 Turn deadline 和默认单轮回退；`tests/security/test_execution.py` 使用阻塞的虚构 SDK 验证剩余时间限制及本机 I/O 关闭。正式 Web 尚未开放多轮，不以离线测试授予任何新 Provider 能力。
 
 参数与知识执行覆盖：`test_tool_argument_contract.py`、`test_tool_status_no_match.py`、`test_knowledge_handler.py`、`test_knowledge_registration.py`、`test_knowledge_assembly.py`。历史实施与独立审计见[阶段总结](../../records/archive/knowledge-tool-v1/2026-10-knowledge-tool-v1-summary.md)，不能把历史测试数量当作当前验收。

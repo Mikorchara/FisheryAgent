@@ -1,12 +1,12 @@
 # Assistant 有界多轮接入与交互设计
 
-状态：2026-10-12，阶段 A 安全 Activity / 通用步骤 UI 已实施；阶段 B/C/D 仍为设计。默认产品仍为 **1 Tool / 1 round / 2 requests**；尚未开放 Assistant **2/2/3**。
+状态：2026-10-12，阶段 A 与 Phase 4B-1 内部 Assistant 后端已实施；Web 多轮发布及后续资格仍待审核。默认产品仍为 **1 Tool / 1 round / 2 requests**；**2/2/3 仅限内部显式调用**。
 
 依据当前 `assistant.py`、`tool_conversation.py`、`assistant_sources.py`、`execution.py`、`web.py`、`observability.py`、`resources/web/app.js` 及对应测试。[内部 Runtime](../tools/READ_ONLY_TOOL_CALLING.md)、[当前 Assistant 架构](../architecture/ASSISTANT_MODEL_V1_DESIGN.md)提供现有合同，本文件不替代它们。
 
 ## 1. 当前缺口与资格证据边界
 
-下表为设计时识别的集成缺口；阶段 A 收口情况见 §7，未完成部分仍需在产品多轮启用前解决。
+下表保留设计时识别的缺口；阶段 A 收口见 §7，内部后端收口见 §8。其余缺口仍需在 Web 多轮启用前解决。
 
 | 当前实现 | 接入缺口 |
 | --- | --- |
@@ -152,7 +152,7 @@ Assistant：仅最终成功后出现一条自然语言正文。
 
 实现阶段先 targeted，稳定后 FULL PRODUCT + Browser，qualification 合同变更时加离线 FULL QUALIFICATION；语法、链接、diff 与敏感检查。人工验收只在单独授权后使用正式 multi Prompt 和实际预算确认，核对一个 Turn 一条回答、即时 Stop、每个 Tool 时间/状态与真实日志一致。
 
-阶段 A 已完成，默认多轮门禁仍关闭。不能仅凭这两个实验样本直接开启正式多轮；正式 Prompt 资格、整 Turn deadline 与发布范围应在启用前完成。后续阶段须单独审核，本阶段未执行真实请求。
+阶段 A 和内部后端接入已完成，Web 多轮门禁仍关闭。不能仅凭这两个实验样本直接开放多轮；正式多轮 Prompt 资格与维护者发布范围仍需审核。本阶段未执行真实请求。
 
 ## 7. 阶段 A 实施结果
 
@@ -164,3 +164,31 @@ Assistant：仅最终成功后出现一条自然语言正文。
 - FULL PRODUCT 首轮暴露 Phase 3 既有测试清单遗漏：独立 `development/qualification/multi_round_qualification.py` composition root 未列入 KnowledgeService 构造位置测试。仅补充该明确路径，仍锁定每个 root 一次构建及 Web 单实例共享，无 Knowledge 行为修改。
 
 离线验证：受影响 Python targeted 254 项通过；FAST 149 项通过；FULL PRODUCT 901 项通过；Browser 196 项通过；额外 FULL QUALIFICATION 116 项完成（1 项既有条件跳过）。新 Activity 合同覆盖 19 项 Python / Web 测试及 8 项 Browser 测试。Markdown 本地链接、Python / JS 语法、diff 与改动文本敏感模式检查通过。未执行真实 Provider 请求。
+
+## 8. Phase 4B-1 内部后端实施记录
+
+- 复用同一个 `ToolCallingService.run_request`，没有第二套循环。构造器默认仍为 SINGLE_ROUND，协调器与 `AssistantService` 必须同时显式选择 `ToolExecutionMode.BOUNDED_MULTI_ROUND`；预算由协调器固定为 2 calls / 2 rounds / 3 requests。仅增加协调器而未显式配置 Assistant 仍拒绝。
+- 多轮 Prompt 版本为 `ASSISTANT_BOUNDED_MULTI_ROUND@1`。原 `SYSTEM_INSTRUCTION` 文本不变；新版本只替换单轮规划句，允许依据真实结果继续选择或提前 Final。来源、数据非指令、疾病/药物边界与纯文本原则全部保留。安全 Assistant Trace 记录版本标识，不记录 Prompt。
+- 同一 Turn 继续冻结 Runtime/Credential/Policy，复用同一个 Executor。有序 steps 是执行真相；每个返回结果保留独立 Receipt。Ledger gate 检查全部实际来源，失败/取消不提交。两个 Tool 时旧 `request_1/request_2/tool_activity` 投影为空且不可用，不能把最后一个 Tool 当作唯一来源；公开 Activity 只包含 allowlist 摘要。
+- 原完整 pair 裁剪与 History Projection 不变；一轮只提交一个成功 user/final assistant pair，Tool protocol、Ledger、失败或中间文本不进入后续 History。Web 没有 mode/budget/Prompt/deadline 输入，未改启动配置、bootstrap 或网络确认预算；Analysis 仍固定单轮。
+
+内部配置示意（不是 Web 开关，也不授予 Provider 真实资格）：
+
+```python
+mode = ToolExecutionMode.BOUNDED_MULTI_ROUND
+coordinator = ToolCallingService(gateway, registry, traces,
+    policy=frozen_assistant_policy, execution_mode=mode)
+service = AssistantService(coordinator, execution_mode=mode, turn_timeout_s=60)
+result = service.send(request, frozen_runtime)
+```
+
+### 整 Turn deadline 与终态
+
+- 从 `send` 执行开始计时，覆盖身份校验、Context/History、模型、Tool、来源门禁及最终 Trace。默认总预算为冻结 Runtime 的 `total_timeout_s`，内部 `turn_timeout_s` 只能收紧，不能把三次请求分别算成三个总预算；准备 request 的等待时间不计入。复用原 RequestHandle；无外部 handle 的内部调用也会建立相同 scope。
+- Adapter 将 SDK/异步操作 timeout 限制到同一绝对截止时间。模型请求之间不续期；正常 Provider 错误保留 HTTP 等安全码，截止时间耗尽为 `TOTAL_TIMEOUT`，用户 Stop 为 `USER_CANCELLED`（Stop 已发生时优先）。超时清理只 abort I/O，不设置用户取消标志；最多 5 秒已有 SDK 清理宽限不增加生成预算，不能证明远端计算/计费停止。
+- 同步只读 Handler 与同步文件 Trace 写入不能强制抢占；检查前后边界与最终提交，逾期不发后续请求、不返回成功正文。若 Assistant Trace 写入跨越截止时间，追加同 id 的失败终态修正，最后的 `assistant_turn` 为提交结果；若修正写入也失败，`trace_recorded=false` 且仍返回失败。此前 Coordinator Trace 是执行记录，不能当作最终成功提交凭证。
+- 取消、来源要求不满足、模型/Tool 错误、Trace 失败、超时均保留已完成 steps/Receipt/Usage 供审计，不提交成功 History，不自动重试、补 Tool 或切换模式。
+
+离线验证：新增 20 项内部 Assistant 测试与 5 项执行安全测试；主要 targeted 83 项通过，Assistant 分组 140 项、Tool 分组 268 项通过；FAST 149 项通过；FULL PRODUCT 926 项通过（32.6 秒）；FULL QUALIFICATION 116 项完成（115 通过、1 项既有目录 symlink 环境条件跳过）；Browser 196 项通过。覆盖 direct Final、Tool 后提前 Final、完整两轮及真实结果传递、独立 Ledger、单次最终提交、History、去重/轮次限制、Provider/Tool/Trace 错误、取消和 deadline。147 个 Python 文件 AST、JS 语法、286 条 Markdown 本地文件链接、diff 与改动文本敏感模式检查通过；核对原单轮 System Prompt 与 HEAD 文本完全一致。未执行真实 Provider，未 commit/push。
+
+剩余产品集成：维护者发布的 exact Preset/contract/工具组合多轮范围；正式多轮 Prompt+History 的单独真实 qualification；稳定于 epoch 的启动 flag 与 rollback；bootstrap/联网确认最多三次请求的预算及 revision 绑定。现有 UI 已能展示通用五步，但上述授权与预算尚未接入，因此 Web 继续 1/1/2。本阶段不自动扩大 Qwen/DeepSeek/Ollama 的发布能力。

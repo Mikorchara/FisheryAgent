@@ -107,6 +107,7 @@ class JsonlTraceSink:
         """Final commit outcome and numeric history budgets; no conversation material."""
         self._append({"kind": "assistant_turn", "application_mode": "assistant",
             "preset_id": result.preset_id, "request_id": result.execution.request_id,
+            "prompt_id": result.prompt_id,
             "trace_id": result.execution.trace_id, "status": result.status.value,
             "error_code": result.error_code, "started_at": started_at.isoformat(),
             "finished_at": finished_at.isoformat(), "timing": {"total_ms": result.total_latency_ms},

@@ -53,7 +53,7 @@ Analysis 可显式授权只读 Tool。授权后请求仍先携带开始时捕获
 
 `assistant_sources.py` 从协调器的真实 ToolExecutionResult 推导不可变 `TurnSourceReceipt`，核对工具名、call id、结果状态和有限 payload 合同。模型正文、旧历史、浏览器声明与文字仿 Tool Call 不产生 Receipt。它只存来源类别、操作是否完成、质量/时效、时间及可用字段/证据数量，不复制水质值、评分、query 或 Evidence 正文。
 
-内部执行结果已使用有序 model / tool steps，旧单轮字段由序列只读投影。每个返回的 Tool 执行分别生成 Receipt，存入 `TurnSourceLedger.entries`，按执行 seq 关联；不同时间的观测不合并。Assistant 内部满足检查使用 Ledger，`source_receipt` 保留为单执行兼容投影。Ledger 不新增 Web/UI 字段，不进入 completed History；当前运行仍固定 1/1/2。详细合同见[只读 Tool 当前实现](../tools/READ_ONLY_TOOL_CALLING.md#内部结果来源与预算合同)。
+内部执行结果已使用有序 model / tool steps，旧单轮字段由序列只读投影。每个返回的 Tool 执行分别生成 Receipt，存入 `TurnSourceLedger.entries`，按执行 seq 关联；不同时间的观测不合并。Assistant 内部满足检查使用 Ledger，`source_receipt` 保留为单执行兼容投影。Ledger 不新增 Web/UI 字段，不进入 completed History；正式 Web 默认仍固定 1/1/2，内部显式模式可使用 2/2/3。多轮旧单 Tool/request 槽位不可用，不将最后一个 Tool 当作唯一来源。详细合同见[只读 Tool 当前实现](../tools/READ_ONLY_TOOL_CALLING.md#内部结果来源与预算合同)。
 
 | 内部 SourceRequirement | 满足条件 |
 | --- | --- |
@@ -92,7 +92,13 @@ History Projection、SourceRequirement / Receipt / Commit Gate、单调用单 ro
 
 输入附近“本次运行”展开为通用有序列表；最终消息下只显示实际执行 Tool 的轻量摘要，不设固定第二 Tool 槽位。status 的 Completed 不能提交 History；只有最终 chat 响应通过已有来源/完成/取消门禁和 Trace 后才提交一条最终回答。最终 Trace 与终态在同一短提交临界区中串行处理：此前 Stop 优先，已进入最终提交的迟到 Stop 不撤销成功；Trace 失败绝不提前发布 Completed。Clear、模型切换、epoch 和成功文本 pair 的 History 合同不变。
 
-阶段 A 仅准备展示合同；AssistantService 仍拒绝 BOUNDED_MULTI_ROUND，Web 不能指定 mode、预算或 steps，正式 Assistant / Analysis 保持 1/1/2。多轮产品发布、整 Turn deadline 和 Streaming 仍是后续独立工作。
+AssistantService 默认仍拒绝多轮协调器。内部调用必须在协调器与 AssistantService 同时显式选择 `ToolExecutionMode.BOUNDED_MULTI_ROUND`，才能使用固定 2/2/3；Web 不能指定 mode、预算、Prompt 或 deadline，正式 Assistant / Analysis 保持 1/1/2。
+
+内部多轮使用独立版本 `ASSISTANT_BOUNDED_MULTI_ROUND@1`，保留原 Assistant v2 的来源、安全和纯文本原则，仅把“Tool 后直接回答”改为“根据实际结果继续判断或提前 Final”。History 仍先完整 pair 裁剪，再应用原有投影，最终只提交成功 user/final assistant 文本对。
+
+内部整 Turn deadline 从 `send` 开始，覆盖上下文、模型请求、Tool、门禁与 Trace。上限为冻结 Runtime 的 `total_timeout_s`，内部 `turn_timeout_s` 只能收紧；同一 RequestHandle 不续期。Adapter 使用剩余时间真正取消本机异步 SDK I/O，`TOTAL_TIMEOUT` 与 `USER_CANCELLED`、Provider 错误分开；清理 I/O 不制造用户 Stop。同步本地 Handler/文件写入无法强制抢占，返回后仍检查超时，不能提交成功；SDK 清理有有限宽限，不证明远端已停止计算。
+
+若同步 Assistant Trace 写入跨越 deadline，追加同 request/trace id 的失败终态修正；最后一条 `assistant_turn` 是提交结果，先前执行 Trace 只记录执行阶段。多轮正式发布范围、启动 flag/epoch 与联网预算确认、正式 Prompt 真实资格仍待后续阶段；本阶段未启用 Web 多轮或 Streaming。
 
 ## 主要代码
 
