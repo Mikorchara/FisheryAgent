@@ -53,6 +53,8 @@ Analysis 可显式授权只读 Tool。授权后请求仍先携带开始时捕获
 
 `assistant_sources.py` 从协调器的真实 ToolExecutionResult 推导不可变 `TurnSourceReceipt`，核对工具名、call id、结果状态和有限 payload 合同。模型正文、旧历史、浏览器声明与文字仿 Tool Call 不产生 Receipt。它只存来源类别、操作是否完成、质量/时效、时间及可用字段/证据数量，不复制水质值、评分、query 或 Evidence 正文。
 
+内部执行结果已使用有序 model / tool steps，旧单轮字段由序列只读投影。每个返回的 Tool 执行分别生成 Receipt，存入 `TurnSourceLedger.entries`，按执行 seq 关联；不同时间的观测不合并。Assistant 内部满足检查使用 Ledger，`source_receipt` 保留为单执行兼容投影。Ledger 不新增 Web/UI 字段，不进入 completed History；当前运行仍固定 1/1/2。详细合同见[只读 Tool 当前实现](../tools/READ_ONLY_TOOL_CALLING.md#内部结果来源与预算合同)。
+
 | 内部 SourceRequirement | 满足条件 |
 | --- | --- |
 | AUTO | 不要求 Tool；普通 Web 请求固定使用此值 |

@@ -1,7 +1,7 @@
 """T3 single-round conversation: no real model, credentials, or network."""
 
 import ast
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, fields, replace
 from datetime import timedelta
 import json
 from pathlib import Path
@@ -25,7 +25,8 @@ from fishery_ai.openai_compatible_adapter import OpenAICompatibleAdapter
 from fishery_ai.providers import AuthSpec
 from fishery_ai.telemetry.current import CurrentWaterQualityReader
 from fishery_ai.telemetry.snapshot import CurrentSnapshotStore
-from fishery_ai.tool_conversation import (SYSTEM_INSTRUCTION, MockToolGateway, ToolCallingService)
+from fishery_ai.tool_conversation import (SYSTEM_INSTRUCTION, MockToolGateway, ToolCallingService,
+    ModelExecutionStep, ToolExecutionStep, ModelStepOutcome, ToolTurnBudget, SINGLE_ROUND_BUDGET)
 from fishery_ai.tools import ToolDefinition, ToolExecutor, ToolRegistry
 from fishery_ai.tools.policy import ToolPolicy
 from fishery_ai.tools.registry import SEARCH_FISHERY_KNOWLEDGE
@@ -116,6 +117,101 @@ class ToolConversationTests(unittest.TestCase):
         self.assertEqual(result.generated_text, "水质正常。")
         self.assertEqual(len(gateway.requests), 2)
         self.assertIs(self.store.get_current(), original)
+
+    def test_steps_are_the_only_writable_execution_contract(self):
+        result = self.service(RecordingGateway(tool_response(), self.final())).converse("查水质", self.runtime)
+        self.assertEqual([type(item) for item in result.steps],
+                         [ModelExecutionStep, ToolExecutionStep, ModelExecutionStep])
+        self.assertEqual([item.seq for item in result.steps], [1, 2, 3])
+        self.assertEqual([item.request_index for item in result.steps if isinstance(item, ModelExecutionStep)], [1, 2])
+        self.assertIs(result.request_1, result.steps[0].result)
+        self.assertIs(result.request_2, result.steps[2].result)
+        self.assertIs(result.tool_result, result.steps[1].result)
+        self.assertEqual(result.tool_call_id, result.steps[1].tool_call_id)
+        self.assertEqual(result.tool_name, result.steps[1].tool_name)
+        self.assertEqual(result.tool_duration_ms, result.steps[1].duration_ms)
+        names = {item.name for item in fields(result)}
+        for name in ("request_1", "request_2", "tool_result", "tool_call_id", "tool_name", "tool_duration_ms"):
+            self.assertNotIn(name, names)
+            with self.assertRaises(TypeError):
+                replace(result, **{name: None})
+        with self.assertRaises(FrozenInstanceError):
+            result.steps[1].duration_ms = 0
+
+    def test_steps_direct_answer_and_cancelled_preflight_have_no_phantom_tool(self):
+        result = self.service(RecordingGateway(self.final())).converse("概念", self.runtime)
+        self.assertEqual(len(result.steps), 1)
+        self.assertEqual(result.steps[0].result.outcome, "final_answer")
+        self.assertEqual(result.request_2, ModelStepOutcome())
+        handle = RequestHandle()
+        with request_scope(handle):
+            handle.cancel()
+            result = self.service(RecordingGateway()).converse("概念", self.runtime)
+        self.assertEqual(result.steps, ())
+        self.assertEqual(result.request_1, ModelStepOutcome())
+        self.assertIsNone(result.tool_result)
+
+    def test_budget_is_immutable_and_larger_modes_cannot_execute(self):
+        service = self.service(RecordingGateway())
+        self.assertEqual(service.budget, ToolTurnBudget(1, 1, 2))
+        self.assertEqual(service.budget.max_steps, 3)
+        with self.assertRaises(FrozenInstanceError):
+            service.budget.max_tool_calls = 2
+        with self.assertRaises(AttributeError):
+            service.budget = ToolTurnBudget(2, 2, 3)
+        with self.assertRaises(ValueError):
+            ToolCallingService(RecordingGateway(), self.registry, self.traces, budget=ToolTurnBudget(2, 2, 3))
+        for values in ((0, 1, 2), (True, 1, 2), (1, 2, 2), (1, 1, 0)):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                ToolTurnBudget(*values)
+        self.assertEqual(SINGLE_ROUND_BUDGET.max_model_requests, 2)
+
+    def test_step_order_and_typed_payload_validation(self):
+        result = self.service(RecordingGateway(tool_response(), self.final())).converse("查水质", self.runtime)
+        with self.assertRaises(ValueError):
+            replace(result, steps=tuple(reversed(result.steps)))
+        with self.assertRaises(ValueError):
+            replace(result, steps=(result.steps[1],))
+        with self.assertRaises(ValueError):
+            replace(result.steps[1], result={"status": "OK"})
+        with self.assertRaises(ValueError):
+            replace(result.steps[0], request_index=True)
+        # The input collection is frozen, rather than retained as a mutable list.
+        draft = list(result.steps)
+        copied = replace(result, steps=draft)
+        draft.clear()
+        self.assertEqual(copied.steps, result.steps)
+
+    def test_safe_trace_has_ordered_metadata_without_protocol_payload(self):
+        result = self.service(RecordingGateway(tool_response(), self.final("fake-private-answer"))).converse(
+            "fake-private-question", self.runtime)
+        trace = self.trace()
+        self.assertEqual([item["kind"] for item in trace["steps"]], ["model", "tool", "model"])
+        self.assertEqual([item["seq"] for item in trace["steps"]], [1, 2, 3])
+        self.assertEqual(trace["steps"][0]["outcome"], result.request_1.outcome)
+        self.assertEqual(trace["steps"][2]["usage"], trace["model_request_2"]["usage"])
+        self.assertEqual(trace["steps"][1]["result_status"], "NO_DATA")
+        self.assertTrue(trace["legacy_projection_available"])
+        text = json.dumps(trace)
+        for forbidden in ("fake-private-question", "fake-private-answer", "arguments_json", '"water_quality"', "_content_json"):
+            self.assertNotIn(forbidden, text)
+
+    def test_safe_trace_can_express_future_shape_without_legacy_last_tool(self):
+        result = self.service(RecordingGateway(tool_response(), self.final())).converse("查水质", self.runtime)
+        fixture = replace(result, steps=(*result.steps[:2],
+            replace(result.steps[2], result=replace(result.request_2, outcome="tool_calls")),
+            replace(result.steps[1], seq=4, model_request_index=2, tool_round=2),
+            replace(result.steps[2], seq=5, request_index=3)))
+        with self.assertRaises(ValueError):
+            _ = fixture.tool_result
+        with self.assertRaises(ValueError):
+            _ = fixture.request_2
+        self.traces.record_tool_conversation(fixture, started_at=NOW, finished_at=NOW, total_ms=0)
+        trace = self.trace()
+        self.assertEqual(len(trace["steps"]), 5)
+        self.assertFalse(trace["legacy_projection_available"])
+        self.assertIsNone(trace["tool_name"])
+        self.assertIsNone(trace["model_request_1"])
 
     def test_mock_never_hard_fails_when_only_knowledge_is_authorized(self):
         # D1b: borrowing "the first offered tool" used to call Knowledge with "{}" and

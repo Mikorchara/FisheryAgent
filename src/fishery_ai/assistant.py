@@ -8,7 +8,8 @@ import time
 
 from .history_projection import DEFAULT_HISTORY_PROJECTION, ProjectionId, project_retained_history
 from .contracts import Mode, Status, utcnow
-from .assistant_sources import SourceRequirement, TurnSourceReceipt, receipt_from_execution, requirement_satisfied
+from .assistant_sources import (SourceRequirement, TurnSourceLedger, TurnSourceReceipt,
+                               ledger_from_execution, requirement_satisfied_by_ledger)
 from .execution import current_handle
 from .model_gateway import GatewayError, ModelMessage, ModelRequest
 from .model_options import ReasoningMode, Support
@@ -179,7 +180,11 @@ class AssistantResult:
     execution: ToolConversationResult = field(repr=False)
     total_latency_ms: float
     trace_recorded: bool = False
-    source_receipt: TurnSourceReceipt = field(default_factory=TurnSourceReceipt)
+    source_ledger: TurnSourceLedger = field(default_factory=TurnSourceLedger)
+
+    @property
+    def source_receipt(self) -> TurnSourceReceipt:
+        return self.source_ledger.single_receipt
 
     def to_dict(self):
         run, context = self.execution, self.context
@@ -241,7 +246,7 @@ class AssistantService:
         handle = current_handle()
         run = self.coordinator.run_request(context.model_request, runtime,
             on_progress=handle.report_phase if handle else None)
-        receipt = receipt_from_execution(run)
+        ledger = ledger_from_execution(run)
         code = run.error_code
         if run.status == Status.COMPLETED:
             if run.final_finish_reason == "length":
@@ -250,7 +255,7 @@ class AssistantService:
                 code = "ASSISTANT_RESPONSE_EMPTY"
             elif run.final_finish_reason != "stop":
                 code = "ASSISTANT_RESPONSE_INCOMPLETE"
-            elif not requirement_satisfied(request.source_requirement, receipt):
+            elif not requirement_satisfied_by_ledger(request.source_requirement, ledger):
                 code = "ASSISTANT_SOURCE_REQUIREMENT_UNMET"
         handle = current_handle()
         if handle:
@@ -264,7 +269,7 @@ class AssistantService:
             text = text.replace(secret, "[REDACTED]")
         result = AssistantResult(request.preset_id, status, code, text,
             utcnow().isoformat() if status == Status.COMPLETED else None, context, run,
-            round((time.monotonic() - started) * 1000, 3), source_receipt=receipt)
+            round((time.monotonic() - started) * 1000, 3), source_ledger=ledger)
         try:
             self.coordinator.traces.record_assistant(result, started_at=started_at, finished_at=utcnow())
         except Exception:

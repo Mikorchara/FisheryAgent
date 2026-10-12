@@ -9,7 +9,7 @@ from enum import Enum
 import math
 
 from .contracts import Freshness, Quality, WaterQualityReading, parse_time
-from .tool_conversation import ToolConversationResult
+from .tool_conversation import ModelExecutionStep, ToolConversationResult, ToolExecutionStep
 from .tools.contracts import ToolStatus
 from .tools.registry import CURRENT_WATER_QUALITY, SEARCH_FISHERY_KNOWLEDGE, WATER_QUALITY_SCORE
 
@@ -151,7 +151,7 @@ def _empty_score(payload):
         ("score", None), ("grade", None), ("components", {})))
 
 
-def receipt_from_execution(run: ToolConversationResult) -> TurnSourceReceipt:
+def _receipt_from_step(run: ToolConversationResult, step: ToolExecutionStep) -> TurnSourceReceipt:
     """Only consume correlated results from the existing coordinator/executor.
 
     A later model failure/cancellation does not erase a completed local read;
@@ -160,12 +160,14 @@ def receipt_from_execution(run: ToolConversationResult) -> TurnSourceReceipt:
     """
     if not isinstance(run, ToolConversationResult):
         raise TypeError("receipt requires backend execution")
-    tool = run.tool_result
-    if (tool is None or run.request_1.outcome != "tool_calls"
-            or run.tool_name not in (CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE, SEARCH_FISHERY_KNOWLEDGE)
-            or tool.tool_name != run.tool_name or tool.tool_call_id != run.tool_call_id):
+    tool = step.result
+    model = next((item for item in run.steps if isinstance(item, ModelExecutionStep)
+                  and item.request_index == step.model_request_index and item.seq < step.seq), None)
+    if (tool is None or model is None or model.result.outcome != "tool_calls"
+            or step.tool_name not in (CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE, SEARCH_FISHERY_KNOWLEDGE)
+            or tool.tool_name != step.tool_name or tool.tool_call_id != step.tool_call_id):
         return TurnSourceReceipt()
-    empty = TurnSourceReceipt(tool_name=run.tool_name, tool_status=tool.status)
+    empty = TurnSourceReceipt(tool_name=step.tool_name, tool_status=tool.status)
     if tool.status == ToolStatus.ERROR:
         return empty
     try:
@@ -174,33 +176,33 @@ def receipt_from_execution(run: ToolConversationResult) -> TurnSourceReceipt:
         return empty
     if not isinstance(payload, dict) or payload.get("status") != tool.status.value:
         return empty
-    if run.tool_name == SEARCH_FISHERY_KNOWLEDGE:
+    if step.tool_name == SEARCH_FISHERY_KNOWLEDGE:
         items, count = payload.get("evidence"), payload.get("result_count")
         if not isinstance(items, list) or type(count) is not int or count != len(items) or not 0 <= count <= 3:
             return empty
         if tool.status == ToolStatus.NO_MATCH and count == 0:
-            return TurnSourceReceipt(tool_name=run.tool_name, tool_status=tool.status,
+            return TurnSourceReceipt(tool_name=step.tool_name, tool_status=tool.status,
                                      project_search_completed=True)
         if (tool.status == ToolStatus.OK and count > 0
                 and all(isinstance(item, dict) and all(isinstance(item.get(key), str) and item[key].strip()
                         for key in ("id", "category", "source", "text")) for item in items)):
             return TurnSourceReceipt(frozenset({TurnSource.RETRIEVED_PROJECT_EVIDENCE}),
-                run.tool_name, tool.status, project_search_completed=True, evidence_count=count)
+                step.tool_name, tool.status, project_search_completed=True, evidence_count=count)
         return empty
     if tool.status == ToolStatus.NO_DATA:
         if "water_quality" not in payload or payload["water_quality"] is not None:
             return empty
-        if run.tool_name == CURRENT_WATER_QUALITY:
+        if step.tool_name == CURRENT_WATER_QUALITY:
             valid = "findings" in payload and payload["findings"] == []
         else:
             valid = _empty_score(payload) and all(
                 key in payload and payload[key] is None for key in ("quality", "freshness", "evaluated_at"))
         if not valid:
             return empty
-        return TurnSourceReceipt(tool_name=run.tool_name, tool_status=tool.status,
+        return TurnSourceReceipt(tool_name=step.tool_name, tool_status=tool.status,
             observation_query_completed=True,
-            score_evaluation_completed=run.tool_name == WATER_QUALITY_SCORE)
-    allowed_statuses = (ToolStatus.OK,) if run.tool_name == CURRENT_WATER_QUALITY else (
+            score_evaluation_completed=step.tool_name == WATER_QUALITY_SCORE)
+    allowed_statuses = (ToolStatus.OK,) if step.tool_name == CURRENT_WATER_QUALITY else (
         ToolStatus.OK, ToolStatus.PARTIAL, ToolStatus.NOT_SCORABLE)
     if tool.status not in allowed_statuses:
         return empty
@@ -209,7 +211,7 @@ def receipt_from_execution(run: ToolConversationResult) -> TurnSourceReceipt:
         return empty
     sources = {TurnSource.CURRENT_TOOL_OBSERVATION}
     evaluation_completed = False
-    if run.tool_name == WATER_QUALITY_SCORE:
+    if step.tool_name == WATER_QUALITY_SCORE:
         if _score_available(payload, observation):
             sources.add(TurnSource.CURRENT_TOOL_SCORE)
             evaluation_completed = True
@@ -217,8 +219,61 @@ def receipt_from_execution(run: ToolConversationResult) -> TurnSourceReceipt:
             evaluation_completed = (_empty_score(payload) and observation["quality"] == Quality.INVALID
                 and payload.get("quality") == observation["quality"].value
                 and payload.get("freshness") == observation["freshness"].value)
-    return TurnSourceReceipt(frozenset(sources), run.tool_name, tool.status, **observation,
+    return TurnSourceReceipt(frozenset(sources), step.tool_name, tool.status, **observation,
         observation_query_completed=True, score_evaluation_completed=evaluation_completed)
+
+
+@dataclass(frozen=True)
+class TurnSourceLedgerEntry:
+    execution_seq: int
+    model_request_index: int
+    tool_round: int
+    receipt: TurnSourceReceipt
+
+    def __post_init__(self):
+        if (any(type(value) is not int or value < 1 for value in (
+                self.execution_seq, self.model_request_index, self.tool_round))
+                or not isinstance(self.receipt, TurnSourceReceipt)):
+            raise ValueError("invalid source ledger entry")
+
+
+@dataclass(frozen=True)
+class TurnSourceLedger:
+    """Per-execution proofs, never a merged current reading or Web input."""
+    entries: tuple[TurnSourceLedgerEntry, ...] = ()
+
+    def __post_init__(self):
+        object.__setattr__(self, "entries", tuple(self.entries))
+        if (any(not isinstance(item, TurnSourceLedgerEntry) for item in self.entries)
+                or any(left.execution_seq >= right.execution_seq
+                       for left, right in zip(self.entries, self.entries[1:]))):
+            raise ValueError("invalid source ledger order")
+
+    @property
+    def single_receipt(self) -> TurnSourceReceipt:
+        """Fail closed rather than silently choosing a last receipt in future modes."""
+        if len(self.entries) > 1:
+            raise ValueError("single receipt requires single tool execution")
+        return self.entries[0].receipt if self.entries else TurnSourceReceipt()
+
+    def to_dict(self) -> dict:
+        return {"entries": [{"execution_seq": item.execution_seq,
+            "model_request_index": item.model_request_index, "tool_round": item.tool_round,
+            "receipt": item.receipt.to_dict()} for item in self.entries]}
+
+
+def ledger_from_execution(run: ToolConversationResult) -> TurnSourceLedger:
+    """Only returned backend results earn entries; never inspect messages or history."""
+    if not isinstance(run, ToolConversationResult):
+        raise TypeError("ledger requires backend execution")
+    return TurnSourceLedger(tuple(TurnSourceLedgerEntry(step.seq, step.model_request_index,
+        step.tool_round, _receipt_from_step(run, step)) for step in run.steps
+        if isinstance(step, ToolExecutionStep) and step.result is not None))
+
+
+def receipt_from_execution(run: ToolConversationResult) -> TurnSourceReceipt:
+    """Read-only single-execution compatibility projection from the ledger."""
+    return ledger_from_execution(run).single_receipt
 
 
 def requirement_satisfied(requirement: SourceRequirement, receipt: TurnSourceReceipt) -> bool:
@@ -232,3 +287,11 @@ def requirement_satisfied(requirement: SourceRequirement, receipt: TurnSourceRec
     if requirement == SourceRequirement.CURRENT_SCORE_EVALUATION:
         return receipt.score_evaluation_completed
     return receipt.project_search_completed
+
+
+def requirement_satisfied_by_ledger(requirement: SourceRequirement, ledger: TurnSourceLedger) -> bool:
+    """A matching completed operation in this turn; no payload/time merging."""
+    if not isinstance(requirement, SourceRequirement) or not isinstance(ledger, TurnSourceLedger):
+        raise TypeError("typed requirement and ledger required")
+    return requirement == SourceRequirement.AUTO or any(
+        requirement_satisfied(requirement, item.receipt) for item in ledger.entries)

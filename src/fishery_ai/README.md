@@ -13,13 +13,13 @@
 ## Assistant / Analysis · 正式 Runtime
 
 - [assistant.py](assistant.py)：Assistant 请求、完整历史 pair 裁剪、上下文构造与执行服务。
-- [assistant_sources.py](assistant_sources.py)：本轮来源要求、真实执行 Receipt 和成功提交满足关系。
+- [assistant_sources.py](assistant_sources.py)：本轮来源要求、逐执行 Receipt / Ledger 与成功提交满足关系。
 - [history_projection.py](history_projection.py)：正式默认的未受信任历史投影，以及原生投影回滚路径；资格工具复用同一投影。
 - [application.py](application.py)：固定 Analysis 上下文、Normal / Streaming 执行、可选 Tool 接入与结果投影。
 
 ## Tool Runtime · 正式 Runtime
 
-- [tool_conversation.py](tool_conversation.py)：共享单轮 Model → Tool → Model 协调、Usage / Trace，以及开发界面的离线 Mock 模型。
+- [tool_conversation.py](tool_conversation.py)：固定 1/1/2 协调、有序 steps 与预算合同、Usage / 安全 Trace，以及开发界面的离线 Mock 模型。
 - [tools/__init__.py](tools/__init__.py)：Tool 执行层公共接口导出。
 - [tools/contracts.py](tools/contracts.py)：Tool 定义、执行结果、业务状态与安全错误合同。
 - [tools/registry.py](tools/registry.py)：静态 allowlist、正式模型 Tool Definition 及固定 Handler 绑定。

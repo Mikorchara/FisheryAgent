@@ -1,6 +1,6 @@
 # 有界 Multi-Round 与 Streaming Tool Runtime 研究
 
-日期：2026-10-12；源码基线：`7ebbe59`，以本次实际源码和测试阅读为准。本文是设计建议，不是已实现合同。未修改源码、测试、配置、Prompt 或模型合同，未执行测试或真实 Provider 请求。开始时已有源码导航与 STRUCTURE 的文档改动，原样保留。
+研究日期：2026-10-12；原研究源码基线：`7ebbe59`。以下多轮/Streaming 内容仍为设计建议。阶段 1 已落地有序 steps、逐执行 Ledger、内部预算和安全 Trace；正式执行仍固定 1/1/2，Prompt、History、Tool 权限与模型合同不变，无真实 Provider 请求。当前合同见[只读 Tool 当前实现](../tools/READ_ONLY_TOOL_CALLING.md#内部结果来源与预算合同)。
 
 ## 1. 结论
 
@@ -14,14 +14,14 @@
 
 | 当前代码 | 已可复用 | 写死的一轮假设 / 扩展影响 |
 | --- | --- | --- |
-| [tool_conversation.py](../../../src/fishery_ai/tool_conversation.py) `ToolCallingService.run_request()` | 共享上下文执行、Policy 定义、响应校验、取消、Usage | `steps` 固定两个元素；一个 `tool_result`；Executor 固定 max_calls=1；follow-up 固定 none；再次调用为 TOOL_ROUND_LIMIT |
-| 同上 `ToolConversationResult` / `ModelStepOutcome` | 不可变结果及安全错误 | `request_1/request_2`、单个 call id/name/duration，不足以表示第二个 Tool 与第三次模型请求 |
+| [tool_conversation.py](../../../src/fishery_ai/tool_conversation.py) `ToolCallingService.run_request()` | 共享上下文执行、Policy 定义、响应校验、取消、Usage；阶段 1 使用有序 steps 与固定预算合同 | 执行仍单轮；Executor max_calls=1；follow-up 固定 none；再次调用为 TOOL_ROUND_LIMIT |
+| 同上 `ToolConversationResult` / `ModelStepOutcome` | 不可变 model/tool steps，单轮只读兼容投影 | 更大预算不能执行；旧消费者需单独迁移后才能接入未来多轮 |
 | [model_gateway.py](../../../src/fishery_ai/model_gateway.py) `ModelMessage/Request/Response` | assistant.tool_calls、role=tool、call id、多个历史消息，可构造重复 follow-up | 协议没有限定一次 Tool round；`validate_tool_request(streaming=True)` 主动拒绝所有 Tool 请求 |
 | 同上 `ModelEvent` | content、reasoning、usage、finish_reason | 没有 Tool delta、choice / call index、完整流式模型响应合同 |
 | [openai_compatible_adapter.py](../../../src/fishery_ai/openai_compatible_adapter.py) `_kwargs/_response/_bridge` | 完整调用编解码、SDK 取消与资源清理 | `_event` 拒绝 tool_calls delta；可重试配置仍来自 Runtime；每次 SDK operation 重建 total timeout |
 | [tools/executor.py](../../../src/fishery_ai/tools/executor.py) | max_calls 可配置 1–8、参数 ≤4096 bytes、结果默认 ≤32768 bytes、同实例拒绝重放 call id | Coordinator 只用 max_calls=1；没有跨轮逻辑调用签名去重、累计结果预算或模型循环 |
 | [tools/registry.py](../../../src/fishery_ai/tools/registry.py) / [policy.py](../../../src/fishery_ai/tools/policy.py) | 三个静态只读 Tool、实例绑定依赖、冻结的模式授权 | 基本不需重写；多轮不能扩大 Policy，不能让模型注册 Tool |
-| [assistant_sources.py](../../../src/fishery_ai/assistant_sources.py) | 来源操作与正向 payload 分离，实际结果校验，纯满足函数 | `receipt_from_execution` 只取一次执行，并检查 `request_1.outcome`；Receipt 只有一个工具和一组观测时间 / 质量 |
+| [assistant_sources.py](../../../src/fishery_ai/assistant_sources.py) | 逐执行 Receipt、有序 Ledger、独立时间/质量与确定性满足函数 | 单次 Receipt 语义保持；旧 wrapper 拒绝多执行，不取最后一次 |
 | [assistant.py](../../../src/fishery_ai/assistant.py) | 成功提交 gate、History v2、Preset / OFF / Normal、取消原子收口 | 单 Activity、两次请求投影；当前 Prompt 明确要求 Tool 后直接回答 |
 | [execution.py](../../../src/fishery_ai/execution.py) | 一个 RequestHandle 可跨两次 SDK 调用，取消 hook 可重新绑定 | progress 仅接受 REQUEST_1 / RUNNING_TOOL / REQUEST_2；无整 Turn deadline |
 | [observability.py](../../../src/fishery_ai/observability.py) | allowlist Trace、无正文 / 参数 / Secret | Tool Trace 固定两次模型请求、一次工具记录，不能覆盖所有 step |
@@ -266,7 +266,7 @@ Later Streaming：只替换一次 Model step 的取得方式
 
 | 优先级 | 未来最小修改点 | 本轮状态 |
 | --- | --- | --- |
-| 第一小步 | tool_conversation：step / budget 结果合同；assistant_sources：逐执行 Receipt 与 Ledger 聚合；observability：安全数组投影 | 仅设计；仍保留 1/1/2 |
+| 第一小步 | tool_conversation：step / budget 结果合同；assistant_sources：逐执行 Receipt 与 Ledger；observability：安全数组投影 | 阶段 1 已实现；仍固定 1/1/2 |
 | non-streaming 多轮 | 共享 run_request 有界状态机；一个 Executor 跨轮；tools/contracts 的必要内部归一绑定；execution 的 indexed progress / Turn deadline | 不新增 Handler / Registry 或第二套循环 |
 | 应用接入 | assistant / application / contracts / web / UI：分别消费新版 steps / Activity，旧模式派生兼容；联网预算说明 | 正式应用需逐项启用，Analysis 不自动升级 |
 | Streaming | model_gateway：片段与完整 step 事件；Adapter：assembler、emitted、终止 / 清理；execution：剩余 Turn 时间传输 | ProtocolSpec 只在已有协议编码确有需要时调整，不能承载编排 |
@@ -275,7 +275,7 @@ Later Streaming：只替换一次 Model step 的取得方式
 
 ## 14. 推荐阶段划分
 
-1. **合同基础**：steps / Ledger / budget / progress 方案，单执行 Receipt 语义保持；legacy wrapper 保留 1/1/2 和原 Prompt、History、UI。离线 parity 后停止审查。
+1. **合同基础（已实现）**：steps / Ledger / budget / safe trace，单执行 Receipt 语义保持；legacy 投影保留 1/1/2 和原 Prompt、History、UI。progress 阶段名称保持原样，离线 parity 后停止审查。
 2. **有界 non-streaming**：内部显式模式试验 2/2/3、统一 Deadline、去重和错误收口，scripted 测试证明提前 Final 和结果影响下一 Tool；再审查对应的最小指令版本。
 3. **资格与单应用发布**：另获授权做精确模型资格，不沿用单轮资格推导；先 Assistant 或 Development 一个消费者，feature flag 可回滚，Analysis 保持旧预算直到独立批准。
 4. **Streaming 协议基础**：先在 1/1/2 离线验证 assembler / 生命周期，再用同一 Coordinator 覆盖 2/2/3；此时尚不必公开流式正文。

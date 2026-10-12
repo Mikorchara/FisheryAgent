@@ -51,6 +51,16 @@ Handler 固定 top_k=3，返回 status、retrieval_mode、result_count、evidenc
 
 共享协调器最多执行 1 个调用、1 个 Tool round、2 次模型请求。多调用返回 `TOOL_CALL_LIMIT`，第二轮继续请求 Tool 返回 `TOOL_ROUND_LIMIT`；没有 Agent loop。首轮后、执行前后及第二次请求前沿用同一 `RequestHandle` 检查取消。取消不写 Capability Evidence，也不把部分回答提交为成功；不保证远端推理/计费停止。
 
+### 内部结果、来源与预算合同
+
+`ToolConversationResult.steps` 是唯一的执行结果序列：`ModelExecutionStep` 保存 seq、request_index 和 ModelStepOutcome；`ToolExecutionStep` 保存关联的模型请求、Tool round、call id/name、执行结果与耗时。直答只有一个模型 step，Tool→Final 为 model / tool / model；未开始的请求不制造 step。`request_1/request_2/tool_result/tool_name/tool_call_id/tool_duration_ms` 仅为只读兼容投影，不能单独写入；超出单轮形态时明确拒绝旧投影，不取“最后一次 Tool”。
+
+`assistant_sources.py` 从每个实际返回的关联执行生成独立 Receipt，组成不可变 `TurnSourceLedger`。每项保留执行 seq、model_request_index、tool_round 和 Receipt 的独立质量/时间；不合并观测值或时间。ERROR 可留下无完成证明的条目；未取得结果的调用、正文与历史不生成条目。单次 `receipt_from_execution()` 与 Assistant `source_receipt` 都是 Ledger 的单执行投影。
+
+`requirement_satisfied_by_ledger()` 沿用原 Requirement 语义：AUTO 始终满足，其余要求需本轮至少一项 Receipt 证明对应操作已完成。NO_DATA / NO_MATCH / NOT_SCORABLE / PARTIAL 的校验与正向来源授予规则不变。Assistant gate 使用 Ledger，Web 仍只输出原有轻量 Activity；Ledger、协议消息及原始 Tool Result 都不进入 History。
+
+内部 `ToolTurnBudget` 声明有限调用/轮次/请求和 step 上限。当前 `ToolCallingService` **只接受固定 1/1/2，最多 3 steps**，不能用较大预算开启多轮。原 follow-up 仍为 `tool_choice=none`。JSONL Trace 新增有序 steps 安全摘要，原单轮字段从同一序列派生；不写 Prompt、正文、arguments 或原始 payload。此合同基础未发布 Multi-Round 或 Streaming Tool Calling。
+
 ### Development/Test 与 Manual
 
 Development/Test 可使用离线 Mock 或满足能力门禁的真实 Runtime，提供安全完整 Trace；真实请求由用户显式确认。Manual V1/V2 是 Raw 请求与展示路径，Tool Call 可传输/展示但绝不自动执行。

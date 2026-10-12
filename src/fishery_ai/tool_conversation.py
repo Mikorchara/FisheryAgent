@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 import json
+import math
 import re
 import time
 from typing import Callable
@@ -148,6 +149,61 @@ class ModelStepOutcome:
     error_code: str | None = None
 
 
+@dataclass(frozen=True)
+class ToolTurnBudget:
+    """Internal finite budget; publishing a different execution mode is separate."""
+    max_tool_calls: int = 1
+    max_tool_rounds: int = 1
+    max_model_requests: int = 2
+
+    def __post_init__(self):
+        if any(type(value) is not int or value < 1 for value in (
+                self.max_tool_calls, self.max_tool_rounds, self.max_model_requests)):
+            raise ValueError("invalid tool turn budget")
+        if self.max_model_requests < self.max_tool_rounds + 1:
+            raise ValueError("tool rounds require a final model request")
+
+    @property
+    def max_steps(self) -> int:
+        return self.max_model_requests + self.max_tool_calls
+
+
+SINGLE_ROUND_BUDGET = ToolTurnBudget()
+
+
+@dataclass(frozen=True)
+class ModelExecutionStep:
+    seq: int
+    request_index: int
+    result: ModelStepOutcome
+
+    def __post_init__(self):
+        if (any(type(value) is not int or value < 1 for value in (self.seq, self.request_index))
+                or not isinstance(self.result, ModelStepOutcome)):
+            raise ValueError("invalid model execution step")
+
+
+@dataclass(frozen=True)
+class ToolExecutionStep:
+    seq: int
+    model_request_index: int
+    tool_round: int
+    tool_call_id: str = field(repr=False)
+    tool_name: str = field(repr=False)
+    result: ToolExecutionResult | None = field(default=None, repr=False)
+    duration_ms: float | None = None
+
+    def __post_init__(self):
+        if (any(type(value) is not int or value < 1 for value in (
+                self.seq, self.model_request_index, self.tool_round))
+                or not isinstance(self.tool_call_id, str) or not self.tool_call_id
+                or not isinstance(self.tool_name, str) or not self.tool_name
+                or (self.result is not None and not isinstance(self.result, ToolExecutionResult))
+                or (self.duration_ms is not None and (type(self.duration_ms) not in (int, float)
+                    or not math.isfinite(self.duration_ms) or self.duration_ms < 0))):
+            raise ValueError("invalid tool execution step")
+
+
 def _finish_reason(value) -> str | None:
     return value if value in ("stop", "length", "tool_calls", "function_call", "content_filter") else None
 
@@ -159,18 +215,65 @@ class ToolConversationResult:
     status: Status
     runtime: RuntimeInfo
     generated_text: str = field(repr=False)
-    request_1: ModelStepOutcome
-    request_2: ModelStepOutcome
+    steps: tuple[ModelExecutionStep | ToolExecutionStep, ...]
     usage: SessionUsage
-    tool_result: ToolExecutionResult | None = field(default=None, repr=False)
-    tool_duration_ms: float | None = None
     final_finish_reason: str | None = None
     error_code: str | None = None
-    tool_call_id: str | None = None
-    tool_name: str | None = None
     trace_recorded: bool = False
     reasoning_content: str | None = field(default=None, repr=False)
     application_mode: str = "assistant"
+
+    def __post_init__(self):
+        object.__setattr__(self, "steps", tuple(self.steps))
+        model_indices = []
+        for seq, step in enumerate(self.steps, 1):
+            if not isinstance(step, (ModelExecutionStep, ToolExecutionStep)) or step.seq != seq:
+                raise ValueError("invalid execution step order")
+            if isinstance(step, ModelExecutionStep):
+                if not isinstance(step.result, ModelStepOutcome):
+                    raise TypeError("model step outcome required")
+                model_indices.append(step.request_index)
+            elif step.model_request_index not in model_indices or step.tool_round < 1:
+                raise ValueError("tool step requires its preceding model request")
+        if model_indices != list(range(1, len(model_indices) + 1)):
+            raise ValueError("invalid model request order")
+
+    def _legacy_model(self, index: int) -> ModelStepOutcome:
+        if sum(isinstance(step, ModelExecutionStep) for step in self.steps) > 2:
+            raise ValueError("legacy projection requires single-round execution")
+        return next((step.result for step in self.steps if isinstance(step, ModelExecutionStep)
+                     and step.request_index == index), ModelStepOutcome())
+
+    @property
+    def request_1(self) -> ModelStepOutcome:
+        return self._legacy_model(1)
+
+    @property
+    def request_2(self) -> ModelStepOutcome:
+        return self._legacy_model(2)
+
+    @property
+    def tool_step(self) -> ToolExecutionStep | None:
+        tools = tuple(step for step in self.steps if isinstance(step, ToolExecutionStep))
+        if len(tools) > 1:
+            raise ValueError("legacy projection requires single tool execution")
+        return tools[0] if tools else None
+
+    @property
+    def tool_result(self) -> ToolExecutionResult | None:
+        return self.tool_step.result if self.tool_step else None
+
+    @property
+    def tool_duration_ms(self) -> float | None:
+        return self.tool_step.duration_ms if self.tool_step else None
+
+    @property
+    def tool_call_id(self) -> str | None:
+        return self.tool_step.tool_call_id if self.tool_step else None
+
+    @property
+    def tool_name(self) -> str | None:
+        return self.tool_step.tool_name if self.tool_step else None
 
 
 def _safe_code(code: str) -> str:
@@ -213,11 +316,19 @@ class ToolCallingService:
     def __init__(self, gateway: ModelGateway, registry: ToolRegistry, traces: JsonlTraceSink,
                  *, clock: Callable[[], datetime] = utcnow,
                  id_factory: Callable[[], str] = lambda: uuid.uuid4().hex,
-                 policy: ToolPolicy | None = None):
+                 policy: ToolPolicy | None = None,
+                 budget: ToolTurnBudget = SINGLE_ROUND_BUDGET):
+        if not isinstance(budget, ToolTurnBudget) or budget != SINGLE_ROUND_BUDGET:
+            raise ValueError("only the published single-round budget is executable")
+        self._budget = budget
         self.gateway, self.registry, self.traces = gateway, registry, traces
         self.clock, self.id_factory = clock, id_factory
         self.policy = policy if policy is not None else load_tool_policies()["assistant"]
         self.policy.validate_registry(registry)
+
+    @property
+    def budget(self) -> ToolTurnBudget:
+        return self._budget
 
     def converse(self, question: str, runtime: RuntimeSnapshot) -> ToolConversationResult:
         if not isinstance(question, str) or not question.strip():
@@ -235,49 +346,59 @@ class ToolCallingService:
         handle = current_handle()
         request_id = request_id or (handle.request_id if handle else self.id_factory())
         trace_id = trace_id or self.id_factory()
-        steps = [ModelStepOutcome(), ModelStepOutcome()]
+        budget = self.budget
+        steps: list[ModelExecutionStep | ToolExecutionStep] = []
         usage_items: list[Usage] = []
         tool_result, tool_duration_ms = None, None
-        tool_call_id, tool_name = None, None
         text, finish_reason, error_code = "", None, None
         reasoning_content = None
         status = Status.COMPLETED
 
         def complete(request: ModelRequest, index: int):
             check_cancelled()
+            if index + 1 > budget.max_model_requests:
+                raise GatewayError("MODEL_REQUEST_LIMIT")
+            if len(steps) >= budget.max_steps:
+                raise GatewayError("TOOL_STEP_LIMIT")
+            position = len(steps)
+            steps.append(ModelExecutionStep(position + 1, index + 1, ModelStepOutcome()))
+
+            def set_outcome(outcome):
+                steps[position] = replace(steps[position], result=outcome)
+
             if on_progress:
                 on_progress("REQUEST_1" if index == 0 else "REQUEST_2")
             # The coordinator also gates alternate Gateways; no real capability is granted.
             try:
                 validate_tool_request(request, runtime, streaming=False)
             except GatewayError as exc:
-                steps[index] = ModelStepOutcome("blocked", error_code=_safe_code(exc.code))
+                set_outcome(ModelStepOutcome("blocked", error_code=_safe_code(exc.code)))
                 raise
             try:
                 response = self.gateway.complete(request, runtime)
             except GatewayError as exc:
                 usage_items.append(Usage())
-                steps[index] = ModelStepOutcome("cancelled" if exc.code == "USER_CANCELLED" else "failed",
-                                                error_code=_safe_code(exc.code))
+                set_outcome(ModelStepOutcome("cancelled" if exc.code == "USER_CANCELLED" else "failed",
+                                                error_code=_safe_code(exc.code)))
                 raise
             except Exception:
                 usage_items.append(Usage())
-                steps[index] = ModelStepOutcome("failed", error_code="MODEL_REQUEST_ERROR")
+                set_outcome(ModelStepOutcome("failed", error_code="MODEL_REQUEST_ERROR"))
                 raise GatewayError("MODEL_REQUEST_ERROR") from None
             reported_usage = (response.usage or Usage()) if isinstance(response, ModelResponse) else Usage()
             if not isinstance(reported_usage, Usage):
                 usage_items.append(Usage())
-                steps[index] = ModelStepOutcome("failed", error_code="INVALID_RESPONSE")
+                set_outcome(ModelStepOutcome("failed", error_code="INVALID_RESPONSE"))
                 raise GatewayError("INVALID_RESPONSE")
             usage_items.append(reported_usage)
-            steps[index] = ModelStepOutcome("received", reported_usage,
-                                            _finish_reason(getattr(response, "finish_reason", None)))
+            set_outcome(ModelStepOutcome("received", reported_usage,
+                                            _finish_reason(getattr(response, "finish_reason", None))))
             try:
                 calls = _validate_response(response)
             except GatewayError as exc:
-                steps[index] = replace(steps[index], outcome="failed", error_code=exc.code)
+                set_outcome(replace(steps[position].result, outcome="failed", error_code=exc.code))
                 raise
-            steps[index] = replace(steps[index], outcome="tool_calls" if calls else "final_answer")
+            set_outcome(replace(steps[position].result, outcome="tool_calls" if calls else "final_answer"))
             check_cancelled()
             return response, calls
 
@@ -290,18 +411,25 @@ class ToolCallingService:
                 text, finish_reason = first.text, _finish_reason(first.finish_reason)
                 reasoning_content = first.reasoning_content
             else:
-                if len(calls) > 1:
-                    steps[0] = replace(steps[0], outcome="multiple_tool_calls", error_code="TOOL_CALL_LIMIT")
+                if len(calls) > budget.max_tool_calls:
+                    steps[0] = replace(steps[0], result=replace(steps[0].result,
+                        outcome="multiple_tool_calls", error_code="TOOL_CALL_LIMIT"))
                     raise GatewayError("TOOL_CALL_LIMIT")
-                tool_call_id, tool_name = calls[0].id, calls[0].function_name
+                if budget.max_tool_rounds < 1 or len(steps) >= budget.max_steps:
+                    raise GatewayError("TOOL_ROUND_LIMIT")
+                tool_position = len(steps)
+                steps.append(ToolExecutionStep(tool_position + 1, 1, 1, calls[0].id, calls[0].function_name))
                 check_cancelled()
                 if on_progress:
                     on_progress("RUNNING_TOOL")
                 tool_tick = time.monotonic()
                 try:
-                    tool_result = ToolExecutor(self.registry, max_calls=1, policy=self.policy).execute(calls[0])
+                    tool_result = ToolExecutor(self.registry, max_calls=budget.max_tool_calls,
+                                               policy=self.policy).execute(calls[0])
                 finally:
                     tool_duration_ms = (time.monotonic() - tool_tick) * 1000
+                    steps[tool_position] = replace(steps[tool_position], result=tool_result,
+                                                   duration_ms=tool_duration_ms)
                 check_cancelled()
                 if tool_result.status == ToolStatus.ERROR:
                     raise GatewayError(tool_result.error_code.value)
@@ -313,7 +441,8 @@ class ToolCallingService:
                 ))
                 second, next_calls = complete(follow_up, 1)
                 if next_calls:
-                    steps[1] = replace(steps[1], outcome="tool_round_limit", error_code="TOOL_ROUND_LIMIT")
+                    steps[-1] = replace(steps[-1], result=replace(steps[-1].result,
+                        outcome="tool_round_limit", error_code="TOOL_ROUND_LIMIT"))
                     raise GatewayError("TOOL_ROUND_LIMIT")
                 text, finish_reason = second.text, _finish_reason(second.finish_reason)
                 reasoning_content = second.reasoning_content
@@ -325,9 +454,9 @@ class ToolCallingService:
             error_code, status = "TOOL_CONVERSATION_ERROR", Status.FAILED
 
         result = ToolConversationResult(request_id, trace_id, status, runtime.public_info(),
-            text if status == Status.COMPLETED else "", steps[0], steps[1], _aggregate_usage(usage_items),
-            tool_result, tool_duration_ms, finish_reason if status == Status.COMPLETED else None, error_code,
-            tool_call_id, tool_name, reasoning_content=reasoning_content if status == Status.COMPLETED else None,
+            text if status == Status.COMPLETED else "", tuple(steps), _aggregate_usage(usage_items),
+            finish_reason if status == Status.COMPLETED else None, error_code,
+            reasoning_content=reasoning_content if status == Status.COMPLETED else None,
             application_mode=self.policy.mode)
         try:
             self.traces.record_tool_conversation(result, started_at=started_at,

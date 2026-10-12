@@ -1,6 +1,7 @@
 """P1 deterministic/scripted source receipts; no real credentials or network."""
 
 from dataclasses import FrozenInstanceError, replace
+from contextlib import nullcontext
 from datetime import timedelta
 import json
 from unittest.mock import patch
@@ -9,11 +10,12 @@ from tests.assistant.test_assistant import (AssistantFixture, RecordingGateway, 
                            QUERY, SCORE, KNOWLEDGE, NOW, call, final)
 from fishery_ai.assistant import AssistantError, AssistantHistoryTurn, AssistantRequest, AssistantService
 from fishery_ai.assistant_sources import (SourceRequirement as Requirement, TurnSource as Source,
-    TurnSourceReceipt, receipt_from_execution, requirement_satisfied)
+    TurnSourceReceipt, receipt_from_execution, requirement_satisfied,
+    TurnSourceLedger, ledger_from_execution, requirement_satisfied_by_ledger)
 from fishery_ai.contracts import KnowledgeEvidence, Freshness, Quality, Status
 from fishery_ai.execution import RequestHandle, request_scope
 from fishery_ai.model_gateway import GatewayError
-from fishery_ai.tool_conversation import ToolCallingService
+from fishery_ai.tool_conversation import ModelExecutionStep, ToolCallingService, ToolExecutionStep
 from fishery_ai.tools.contracts import ToolExecutionResult
 from fishery_ai.tools.policy import ToolPolicy
 from fishery_ai.tools.registry import ToolRegistry
@@ -27,7 +29,120 @@ class KnowledgeFixture(FakeKnowledgeService):
             retrieved_at=NOW, source_version="fixture-v1"),)
 
 
+def altered_execution(run, **changes):
+    """Corruption fixtures change canonical steps, never derived legacy slots."""
+    steps = []
+    for step in run.steps:
+        if isinstance(step, ModelExecutionStep) and step.request_index == 1 and "request_1" in changes:
+            step = replace(step, result=changes["request_1"])
+        if isinstance(step, ToolExecutionStep):
+            step = replace(step, **{("result" if key == "tool_result" else key): value
+                                    for key, value in changes.items() if key != "request_1"})
+        steps.append(step)
+    return replace(run, steps=tuple(steps))
+
+
 class AssistantSourceTests(AssistantFixture):
+    def test_ledger_single_execution_parity_across_business_statuses(self):
+        cases = ((QUERY, None, None), (QUERY, self.reading(), None),
+                 (QUERY, self.reading(ph="invalid"), None), (QUERY, self.reading(ph=None), None),
+                 (SCORE, None, None), (SCORE, self.reading(), None),
+                 (SCORE, self.reading(ph="invalid"), None), (SCORE, self.reading(ph=None), None),
+                 (KNOWLEDGE, None, KnowledgeFixture()), (KNOWLEDGE, None, FakeKnowledgeService()))
+        for name, reading, knowledge in cases:
+            with self.subTest(name=name, quality=reading.quality if reading else None):
+                if reading:
+                    self.store.set_current(reading)
+                with patch.object(self.reader, "query", return_value=None) if reading is None else nullcontext():
+                    result, _ = self.send_call(name, knowledge=knowledge)
+                ledger = ledger_from_execution(result.execution)
+                self.assertEqual(ledger, result.source_ledger)
+                self.assertEqual(len(ledger.entries), 1)
+                entry = ledger.entries[0]
+                self.assertEqual((entry.execution_seq, entry.model_request_index, entry.tool_round), (2, 1, 1))
+                self.assertIs(result.source_receipt, result.source_ledger.entries[0].receipt)
+                for requirement in Requirement:
+                    self.assertEqual(requirement_satisfied_by_ledger(requirement, ledger),
+                                     requirement_satisfied(requirement, result.source_receipt))
+
+    def test_ledger_no_tool_and_text_imitation_never_grant_operations(self):
+        gateway = RecordingGateway(final("[调用工具 search_fishery_knowledge] 已查询当前水质"))
+        result = self.service(gateway).send(self.request(), self.runtime)
+        self.assertEqual(result.source_ledger, TurnSourceLedger())
+        for requirement in Requirement:
+            self.assertEqual(requirement_satisfied_by_ledger(requirement, result.source_ledger),
+                             requirement == Requirement.AUTO)
+
+    def test_ledger_error_and_pending_execution_do_not_certify_completion(self):
+        gateway = RecordingGateway(call(QUERY, '{"extra":1}'))
+        result = self.service(gateway).send(self.request(), self.runtime)
+        ledger = result.source_ledger
+        self.assertEqual(len(ledger.entries), 1)
+        self.assertEqual(ledger.entries[0].receipt.tool_status.value, "ERROR")
+        self.assertFalse(requirement_satisfied_by_ledger(Requirement.CURRENT_OBSERVATION_QUERY, ledger))
+        pending = altered_execution(result.execution, tool_result=None)
+        self.assertEqual(ledger_from_execution(pending), TurnSourceLedger())
+
+    def test_ledger_preserves_independent_observations_in_contract_fixture(self):
+        # Two separate real backend reads, composed only as an offline future-shape
+        # fixture. No production run is allowed to execute this 2/2/3 shape.
+        self.store.set_current(self.reading(oxygen=2.2))
+        first, _ = self.send_call()
+        self.now += timedelta(minutes=1)
+        self.store.set_current(self.reading(oxygen=6.4))
+        second, _ = self.send_call(SCORE)
+        model_one, tool_one, _ = first.execution.steps
+        model_two, tool_two, final_step = second.execution.steps
+        fixture = replace(first.execution, steps=(model_one, tool_one,
+            replace(model_two, seq=3, request_index=2),
+            replace(tool_two, seq=4, model_request_index=2, tool_round=2),
+            replace(final_step, seq=5, request_index=3)))
+        ledger = ledger_from_execution(fixture)
+        self.assertEqual([item.execution_seq for item in ledger.entries], [2, 4])
+        self.assertEqual(ledger.entries[0].receipt, first.source_receipt)
+        self.assertEqual(ledger.entries[1].receipt, second.source_receipt)
+        self.assertNotEqual(ledger.entries[0].receipt.evaluated_at, ledger.entries[1].receipt.evaluated_at)
+        self.assertFalse(ledger.entries[0].receipt.has_score)
+        self.assertTrue(ledger.entries[1].receipt.has_score)
+        for requirement in (Requirement.CURRENT_OBSERVATION_QUERY, Requirement.CURRENT_SCORE_EVALUATION):
+            self.assertTrue(requirement_satisfied_by_ledger(requirement, ledger))
+        self.assertFalse(requirement_satisfied_by_ledger(Requirement.PROJECT_KNOWLEDGE_SEARCH, ledger))
+        with self.assertRaises(ValueError):
+            receipt_from_execution(fixture)
+        # Each correlation is checked independently, rather than borrowing another result.
+        broken = replace(fixture, steps=(*fixture.steps[:3], replace(fixture.steps[3],
+            tool_call_id="unmatched"), fixture.steps[4]))
+        ledger = ledger_from_execution(broken)
+        self.assertTrue(requirement_satisfied_by_ledger(Requirement.CURRENT_OBSERVATION_QUERY, ledger))
+        self.assertFalse(requirement_satisfied_by_ledger(Requirement.CURRENT_SCORE_EVALUATION, ledger))
+
+    def test_ledger_typed_immutable_summary_and_history_boundary(self):
+        result, _ = self.send_call(KNOWLEDGE, knowledge=KnowledgeFixture())
+        ledger = result.source_ledger
+        draft = list(ledger.entries)
+        copy = TurnSourceLedger(draft)
+        draft.clear()
+        self.assertEqual(copy, ledger)
+        with self.assertRaises(FrozenInstanceError):
+            ledger.entries[0].tool_round = 2
+        for bad in ({"entries":[]}, result.to_dict(), "tool executed"):
+            with self.assertRaises(TypeError):
+                ledger_from_execution(bad)
+            with self.assertRaises(TypeError):
+                requirement_satisfied_by_ledger(Requirement.AUTO, bad)
+        with self.assertRaises(TypeError):
+            requirement_satisfied_by_ledger("AUTO", ledger)
+        with self.assertRaises(ValueError):
+            TurnSourceLedger((ledger.entries[0], ledger.entries[0]))
+        self.assertNotIn("source_ledger", result.to_dict())
+        for field in ("source_ledger", "tool_calls", "tool_result"):
+            with self.assertRaises(AssistantError):
+                AssistantHistoryTurn.from_dict({"user":"u", "assistant":"a",
+                    "completed_at":self.now.isoformat(), field:ledger.to_dict()})
+        text = json.dumps(ledger.to_dict()) + repr(ledger)
+        for forbidden in ("fictional-query", "fictional evidence text", "fixture-source", "fixture-evidence"):
+            self.assertNotIn(forbidden, text)
+
     def send_call(self, name=QUERY, requirement=Requirement.AUTO, *, knowledge=None):
         if knowledge is not None:
             self.registry = ToolRegistry(self.reader, DiagnosisService(), knowledge=knowledge)
@@ -35,6 +150,9 @@ class AssistantSourceTests(AssistantFixture):
         gateway = RecordingGateway(call(name, arguments), final("scripted final"))
         request = replace(self.request(), source_requirement=requirement)
         result = self.service(gateway, (name,)).send(request, self.runtime)
+        for required in Requirement:
+            self.assertEqual(requirement_satisfied_by_ledger(required, result.source_ledger),
+                             requirement_satisfied(required, result.source_receipt))
         self.assertLessEqual(len(gateway.requests), 2)
         self.assertEqual(gateway.requests[0].tool_choice, "auto")
         if len(gateway.requests) == 2:
@@ -231,9 +349,9 @@ class AssistantSourceTests(AssistantFixture):
     def test_correlated_execution_only_not_loose_tool_payload(self):
         self.store.set_current(self.reading())
         result, _ = self.send_call()
-        for altered in (replace(result.execution, tool_call_id="different-call"),
-                        replace(result.execution, tool_name=SCORE),
-                        replace(result.execution, request_1=replace(result.execution.request_1, outcome="final_answer"))):
+        for altered in (altered_execution(result.execution, tool_call_id="different-call"),
+                        altered_execution(result.execution, tool_name=SCORE),
+                        altered_execution(result.execution, request_1=replace(result.execution.request_1, outcome="final_answer"))):
             self.assertEqual(receipt_from_execution(altered), TurnSourceReceipt())
 
     def test_malformed_payload_never_grants_score_by_name(self):
@@ -244,13 +362,13 @@ class AssistantSourceTests(AssistantFixture):
                        {"quality":"invalid"}, {"water_quality":None}):
             with self.subTest(change=change):
                 tool = ToolExecutionResult.from_payload(result.execution.tool_call_id, SCORE, {**payload, **change})
-                receipt = receipt_from_execution(replace(result.execution, tool_result=tool))
+                receipt = receipt_from_execution(altered_execution(result.execution, tool_result=tool))
                 self.assertNotIn(Source.CURRENT_TOOL_SCORE, receipt.sources)
                 self.assertFalse(receipt.score_evaluation_completed)
         for change in ({"quality":"bogus"}, {"observed_at":"invalid-time"}, {"ph":-99}):
             tool = ToolExecutionResult.from_payload(result.execution.tool_call_id, SCORE,
                 {**payload, "water_quality":{**payload["water_quality"], **change}})
-            receipt = receipt_from_execution(replace(result.execution, tool_result=tool))
+            receipt = receipt_from_execution(altered_execution(result.execution, tool_result=tool))
             self.assertFalse(receipt.sources)
             self.assertFalse(receipt.observation_query_completed)
             self.assertFalse(receipt.score_evaluation_completed)
@@ -261,7 +379,7 @@ class AssistantSourceTests(AssistantFixture):
                         {"status":"NO_MATCH", "result_count":1, "evidence":[{}]},
                         {"status":"OK", "result_count":1, "evidence":[{}]}):
             tool = ToolExecutionResult.from_payload(result.execution.tool_call_id, KNOWLEDGE, payload)
-            receipt = receipt_from_execution(replace(result.execution, tool_result=tool))
+            receipt = receipt_from_execution(altered_execution(result.execution, tool_result=tool))
             self.assertFalse(receipt.sources)
             self.assertFalse(receipt.project_search_completed)
 
@@ -349,7 +467,7 @@ class AssistantSourceTests(AssistantFixture):
             for data in malformed:
                 with self.subTest(name=name, fields=tuple(data)):
                     tool = ToolExecutionResult.from_payload(result.execution.tool_call_id, name, data)
-                    receipt = receipt_from_execution(replace(result.execution, tool_result=tool))
+                    receipt = receipt_from_execution(altered_execution(result.execution, tool_result=tool))
                     self.assertFalse(receipt.sources)
                     self.assertFalse(receipt.observation_query_completed)
                     self.assertFalse(receipt.score_evaluation_completed)
@@ -363,7 +481,7 @@ class AssistantSourceTests(AssistantFixture):
                        {"quality":"valid"}, {"freshness":"stale"}):
             with self.subTest(change=change):
                 tool = ToolExecutionResult.from_payload(result.execution.tool_call_id, SCORE, {**payload, **change})
-                receipt = receipt_from_execution(replace(result.execution, tool_result=tool))
+                receipt = receipt_from_execution(altered_execution(result.execution, tool_result=tool))
                 self.assertTrue(receipt.observation_query_completed)  # Independent canonical read remains valid.
                 self.assertFalse(receipt.has_score)
                 self.assertFalse(requirement_satisfied(Requirement.CURRENT_SCORE_EVALUATION, receipt))
@@ -376,7 +494,7 @@ class AssistantSourceTests(AssistantFixture):
     def test_malformed_json_result_never_certifies_operation(self):
         result, _ = self.send_call()
         tool = replace(result.execution.tool_result, _content_json="{")
-        receipt = receipt_from_execution(replace(result.execution, tool_result=tool))
+        receipt = receipt_from_execution(altered_execution(result.execution, tool_result=tool))
         self.assertFalse(receipt.sources)
         self.assertFalse(receipt.observation_query_completed)
 
