@@ -94,6 +94,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  ├─ fishery_ai/                                                # 可安装 Python 应用包
 │  │  ├─ __init__.py                                             # 应用包初始化
 │  │  ├─ __main__.py                                             # CLI、Web 与真实验证入口
+│  │  ├─ README.md                                               # 按职责分类的源码导航与开发边界
 │  │  ├─ application.py                                          # 固定 Analysis 上下文与执行主流程
 │  │  ├─ history_projection.py                                   # 产品默认 B 与原生 A 回滚的共享历史投影
 │  │  ├─ assistant.py                                            # Assistant 上下文、历史与执行服务
