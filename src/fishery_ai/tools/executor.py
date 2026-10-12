@@ -13,7 +13,7 @@ class ToolExecutor:
     """Create once per request. Attempts consume budget; call IDs cannot be replayed."""
 
     def __init__(self, registry: ToolRegistry, *, max_calls: int = 1,
-                 max_result_bytes: int = 32768, policy=None):
+                 max_result_bytes: int = 32768, policy=None, reject_duplicate_requests: bool = False):
         from .policy import load_tool_policies
         self._policy = policy if policy is not None else load_tool_policies()["assistant"]
         self._policy.validate_registry(registry)
@@ -25,6 +25,10 @@ class ToolExecutor:
         self._max_calls = max_calls
         self._max_result_bytes = max_result_bytes
         self._seen: set[str] = set()
+        if type(reject_duplicate_requests) is not bool:
+            raise ValueError("invalid duplicate request option")
+        self._reject_duplicate_requests = reject_duplicate_requests
+        self._seen_requests: set[tuple[str, str]] = set()
         self._lock = Lock()
 
     def execute(self, call: ModelToolCall) -> ToolExecutionResult:
@@ -49,9 +53,19 @@ class ToolExecutor:
                     raise ValueError
                 # The definition owns its parameter contract; the Executor only
                 # enforces size, JSON shape and the safe error mapping.
-                invoke = definition.bind(arguments)
+                if self._reject_duplicate_requests:
+                    normalized, invoke = definition.prepare(arguments)
+                    signature = (call.function_name, json.dumps(normalized, sort_keys=True,
+                        ensure_ascii=True, allow_nan=False, separators=(",", ":")))
+                else:
+                    invoke = definition.bind(arguments)
             except (ValueError, TypeError, RecursionError, UnicodeError, AttributeError):
                 raise ToolError(ToolErrorCode.INVALID_TOOL_ARGUMENTS) from None
+            if self._reject_duplicate_requests:
+                with self._lock:
+                    if signature in self._seen_requests:
+                        raise ToolError(ToolErrorCode.TOOL_REQUEST_ALREADY_EXECUTED)
+                    self._seen_requests.add(signature)
             check_cancelled()
             payload = invoke()
             check_cancelled()

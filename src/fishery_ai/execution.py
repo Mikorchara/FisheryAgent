@@ -54,7 +54,7 @@ class RequestHandle:
             self._hook = None
 
     def report_phase(self, phase):
-        if phase not in ("REQUEST_1", "RUNNING_TOOL", "REQUEST_2"):
+        if phase not in ("REQUEST_1", "RUNNING_TOOL", "REQUEST_2", "REQUEST_3"):
             raise ValueError("invalid execution phase")
         with self._lock:
             if self.state == "RUNNING":

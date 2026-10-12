@@ -39,6 +39,7 @@ class ToolErrorCode(str, Enum):
     TOOL_RESULT_TOO_LARGE = "TOOL_RESULT_TOO_LARGE"
     TOOL_CALL_LIMIT = "TOOL_CALL_LIMIT"
     TOOL_CALL_ALREADY_EXECUTED = "TOOL_CALL_ALREADY_EXECUTED"
+    TOOL_REQUEST_ALREADY_EXECUTED = "TOOL_REQUEST_ALREADY_EXECUTED"
 
 
 class ToolError(Exception):
@@ -70,14 +71,18 @@ class ToolDefinition:
         This is the whole server-side parameter contract: reject, normalize, and
         only then hand arguments to the bound handler. Bound once per call.
         """
+        return self.prepare(arguments)[1]
+
+    def prepare(self, arguments: dict) -> tuple[dict, Callable[[], dict]]:
+        """Validate once; expose canonical arguments only to the local executor."""
         if self.validate_arguments is None:
             if arguments:
                 raise ValueError("this tool accepts no parameters")
-            return self.handler
+            return {}, self.handler
         validated = self.validate_arguments(arguments)
         if not isinstance(validated, dict):
             raise ValueError("validated arguments must be a JSON object")
-        return partial(self.handler, validated)
+        return validated, partial(self.handler, validated)
 
 
 @dataclass(frozen=True)

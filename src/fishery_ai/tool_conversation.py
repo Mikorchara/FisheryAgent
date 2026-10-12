@@ -1,7 +1,8 @@
-"""T3 application coordinator: at most one read-only tool and one follow-up."""
+"""Shared bounded coordinator; production stays single-round by default."""
 
 from dataclasses import dataclass, field, replace
 from datetime import datetime
+from enum import Enum
 import json
 import math
 import re
@@ -169,6 +170,12 @@ class ToolTurnBudget:
 
 
 SINGLE_ROUND_BUDGET = ToolTurnBudget()
+BOUNDED_MULTI_ROUND_BUDGET = ToolTurnBudget(2, 2, 3)
+
+
+class ToolExecutionMode(str, Enum):
+    SINGLE_ROUND = "SINGLE_ROUND"
+    BOUNDED_MULTI_ROUND = "BOUNDED_MULTI_ROUND"
 
 
 @dataclass(frozen=True)
@@ -317,10 +324,17 @@ class ToolCallingService:
                  *, clock: Callable[[], datetime] = utcnow,
                  id_factory: Callable[[], str] = lambda: uuid.uuid4().hex,
                  policy: ToolPolicy | None = None,
-                 budget: ToolTurnBudget = SINGLE_ROUND_BUDGET):
-        if not isinstance(budget, ToolTurnBudget) or budget != SINGLE_ROUND_BUDGET:
-            raise ValueError("only the published single-round budget is executable")
+                 budget: ToolTurnBudget | None = None,
+                 execution_mode: ToolExecutionMode = ToolExecutionMode.SINGLE_ROUND):
+        if not isinstance(execution_mode, ToolExecutionMode):
+            raise ValueError("typed internal execution mode required")
+        expected_budget = (SINGLE_ROUND_BUDGET if execution_mode == ToolExecutionMode.SINGLE_ROUND
+                           else BOUNDED_MULTI_ROUND_BUDGET)
+        budget = expected_budget if budget is None else budget
+        if not isinstance(budget, ToolTurnBudget) or budget != expected_budget:
+            raise ValueError("execution mode requires its fixed budget")
         self._budget = budget
+        self._execution_mode = execution_mode
         self.gateway, self.registry, self.traces = gateway, registry, traces
         self.clock, self.id_factory = clock, id_factory
         self.policy = policy if policy is not None else load_tool_policies()["assistant"]
@@ -330,7 +344,13 @@ class ToolCallingService:
     def budget(self) -> ToolTurnBudget:
         return self._budget
 
+    @property
+    def execution_mode(self) -> ToolExecutionMode:
+        return self._execution_mode
+
     def converse(self, question: str, runtime: RuntimeSnapshot) -> ToolConversationResult:
+        if self.execution_mode != ToolExecutionMode.SINGLE_ROUND:
+            raise ValueError("bounded mode requires an explicit scripted ModelRequest")
         if not isinstance(question, str) or not question.strip():
             raise ValueError("question is required")
         request = ModelRequest(Mode.CHAT, (ModelMessage("system", SYSTEM_INSTRUCTION),
@@ -347,9 +367,12 @@ class ToolCallingService:
         request_id = request_id or (handle.request_id if handle else self.id_factory())
         trace_id = trace_id or self.id_factory()
         budget = self.budget
+        policy = self.policy  # Freeze authorization for every request and execution in this turn.
+        multi_round = self.execution_mode == ToolExecutionMode.BOUNDED_MULTI_ROUND
         steps: list[ModelExecutionStep | ToolExecutionStep] = []
         usage_items: list[Usage] = []
-        tool_result, tool_duration_ms = None, None
+        executor = None
+        tool_attempts = 0
         text, finish_reason, error_code = "", None, None
         reasoning_content = None
         status = Status.COMPLETED
@@ -367,9 +390,10 @@ class ToolCallingService:
                 steps[position] = replace(steps[position], result=outcome)
 
             if on_progress:
-                on_progress("REQUEST_1" if index == 0 else "REQUEST_2")
+                on_progress(f"REQUEST_{index + 1}")
             # The coordinator also gates alternate Gateways; no real capability is granted.
             try:
+                check_cancelled()  # Progress callbacks may cancel before transport starts.
                 validate_tool_request(request, runtime, streaming=False)
             except GatewayError as exc:
                 set_outcome(ModelStepOutcome("blocked", error_code=_safe_code(exc.code)))
@@ -404,28 +428,54 @@ class ToolCallingService:
 
         try:
             check_cancelled()
-            definitions = self.policy.model_definitions(self.registry)
+            if multi_round and runtime.max_retries != 0:
+                raise GatewayError("TOOL_RETRY_NOT_ALLOWED")
+            definitions = policy.model_definitions(self.registry)
             request = replace(request, tools=definitions, tool_choice="auto" if definitions else None)
-            first, calls = complete(request, 0)
-            if not calls:
-                text, finish_reason = first.text, _finish_reason(first.finish_reason)
-                reasoning_content = first.reasoning_content
-            else:
-                if len(calls) > budget.max_tool_calls:
-                    steps[0] = replace(steps[0], result=replace(steps[0].result,
+            for index in range(budget.max_model_requests):
+                response, calls = complete(request, index)
+                if not calls:
+                    text, finish_reason = response.text, _finish_reason(response.finish_reason)
+                    if multi_round:
+                        final_error = ("MODEL_RESPONSE_TRUNCATED" if finish_reason == "length" else
+                            "MODEL_RESPONSE_EMPTY" if not isinstance(text, str) or not text.strip() else
+                            "MODEL_RESPONSE_INCOMPLETE" if finish_reason != "stop" else None)
+                        if final_error:
+                            steps[-1] = replace(steps[-1], result=replace(steps[-1].result,
+                                outcome="failed", error_code=final_error))
+                            raise GatewayError(final_error)
+                    reasoning_content = response.reasoning_content
+                    break  # Early final: unused budget is never spent automatically.
+                model_position = len(steps) - 1
+                if request.tool_choice == "none":
+                    steps[model_position] = replace(steps[model_position], result=replace(
+                        steps[model_position].result, outcome="tool_round_limit", error_code="TOOL_ROUND_LIMIT"))
+                    raise GatewayError("TOOL_ROUND_LIMIT")
+                if len(calls) > 1:
+                    steps[model_position] = replace(steps[model_position], result=replace(steps[model_position].result,
                         outcome="multiple_tool_calls", error_code="TOOL_CALL_LIMIT"))
                     raise GatewayError("TOOL_CALL_LIMIT")
-                if budget.max_tool_rounds < 1 or len(steps) >= budget.max_steps:
+                if (tool_attempts >= budget.max_tool_calls or tool_attempts >= budget.max_tool_rounds
+                        or index + 1 >= budget.max_model_requests or len(steps) >= budget.max_steps):
                     raise GatewayError("TOOL_ROUND_LIMIT")
+                if multi_round and response.finish_reason not in ("tool_calls", "function_call", "stop"):
+                    steps[model_position] = replace(steps[model_position], result=replace(
+                        steps[model_position].result, outcome="failed", error_code="MODEL_TOOL_CALL_INCOMPLETE"))
+                    raise GatewayError("MODEL_TOOL_CALL_INCOMPLETE")
+                tool_attempts += 1
                 tool_position = len(steps)
-                steps.append(ToolExecutionStep(tool_position + 1, 1, 1, calls[0].id, calls[0].function_name))
+                steps.append(ToolExecutionStep(tool_position + 1, index + 1, tool_attempts,
+                                               calls[0].id, calls[0].function_name))
                 check_cancelled()
                 if on_progress:
                     on_progress("RUNNING_TOOL")
                 tool_tick = time.monotonic()
+                tool_result = None
                 try:
-                    tool_result = ToolExecutor(self.registry, max_calls=budget.max_tool_calls,
-                                               policy=self.policy).execute(calls[0])
+                    if executor is None:
+                        executor = ToolExecutor(self.registry, max_calls=budget.max_tool_calls,
+                            policy=policy, reject_duplicate_requests=multi_round)
+                    tool_result = executor.execute(calls[0])
                 finally:
                     tool_duration_ms = (time.monotonic() - tool_tick) * 1000
                     steps[tool_position] = replace(steps[tool_position], result=tool_result,
@@ -433,19 +483,18 @@ class ToolCallingService:
                 check_cancelled()
                 if tool_result.status == ToolStatus.ERROR:
                     raise GatewayError(tool_result.error_code.value)
-                follow_up = replace(request, tool_choice="none", messages=(
+                final_only = (tool_attempts >= budget.max_tool_calls
+                              or tool_attempts >= budget.max_tool_rounds
+                              or index + 2 >= budget.max_model_requests)
+                request = replace(request, tool_choice="none" if final_only else "auto", messages=(
                     *request.messages,
-                    ModelMessage("assistant", first.text, tool_calls=calls),
+                    ModelMessage("assistant", response.text, tool_calls=calls),
                     ModelMessage("tool", tool_result.to_json(), tool_call_id=calls[0].id),
-                    *((ModelMessage("user", final_response_instruction),) if final_response_instruction else ()),
+                    *((ModelMessage("user", final_response_instruction),)
+                      if final_only and final_response_instruction else ()),
                 ))
-                second, next_calls = complete(follow_up, 1)
-                if next_calls:
-                    steps[-1] = replace(steps[-1], result=replace(steps[-1].result,
-                        outcome="tool_round_limit", error_code="TOOL_ROUND_LIMIT"))
-                    raise GatewayError("TOOL_ROUND_LIMIT")
-                text, finish_reason = second.text, _finish_reason(second.finish_reason)
-                reasoning_content = second.reasoning_content
+            else:
+                raise GatewayError("MODEL_REQUEST_LIMIT")
             check_cancelled()
         except GatewayError as exc:
             error_code = _safe_code(exc.code)
@@ -457,7 +506,7 @@ class ToolCallingService:
             text if status == Status.COMPLETED else "", tuple(steps), _aggregate_usage(usage_items),
             finish_reason if status == Status.COMPLETED else None, error_code,
             reasoning_content=reasoning_content if status == Status.COMPLETED else None,
-            application_mode=self.policy.mode)
+            application_mode=policy.mode)
         try:
             self.traces.record_tool_conversation(result, started_at=started_at,
                 finished_at=self.clock(), total_ms=(time.monotonic() - start_tick) * 1000)

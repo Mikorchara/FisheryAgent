@@ -49,7 +49,7 @@ Handler 固定 top_k=3，返回 status、retrieval_mode、result_count、evidenc
 
 ### 有界执行与取消
 
-共享协调器最多执行 1 个调用、1 个 Tool round、2 次模型请求。多调用返回 `TOOL_CALL_LIMIT`，第二轮继续请求 Tool 返回 `TOOL_ROUND_LIMIT`；没有 Agent loop。首轮后、执行前后及第二次请求前沿用同一 `RequestHandle` 检查取消。取消不写 Capability Evidence，也不把部分回答提交为成功；不保证远端推理/计费停止。
+正式应用默认协调器最多执行 1 个调用、1 个 Tool round、2 次模型请求。多调用返回 `TOOL_CALL_LIMIT`，第二轮继续请求 Tool 返回 `TOOL_ROUND_LIMIT`；没有 Agent loop。首轮后、执行前后及第二次请求前沿用同一 `RequestHandle` 检查取消。取消不写 Capability Evidence，也不把部分回答提交为成功；不保证远端推理/计费停止。
 
 ### 内部结果、来源与预算合同
 
@@ -59,7 +59,29 @@ Handler 固定 top_k=3，返回 status、retrieval_mode、result_count、evidenc
 
 `requirement_satisfied_by_ledger()` 沿用原 Requirement 语义：AUTO 始终满足，其余要求需本轮至少一项 Receipt 证明对应操作已完成。NO_DATA / NO_MATCH / NOT_SCORABLE / PARTIAL 的校验与正向来源授予规则不变。Assistant gate 使用 Ledger，Web 仍只输出原有轻量 Activity；Ledger、协议消息及原始 Tool Result 都不进入 History。
 
-内部 `ToolTurnBudget` 声明有限调用/轮次/请求和 step 上限。当前 `ToolCallingService` **只接受固定 1/1/2，最多 3 steps**，不能用较大预算开启多轮。原 follow-up 仍为 `tool_choice=none`。JSONL Trace 新增有序 steps 安全摘要，原单轮字段从同一序列派生；不写 Prompt、正文、arguments 或原始 payload。此合同基础未发布 Multi-Round 或 Streaming Tool Calling。
+内部 `ToolTurnBudget` 声明有限调用/轮次/请求和 step 上限。默认模式固定 **1/1/2，最多 3 steps**，不能仅传较大预算开启多轮，follow-up 仍为 `tool_choice=none`。JSONL Trace 记录有序 steps 安全摘要，原单轮字段从同一序列派生；不写 Prompt、正文、arguments 或原始 payload。
+
+### 内部 non-streaming 有界多轮
+
+仅内部代码可显式构造 `ToolCallingService(..., execution_mode=ToolExecutionMode.BOUNDED_MULTI_ROUND)`，固定预算 **2 calls / 2 rounds / 3 requests，最多 5 steps**。传入其他预算、非枚举模式或 retry 非零的 Runtime 会安全拒绝。该模式使用 `run_request()` 接收 scripted ModelRequest；`converse()` 不复用要求单轮的旧开发 Prompt。没有 Web request/UI 开关，也没有修改 Assistant / Analysis Prompt。
+
+```text
+Request #1(auto)
+  ├─ Final → 结束
+  └─ Tool A → 真实 Result A → Request #2(auto)
+       ├─ Final → 提前结束，不消费剩余预算
+       └─ Tool B → 真实 Result B → Request #3(none) → Final
+```
+
+这是同一个共享状态机。后续请求累积原消息及 `assistant(tool_calls)` / `tool(tool_call_id, result)`，模型看到真实结果后自行选择；程序不预执行或规划 Tool B。每轮多个 calls 整批拒绝；调用前预留一次 Final 请求，第三次仍请求 Tool 则 `TOOL_ROUND_LIMIT`，绝不发第四次。额外 final response instruction 只附在强制 Final 的请求上。
+
+同一 Turn 捕获冻结 Policy、同一个 Runtime / CredentialSnapshot，并复用一个 Executor。内部多轮启用 call id 和逻辑请求去重：`ToolDefinition.prepare()` 校验一次，Executor 用 Tool name + validator 归一后参数生成内存签名；重放 id 为 `TOOL_CALL_ALREADY_EXECUTED`，重复逻辑请求为 `TOOL_REQUEST_ALREADY_EXECUTED`。参数、签名或 hash 都不进入 Trace。默认单轮 Executor 的授权/参数行为不变。NO_DATA / NO_MATCH 等不会触发自动重试、参数改写或补查；模型可以 Final，也可以选择预算内另一个不同请求。
+
+ERROR、未授权、畸形/截断调用、Provider 失败和取消立即停止。已有执行结果与 Ledger 保留审计，但失败/取消 Turn 不返回成功正文；缺失 Usage 保持 unknown。多轮 Final 要求非空正文和 stop，截断不能成功。每次请求、进度回调后、Tool 前后都沿用 RequestHandle 的取消检查；内部第三次请求使用安全 REQUEST_3 阶段。Trace 写失败也不能成功提交。
+
+SourceRequirement / Receipt / Ledger 满足语义未改。协调器输出的是执行结果，**不能只凭 COMPLETED 替代来源 Commit Gate**：内部消费者仍需对本轮 Ledger 检查 Requirement；历史文字不补来源，Tool ERROR 不授予完成。正式 Assistant 明确拒绝多轮协调器，Analysis / Web / qualification 仍构造默认 1/1/2；History 只保存原有成功 user / assistant pair。
+
+当前内部预算限制次数，不新增整 Turn deadline；各请求沿用冻结 Runtime 的现有 timeout，不能声称有跨三次请求的统一剩余时限。多轮未做真实模型资格验证，不更改 Preset / Capability 合同，也未开放 Streaming、并行 Tool 或 Agent。
 
 ### Development/Test 与 Manual
 
@@ -70,11 +92,13 @@ Development/Test 可使用离线 Mock 或满足能力门禁的真实 Runtime，�
 - 不支持 Streaming Tool Calling、tool delta 拼接或 Streaming Tool Execution。
 - Knowledge 已注册，真实受控资格实验与 History v2 迁移已完成；有限样本不代表长期 Tool 选择稳定性。普通 AUTO 下无 Tool 却声称已查询 / 评分 / 检索的正文仍可能提交成功；Prompt 与历史文字不构成执行证明。
 - Assistant 按需 Knowledge 与 Analysis 自动 RAG 的双重来源、检索相关性和产品 AUTO 的来源保证仍待评估；History 默认 B 可内部回滚，不会因失败自动改投影或重发。
-- 没有第二轮以上循环、多个 Tool 并行、Agent、Detection Tool、设备控制或写入操作。
+- 正式应用没有第二个 Tool round；内部模式最多两轮。没有多个 Tool 并行、Agent、Detection Tool、设备控制或写入操作。
 - Protocol support、Preset 固定合同、Managed Evidence 和用户 Tool Policy 是不同层次，不能互相代替。
 
 ## 主要测试
 
 T1/T2/T3：`test_gateway_tool_contract.py`、`test_read_only_tools.py`、`test_tool_conversation.py`。应用与 UI：`test_analysis_tools.py`、`test_analysis_tool_web.py`、`test_web_tool_conversation.py`、`test_assistant.py`、`test_browser_streaming.cjs`。自动测试使用 Mock / 临时数据，不发送真实模型请求。
+
+`test_bounded_multi_round.py` 覆盖内部三种路径、真实结果驱动下一模型决策、提前 Final、固定预算、同轮多调用拒绝、归一参数去重、逐执行 Ledger、取消/Usage/安全 Trace 与默认 1/1/2 请求编码兼容。
 
 参数与知识执行覆盖：`test_tool_argument_contract.py`、`test_tool_status_no_match.py`、`test_knowledge_handler.py`、`test_knowledge_registration.py`、`test_knowledge_assembly.py`。历史实施与独立审计见[阶段总结](../../records/archive/knowledge-tool-v1/2026-10-knowledge-tool-v1-summary.md)，不能把历史测试数量当作当前验收。

@@ -27,7 +27,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  ├─ PRIVATE_CREDENTIAL_STORAGE.md                                   # 用户私有凭据安全边界
 │  │  │  └─ PROJECT_DATA_AND_CONFIG_LOCATIONS.md                            # 数据与配置实际位置地图
 │  │  ├─ research/                                                          # 带历史标记的研究与未来议题
-│  │  │  ├─ BOUNDED_MULTI_ROUND_TOOL_RUNTIME.md                              # 有界多轮与流式研究，合同基础已实现
+│  │  │  ├─ BOUNDED_MULTI_ROUND_TOOL_RUNTIME.md                              # 多轮与流式研究，内部非流式两轮已实现
 │  │  │  ├─ DEVELOPMENT_BACKLOG.md                                          # 未立项候选与用户原始笔记，保留历史
 │  │  │  ├─ RUNTIME_PROMPT_AUDIT.md                                       # 运行 Prompt 来源与职责审计，含版本边界
 │  │  │  └─ TOOL_ORCHESTRATION_ARCHITECTURE_REVIEW.md                       # 旧基线 Tool 编排研究
@@ -132,7 +132,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ repositories.py                                         # 水质与 Detection Mock 资源读取
 │  │  ├─ secure_files.py                                         # 安全文件操作与 Windows ACL 检查
 │  │  ├─ tool_capability_probe.py                                # Managed Tool Calling 显式 Probe
-│  │  ├─ tool_conversation.py                                    # 有序 steps、固定预算与单轮 Tool 协调
+│  │  ├─ tool_conversation.py                                    # 默认单轮与内部有界两轮共享协调
 │  │  ├─ water_quality_scoring.py                                # 水质实验评分与等级规则
 │  │  ├─ web.py                                                  # Web API、共享服务与页面入口
 │  │  ├─ web_security.py                                         # Host、Origin 与 CSRF 防护
@@ -269,6 +269,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    │  ├─ test_mock_tool_gateway.py                                          # 离线 Mock 按工具名分派、方向性降级与安全兜底测试
    │  ├─ test_read_only_tools.py                                            # Registry、Executor 与只读 Handler 测试
    │  ├─ test_tool_argument_contract.py                                     # Tool 受控参数合同与旧工具兼容测试
+   │  ├─ test_bounded_multi_round.py                                        # 内部两轮预算、模型决策、去重与取消测试
    │  ├─ test_tool_conversation.py                                          # steps、固定预算、单轮与兼容投影测试
    │  ├─ test_tool_policy.py                                                # Analysis 与 Assistant 授权测试
    │  ├─ test_tool_policy_manager.py                                        # Tool Manager、用户 Policy 存储与默认/override 不变性测试

@@ -19,7 +19,7 @@
 
 ## Tool Runtime · 正式 Runtime
 
-- [tool_conversation.py](tool_conversation.py)：固定 1/1/2 协调、有序 steps 与预算合同、Usage / 安全 Trace，以及开发界面的离线 Mock 模型。
+- [tool_conversation.py](tool_conversation.py)：默认 1/1/2 与内部显式 2/2/3 的共享协调、有序 steps、Usage / 安全 Trace，以及开发界面的离线 Mock 模型。
 - [tools/__init__.py](tools/__init__.py)：Tool 执行层公共接口导出。
 - [tools/contracts.py](tools/contracts.py)：Tool 定义、执行结果、业务状态与安全错误合同。
 - [tools/registry.py](tools/registry.py)：静态 allowlist、正式模型 Tool Definition 及固定 Handler 绑定。

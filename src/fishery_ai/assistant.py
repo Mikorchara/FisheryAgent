@@ -14,7 +14,7 @@ from .execution import current_handle
 from .model_gateway import GatewayError, ModelMessage, ModelRequest
 from .model_options import ReasoningMode, Support
 from .presets import preset_profiles
-from .tool_conversation import ToolCallingService, ToolConversationResult
+from .tool_conversation import ToolCallingService, ToolConversationResult, ToolExecutionMode
 from .tools.catalog import catalog_display
 from .tools.registry import ToolRegistry
 
@@ -224,6 +224,8 @@ class AssistantService:
                  history_projection: ProjectionId = DEFAULT_HISTORY_PROJECTION):
         if coordinator.policy.mode != "assistant":
             raise AssistantError()
+        if getattr(coordinator, "execution_mode", ToolExecutionMode.SINGLE_ROUND) != ToolExecutionMode.SINGLE_ROUND:
+            raise AssistantError("ASSISTANT_MULTI_ROUND_NOT_ENABLED")
         if not isinstance(history_projection, ProjectionId):
             raise AssistantError("INVALID_HISTORY_PROJECTION")
         self.coordinator = coordinator
