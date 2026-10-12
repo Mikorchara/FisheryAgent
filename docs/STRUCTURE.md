@@ -89,6 +89,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  └─ assistant-Q4.json                                               # 三 Tool 选择 Knowledge 的资格计划
 │  │  ├─ qualify_assistant_turn.py                                          # 单 manifest Assistant 资格入口，默认 dry-run
 │  │  ├─ qualify_local_preset_request.py                                    # Local Preset 最小请求资格验证
+│  │  ├─ qualify_multi_round.py                                             # 单案例有界多轮资格实验，默认 dry-run
 │  │  └─ qualify_preset_tools.py                                            # Preset Tool Calling 资格验证入口
 │  └─ README.md                                                             # 辅助工具用途与逐次真实联网授权边界
 ├─ src/                                                          # Runtime/Core 应用源码与安装 metadata
@@ -141,6 +142,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  └─ qualification/                                     # 资格实现，单向复用正式产品合同
 │  │  │     ├─ __init__.py                                      # 无装配、凭据解析或联网的包入口
 │  │  │     ├─ assistant_qualification.py                       # 单 manifest 授权、预算、运行与安全报告
+│  │  │     ├─ multi_round_qualification.py                       # 隔离 Snapshot、多轮资格与安全来源报告
 │  │  │     ├─ qualification_adapter.py                         # 资格输出预算与有限 Provider 观测
 │  │  │     ├─ qualification_history.py                         # 冻结历史 fixture 与 case 兼容白名单
 │  │  │     ├─ qualification_migration.py                       # 历史多轮资格 fixture 与矩阵兼容
@@ -246,6 +248,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
    │  ├─ test_assistant_qualification.py                                    # 单次实验、预算、取消与报告脱敏测试
    │  ├─ test_qualification_boundary.py                                      # 正式导入隔离、兼容别名与开发 CLI 边界测试
+   │  ├─ test_multi_round_qualification.py                                   # 单案例预算、隔离 Snapshot、结果关联与安全报告
    │  ├─ test_local_preset_qualification.py                                 # Local Preset 验证入口安全测试
    │  └─ test_preset_tool_qualification.py                                  # Preset Tool 完整资格流程测试
    ├─ security/                                                             # Credential、安全写入、ACL、快照与请求取消

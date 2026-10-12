@@ -89,6 +89,7 @@ Phase D 后实现集中在 `development/qualification/`，单向复用正式 Run
 - [development/__init__.py](development/__init__.py)：无副作用的开发包标记。
 - [development/qualification/__init__.py](development/qualification/__init__.py)：资格边界标记，导入包本身不装配服务、解析凭据或联网。
 - [development/qualification/assistant_qualification.py](development/qualification/assistant_qualification.py)：单 manifest 授权、预算、Assistant 资格执行和安全报告。
+- [development/qualification/multi_round_qualification.py](development/qualification/multi_round_qualification.py)：隔离合成 Snapshot 的单案例有界多轮资格实验，默认不联网。
 - [development/qualification/qualification_adapter.py](development/qualification/qualification_adapter.py)：单次实验的输出预算与有限 Provider 原始 / 归一观测。
 - [development/qualification/qualification_history.py](development/qualification/qualification_history.py)：冻结合成 History、H case 和兼容白名单，非产品 Session。
 - [development/qualification/qualification_migration.py](development/qualification/qualification_migration.py)：已结束研究的多轮 fixture、矩阵与顺序兼容数据，不启动批次。

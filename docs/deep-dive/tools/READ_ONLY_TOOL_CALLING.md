@@ -83,6 +83,29 @@ SourceRequirement / Receipt / Ledger 满足语义未改。协调器输出的是�
 
 当前内部预算限制次数，不新增整 Turn deadline；各请求沿用冻结 Runtime 的现有 timeout，不能声称有跨三次请求的统一剩余时限。多轮未做真实模型资格验证，不更改 Preset / Capability 合同，也未开放 Streaming、并行 Tool 或 Agent。
 
+### 单案例多轮资格入口
+
+`scripts/qualification/qualify_multi_round.py` 调用 `development/qualification/multi_round_qualification.py`。它是开发边界内的长期单次工具，不接正式 AssistantService，也不启用产品多轮；默认 dry-run，不解析凭据、不装配 Handler/SDK、不生成报告。真实运行必须逐个 case 获本轮授权并传 `--confirm-network`，无永久授权文件、批处理或自动补样本。
+
+默认发布 Preset 为 Qwen 3.8 Flash，按当前固定合同解析 exact Identity / ProtocolSpec / OFF + Normal；未知 Tool capability 不绕过。复用正式 private credential composition、RuntimeSnapshot / CredentialSnapshot、QualificationAdapter 的受限输出预算和 raw/normalized 安全观测、共享 ToolCallingService / Registry / Executor、RequestHandle 与现有安全报告写入。不改 Preset、Evidence、全局 Policy、Web Snapshot 或正式 Prompt。
+
+| case | 隔离合成水质 | 预期执行序列 | 最大模型请求 |
+| --- | --- | --- | --- |
+| low-oxygen | 28℃ / pH 7.5 / DO 2.2 | 查询当前水质→模型看到异常后检索知识→Final | 3 |
+| normal | 28℃ / pH 7.5 / DO 6.4 | 查询当前水质→无需检索→Final | 2 |
+| current-do | 同正常 fixture | 一次水质查询→直接 Final | 2 |
+| concept | 同正常 fixture，但不应读取 | 无 Tool 直接 Final | 1 |
+
+四项均暴露查询与 Knowledge 两个正式 Tool，模型自主选择，不预执行、不按自然语言硬路由。low-oxygen 与 normal 的问题完全相同，首轮不包含 fixture 数值；只有真实 Handler 返回的 Result 决定模型下一步。独立实验 System 指令明确允许结果后重新决策，同时要求正常场景不检索、概念题可直答；不使用仍要求 Tool 后直接回答的正式 Prompt。
+
+Runtime 固定 2/2/3；单案例额外请求上限更严格，超过即停止，不为了得到预期路径放宽预算。正常/DO 案例若意外请求第二个 Tool，会记录模型调用但不执行 Handler、不发第三次请求；concept 意外调用也不会执行 Handler。每请求最多 256 tokens；逐请求 timeout 沿用冻结 Runtime，尚无整 Turn deadline。Provider 错误、截断、参数错误、取消均结束，不自动 retry、修参数或切换 Provider。
+
+报告区分模型提出的 normalized calls、实际 execution steps、每个 Result 的状态/耗时、下一请求是否确实包含该执行的原 Result、逐执行 Ledger、Usage、finish reason、最终正文存在性及提前结束。原始 Provider 调用一致性来自既有 QualificationAdapter；脚本测试明确标记 offline_fixture，不作为真实模型证据。正文、query、call id、完整 payload、Prompt、Credential / 私有路径不记录，不能据此评价回答质量。
+
+资格通过同时要求：执行 COMPLETED；实际 Tool 顺序符合固定 case；每个 Result 原样进入后续请求；现有 Ledger 来源要求满足。真实分类另需实际 Adapter 的 Provider / normalized 一致性和 exact model 检查通过，不能用 scripted 回答充当 Provider 证据。low-oxygen 分别检查当前观测查询与项目搜索，复用确定性检查而不增加 SourceRequirement 类型；NO_MATCH 完成搜索但不认证知识命中。执行完成而路径/来源不满足仍不能 qualified，也不进入产品成功 History。执行失败保留已有 Ledger；报告写入失败时 CLI 保留已消耗请求数量，不让用户误以为尚未请求。
+
+使用方法见[构建与运行](../../BUILD_RUN.md)。本阶段只完成离线准备，没有真实 Provider 数据，未发布多轮能力。
+
 ### Development/Test 与 Manual
 
 Development/Test 可使用离线 Mock 或满足能力门禁的真实 Runtime，提供安全完整 Trace；真实请求由用户显式确认。Manual V1/V2 是 Raw 请求与展示路径，Tool Call 可传输/展示但绝不自动执行。

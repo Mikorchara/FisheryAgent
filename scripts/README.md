@@ -5,6 +5,7 @@
 - `dev/run_tests.py`：简单离线 unittest 分层入口，默认 FULL PRODUCT；不启动 Provider 或批次任务。
 - `dev/manual_edge_mock_probe.cjs`：人工页面调试辅助，需用户自行提供本机 Web / Edge CDP；不属于自动 Browser 测试，不自动启动服务。
 - `qualification/qualify_assistant_turn.py`：单 manifest 来源资格验证，默认 dry-run；Q1–Q4 保留为有限单次计划示例。
+- `qualification/qualify_multi_round.py`：内部 2/2/3 单案例资格实验，默认 dry-run；隔离合成 Snapshot，逐 case 限制 1–3 次请求，不进入正式 Assistant。
 - `qualification/qualify_preset_tools.py`：单 Preset 的只读 Tool 往返与概念题维护资格验证，不自动发布。
 - `qualification/qualify_local_preset_request.py`：精确 Local 目标的单次请求检查，不扫描模型或自动发布。
 

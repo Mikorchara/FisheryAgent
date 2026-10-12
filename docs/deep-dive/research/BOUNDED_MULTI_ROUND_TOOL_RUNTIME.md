@@ -277,7 +277,7 @@ Later Streaming：只替换一次 Model step 的取得方式
 
 1. **合同基础（已实现）**：steps / Ledger / budget / safe trace，单执行 Receipt 语义保持；legacy 投影保留 1/1/2 和原 Prompt、History、UI。progress 阶段名称保持原样，离线 parity 后停止审查。
 2. **有界 non-streaming（内部已实现）**：显式 2/2/3、去重和错误收口；scripted 测试证明提前 Final 和结果影响下一 Tool。统一 Deadline、通用 indexed progress 与发布用指令仍待独立评审。
-3. **资格与单应用发布**：另获授权做精确模型资格，不沿用单轮资格推导；先 Assistant 或 Development 一个消费者，feature flag 可回滚，Analysis 保持旧预算直到独立批准。
+3. **资格与单应用发布（单案例离线准备已完成）**：`qualify_multi_round.py` 使用独立实验指令和隔离合成 Snapshot，默认不联网；四项固定 case 分别限制 3/2/2/1 次请求，正式产品仍为单轮。使用[单案例入口](../tools/READ_ONLY_TOOL_CALLING.md#单案例多轮资格入口)另获授权做精确模型资格，不沿用单轮资格推导；真实结果尚未运行。产品发布需先 Assistant 或 Development 一个消费者，feature flag 可回滚，Analysis 保持旧预算直到独立批准。
 4. **Streaming 协议基础**：先在 1/1/2 离线验证 assembler / 生命周期，再用同一 Coordinator 覆盖 2/2/3；此时尚不必公开流式正文。
 5. **Streaming 产品接入**：精确 Streaming + Tool 资格、公开 SSE / 安全渲染、一个 Turn 的多 step Activity、真实 Stop 人工验收。
 

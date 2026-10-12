@@ -51,7 +51,17 @@ Assistant 来源资格验证使用独立单次入口，默认 dry-run：
 
 Q1–Q4 保留为单次维护计划示例，使用空 History；不包含已结束的 H / P2E 批次。真实运行必须针对具体计划和次数获得本轮明确授权，才使用 `--confirm-network`。Harness 最多两次请求、每请求最多 256 输出 tokens、retry=0；安全结果写入 `outputs/assistant-qualification/`。CLI Snapshot 初始为空，不读取 Web 已 Apply 的状态。凭据受阻时安全停止，不改 ACL 或回退源码 `.env`。
 
-History 的 Qwen、DeepSeek、Ollama A/B 批次和 P2E 多轮资格实验均已结束，正式产品迁移也已完成；对应一次性 runner、manifest / index / generator 和实验测试已移除。实验合同、结果及停止事故保留在[记录索引](records/README.md)与 Git；迁移依据见[History v2 判定](records/2026-10-history-v2-migration-decision.md)。不得按旧授权重跑或补样本。
+内部有界多轮使用新的单案例入口，默认 Qwen 3.8 Flash / OFF / Normal。先检查计划，不读取凭据、不联网、不写报告：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/qualification/qualify_multi_round.py --case low-oxygen --dry-run
+```
+
+可选 case：`low-oxygen`（当前水质→异常知识→Final，最多 3 次请求）、`normal`（查询→Final，最多 2 次）、`current-do`（查询→Final，最多 2 次）、`concept`（无 Tool 直答，最多 1 次）。每次只选择一个 case；没有批次、自动重试或 failover。独立进程使用合成 Snapshot，不读取或修改 Web Snapshot / Policy。正式产品仍为 1/1/2。
+
+真实运行需用户针对该 case 单独授权，再将 `--dry-run` 换成 `--confirm-network`；默认每请求最多 256 输出 tokens，retry=0。其他已发布 Preset 可用 `--preset` 指定，但不能沿用 Qwen 授权。安全报告仍写入固定 `outputs/assistant-qualification/`，以 `bounded-multi-round@1` 标记；不保存最终正文、query、完整 Tool Result 或 Prompt。详见[实验边界和通过条件](deep-dive/tools/READ_ONLY_TOOL_CALLING.md#单案例多轮资格入口)。
+
+History 的 Qwen、DeepSeek、Ollama A/B 批次和 P2E 多轮历史资格实验均已结束，正式产品迁移也已完成；对应一次性 runner、manifest / index / generator 和实验测试已移除。实验合同、结果及停止事故保留在[记录索引](records/README.md)与 Git；迁移依据见[History v2 判定](records/2026-10-history-v2-migration-decision.md)。不得按旧授权重跑或补样本。
 
 ## Managed Custom 凭据与取消
 
