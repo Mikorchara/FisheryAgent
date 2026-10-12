@@ -183,10 +183,11 @@ class ModelExecutionStep:
     seq: int
     request_index: int
     result: ModelStepOutcome
+    request_started: bool = False  # Gateway invocation, not proof of a Provider network attempt.
 
     def __post_init__(self):
         if (any(type(value) is not int or value < 1 for value in (self.seq, self.request_index))
-                or not isinstance(self.result, ModelStepOutcome)):
+                or type(self.request_started) is not bool or not isinstance(self.result, ModelStepOutcome)):
             raise ValueError("invalid model execution step")
 
 
@@ -199,12 +200,14 @@ class ToolExecutionStep:
     tool_name: str = field(repr=False)
     result: ToolExecutionResult | None = field(default=None, repr=False)
     duration_ms: float | None = None
+    handler_started: bool = False
 
     def __post_init__(self):
         if (any(type(value) is not int or value < 1 for value in (
                 self.seq, self.model_request_index, self.tool_round))
                 or not isinstance(self.tool_call_id, str) or not self.tool_call_id
                 or not isinstance(self.tool_name, str) or not self.tool_name
+                or type(self.handler_started) is not bool
                 or (self.result is not None and not isinstance(self.result, ToolExecutionResult))
                 or (self.duration_ms is not None and (type(self.duration_ms) not in (int, float)
                     or not math.isfinite(self.duration_ms) or self.duration_ms < 0))):
@@ -229,6 +232,7 @@ class ToolConversationResult:
     trace_recorded: bool = False
     reasoning_content: str | None = field(default=None, repr=False)
     application_mode: str = "assistant"
+    budget: ToolTurnBudget = SINGLE_ROUND_BUDGET
 
     def __post_init__(self):
         object.__setattr__(self, "steps", tuple(self.steps))
@@ -360,7 +364,8 @@ class ToolCallingService:
     def run_request(self, request: ModelRequest, runtime: RuntimeSnapshot, *,
                     request_id: str | None = None, trace_id: str | None = None,
                     final_response_instruction: str | None = None,
-                    on_progress: Callable[[str], None] | None = None) -> ToolConversationResult:
+                    on_progress: Callable[[str], None] | None = None,
+                    on_steps: Callable[[tuple], None] | None = None) -> ToolConversationResult:
         """Shared bounded execution; caller owns context, Registry owns definitions."""
         started_at, start_tick = self.clock(), time.monotonic()
         handle = current_handle()
@@ -377,6 +382,10 @@ class ToolCallingService:
         reasoning_content = None
         status = Status.COMPLETED
 
+        def publish_steps():
+            if on_steps:
+                on_steps(tuple(steps))  # Immutable runtime steps remain the only execution truth.
+
         def complete(request: ModelRequest, index: int):
             check_cancelled()
             if index + 1 > budget.max_model_requests:
@@ -388,9 +397,11 @@ class ToolCallingService:
 
             def set_outcome(outcome):
                 steps[position] = replace(steps[position], result=outcome)
+                publish_steps()
 
             if on_progress:
                 on_progress(f"REQUEST_{index + 1}")
+            publish_steps()
             # The coordinator also gates alternate Gateways; no real capability is granted.
             try:
                 check_cancelled()  # Progress callbacks may cancel before transport starts.
@@ -399,6 +410,8 @@ class ToolCallingService:
                 set_outcome(ModelStepOutcome("blocked", error_code=_safe_code(exc.code)))
                 raise
             try:
+                steps[position] = replace(steps[position], request_started=True)
+                publish_steps()
                 response = self.gateway.complete(request, runtime)
             except GatewayError as exc:
                 usage_items.append(Usage())
@@ -469,17 +482,24 @@ class ToolCallingService:
                 check_cancelled()
                 if on_progress:
                     on_progress("RUNNING_TOOL")
+                publish_steps()  # Attempt only: the Executor has not authorized the Handler yet.
                 tool_tick = time.monotonic()
                 tool_result = None
                 try:
                     if executor is None:
+                        def handler_started():
+                            steps[tool_position] = replace(steps[tool_position], handler_started=True)
+                            publish_steps()
+
                         executor = ToolExecutor(self.registry, max_calls=budget.max_tool_calls,
-                            policy=policy, reject_duplicate_requests=multi_round)
+                            policy=policy, reject_duplicate_requests=multi_round,
+                            on_handler_started=handler_started)
                     tool_result = executor.execute(calls[0])
                 finally:
                     tool_duration_ms = (time.monotonic() - tool_tick) * 1000
                     steps[tool_position] = replace(steps[tool_position], result=tool_result,
                                                    duration_ms=tool_duration_ms)
+                    publish_steps()
                 check_cancelled()
                 if tool_result.status == ToolStatus.ERROR:
                     raise GatewayError(tool_result.error_code.value)
@@ -502,11 +522,13 @@ class ToolCallingService:
         except Exception:
             error_code, status = "TOOL_CONVERSATION_ERROR", Status.FAILED
 
+        publish_steps()
+
         result = ToolConversationResult(request_id, trace_id, status, runtime.public_info(),
             text if status == Status.COMPLETED else "", tuple(steps), _aggregate_usage(usage_items),
             finish_reason if status == Status.COMPLETED else None, error_code,
             reasoning_content=reasoning_content if status == Status.COMPLETED else None,
-            application_mode=policy.mode)
+            application_mode=policy.mode, budget=budget)
         try:
             self.traces.record_tool_conversation(result, started_at=started_at,
                 finished_at=self.clock(), total_ms=(time.monotonic() - start_tick) * 1000)

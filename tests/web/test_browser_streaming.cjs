@@ -1139,6 +1139,121 @@ function assistantResult(changes={}) {
     total_latency_ms:3200,...changes};
 }
 
+function assistantStepsActivity(changes={}) {
+  return {activity_schema_version:2,request_id:'offline-request',revision:12,state:'COMPLETED',phase:'FINALIZING',
+    counts:{model_requests_started:2,tool_attempts:1,tools_executed:1},
+    budget:{tool_calls:1,tool_rounds:1,model_requests:2},total_latency_ms:100,
+    steps:[{seq:1,kind:'model',request_index:1,request_started:true,state:'COMPLETED',outcome:'tool_calls',finish_reason:'tool_calls'},
+      {seq:2,kind:'tool',state:'COMPLETED',handler_started:true,tool_name:'get_current_water_quality',
+        display_name:'当前水质',result_status:'OK',duration_ms:2,freshness:'fresh'},
+      {seq:3,kind:'model',request_index:2,request_started:true,state:'COMPLETED',outcome:'final_answer',finish_reason:'stop'}],...changes};
+}
+
+test('Assistant v2 Activity uses ordered steps and ignores raw legacy payload and interim text',async()=>{
+  const activity=assistantStepsActivity();
+  activity.steps[1].arguments={secret:'fictional-private-query'};activity.steps[1].raw_result='fictional-private-result';
+  activity.steps[0].text='not a final answer';
+  const page=assistantPage(async()=>r2Reply({result:assistantResult({activity,trace_recorded:true,
+    tool_activity:{used_tool:true,tool_name:'wrong_legacy_tool'},usage:{request_count:2,usage:{}}})}));
+  await enterAssistant(page);await sendAssistantQuestion(page);
+  const state=assistantStateJson(page);
+  assert.equal(state.completedTurns.length,1);assert.equal(state.displayEntries.filter(x=>x.kind==='assistant').length,1);
+  assert.deepEqual(state.run.steps.map(s=>s.kind),['model','tool','model']);
+  assert.match(allElementText(page.element('assistant-run-details')),/Step #1.*Step #2.*Step #3/);
+  const text=allElementText(page.element('assistant-messages'))+JSON.stringify(state);
+  assert.doesNotMatch(text,/fictional-private-query|fictional-private-result|not a final answer|wrong_legacy_tool/);
+  assert.match(allElementText(page.element('assistant-messages')),/使用了 1 个 Tool/);
+});
+
+test('Assistant generic Activity supports a five-step display without fixed Tool slots',()=>{
+  const page=assistantPage();const activity=assistantStepsActivity();
+  activity.steps.push({seq:4,kind:'tool',state:'COMPLETED',handler_started:true,tool_name:'search_fishery_knowledge',
+    display_name:'知识检索',result_status:'NO_MATCH',evidence_count:0,duration_ms:1},
+    {seq:5,kind:'model',request_index:3,request_started:true,state:'COMPLETED',outcome:'final_answer',finish_reason:'stop'});
+  vm.runInContext(`setAssistantRun('Completed',{activity:${JSON.stringify(activity)}})`,page.context);
+  assert.deepEqual(assistantStateJson(page).run.steps.map(s=>s.seq),[1,2,3,4,5]);
+  assert.match(page.element('assistant-run-summary').textContent,/2 Tool · 3 Requests/);
+  assert.match(allElementText(page.element('assistant-run-details')),/Step #5.*Request #3/);
+  assert.equal(page.calls.length,0); // Rendering future steps does not enable multi-round requests.
+});
+
+test('Assistant rejected attempts display rejection without counting a Handler execution',async()=>{
+  const activity=assistantStepsActivity({state:'FAILED',steps:[
+    {seq:1,kind:'model',request_index:1,request_started:true,state:'COMPLETED',outcome:'tool_calls'},
+    {seq:2,kind:'tool',state:'REJECTED',handler_started:false,tool_name:'get_current_water_quality',
+      result_status:'ERROR',safe_error_code:'INVALID_TOOL_ARGUMENTS'}]});
+  const page=assistantPage(async()=>r2Reply({result:assistantResult({activity,status:'failed',successful_turn:false,
+    final_text:'do not display this',error_code:'INVALID_TOOL_ARGUMENTS'})},false));
+  await enterAssistant(page);await sendAssistantQuestion(page);
+  assert.match(page.element('assistant-run-summary').textContent,/0 Tool · 1 Requests/);
+  assert.match(allElementText(page.element('assistant-run-details')),/REJECTED.*Handler 未执行.*INVALID_TOOL_ARGUMENTS/);
+  assert.equal(assistantStateJson(page).completedTurns.length,0);
+  assert.doesNotMatch(allElementText(page.element('assistant-messages')),/do not display this/);
+});
+
+test('Assistant poll recovers fast completed Tool steps and rejects stale or wrong-run snapshots',async()=>{
+  let release;const activity=assistantStepsActivity({state:'RUNNING',phase:'REQUEST_2'});
+  activity.steps[2].state='RUNNING';activity.steps[2].outcome='not_started';
+  const page=assistantPage(async(url)=>url.endsWith('/status') ? r2Reply({state:'RUNNING',phase:'REQUEST_2',activity})
+    : new Promise(done=>{release=done;}));
+  await enterAssistant(page);const pending=sendAssistantQuestion(page);
+  while(!release)await new Promise(done=>setImmediate(done));
+  await new Promise(done=>setTimeout(done,410));
+  assert.deepEqual(assistantStateJson(page).run.steps.map(s=>s.state),['COMPLETED','COMPLETED','RUNNING']);
+  assert.equal(assistantStateJson(page).completedTurns.length,0);
+  const stale={state:'RUNNING',phase:'REQUEST_1',activity:assistantStepsActivity({revision:11,steps:[]})};
+  vm.runInContext(`acceptAssistantProgress(activeExecution,${JSON.stringify(stale)})`,page.context);
+  const wrong={...stale,activity:assistantStepsActivity({revision:50,request_id:'other-run',steps:[]})};
+  vm.runInContext(`acceptAssistantProgress(activeExecution,${JSON.stringify(wrong)})`,page.context);
+  assert.equal(assistantStateJson(page).run.steps.length,3);
+  release(r2Reply({result:assistantResult({activity:assistantStepsActivity(),trace_recorded:true})}));await pending;
+  assert.equal(assistantStateJson(page).completedTurns.length,1);
+});
+
+test('Assistant polling Completed never commits history before the final gated chat response',async()=>{
+  let release;const page=assistantPage(async()=>new Promise(done=>{release=done;}));await enterAssistant(page);
+  const pending=sendAssistantQuestion(page);while(!release)await new Promise(done=>setImmediate(done));
+  vm.runInContext(`acceptAssistantProgress(activeExecution,{state:'COMPLETED',activity:${JSON.stringify(assistantStepsActivity())}})`,page.context);
+  assert.match(page.element('assistant-run-summary').textContent,/Finalizing/);
+  assert.equal(assistantStateJson(page).completedTurns.length,0);
+  release(r2Reply({result:assistantResult({activity:assistantStepsActivity({state:'FAILED'}),
+    status:'failed',successful_turn:false,error_code:'TRACE_WRITE_ERROR',final_text:'do not commit'})},false));await pending;
+  assert.equal(assistantStateJson(page).completedTurns.length,0);
+  assert.match(page.element('assistant-run-summary').textContent,/Failed/);
+});
+
+test('Assistant Stop retains completed steps and cancelled running step despite late chat success',async()=>{
+  let release;const activity=assistantStepsActivity({state:'CANCELLED',revision:20});
+  activity.steps[2].state='CANCELLED';activity.steps[2].outcome='cancelled';
+  const page=assistantPage(async(url)=>url.endsWith('/cancel') ? r2Reply({state:'CANCELLED',activity})
+    : new Promise(done=>{release=done;}));
+  await enterAssistant(page);const pending=sendAssistantQuestion(page);while(!release)await new Promise(done=>setImmediate(done));
+  await page.element('assistant-stop').dispatch('click');
+  assert.deepEqual(assistantStateJson(page).run.steps.map(s=>s.state),['COMPLETED','COMPLETED','CANCELLED']);
+  assert.match(page.element('assistant-run-summary').textContent,/Cancelled/);
+  release(r2Reply({result:assistantResult({activity:assistantStepsActivity(),trace_recorded:true})}));await pending;
+  assert.equal(assistantStateJson(page).completedTurns.length,0);
+  assert.match(page.element('assistant-run-summary').textContent,/Cancelled/);
+});
+
+test('Assistant v2 final Activity requires matching request and recorded final Trace',async()=>{
+  for(const changes of [{trace_recorded:false},{activity:assistantStepsActivity({request_id:'wrong-request'})}]) {
+    const page=assistantPage(async()=>r2Reply({result:assistantResult({activity:assistantStepsActivity(),trace_recorded:true,...changes})}));
+    await enterAssistant(page);await sendAssistantQuestion(page);
+    assert.equal(assistantStateJson(page).completedTurns.length,0);
+    assert.match(page.element('assistant-run-summary').textContent,/Failed/);
+  }
+});
+
+test('Assistant early Final has one model step and no phantom Tool or later model slots',async()=>{
+  const activity=assistantStepsActivity({steps:[{seq:1,kind:'model',request_index:1,request_started:true,state:'COMPLETED',outcome:'final_answer'}]});
+  const page=assistantPage(async()=>r2Reply({result:assistantResult({activity,trace_recorded:true})}));
+  await enterAssistant(page);await sendAssistantQuestion(page);
+  assert.match(page.element('assistant-run-summary').textContent,/0 Tool · 1 Requests/);
+  assert.doesNotMatch(allElementText(page.element('assistant-run-details')),/Request #2|Step #2/);
+  assert.match(allElementText(page.element('assistant-messages')),/未调用 Tool/);
+});
+
 function assistantPage(handler=async()=>r2Reply({result:assistantResult()}), bootstrap=assistantBootstrap()) {
   const calls=[];
   const page=makePage(async(url,options={})=>{

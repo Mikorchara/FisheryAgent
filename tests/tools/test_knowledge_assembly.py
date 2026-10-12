@@ -24,7 +24,8 @@ WATER = "get_current_water_quality"
 SCORE = "score_current_water_quality"
 COMPOSITION_ROOTS = {"web.py", "composition.py",
     "development/qualification/real_validation.py",
-    "development/qualification/assistant_qualification.py"}
+    "development/qualification/assistant_qualification.py",
+    "development/qualification/multi_round_qualification.py"}
 
 
 from tests.support.paths import PROJECT_ROOT

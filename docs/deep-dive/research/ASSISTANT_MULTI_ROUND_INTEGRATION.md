@@ -1,10 +1,12 @@
 # Assistant 有界多轮接入与交互设计
 
-状态：设计，尚未实施。2026-10-12。默认产品仍为 **1 Tool / 1 round / 2 requests**；本方案仅研究 Assistant 可控启用 **2/2/3、每轮一个 Tool、non-streaming**。
+状态：2026-10-12，阶段 A 安全 Activity / 通用步骤 UI 已实施；阶段 B/C/D 仍为设计。默认产品仍为 **1 Tool / 1 round / 2 requests**；尚未开放 Assistant **2/2/3**。
 
 依据当前 `assistant.py`、`tool_conversation.py`、`assistant_sources.py`、`execution.py`、`web.py`、`observability.py`、`resources/web/app.js` 及对应测试。[内部 Runtime](../tools/READ_ONLY_TOOL_CALLING.md)、[当前 Assistant 架构](../architecture/ASSISTANT_MODEL_V1_DESIGN.md)提供现有合同，本文件不替代它们。
 
 ## 1. 当前缺口与资格证据边界
+
+下表为设计时识别的集成缺口；阶段 A 收口情况见 §7，未完成部分仍需在产品多轮启用前解决。
 
 | 当前实现 | 接入缺口 |
 | --- | --- |
@@ -150,4 +152,15 @@ Assistant：仅最终成功后出现一条自然语言正文。
 
 实现阶段先 targeted，稳定后 FULL PRODUCT + Browser，qualification 合同变更时加离线 FULL QUALIFICATION；语法、链接、diff 与敏感检查。人工验收只在单独授权后使用正式 multi Prompt 和实际预算确认，核对一个 Turn 一条回答、即时 Stop、每个 Tool 时间/状态与真实日志一致。
 
-建议：**可以开始阶段 A（安全投影与通用 UI），默认 flag 关闭。**不能仅凭这两个实验样本直接开启正式多轮；正式 Prompt 资格、整 Turn deadline、发布范围与终态一致性应在启用前完成。本轮仅写设计，不做实现或真实请求。
+阶段 A 已完成，默认多轮门禁仍关闭。不能仅凭这两个实验样本直接开启正式多轮；正式 Prompt 资格、整 Turn deadline 与发布范围应在启用前完成。后续阶段须单独审核，本阶段未执行真实请求。
+
+## 7. 阶段 A 实施结果
+
+- 新增 `assistant_activity.py`：以 Runtime steps 为唯一执行真相，统一生成最终响应、Trace 与 status 的 schema v2 安全投影。RequestHandle 缓存的是脱敏元数据快照，revision 单调递增，快步骤不会因轮询漏看而丢失。
+- Coordinator 可选 steps observer 与 Executor Handler-entry observer 复用原执行栈；新增 request_started / handler_started 观测标记。尝试、授权拒绝与真正执行明确区分，执行权限和调用预算不变。
+- 前端使用通用有序 Model / Tool 列表；只添加实际步骤。保留单轮旧响应兼容，支持未来五步数据的离线渲染，不开放多轮请求。运行失败/取消保留步骤，迟到/旧 revision/错误 request id 不覆盖当前执行。
+- Assistant 在 FINALIZING 后将 Trace 写入与取消提交串行化，再发布终态；Trace 失败不能发布成功。轮询 Completed 仅等待最终 gated chat 响应，不提交 History。一轮仍只有一条成功最终回答。
+- Prompt、History Projection、Source/Receipt/Ledger/Commit Gate 判定、Analysis、Provider、Handler 与 Policy 权限不变。正式 Assistant 的 multi-round gate 仍关闭，保持 1/1/2；未新增启用开关、deadline、SSE 或 Streaming。
+- FULL PRODUCT 首轮暴露 Phase 3 既有测试清单遗漏：独立 `development/qualification/multi_round_qualification.py` composition root 未列入 KnowledgeService 构造位置测试。仅补充该明确路径，仍锁定每个 root 一次构建及 Web 单实例共享，无 Knowledge 行为修改。
+
+离线验证：受影响 Python targeted 254 项通过；FAST 149 项通过；FULL PRODUCT 901 项通过；Browser 196 项通过；额外 FULL QUALIFICATION 116 项完成（1 项既有条件跳过）。新 Activity 合同覆盖 19 项 Python / Web 测试及 8 项 Browser 测试。Markdown 本地链接、Python / JS 语法、diff 与改动文本敏感模式检查通过。未执行真实 Provider 请求。

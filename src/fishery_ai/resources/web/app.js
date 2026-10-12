@@ -297,10 +297,12 @@ async function stopGeneration() {
       return data;
     };
     let state = await post("cancel"); // Independent request reaches server before browser abort.
+    if (assistantRun) acceptAssistantProgress(running, state, true);
     running.controller.abort();
     for (let attempt = 0; state.state === "CANCEL_REQUESTED" && attempt < 20; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 250));
       state = await post("status");
+      if (assistantRun) acceptAssistantProgress(running, state, true);
     }
     const closed = state.backend_io_closed === true ? "后端 I/O 已关闭" : "后端 I/O 关闭尚未确认";
     const outcome = state.state === "COMPLETED" ? "请求已经完成" : state.state === "CANCELLED" ? "USER_CANCELLED" : state.state;
@@ -2783,7 +2785,55 @@ function safeAssistantActivity(value = {}) {
   }
   if (["fresh", "stale"].includes(value.freshness)) activity.freshness = value.freshness;
   if (["valid", "partial", "invalid"].includes(value.quality)) activity.quality = value.quality;
+  activity.experimental = value.experimental === true || name === "score_current_water_quality";
+  if (Number.isSafeInteger(value.evidence_count) && value.evidence_count >= 0 && value.evidence_count <= 100) activity.evidence_count = value.evidence_count;
   return activity;
+}
+
+function safeAssistantSteps(result) {
+  const value = result?.activity;
+  if (value?.activity_schema_version === 2 && Array.isArray(value.steps)) {
+    const steps = [];
+    for (const raw of value.steps.slice(0, 5)) {
+      if (raw.seq !== steps.length + 1 || !["model", "tool"].includes(raw.kind)) break;
+      const step = {seq: raw.seq, kind: raw.kind,
+        state: ["RUNNING", "ATTEMPTING", "COMPLETED", "REJECTED", "FAILED", "CANCELLED"].includes(raw.state) ? raw.state : "FAILED",
+        safe_error_code: typeof raw.safe_error_code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(raw.safe_error_code) ? raw.safe_error_code : null};
+      if (raw.kind === "model") {
+        step.request_index = Number.isSafeInteger(raw.request_index) ? raw.request_index : null;
+        step.request_started = raw.request_started === true;
+        step.outcome = assistantOutcome(raw.outcome); step.usage = safeAssistantUsage(raw.usage);
+        step.finish_reason = ["stop", "length", "tool_calls", "function_call", "content_filter"].includes(raw.finish_reason) ? raw.finish_reason : null;
+      } else {
+        Object.assign(step, safeAssistantActivity({...raw, used_tool: raw.handler_started === true, tool_status: raw.result_status}));
+        step.handler_started = raw.handler_started === true;
+      }
+      steps.push(step);
+    }
+    return steps;
+  }
+  // Thin compatibility for older single-round responses, never parallel writable state.
+  const steps = [], tool = safeAssistantActivity(result?.tool_activity);
+  for (const index of [1, 2]) {
+    const model = result?.[`request_${index}`];
+    if (model && model.outcome !== "not_started") steps.push({seq: steps.length + 1, kind: "model",
+      request_index: index, request_started: model.outcome !== "blocked", outcome: assistantOutcome(model.outcome), state: "COMPLETED"});
+    if (index === 1 && tool.used_tool) steps.push({seq: steps.length + 1, kind: "tool",
+      state: tool.tool_status === "ERROR" ? "FAILED" : "COMPLETED", handler_started: true, ...tool});
+  }
+  return steps;
+}
+
+function assistantToolRows(tool) {
+  const label = tool.display_name && tool.display_name !== tool.tool_name
+    ? `${tool.display_name}（${tool.tool_name}）` : tool.tool_name;
+  const rows = [["Tool Name", label], ["Result Status", tool.tool_status],
+    ["Duration", Number.isFinite(tool.duration_ms) ? `${tool.duration_ms.toFixed(1)} ms` : "unavailable"]];
+  for (const key of ["quality", "freshness", "observed_at", "evaluated_at", "evidence_count"]) if (tool[key] !== undefined) rows.push([key, tool[key]]);
+  if (tool.display_summary) rows.push(["用途", tool.display_summary]);
+  rows.push(["说明", "只读 Tool 调用；结果含义以工具说明为准"]);
+  if (tool.experimental) rows.push(["实验评分", "EXPERIMENTAL / NOT PROFESSIONAL STANDARD"]);
+  return rows;
 }
 
 function assistantRows(parent, rows) {
@@ -2804,22 +2854,13 @@ function renderAssistantMessages() {
     }
     if (entry.kind === "assistant") {
       const meta = document.createElement("small"); meta.textContent = `${entry.model} · ${entry.completedAt}`; article.append(meta);
-      const tool = entry.activity;
-      if (!tool.used_tool) {
+      const tools = (entry.steps || []).filter(step => step.kind === "tool" && step.handler_started);
+      if (!tools.length) {
         const note = document.createElement("small"); note.textContent = "未调用 Tool"; article.append(note);
       } else {
         const details = document.createElement("details"), summary = document.createElement("summary"), dl = document.createElement("dl");
-        summary.textContent = "使用了 1 个 Tool"; dl.classList.add("facts-grid");
-        // Labels come from the backend (Catalog); this panel adds no per-tool wording of its own.
-        const label = tool.display_name && tool.display_name !== tool.tool_name
-          ? `${tool.display_name}（${tool.tool_name}）` : tool.tool_name;
-        const rows = [["Tool Name", label], ["Result Status", tool.tool_status],
-          ["Duration", Number.isFinite(tool.duration_ms) ? `${tool.duration_ms.toFixed(1)} ms` : "unavailable"]];
-        for (const key of ["quality", "freshness", "observed_at", "evaluated_at"]) if (tool[key] !== undefined) rows.push([key, tool[key]]);
-        if (tool.display_summary) rows.push(["用途", tool.display_summary]);
-        rows.push(["说明", "只读 Tool 调用；结果含义以工具说明为准"]);
-        if (tool.tool_name === "score_current_water_quality") rows.push(["实验评分", "EXPERIMENTAL / NOT PROFESSIONAL STANDARD"]);
-        assistantRows(dl, rows); details.append(summary, dl); article.append(details);
+        summary.textContent = `使用了 ${tools.length} 个 Tool`; dl.classList.add("facts-grid");
+        assistantRows(dl, tools.flatMap(assistantToolRows)); details.append(summary, dl); article.append(details);
       }
     }
     messages.append(article);
@@ -2849,22 +2890,51 @@ function setAssistantRun(phase, result = null, code = null) {
   run.phase = phase;
   run.errorCode = code;
   if (result) {
-    run.activity = safeAssistantActivity(result.tool_activity);
-    run.requests = Number.isSafeInteger(result.usage?.request_count) ? result.usage.request_count : null;
-    run.request1 = assistantOutcome(result.request_1?.outcome); run.request2 = assistantOutcome(result.request_2?.outcome);
-    run.finishReason = ["stop", "length", "content_filter", "tool_calls"].includes(result.final_finish_reason) ? result.final_finish_reason : null;
-    run.usage = safeAssistantUsage(result.usage?.usage);
-    run.latency = Number.isFinite(result.total_latency_ms) ? result.total_latency_ms : null;
+    run.steps = safeAssistantSteps(result);
+    run.requests = run.steps.filter(step => step.kind === "model" && step.request_started).length;
+    if (result.final_finish_reason !== undefined) run.finishReason = ["stop", "length", "content_filter", "tool_calls"].includes(result.final_finish_reason) ? result.final_finish_reason : null;
+    run.usage = safeAssistantUsage(result.usage?.usage || result.activity?.aggregate_usage);
+    const latency = result.total_latency_ms ?? result.activity?.total_latency_ms;
+    run.latency = Number.isFinite(latency) && latency >= 0 ? latency : null;
   }
   assistantState.run = run;
   $("assistant-run").hidden = false;
-  $("assistant-run-summary").textContent = `本次运行：${phase} · ${run.model}${run.requests !== undefined ? ` · ${run.activity?.used_tool ? 1 : 0} Tool · ${run.requests ?? "unavailable"} Requests · ${assistantDuration(run.latency)}` : ""}`;
-  const rows = [["Model", run.model], ["Stage", phase], ["Request #1 outcome", run.request1],
-    ["Tool name", run.activity?.tool_name], ["Tool result status", run.activity?.tool_status],
-    ["Request #2 outcome", run.request2], ["Finish reason", run.finishReason], ["Total latency", assistantDuration(run.latency)]];
+  const tools = (run.steps || []).filter(step => step.kind === "tool" && step.handler_started);
+  $("assistant-run-summary").textContent = `本次运行：${phase} · ${run.model}${run.requests !== undefined ? ` · ${tools.length} Tool · ${run.requests} Requests · ${assistantDuration(run.latency)}` : ""}`;
+  const rows = [["Model", run.model], ["Stage", phase]];
+  for (const step of run.steps || []) {
+    rows.push([`Step #${step.seq}`, step.kind === "model" ? `Request #${step.request_index} · ${step.state}` : `Tool · ${step.state}`]);
+    if (step.kind === "model") {
+      rows.push([`Request #${step.request_index} outcome`, step.outcome], ["Finish reason", step.finish_reason]);
+      for (const [key, value] of Object.entries(step.usage || {})) rows.push([key, value ?? "unavailable"]);
+    } else {
+      rows.push(["Tool name", step.tool_name], ["Tool result status", step.tool_status],
+        ["执行", step.handler_started ? "Handler 已开始" : "调用尝试；Handler 未执行"], ...assistantToolRows(step).slice(2));
+    }
+    if (step.safe_error_code) rows.push(["Safe error", step.safe_error_code]);
+  }
+  rows.push(["Finish reason", run.finishReason], ["Total latency", assistantDuration(run.latency)]);
   for (const [key, value] of Object.entries(run.usage || {})) rows.push([key, value ?? "unavailable"]);
   if (run.errorCode) rows.push(["Safe error", run.errorCode]);
   assistantRows($("assistant-run-details"), rows);
+}
+
+function acceptAssistantProgress(execution, data, stopping = false) {
+  if (assistantState.pendingRequest !== execution || activeExecution !== execution || (!stopping && execution.cancelled)) return;
+  const activity = data.activity;
+  if (activity?.activity_schema_version === 2) {
+    if (activity.request_id !== execution.request_id || !Number.isSafeInteger(activity.revision)
+      || activity.revision <= (execution.activityRevision ?? -1)) return;
+    execution.activityRevision = activity.revision;
+  }
+  const phase = stopping ? "Cancelling" : data.state === "COMPLETED" ? "Finalizing"
+    : data.state === "CANCELLED" ? "Cancelled" : data.state === "FAILED" ? "Failed"
+    : {REQUEST_1: "Request #1", RUNNING_TOOL: "Running Tool", REQUEST_2: "Request #2",
+       REQUEST_3: "Request #3", FINALIZING: "Finalizing"}[data.phase];
+  if (phase) {
+    assistantNotice("");
+    setAssistantRun(phase, activity ? {activity} : null);
+  }
 }
 
 function monitorAssistantPhase(execution) {
@@ -2875,10 +2945,12 @@ function monitorAssistantPhase(execution) {
         body: JSON.stringify({control_token: execution.control_token}), signal: execution.controller.signal});
       const data = await response.json();
       if (response.ok && activeExecution === execution && !execution.cancelled && assistantState.pendingRequest === execution) {
-        const phase = {REQUEST_1: "Request #1", RUNNING_TOOL: "Running Tool", REQUEST_2: "Request #2"}[data.phase];
-        if (phase && data.state === "RUNNING") setAssistantRun(phase);
+        acceptAssistantProgress(execution, data);
       }
-    } catch (_) { /* Status observation cannot override the actual chat/cancel outcome. */ }
+    } catch (_) {
+      if (activeExecution === execution && !execution.cancelled && assistantState.pendingRequest === execution)
+        assistantNotice("进度暂不可用；正在等待本次请求结果。");
+    }
     if (activeExecution === execution && !execution.cancelled && assistantState.pendingRequest === execution) monitorAssistantPhase(execution);
   }, 350);
 }
@@ -2935,23 +3007,28 @@ async function sendAssistant() {
       }
       throw new Error(code);
     }
-    setAssistantRun(result.usage?.request_count === 2 ? "Request #2" : "Request #1", result);
+    if (result.activity?.activity_schema_version === 2 && (result.activity.request_id !== execution.request_id
+      || result.activity.state !== "COMPLETED" || result.trace_recorded !== true)) throw new Error("INVALID_RESPONSE");
+    setAssistantRun("Finalizing", result);
     if (typeof result.final_text !== "string" || !result.final_text.trim()) throw new Error("ASSISTANT_RESPONSE_EMPTY");
     if (result.final_finish_reason !== "stop") throw new Error(result.final_finish_reason === "length" ? "ASSISTANT_RESPONSE_TRUNCATED" : "ASSISTANT_RESPONSE_INCOMPLETE");
     if (typeof result.completed_at !== "string" || !Number.isFinite(Date.parse(result.completed_at))) throw new Error("INVALID_RESPONSE");
     userEntry.pending = false;
-    const activity = safeAssistantActivity(result.tool_activity);
+    const steps = safeAssistantSteps(result);
+    const tool = steps.find(step => step.kind === "tool" && step.handler_started);
+    const activity = tool ? safeAssistantActivity(tool) : safeAssistantActivity();
     assistantState.toolActivity = activity;
     assistantState.completedTurns.push({user: question, assistant: result.final_text, completed_at: result.completed_at});
     assistantState.completedTurns = assistantState.completedTurns.slice(-20);
     assistantState.displayEntries.push({kind: "assistant", text: result.final_text, model: assistantPreset().display_name,
-      completedAt: result.completed_at, activity, queried_this_turn: activity.used_tool && activity.tool_name !== null,
+      completedAt: result.completed_at, activity, steps, queried_this_turn: !!tool,
       usage: safeAssistantUsage(result.usage?.usage), latency: result.total_latency_ms});
     assistantState.displayEntries = assistantState.displayEntries.slice(-60);
     assistantState.historyTrimmed = locallyTrimmed + (Number.isSafeInteger(result.history_trimmed) ? result.history_trimmed : 0);
     $("assistant-history-notice").textContent = assistantState.historyTrimmed ? "较早对话未发送给模型；显示记录不代表模型收到全部历史。" : "";
     assistantState.draft = ""; $("assistant-input").value = "";
     setAssistantRun("Completed", result);
+    assistantNotice("");
     renderAssistantMessages();
   } catch (exc) {
     if (execution?.cancelled || (execution && assistantState.pendingRequest !== execution)) return;

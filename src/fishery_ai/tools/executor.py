@@ -13,7 +13,8 @@ class ToolExecutor:
     """Create once per request. Attempts consume budget; call IDs cannot be replayed."""
 
     def __init__(self, registry: ToolRegistry, *, max_calls: int = 1,
-                 max_result_bytes: int = 32768, policy=None, reject_duplicate_requests: bool = False):
+                 max_result_bytes: int = 32768, policy=None, reject_duplicate_requests: bool = False,
+                 on_handler_started=None):
         from .policy import load_tool_policies
         self._policy = policy if policy is not None else load_tool_policies()["assistant"]
         self._policy.validate_registry(registry)
@@ -30,6 +31,7 @@ class ToolExecutor:
         self._reject_duplicate_requests = reject_duplicate_requests
         self._seen_requests: set[tuple[str, str]] = set()
         self._lock = Lock()
+        self._on_handler_started = on_handler_started
 
     def execute(self, call: ModelToolCall) -> ToolExecutionResult:
         if not isinstance(call, ModelToolCall):
@@ -67,6 +69,8 @@ class ToolExecutor:
                         raise ToolError(ToolErrorCode.TOOL_REQUEST_ALREADY_EXECUTED)
                     self._seen_requests.add(signature)
             check_cancelled()
+            if self._on_handler_started:
+                self._on_handler_started()  # Observation only; all authorization/validation already passed.
             payload = invoke()
             check_cancelled()
             result = ToolExecutionResult.from_payload(call.id, call.function_name, payload)

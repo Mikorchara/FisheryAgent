@@ -13,6 +13,7 @@
 ## Assistant / Analysis · 正式 Runtime
 
 - [assistant.py](assistant.py)：Assistant 请求、完整历史 pair 裁剪、上下文构造与执行服务。
+- [assistant_activity.py](assistant_activity.py)：正式 Runtime 的有序步骤安全投影，供状态轮询、最终响应和 Trace 复用，不保存第二份 Tool payload。
 - [assistant_sources.py](assistant_sources.py)：本轮来源要求、逐执行 Receipt / Ledger 与成功提交满足关系。
 - [history_projection.py](history_projection.py)：正式默认的未受信任历史投影，以及原生投影回滚路径；资格工具复用同一投影。
 - [application.py](application.py)：固定 Analysis 上下文、Normal / Streaming 执行、可选 Tool 接入与结果投影。

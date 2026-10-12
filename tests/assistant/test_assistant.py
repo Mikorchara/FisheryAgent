@@ -417,10 +417,10 @@ class AssistantTests(AssistantFixture):
         gateway = RecordingGateway(call(), final())
         with request_scope(handle), patch.object(handle, "report_phase", observe):
             result = self.service(gateway).send(self.request(), self.runtime)
-        self.assertEqual(phases, ["REQUEST_1", "RUNNING_TOOL", "REQUEST_2"])
+        self.assertEqual(phases, ["REQUEST_1", "RUNNING_TOOL", "REQUEST_2", "FINALIZING"])
         self.assertEqual(result.status, Status.COMPLETED)
         report("REQUEST_1")
-        self.assertEqual(handle.phase, "REQUEST_2")  # Terminal runs cannot regress their phase.
+        self.assertEqual(handle.phase, "FINALIZING")  # Terminal runs cannot regress their phase.
         with self.assertRaises(ValueError): report("fictional prompt text")
 
 

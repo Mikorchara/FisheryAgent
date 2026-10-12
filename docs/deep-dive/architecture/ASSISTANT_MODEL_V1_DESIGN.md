@@ -82,15 +82,26 @@ History Projection、SourceRequirement / Receipt / Commit Gate、单调用单 ro
 - `RequestHandle`、不可变 Runtime / Credential Snapshot、Capability gate、Host / Origin / CSRF 和安全错误沿用 Gateway / Web 现有边界。
 - 停止会结束本机请求 I/O 与会话提交；无法据此证明远端模型计算或计费已停止。
 - Assistant 回答按纯文本安全渲染；只显示轻量 Tool Activity。Development/Test 才显示完整安全 Trace。Secret、Prompt、Credential 路径和原始 Tool JSON 不显示给聊天界面。
-- 三个 Preset 和 History / Knowledge 已有受控真实验证记录；仍需区分协议通过、操作完成和正文可信度。Analysis 自动 RAG 与可选 Knowledge Tool 的双重来源、检索相关性及长期选择可靠性尚待评估。Detection facts、Streaming Tool Calling、长期 Memory、多 Tool round、Agent 与生产设备/数据库写操作均未实现。
+- 三个 Preset 和 History / Knowledge 已有受控真实验证记录；仍需区分协议通过、操作完成和正文可信度。Analysis 自动 RAG 与可选 Knowledge Tool 的双重来源、检索相关性及长期选择可靠性尚待评估。Detection facts、Streaming Tool Calling、长期 Memory、正式 Assistant 多轮、Agent 与生产设备/数据库写操作尚未开放。
+
+### 有序 Steps Activity
+
+`assistant_activity.py` 从 Runtime 的有序 steps 生成 schema v2 安全摘要；最终 `/api/assistant/chat` 的 `activity`、既有 request status 轮询和 Assistant Trace 使用同一投影。RequestHandle 只缓存有限的安全摘要并增加 revision，不保存参数、正文、Raw Result 或 Ledger。轮询每约 350ms 读取累积步骤，因此即使没看到短步骤的运行瞬间，也能看到其完成记录。
+
+模型步骤区分 Gateway 调用前的尝试与 `request_started`；这不是实际 Provider 网络次数证明。Tool 步骤先为 ATTEMPTING，Executor 在原授权、参数和取消检查通过后通知 Handler 进入，才有 `handler_started=true`。拒绝调用为 REJECTED，不计入已执行 Tool；Handler ERROR、取消或后续模型失败保留已有审计步骤。NO_DATA / NO_MATCH / NOT_SCORABLE 等仍是业务结果，不因 Activity 变为执行错误。
+
+输入附近“本次运行”展开为通用有序列表；最终消息下只显示实际执行 Tool 的轻量摘要，不设固定第二 Tool 槽位。status 的 Completed 不能提交 History；只有最终 chat 响应通过已有来源/完成/取消门禁和 Trace 后才提交一条最终回答。最终 Trace 与终态在同一短提交临界区中串行处理：此前 Stop 优先，已进入最终提交的迟到 Stop 不撤销成功；Trace 失败绝不提前发布 Completed。Clear、模型切换、epoch 和成功文本 pair 的 History 合同不变。
+
+阶段 A 仅准备展示合同；AssistantService 仍拒绝 BOUNDED_MULTI_ROUND，Web 不能指定 mode、预算或 steps，正式 Assistant / Analysis 保持 1/1/2。多轮产品发布、整 Turn deadline 和 Streaming 仍是后续独立工作。
 
 ## 主要代码
 
 - `src/fishery_ai/application.py`：固定 Analysis 与可选 Analysis Tool 接入。
 - `src/fishery_ai/assistant.py`：Assistant Preset 白名单、历史投影、最终回答提交门禁。
+- `src/fishery_ai/assistant_activity.py`：正式 Assistant 累积进度与最终 Activity 的字段 allowlist。
 - `src/fishery_ai/history_projection.py`：完整 pair 裁剪后的正式 B 投影与内部 A 回滚。
 - `src/fishery_ai/assistant_sources.py`：本轮操作要求、有限 Receipt 与纯确定性满足关系。
-- `src/fishery_ai/tool_conversation.py`：共享单轮协调器。
+- `src/fishery_ai/tool_conversation.py`：共享有界协调器，正式产品仍使用单轮预算。
 - `src/fishery_ai/tools/`：Registry、Policy、Executor、Catalog 与 Handler。
 - `src/fishery_ai/resources/web/`：Analysis / Assistant 独立工作区及 Development/Test UI。
 - `tests/assistant/test_assistant.py`、`tests/assistant/test_assistant_sources.py`、`tests/assistant/test_history_projection.py`、`tests/tools/test_analysis_tools.py`、`tests/web/test_analysis_tool_web.py`、`tests/web/test_browser_streaming.cjs`：主要回归覆盖。

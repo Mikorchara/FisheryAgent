@@ -72,6 +72,7 @@ class JsonlTraceSink:
         for step in result.steps:
             if isinstance(step, ModelExecutionStep):
                 steps.append({"seq": step.seq, "kind": "model", "request_index": step.request_index,
+                              "request_started": step.request_started,
                               **asdict(step.result)})
             else:
                 steps.append({"seq": step.seq, "kind": "tool", "model_request_index": step.model_request_index,
@@ -79,6 +80,7 @@ class JsonlTraceSink:
                     "tool_call_id": step.tool_call_id if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", step.tool_call_id) else None,
                     "tool_name": step.tool_name if step.tool_name in ToolRegistry.registered_names() else "unknown_tool",
                     "result_status": step.result.status.value if step.result else None,
+                    "handler_started": step.handler_started,
                     "duration_ms": round(step.duration_ms, 3) if step.duration_ms is not None else None})
         entry = {
             "kind": "read_only_tool_conversation",
@@ -112,6 +114,7 @@ class JsonlTraceSink:
             "history_turns_sent": result.context.history_turns_sent,
             "history_trimmed": result.context.history_trimmed,
             "history_bytes_sent": result.context.history_bytes_sent,
+            "activity": result.to_dict()["activity"],
             "usage": asdict(result.execution.usage)})
 
     def _append(self, entry: dict) -> None:

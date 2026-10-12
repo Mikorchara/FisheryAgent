@@ -100,6 +100,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ application.py                                          # 固定 Analysis 上下文与执行主流程
 │  │  ├─ history_projection.py                                   # 产品默认 B 与原生 A 回滚的共享历史投影
 │  │  ├─ assistant.py                                            # Assistant 上下文、历史与执行服务
+│  │  ├─ assistant_activity.py                                   # 有序 Steps 的安全 Activity 投影
 │  │  ├─ assistant_qualification.py                             # 旧路径模块别名，兼容历史导入与补丁
 │  │  ├─ assistant_sources.py                                    # 逐执行 Receipt、Ledger 与来源满足关系
 │  │  ├─ capability_probe.py                                     # 显式 Streaming 与 Thinking 验证
@@ -206,6 +207,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ assistant/                                                            # Assistant、来源 Receipt 与正式 History 产品合同
    │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
    │  ├─ test_assistant.py                                                  # Assistant 合同、选择规则 Prompt 契约、历史与执行回归测试
+   │  ├─ test_assistant_activity.py                                         # 累积步骤、执行证明、取消与最终提交回归
    │  ├─ test_assistant_sources.py                                          # Receipt、Ledger 与来源提交合同测试
    │  └─ test_history_projection.py                                         # 产品默认 B、A 回滚、裁剪、JSON 与来源隔离回归
    ├─ domain/                                                               # 水质、Diagnosis、评分与 Scenario / Telemetry 回归

@@ -7,6 +7,7 @@ import re
 import time
 
 from .history_projection import DEFAULT_HISTORY_PROJECTION, ProjectionId, project_retained_history
+from .assistant_activity import project_activity, tool_summary
 from .contracts import Mode, Status, utcnow
 from .assistant_sources import (SourceRequirement, TurnSourceLedger, TurnSourceReceipt,
                                ledger_from_execution, requirement_satisfied_by_ledger)
@@ -14,9 +15,8 @@ from .execution import current_handle
 from .model_gateway import GatewayError, ModelMessage, ModelRequest
 from .model_options import ReasoningMode, Support
 from .presets import preset_profiles
-from .tool_conversation import ToolCallingService, ToolConversationResult, ToolExecutionMode
-from .tools.catalog import catalog_display
-from .tools.registry import ToolRegistry
+from .tool_conversation import (ToolCallingService, ToolConversationResult, ToolExecutionMode,
+                                ModelExecutionStep, ToolExecutionStep)
 
 
 ALLOWED_PRESET_IDS = (
@@ -181,6 +181,7 @@ class AssistantResult:
     total_latency_ms: float
     trace_recorded: bool = False
     source_ledger: TurnSourceLedger = field(default_factory=TurnSourceLedger)
+    activity_revision: int = 0
 
     @property
     def source_receipt(self) -> TurnSourceReceipt:
@@ -188,32 +189,23 @@ class AssistantResult:
 
     def to_dict(self):
         run, context = self.execution, self.context
-        tool = run.tool_result
-        name = run.tool_name if run.tool_name in ToolRegistry.registered_names() else None
-        activity = {"used_tool": tool is not None, "tool_name": name,
-                    "tool_status": tool.status.value if tool else None, "duration_ms": run.tool_duration_ms}
-        if name is not None:
-            # Labels come from the Catalog so the UI never keeps a second tool naming map.
-            activity.update(catalog_display(name))
-        if tool is not None:
-            payload = tool.payload
-            water = payload.get("water_quality") or {}
-            for key, value in (("observed_at", water.get("observed_at")), ("evaluated_at", payload.get("evaluated_at"))):
-                if value is not None:
-                    try:
-                        activity[key] = _timestamp(value)
-                    except AssistantError:
-                        pass
-            for key in ("quality", "freshness"):
-                if water.get(key) in ("valid", "partial", "invalid", "fresh", "stale"):
-                    activity[key] = water[key]
+        tools = [step for step in run.steps if isinstance(step, ToolExecutionStep)]
+        legacy = len(tools) <= 1 and sum(isinstance(step, ModelExecutionStep) for step in run.steps) <= 2
+        activity = project_activity(run.steps, request_id=run.request_id, budget=run.budget,
+            state=self.status.value.upper(), error_code=self.error_code, revision=self.activity_revision,
+            phase="FINALIZING" if self.activity_revision else None,
+            total_latency_ms=self.total_latency_ms)
+        legacy_tool = (tool_summary(tools[0]) if tools else {"used_tool": False,
+            "tool_name": None, "tool_status": None, "duration_ms": None}) if legacy else None
         return {"preset_id": self.preset_id, "status": self.status.value, "error_code": self.error_code,
                 "successful_turn": self.status == Status.COMPLETED, "final_text": self.final_text,
                 "completed_at": self.completed_at, "request_id": run.request_id, "trace_id": run.trace_id,
                 "history_turns_received": context.history_turns_received,
                 "history_turns_sent": context.history_turns_sent, "history_trimmed": context.history_trimmed,
-                "history_bytes_sent": context.history_bytes_sent, "tool_activity": activity,
-                "request_1": asdict(run.request_1), "request_2": asdict(run.request_2),
+                "history_bytes_sent": context.history_bytes_sent, "activity": activity,
+                "legacy_projection_available": legacy, "tool_activity": legacy_tool,
+                "request_1": asdict(run.request_1) if legacy else None,
+                "request_2": asdict(run.request_2) if legacy else None,
                 "usage": asdict(run.usage), "final_finish_reason": run.final_finish_reason,
                 "total_latency_ms": self.total_latency_ms, "trace_recorded": self.trace_recorded}
 
@@ -247,7 +239,9 @@ class AssistantService:
         started_at, started = utcnow(), time.monotonic()
         handle = current_handle()
         run = self.coordinator.run_request(context.model_request, runtime,
-            on_progress=handle.report_phase if handle else None)
+            on_progress=handle.report_phase if handle else None,
+            on_steps=(lambda steps: handle.report_steps(steps, budget=self.coordinator.budget,
+                total_latency_ms=(time.monotonic() - started) * 1000)) if handle else None)
         ledger = ledger_from_execution(run)
         code = run.error_code
         if run.status == Status.COMPLETED:
@@ -259,25 +253,29 @@ class AssistantService:
                 code = "ASSISTANT_RESPONSE_INCOMPLETE"
             elif not requirement_satisfied_by_ledger(request.source_requirement, ledger):
                 code = "ASSISTANT_SOURCE_REQUIREMENT_UNMET"
-        handle = current_handle()
-        if handle:
-            # Atomically resolve cancellation vs successful final commit using the shared lifecycle.
-            handle.finish(code)
-            code = handle.public_info()["error_code"]
-        status = Status.CANCELLED if code == "USER_CANCELLED" else Status.FAILED if code else run.status
         secret = runtime.credential._for_adapter()
-        text = run.generated_text if status == Status.COMPLETED else ""
-        if secret:
-            text = text.replace(secret, "[REDACTED]")
-        result = AssistantResult(request.preset_id, status, code, text,
-            utcnow().isoformat() if status == Status.COMPLETED else None, context, run,
-            round((time.monotonic() - started) * 1000, 3), source_ledger=ledger)
-        try:
-            self.coordinator.traces.record_assistant(result, started_at=started_at, finished_at=utcnow())
-        except Exception:
-            code = code or "TRACE_WRITE_ERROR"
+
+        def record_result(cancelled):
+            final_code = "USER_CANCELLED" if cancelled else code
+            status = Status.CANCELLED if final_code == "USER_CANCELLED" else Status.FAILED if final_code else run.status
+            text = run.generated_text if status == Status.COMPLETED else ""
+            if secret:
+                text = text.replace(secret, "[REDACTED]")
+            result = AssistantResult(request.preset_id, status, final_code, text,
+                utcnow().isoformat() if status == Status.COMPLETED else None, context, run,
+                round((time.monotonic() - started) * 1000, 3), source_ledger=ledger)
             if handle:
-                handle.finish(code)
-            return replace(result, status=Status.CANCELLED if code == "USER_CANCELLED" else Status.FAILED,
-                           error_code=code, final_text="", completed_at=None)
-        return replace(result, trace_recorded=True)
+                handle.report_steps(run.steps, budget=self.coordinator.budget,
+                                    total_latency_ms=result.total_latency_ms)
+            try:
+                self.coordinator.traces.record_assistant(result, started_at=started_at, finished_at=utcnow())
+            except Exception:
+                return replace(result, status=Status.CANCELLED if final_code == "USER_CANCELLED" else Status.FAILED,
+                    error_code=final_code or "TRACE_WRITE_ERROR", final_text="", completed_at=None)
+            return replace(result, trace_recorded=True)
+
+        if handle:
+            handle.report_phase("FINALIZING")
+            result = handle.finalize_result(record_result)
+            return replace(result, activity_revision=handle.public_info()["activity"]["revision"])
+        return record_result(False)
