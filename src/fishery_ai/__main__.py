@@ -47,7 +47,7 @@ def main() -> None:
         run_web(port=args.port)
         return
     if args.command == "validate-real":
-        from .real_validation import run_real_validation
+        from .development.qualification.real_validation import run_real_validation
         raise SystemExit(run_real_validation(
             check=args.check, scenario=args.scenario, confirm_network=args.confirm_network))
     def deny_network(*_args, **_kwargs):

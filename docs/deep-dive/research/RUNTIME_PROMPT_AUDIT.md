@@ -4,6 +4,8 @@
 
 **版本边界（2026-10-12）：** 本文保留 v1 的取证快照；下文 Assistant 逐类规则、Registry 描述及 §8 的相关问题按原审计时点阅读。现已实施正式 Assistant System Prompt v2：具体 Tool 名与状态解释下放 Registry，系统观测不再排他限定为查询 Tool，补充疾病/药物边界。当前合同见 [Assistant 当前设计](../architecture/ASSISTANT_MODEL_V1_DESIGN.md)。History、Analysis Prompt、执行与来源硬合同未变；本次只做离线测试，没有真实 Provider 结果。
 
+**路径边界（2026-10-12）：** 资格实现已迁入 `src/fishery_ai/development/qualification/`，下文开发实现链接已更新；旧顶层模块仅为兼容别名。该迁移未修改任何 Prompt 文本或投影语义。
+
 ## 1. 范围与结论
 
 本次从消息构造到 Adapter 编码做静态只读审计；唯一新增文件是本报告。没有运行模型、读取凭据、修改源码或执行测试。结论描述当前发送合同，不保证真实模型遵守文字指令。
@@ -123,15 +125,15 @@ Manual Adapter 的 `manual_complete()/manual_stream()` 直接处理已校验 raw
 
 | 文件、变量/函数 | 什么时候进入、role、频率 | 主要职责 / 重叠 |
 | --- | --- | --- |
-| [`preset_tool_qualification.py`](../../../src/fishery_ai/preset_tool_qualification.py) `qualify_preset_tools():64` | 手动资格验证；`现在水质怎么样？请简短回答。`，user；Tool 首轮/必要 #2 | 复用 `converse()` 的开发 system、查询 Tool description，不是正式 Assistant 默认请求 |
+| [`preset_tool_qualification.py`](../../../src/fishery_ai/development/qualification/preset_tool_qualification.py) `qualify_preset_tools():64` | 手动资格验证；`现在水质怎么样？请简短回答。`，user；Tool 首轮/必要 #2 | 复用 `converse()` 的开发 system、查询 Tool description，不是正式 Assistant 默认请求 |
 | 同文件:94–95 概念题 | 完整 Tool 闭环成功后独立请求；system=开发 system，user=`什么是溶氧？请用一两句话简短回答，不要展开。` | 验证有 Tool 可用仍可直答；不附上前一个 conversation |
-| [`assistant_qualification.py`](../../../src/fishery_ai/assistant_qualification.py) `run_qualification()` | 显式确认后；system 复用正式 Assistant，user=manifest question；允许的一轮执行中两次均保留 | 无新的 qualification 专用 system。显式 native baseline，再按选择投影替换初始上下文；不是随着产品 B 默认变化自动换条件 |
-| [`qualification_projection.py`](../../../src/fishery_ai/qualification_projection.py) `build_projection()` | 资格指定 A/B；roles 同正式 projection；有历史才附 framing | 复用 `history_projection.py` 冻结 notice，没有第二套 B 提示词；hash/metadata 不发送模型 |
-| [`qualification_history.py`](../../../src/fishery_ai/qualification_history.py) `HISTORY_FIXTURES/HISTORY_CASES` | 仅资格路径选择固定 case；历史进入 A user/assistant 或 B user block | EMPTY、旧数值、NO_DATA、旧评分、旧知识声明；正式 Web 不自动插入这些 fixture |
-| [`qualification_migration.py`](../../../src/fishery_ai/qualification_migration.py) `MIGRATION_FIXTURES/MIGRATION_SCENARIOS` | 仅资格兼容路径选择时 | 多轮 NO_DATA/混合状态/来源声明/假 Tool 文本/长历史；没有自动批次 runner。不是新产品 Prompt |
+| [`assistant_qualification.py`](../../../src/fishery_ai/development/qualification/assistant_qualification.py) `run_qualification()` | 显式确认后；system 复用正式 Assistant，user=manifest question；允许的一轮执行中两次均保留 | 无新的 qualification 专用 system。显式 native baseline，再按选择投影替换初始上下文；不是随着产品 B 默认变化自动换条件 |
+| [`qualification_projection.py`](../../../src/fishery_ai/development/qualification/qualification_projection.py) `build_projection()` | 资格指定 A/B；roles 同正式 projection；有历史才附 framing | 复用 `history_projection.py` 冻结 notice，没有第二套 B 提示词；hash/metadata 不发送模型 |
+| [`qualification_history.py`](../../../src/fishery_ai/development/qualification/qualification_history.py) `HISTORY_FIXTURES/HISTORY_CASES` | 仅资格路径选择固定 case；历史进入 A user/assistant 或 B user block | EMPTY、旧数值、NO_DATA、旧评分、旧知识声明；正式 Web 不自动插入这些 fixture |
+| [`qualification_migration.py`](../../../src/fishery_ai/development/qualification/qualification_migration.py) `MIGRATION_FIXTURES/MIGRATION_SCENARIOS` | 仅资格兼容路径选择时 | 多轮 NO_DATA/混合状态/来源声明/假 Tool 文本/长历史；没有自动批次 runner。不是新产品 Prompt |
 | [`scripts/qualification/manifests/`](../../../scripts/qualification/manifests/) `assistant-Q1～Q4.json` | 手动 Harness question；`user` | Q1 查询溶氧，Q2 查询评分，Q3/Q4 项目低氧资料；Q3/Q4 问题相同、暴露 Tool 不同。source_requirement 是 Gate 输入，不变成 Prompt |
 | [`scripts/qualification/qualify_local_preset_request.py`](../../../scripts/qualification/qualify_local_preset_request.py):72/83 | 显式本地资格；raw 或 ModelRequest 的 `user=只回复 OK` | 验证 Normal/Streaming/Manual transport；无业务 system |
-| [`real_validation.py`](../../../src/fishery_ai/real_validation.py) `_request():124` | `validate-real` 显式诊断；user=`请只回复：收到。` | 小请求参数验证；full-chain 分支复用固定 Analysis，不能将诊断文本误当主产品 Prompt |
+| [`real_validation.py`](../../../src/fishery_ai/development/qualification/real_validation.py) `_request():124` | `validate-real` 显式诊断；user=`请只回复：收到。` | 小请求参数验证；full-chain 分支复用固定 Analysis，不能将诊断文本误当主产品 Prompt |
 | [`tests/`](../../../tests/) 中 ModelMessage/Raw body fixture | 离线 Mock/fake SDK；如 `fixture system`、`system`、`test`、`OK` 及攻击/Tool imitation 文本 | 测试输入不是正式产品 instruction；可验证正式常量或消息形状，但不会随模块被 import 而自动拼入产品请求 |
 
 MockGateway / MockToolGateway 中的“离线 Mock…”回答是替代模型输出，不是 Provider Prompt。用户在后续成功 History 中保留了什么文本是另外的数据输入问题，不能把 Mock 实现当真实模型路由。

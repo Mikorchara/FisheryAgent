@@ -5,7 +5,7 @@ from dataclasses import replace
 import json
 from pathlib import Path
 
-from fishery_ai.assistant_qualification import (
+from fishery_ai.development.qualification.assistant_qualification import (
     QualificationError, QualificationManifest, run_qualification, write_report)
 
 

@@ -31,6 +31,8 @@ Demo 使用 MockGateway。自动测试不发送真实网络请求；Cloud / Loca
 
 ## Tool / Preset 维护
 
+资格工具的实现位于 `src/fishery_ai/development/qualification/`，维护入口仍在 `scripts/qualification/`。正常 Web / Assistant / Analysis 不加载该开发子包；它单向复用正式产品合同。旧模块路径保留兼容别名，新代码使用开发子包路径，详见[维护工具说明](../scripts/README.md)。`validate-real` CLI 仅在选中该命令时加载开发实现；当前 experimental Profile 为空时安全返回 `INACTIVE_VALIDATION_PROFILE`，不自动恢复旧连接。
+
 Tool 管理入口在左侧 **01 · Analysis Model → Tool**，分 Analysis / Assistant 两个授权视图。Catalog 展示不等于注册或授权；真实执行还受 Registry、Policy、Handler 与 Runtime capability 约束。
 
 维护者资格脚本需单独确认网络并一次指定一个 Preset：

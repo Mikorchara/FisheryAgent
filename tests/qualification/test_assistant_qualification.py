@@ -15,7 +15,7 @@ from tests.assistant.test_assistant import (AssistantFixture, FakeKnowledgeServi
 from tests.assistant.test_assistant_sources import KnowledgeFixture
 import tests.security.test_execution as test_execution
 from fishery_ai.assistant import AssistantError, AssistantRequest, assistant_profile
-from fishery_ai.assistant_qualification import (QualificationError, QualificationManifest,
+from fishery_ai.development.qualification.assistant_qualification import (QualificationError, QualificationManifest,
     run_qualification, write_report)
 from fishery_ai.assistant_sources import SourceRequirement as Requirement
 from fishery_ai.contracts import Usage, UsageSource
@@ -23,7 +23,7 @@ from fishery_ai.credentials import CredentialFileError, CredentialStore
 from fishery_ai.execution import RequestHandle
 from fishery_ai.model_gateway import GatewayError, ModelResponse, ModelToolCall, ProfileRegistry
 from fishery_ai.openai_compatible_adapter import OpenAICompatibleAdapter
-from fishery_ai.qualification_adapter import QualificationAdapter
+from fishery_ai.development.qualification.qualification_adapter import QualificationAdapter
 from fishery_ai.tools.registry import ToolRegistry
 from fishery_ai.domain import DiagnosisService
 
@@ -43,9 +43,9 @@ class QualificationTests(AssistantFixture):
 
     def test_dry_plan_and_no_confirmation_never_compose_or_resolve(self):
         manifest = replace(self.manifest(), confirm_network=False)
-        with patch("fishery_ai.assistant_qualification._credentials", side_effect=AssertionError("no credentials")), \
-             patch("fishery_ai.assistant_qualification._registry", side_effect=AssertionError("no handler")), \
-             patch("fishery_ai.assistant_qualification.QualificationAdapter", side_effect=AssertionError("no SDK")):
+        with patch("fishery_ai.development.qualification.assistant_qualification._credentials", side_effect=AssertionError("no credentials")), \
+             patch("fishery_ai.development.qualification.assistant_qualification._registry", side_effect=AssertionError("no handler")), \
+             patch("fishery_ai.development.qualification.assistant_qualification.QualificationAdapter", side_effect=AssertionError("no SDK")):
             self.assertEqual(manifest.safe_plan()["network"], "NOT_YET_AUTHORIZED")
             report = run_qualification(manifest, self.root)
         self.assertEqual(report["actual_network_requests"], 0)
@@ -54,9 +54,9 @@ class QualificationTests(AssistantFixture):
         self.assertFalse((self.root / "outputs").exists())
 
     def test_qualification_composition_binds_one_knowledge_service(self):
-        from fishery_ai.assistant_qualification import _registry
+        from fishery_ai.development.qualification.assistant_qualification import _registry
         service = FakeKnowledgeService()
-        with patch("fishery_ai.assistant_qualification.KnowledgeService", return_value=service) as factory:
+        with patch("fishery_ai.development.qualification.assistant_qualification.KnowledgeService", return_value=service) as factory:
             registry = _registry()
         self.assertEqual(factory.call_count, 1)
         self.assertEqual(registry.registered_names(), tuple(item.name for item in registry.model_definitions()))
@@ -101,8 +101,8 @@ class QualificationTests(AssistantFixture):
     def test_credential_error_no_gateway_no_fallback(self):
         credentials = CredentialStore(process_env={})
         with patch.object(credentials, "resolve", side_effect=CredentialFileError()) as resolve, \
-             patch("fishery_ai.assistant_qualification.QualificationAdapter", side_effect=AssertionError("no gateway")), \
-             patch("fishery_ai.assistant_qualification._registry", side_effect=AssertionError("no registry")):
+             patch("fishery_ai.development.qualification.assistant_qualification.QualificationAdapter", side_effect=AssertionError("no gateway")), \
+             patch("fishery_ai.development.qualification.assistant_qualification._registry", side_effect=AssertionError("no registry")):
             report = run_qualification(self.manifest(), self.root, credential_store=credentials)
         self.assertEqual(report["error_code"], "CREDENTIAL_FILE_ERROR")
         self.assertEqual(report["request_count"], 0)
@@ -113,8 +113,8 @@ class QualificationTests(AssistantFixture):
         location = NS(env_path=self.root / "private" / "credentials.env")
         # A real legacy file is forbidden to read even in this temporary fixture.
         (self.root / ".env").write_text("DASHSCOPE_API_KEY=fictional-legacy\n", encoding="utf-8")
-        with patch("fishery_ai.assistant_qualification.private_project_location", return_value=location) as paths, \
-             patch("fishery_ai.assistant_qualification.CredentialStore", return_value=self.credentials) as store:
+        with patch("fishery_ai.development.qualification.assistant_qualification.private_project_location", return_value=location) as paths, \
+             patch("fishery_ai.development.qualification.assistant_qualification.CredentialStore", return_value=self.credentials) as store:
             report = run_qualification(self.manifest(), self.root, registry=self.registry,
                                        gateway=RecordingGateway(final()))
         self.assertTrue(report["success"])
@@ -142,7 +142,7 @@ class QualificationTests(AssistantFixture):
         self.assertEqual(report["request_count"], 0)
 
     def test_sdk_debug_logging_fails_before_credentials_or_request(self):
-        with patch("fishery_ai.assistant_qualification.logging.getLogger") as logger, \
+        with patch("fishery_ai.development.qualification.assistant_qualification.logging.getLogger") as logger, \
              patch.object(self.credentials,"resolve",side_effect=AssertionError("no credential read")):
             logger.return_value.isEnabledFor.return_value=True
             report=self.run_fake(self.manifest(),RecordingGateway(final()))
@@ -438,7 +438,7 @@ class QualificationTests(AssistantFixture):
         self.assertFalse(list(folder.glob("*.json")))
 
     def test_schema_hash_binds_description_and_required_query(self):
-        from fishery_ai.qualification_projection import tool_schema_hash
+        from fishery_ai.development.qualification.qualification_projection import tool_schema_hash
         registry = ToolRegistry(self.reader, DiagnosisService(), knowledge=KnowledgeFixture())
         tools = registry.model_definitions()
         original = tool_schema_hash(tools)
@@ -450,7 +450,7 @@ class QualificationTests(AssistantFixture):
             (*tools[:-1], replace(tools[-1], parameters=schema))))
 
     def test_qualification_target_drift_fails_before_transport(self):
-        from fishery_ai.assistant_qualification import MIGRATION_TARGETS
+        from fishery_ai.development.qualification.assistant_qualification import MIGRATION_TARGETS
         from fishery_ai.model_options import Support
         from fishery_ai.providers import AuthSpec
         for target in MIGRATION_TARGETS.values():

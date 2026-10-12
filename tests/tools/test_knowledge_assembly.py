@@ -22,7 +22,9 @@ from fishery_ai.web import create_app
 KNOWLEDGE = SEARCH_FISHERY_KNOWLEDGE
 WATER = "get_current_water_quality"
 SCORE = "score_current_water_quality"
-COMPOSITION_ROOTS = {"web.py", "composition.py", "real_validation.py", "assistant_qualification.py"}
+COMPOSITION_ROOTS = {"web.py", "composition.py",
+    "development/qualification/real_validation.py",
+    "development/qualification/assistant_qualification.py"}
 
 
 from tests.support.paths import PROJECT_ROOT

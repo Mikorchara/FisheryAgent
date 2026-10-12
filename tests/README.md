@@ -47,6 +47,7 @@ python -m unittest discover -s tests -t .
 - 原 P2F 测试保留为 `assistant/test_history_projection.py`；Web setup 提炼为没有 test 方法的 fixture，避免导入和继承造成的 26 项重复收集。
 - 冻结 transcript 语义、完整 pair 裁剪、JSON escaping、当前问题隔离、历史文字不能生成 Receipt、内部回滚和 Web 不可覆盖等保持正式回归。
 - 从旧实验提炼保留：模型无关投影、输入不可变；资格报告 symlink / reparse 拒绝、schema 指纹和精确身份/合同/协议/auth 漂移检查。原有授权、请求预算、retry=0、取消、归一化与脱敏测试保留。
-- 历史模型 fixtures 仍被有效兼容性测试使用，与已结束的 History 实验不同；不能作为正常运行 fallback。产品包中的 qualification 兼容模块未改动，长期单次 Harness 仍依赖其中部分接口。
+- 历史模型 fixtures 仍被有效兼容性测试使用，与已结束的 History 实验不同；不能作为正常运行 fallback。资格实现已集中到 `fishery_ai.development.qualification`，资格测试使用新路径；旧路径只有模块别名，由既有验证/凭据测试继续覆盖兼容性。
+- `qualification/test_qualification_boundary.py` 锁定正常 Runtime 不加载资格实现、包初始化无副作用、旧别名与新实现身份相同、CLI 按需分派，以及产品资源定位不变。移动边界不改变资格预算、授权、报告或正式 History 合同。
 
 原实验和结果见 [records](../docs/records/README.md) 与 Git history；不保留第二套执行资产 archive，不读取或清理 `outputs/` 的真实报告。

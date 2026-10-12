@@ -28,6 +28,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  └─ PROJECT_DATA_AND_CONFIG_LOCATIONS.md                            # 数据与配置实际位置地图
 │  │  ├─ research/                                                          # 带历史标记的研究与未来议题
 │  │  │  ├─ DEVELOPMENT_BACKLOG.md                                          # 未立项候选与用户原始笔记，保留历史
+│  │  │  ├─ RUNTIME_PROMPT_AUDIT.md                                       # 运行 Prompt 来源与职责审计，含版本边界
 │  │  │  └─ TOOL_ORCHESTRATION_ARCHITECTURE_REVIEW.md                       # 旧基线 Tool 编排研究
 │  │  └─ tools/                                                             # 静态只读 Tool 执行层
 │  │     ├─ ADDING_A_TOOL.md                                                # 新增正式只读 Tool 的通用规范
@@ -96,7 +97,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ application.py                                          # 固定 Analysis 上下文与执行主流程
 │  │  ├─ history_projection.py                                   # 产品默认 B 与原生 A 回滚的共享历史投影
 │  │  ├─ assistant.py                                            # Assistant 上下文、历史与执行服务
-│  │  ├─ assistant_qualification.py                              # 受控单次实验、请求预算与报告
+│  │  ├─ assistant_qualification.py                             # 旧路径模块别名，兼容历史导入与补丁
 │  │  ├─ assistant_sources.py                                    # 来源操作要求、Receipt 与提交满足关系
 │  │  ├─ capability_probe.py                                     # 显式 Streaming 与 Thinking 验证
 │  │  ├─ capability_store.py                                     # 精确模型能力证据存储
@@ -116,16 +117,16 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ observability.py                                        # Usage 与安全 JSONL Trace
 │  │  ├─ official_capabilities.py                                # 维护者记录的官方模型能力                    //!!!//
 │  │  ├─ openai_compatible_adapter.py                            # OpenAI SDK 请求编码与传输
-│  │  ├─ preset_tool_qualification.py                            # Preset Tool Calling 资格验证
+│  │  ├─ preset_tool_qualification.py                           # 旧路径模块别名，兼容历史导入与补丁
 │  │  ├─ presets.py                                              # 固定 Preset 模板、Variant 与合同
 │  │  ├─ project_env.py                                          # 私有凭据原子写入与 revision 检查
 │  │  ├─ protocol_specs.py                                       # Provider 语义参数协议编码
 │  │  ├─ providers.py                                            # Service、连接与 Auth 元数据
-│  │  ├─ qualification_adapter.py                                # 实验专用输出预算与有限 Provider 观测
-│  │  ├─ qualification_history.py                                # 实验专用固定历史白名单与 H case 合同
-│  │  ├─ qualification_migration.py                                         # 旧资格多轮 fixture 与冻结矩阵兼容接口，非产品 History
-│  │  ├─ qualification_projection.py                             # qualification 包装及冻结历史 A/B 指纹
-│  │  ├─ real_validation.py                                      # 显式真实模型验证流程
+│  │  ├─ qualification_adapter.py                               # 旧路径模块别名，兼容历史导入与补丁
+│  │  ├─ qualification_history.py                               # 旧路径模块别名，兼容历史导入与补丁
+│  │  ├─ qualification_migration.py                             # 旧路径模块别名，兼容历史导入与补丁
+│  │  ├─ qualification_projection.py                            # 旧路径模块别名，兼容历史导入与补丁
+│  │  ├─ real_validation.py                                     # 旧路径模块别名，兼容历史导入与补丁
 │  │  ├─ repositories.py                                         # 水质与 Detection Mock 资源读取
 │  │  ├─ secure_files.py                                         # 安全文件操作与 Windows ACL 检查
 │  │  ├─ tool_capability_probe.py                                # Managed Tool Calling 显式 Probe
@@ -133,6 +134,17 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ water_quality_scoring.py                                # 水质实验评分与等级规则
 │  │  ├─ web.py                                                  # Web API、共享服务与页面入口
 │  │  ├─ web_security.py                                         # Host、Origin 与 CSRF 防护
+│  │  ├─ development/                                          # 显式开发工具，正式 Runtime 不加载
+│  │  │  ├─ __init__.py                                         # 无副作用的开发包边界
+│  │  │  └─ qualification/                                     # 资格实现，单向复用正式产品合同
+│  │  │     ├─ __init__.py                                      # 无装配、凭据解析或联网的包入口
+│  │  │     ├─ assistant_qualification.py                       # 单 manifest 授权、预算、运行与安全报告
+│  │  │     ├─ qualification_adapter.py                         # 资格输出预算与有限 Provider 观测
+│  │  │     ├─ qualification_history.py                         # 冻结历史 fixture 与 case 兼容白名单
+│  │  │     ├─ qualification_migration.py                       # 历史多轮资格 fixture 与矩阵兼容
+│  │  │     ├─ qualification_projection.py                      # 产品投影复用与冻结资格指纹
+│  │  │     ├─ preset_tool_qualification.py                      # Preset Tool 往返与概念题资格验证
+│  │  │     └─ real_validation.py                               # validate-real 开发命令与安全诊断
 │  │  ├─ resources/                                              # 随 Python 包发布的固定资源
 │  │  │  ├─ knowledge/                                           # 现有渔业知识与来源
 │  │  │  │  ├─ eel_knowledge.json                                # 项目渔业知识快照
@@ -231,6 +243,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    ├─ qualification/                                                        # 长期单次资格验证；默认不联网，无历史 batch
    │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
    │  ├─ test_assistant_qualification.py                                    # 单次实验、预算、取消与报告脱敏测试
+   │  ├─ test_qualification_boundary.py                                      # 正式导入隔离、兼容别名与开发 CLI 边界测试
    │  ├─ test_local_preset_qualification.py                                 # Local Preset 验证入口安全测试
    │  └─ test_preset_tool_qualification.py                                  # Preset Tool 完整资格流程测试
    ├─ security/                                                             # Credential、安全写入、ACL、快照与请求取消
@@ -278,7 +291,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 
 **Runtime / Core：** src/fishery_ai 是运行源码，resources 是包内固定资源；源码根 .env 只标位置，不读取内容，也不参与运行时。
 
-**Development / Test：** tests 分为正式子系统与 qualification，support / fixtures 为共享测试资料。scripts/dev 保存开发辅助，scripts/qualification 保存单次维护验证；.egg-info 为安装生成 metadata。已删除 H / P2E manifests、历史 batch / continuation、preparation generator 和六份实验测试；产品 History 与安全合同仍在正式测试中，历史见 records 与 Git。
+**Development / Test：** src/fishery_ai/development/qualification 集中资格实现，旧顶层模块仅为兼容别名；正式 Web / Assistant / Analysis 不导入资格实现，validate-real CLI 按需加载。tests 分为正式子系统与 qualification，support / fixtures 为共享测试资料。scripts/dev 保存开发辅助，scripts/qualification 保存单次维护验证；.egg-info 为安装生成 metadata。已删除 H / P2E manifests、历史 batch / continuation、preparation generator 和六份实验测试；产品 History 与安全合同仍在正式测试中，历史见 records 与 Git。
 
 **Research / Records：** deep-dive 保存当前技术合同及明确标记的未来研究；records 根目录保留迁移依据与独立审计，已结束阶段进入 archive。历史文件中的状态、路径和测试数量适用于当时基线。History v2 已默认 B；有限真实资格实验不证明长期模型选择可靠性。
 

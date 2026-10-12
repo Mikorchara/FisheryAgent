@@ -12,7 +12,7 @@ from fishery_ai.execution import RequestHandle, request_scope
 from fishery_ai.model_gateway import GatewayError, ProfileRegistry
 from fishery_ai.observability import JsonlTraceSink
 from fishery_ai.openai_compatible_adapter import OpenAICompatibleAdapter
-from fishery_ai.preset_tool_qualification import qualify_preset_tools
+from fishery_ai.development.qualification.preset_tool_qualification import qualify_preset_tools
 from fishery_ai.presets import preset_profiles
 from fishery_ai.telemetry import CurrentSnapshotStore, CurrentWaterQualityReader
 from fishery_ai.tools import ToolRegistry
