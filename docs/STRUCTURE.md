@@ -123,7 +123,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ model_options.py                                        # 生成选项、能力状态与校验
 │  │  ├─ observability.py                                        # Usage 与安全 JSONL Trace
 │  │  ├─ official_capabilities.py                                # 维护者记录的官方模型能力                    //!!!//
-│  │  ├─ openai_compatible_adapter.py                            # OpenAI SDK 请求编码与传输
+│  │  ├─ openai_compatible_adapter.py                            # SDK 传输与内部流式 Tool 组装
 │  │  ├─ preset_tool_qualification.py                           # 旧路径模块别名，兼容历史导入与补丁
 │  │  ├─ presets.py                                              # 固定 Preset 模板、Variant 与合同
 │  │  ├─ project_env.py                                          # 私有凭据原子写入与 revision 检查
@@ -137,7 +137,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ repositories.py                                         # 水质与 Detection Mock 资源读取
 │  │  ├─ secure_files.py                                         # 安全文件操作与 Windows ACL 检查
 │  │  ├─ tool_capability_probe.py                                # Managed Tool Calling 显式 Probe
-│  │  ├─ tool_conversation.py                                    # 默认单轮与内部有界两轮共享协调
+│  │  ├─ tool_conversation.py                                    # 有界共享协调、内部 Normal/Streaming 传输
 │  │  ├─ water_quality_scoring.py                                # 水质实验评分与等级规则
 │  │  ├─ web.py                                                  # Web API、共享服务与页面入口
 │  │  ├─ web_security.py                                         # Host、Origin 与 CSRF 防护
@@ -239,6 +239,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    │  ├─ test_cloud_capability.py                                           # Cloud 能力声明与显式 Probe 测试
    │  ├─ test_evidence_resolver.py                                          # 精确 Identity 证据解析与冲突测试
    │  ├─ test_gateway_tool_contract.py                                      # Tool 模型消息与 SDK 编解码测试
+   │  ├─ test_streaming_tool_assembler.py                                   # 流式 Tool 分片、结束、预算与清理测试
    │  ├─ test_off_streaming_combination.py                                  # OFF 加 Streaming 组合证据测试
    │  ├─ test_ollama_reasoning.py                                           # 精确 Ollama Thinking 参数测试
    │  ├─ test_output_parity.py                                              # Normal 与 Streaming 输出边界测试
@@ -280,6 +281,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    │  ├─ test_read_only_tools.py                                            # Registry、Executor 与只读 Handler 测试
    │  ├─ test_tool_argument_contract.py                                     # Tool 受控参数合同与旧工具兼容测试
    │  ├─ test_bounded_multi_round.py                                        # 内部两轮预算、模型决策、去重与取消测试
+   │  ├─ test_streaming_multi_round.py                                     # 流式组装到真实 Tool 的离线多轮与提交测试
    │  ├─ test_tool_conversation.py                                          # steps、固定预算、单轮与兼容投影测试
    │  ├─ test_tool_policy.py                                                # Analysis 与 Assistant 授权测试
    │  ├─ test_tool_policy_manager.py                                        # Tool Manager、用户 Policy 存储与默认/override 不变性测试

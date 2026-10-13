@@ -336,7 +336,8 @@ class AssistantExecutionWebTests(AssistantWebFixture):
         self.assertEqual(self.post().status_code, 200)
 
     def test_web_cannot_set_flag_mode_budget_prompt_or_deadline(self):
-        for name in ("multi_round_enabled", "execution_mode", "mode", "budget", "deadline", "prompt_id", "turn_timeout_s"):
+        for name in ("multi_round_enabled", "execution_mode", "mode", "budget", "deadline", "prompt_id", "turn_timeout_s",
+                     "model_transport", "transport", "streaming", "stream"):
             self.assertEqual(self.post(**{name: "injected"}).status_code, 400)
         self.factory.assert_not_called()
 

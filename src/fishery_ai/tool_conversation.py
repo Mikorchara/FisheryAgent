@@ -11,7 +11,7 @@ from typing import Callable
 import uuid
 
 from .contracts import Mode, RuntimeInfo, SessionUsage, Status, Usage, UsageAccumulator, UsageSource, utcnow
-from .execution import check_cancelled, current_handle
+from .execution import check_cancelled, current_handle, turn_deadline_scope
 from .model_gateway import (GatewayError, ModelGateway, ModelMessage, ModelRequest,
                             ModelResponse, ModelToolCall, RuntimeSnapshot, validate_tool_request)
 from .model_gateway import MockGateway
@@ -178,6 +178,12 @@ class ToolExecutionMode(str, Enum):
     BOUNDED_MULTI_ROUND = "BOUNDED_MULTI_ROUND"
 
 
+class ToolModelTransport(str, Enum):
+    """Internal typed transport selection; no Web request or release override."""
+    NORMAL = "NORMAL"
+    STREAMING = "STREAMING"
+
+
 @dataclass(frozen=True)
 class ModelExecutionStep:
     seq: int
@@ -233,8 +239,11 @@ class ToolConversationResult:
     reasoning_content: str | None = field(default=None, repr=False)
     application_mode: str = "assistant"
     budget: ToolTurnBudget = SINGLE_ROUND_BUDGET
+    model_transport: ToolModelTransport = ToolModelTransport.NORMAL
 
     def __post_init__(self):
+        if not isinstance(self.model_transport, ToolModelTransport):
+            raise ValueError("typed model transport required")
         object.__setattr__(self, "steps", tuple(self.steps))
         model_indices = []
         for seq, step in enumerate(self.steps, 1):
@@ -329,9 +338,12 @@ class ToolCallingService:
                  id_factory: Callable[[], str] = lambda: uuid.uuid4().hex,
                  policy: ToolPolicy | None = None,
                  budget: ToolTurnBudget | None = None,
-                 execution_mode: ToolExecutionMode = ToolExecutionMode.SINGLE_ROUND):
+                 execution_mode: ToolExecutionMode = ToolExecutionMode.SINGLE_ROUND,
+                 model_transport: ToolModelTransport = ToolModelTransport.NORMAL):
         if not isinstance(execution_mode, ToolExecutionMode):
             raise ValueError("typed internal execution mode required")
+        if not isinstance(model_transport, ToolModelTransport):
+            raise ValueError("typed internal model transport required")
         expected_budget = (SINGLE_ROUND_BUDGET if execution_mode == ToolExecutionMode.SINGLE_ROUND
                            else BOUNDED_MULTI_ROUND_BUDGET)
         budget = expected_budget if budget is None else budget
@@ -339,6 +351,7 @@ class ToolCallingService:
             raise ValueError("execution mode requires its fixed budget")
         self._budget = budget
         self._execution_mode = execution_mode
+        self._model_transport = model_transport
         self.gateway, self.registry, self.traces = gateway, registry, traces
         self.clock, self.id_factory = clock, id_factory
         self.policy = policy if policy is not None else load_tool_policies()["assistant"]
@@ -351,6 +364,10 @@ class ToolCallingService:
     @property
     def execution_mode(self) -> ToolExecutionMode:
         return self._execution_mode
+
+    @property
+    def model_transport(self) -> ToolModelTransport:
+        return self._model_transport
 
     def converse(self, question: str, runtime: RuntimeSnapshot) -> ToolConversationResult:
         if self.execution_mode != ToolExecutionMode.SINGLE_ROUND:
@@ -366,6 +383,16 @@ class ToolCallingService:
                     final_response_instruction: str | None = None,
                     on_progress: Callable[[str], None] | None = None,
                     on_steps: Callable[[tuple], None] | None = None) -> ToolConversationResult:
+        options = dict(request_id=request_id, trace_id=trace_id,
+            final_response_instruction=final_response_instruction, on_progress=on_progress, on_steps=on_steps)
+        if self.model_transport == ToolModelTransport.STREAMING:
+            with turn_deadline_scope(runtime.total_timeout_s):
+                return self._run_request(request, runtime, **options)
+        return self._run_request(request, runtime, **options)
+
+    def _run_request(self, request: ModelRequest, runtime: RuntimeSnapshot, *,
+                     request_id=None, trace_id=None, final_response_instruction=None,
+                     on_progress=None, on_steps=None) -> ToolConversationResult:
         """Shared bounded execution; caller owns context, Registry owns definitions."""
         started_at, start_tick = self.clock(), time.monotonic()
         handle = current_handle()
@@ -374,6 +401,9 @@ class ToolCallingService:
         budget = self.budget
         policy = self.policy  # Freeze authorization for every request and execution in this turn.
         multi_round = self.execution_mode == ToolExecutionMode.BOUNDED_MULTI_ROUND
+        transport = self.model_transport
+        model_complete = (getattr(self.gateway, "complete_tool_stream", None)
+                          if transport == ToolModelTransport.STREAMING else self.gateway.complete)
         steps: list[ModelExecutionStep | ToolExecutionStep] = []
         usage_items: list[Usage] = []
         executor = None
@@ -406,16 +436,21 @@ class ToolCallingService:
             try:
                 check_cancelled()  # Progress callbacks may cancel before transport starts.
                 validate_tool_request(request, runtime, streaming=False)
+                if not callable(model_complete):
+                    raise GatewayError("TOOL_STREAM_TRANSPORT_NOT_IMPLEMENTED")
             except GatewayError as exc:
                 set_outcome(ModelStepOutcome("blocked", error_code=_safe_code(exc.code)))
                 raise
             try:
                 steps[position] = replace(steps[position], request_started=True)
                 publish_steps()
-                response = self.gateway.complete(request, runtime)
+                response = model_complete(request, runtime)
             except GatewayError as exc:
-                usage_items.append(Usage())
+                reported = getattr(exc, "usage", None)
+                reported = reported if isinstance(reported, Usage) else Usage()
+                usage_items.append(reported)
                 set_outcome(ModelStepOutcome("cancelled" if exc.code == "USER_CANCELLED" else "failed",
+                                                usage=reported, finish_reason=_finish_reason(getattr(exc, "finish_reason", None)),
                                                 error_code=_safe_code(exc.code)))
                 raise
             except Exception:
@@ -441,7 +476,7 @@ class ToolCallingService:
 
         try:
             check_cancelled()
-            if multi_round and runtime.max_retries != 0:
+            if (multi_round or transport == ToolModelTransport.STREAMING) and runtime.max_retries != 0:
                 raise GatewayError("TOOL_RETRY_NOT_ALLOWED")
             definitions = policy.model_definitions(self.registry)
             request = replace(request, tools=definitions, tool_choice="auto" if definitions else None)
@@ -528,11 +563,22 @@ class ToolCallingService:
             text if status == Status.COMPLETED else "", tuple(steps), _aggregate_usage(usage_items),
             finish_reason if status == Status.COMPLETED else None, error_code,
             reasoning_content=reasoning_content if status == Status.COMPLETED else None,
-            application_mode=policy.mode, budget=budget)
+            application_mode=policy.mode, budget=budget, model_transport=transport)
         try:
             self.traces.record_tool_conversation(result, started_at=started_at,
                 finished_at=self.clock(), total_ms=(time.monotonic() - start_tick) * 1000)
         except Exception:
             return replace(result, status=result.status if result.error_code else Status.FAILED,
                            generated_text="", error_code=result.error_code or "TRACE_WRITE_ERROR")
+        if transport == ToolModelTransport.STREAMING and result.status == Status.COMPLETED:
+            try:
+                check_cancelled()  # Synchronous trace I/O is part of this internal Turn too.
+            except GatewayError as exc:
+                result = replace(result, status=Status.CANCELLED if exc.code == "USER_CANCELLED" else Status.FAILED,
+                    generated_text="", reasoning_content=None, final_finish_reason=None, error_code=_safe_code(exc.code))
+                try:
+                    self.traces.record_tool_conversation(result, started_at=started_at,
+                        finished_at=self.clock(), total_ms=(time.monotonic() - start_tick) * 1000)
+                except Exception:
+                    return result  # Keep cancellation/timeout, never regenerate or report success.
         return replace(result, trace_recorded=True)

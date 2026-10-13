@@ -101,11 +101,13 @@ class JsonlTraceSink:
             "final_finish_reason": result.final_finish_reason,
             "usage": asdict(result.usage), "timing": {"total_ms": round(total_ms, 3)},
         }
+        if result.model_transport.value == "STREAMING":
+            entry["model_transport"] = result.model_transport.value
         self._append(entry)
 
     def record_assistant(self, result, *, started_at: datetime, finished_at: datetime) -> None:
         """Final commit outcome and numeric history budgets; no conversation material."""
-        self._append({"kind": "assistant_turn", "application_mode": "assistant",
+        entry = {"kind": "assistant_turn", "application_mode": "assistant",
             "preset_id": result.preset_id, "request_id": result.execution.request_id,
             "prompt_id": result.prompt_id,
             "trace_id": result.execution.trace_id, "status": result.status.value,
@@ -116,7 +118,10 @@ class JsonlTraceSink:
             "history_trimmed": result.context.history_trimmed,
             "history_bytes_sent": result.context.history_bytes_sent,
             "activity": result.to_dict()["activity"],
-            "usage": asdict(result.execution.usage)})
+            "usage": asdict(result.execution.usage)}
+        if result.execution.model_transport.value == "STREAMING":
+            entry["model_transport"] = result.execution.model_transport.value
+        self._append(entry)
 
     def _append(self, entry: dict) -> None:
         with self._lock:

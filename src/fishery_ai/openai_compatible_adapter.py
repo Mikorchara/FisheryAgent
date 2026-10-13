@@ -9,6 +9,7 @@ import time
 import re
 import asyncio
 import json
+import math
 import queue
 import threading
 from urllib.parse import urlsplit, urlunsplit
@@ -19,7 +20,7 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from .contracts import Usage, UsageSource
 from .model_gateway import (GatewayError, ModelEvent, ModelRequest, ModelResponse, ModelToolCall,
-                            RetryableGatewayError, RuntimeSnapshot, effective_options, validate_tool_request)
+                            RetryableGatewayError, StreamingModelError, RuntimeSnapshot, effective_options, validate_tool_request)
 from .model_options import (OptionValidationError, ReasoningMode,
                             Support, validate_options)
 from .providers import AuthSpec
@@ -42,6 +43,237 @@ def _usage(value: object) -> Usage:
               getattr(prompt_details, "cached_tokens", None))
     return Usage(*values, source=UsageSource.PROVIDER) if any(
         item is not None for item in values) else Usage()
+
+
+class _ToolCallStreamAssembler:
+    """One bounded SDK response, not an executor or a product Streaming gate.
+
+    Call finish only after clean iterator exhaustion and successful I/O cleanup.
+    IDs are stable metadata; names/arguments may be deltas. No JSON repair.
+    """
+
+    MAX_CHUNKS = 4096
+    MAX_BUFFER_BYTES = 262144
+    MAX_ARGUMENT_BYTES = 4096  # Same upper boundary as the existing Executor.
+    MAX_JSON_DEPTH = 16
+    MAX_JSON_NODES = 1024
+
+    def __init__(self, definitions):
+        self._names = frozenset(d.name for d in definitions)
+        self._chunks = self._bytes = self._argument_bytes = 0
+        self._content, self._reasoning, self._arguments = [], [], []
+        self._id = self._name = self._type = None
+        self._model = self._response_id = self._finish_reason = None
+        self._call_seen = self._arguments_seen = self._finished = self._failed = False
+        self._usage = Usage()
+
+    def __repr__(self):
+        return f"_ToolCallStreamAssembler(chunks={self._chunks}, finished={self._finished})"
+
+    def _reject(self, code="INVALID_STREAM_EVENT"):
+        self._failed = True
+        raise GatewayError(code) from None
+
+    def _text(self, value, *, limit=None):
+        if not isinstance(value, str):
+            self._reject()
+        # Reject oversized strings before allocating a second UTF-8 buffer.
+        if len(value) > self.MAX_BUFFER_BYTES - self._bytes or (limit is not None and len(value) > limit):
+            self._reject("STREAM_BUFFER_LIMIT")
+        try:
+            size = len(value.encode("utf-8"))
+        except UnicodeError:
+            self._reject()
+        if limit is not None and size > limit:
+            self._reject("STREAM_BUFFER_LIMIT")
+        self._bytes += size
+        if self._bytes > self.MAX_BUFFER_BYTES:
+            self._reject("STREAM_BUFFER_LIMIT")
+        return size
+
+    def _stable(self, field, value, *, limit=256):
+        if value is None or value == "":
+            return
+        self._text(value, limit=limit)
+        prior = getattr(self, field)
+        if prior is not None and prior != value:
+            self._reject("INVALID_TOOL_CALL" if field == "_id" else "INVALID_STREAM_EVENT")
+        setattr(self, field, value)
+
+    def push(self, chunk):
+        if self._finished or self._failed:
+            self._reject("INVALID_STREAM_STATE")
+        self._chunks += 1
+        if self._chunks > self.MAX_CHUNKS:
+            self._reject("STREAM_CHUNK_LIMIT")
+        try:
+            self._push(chunk)
+        except (AttributeError, TypeError, ValueError, OverflowError, RecursionError):
+            self._reject()
+
+    def _push(self, chunk):
+        self._stable("_model", getattr(chunk, "model", None))
+        self._stable("_response_id", getattr(chunk, "id", None))
+        usage = _usage(getattr(chunk, "usage", None))
+        if usage.source != UsageSource.UNAVAILABLE:
+            # Usage is cumulative per response, never summed across chunks.
+            fields = ("input_tokens", "output_tokens", "total_tokens", "reasoning_tokens", "cached_input_tokens")
+            values = []
+            for key in fields:
+                old, new = getattr(self._usage, key), getattr(usage, key)
+                if old is not None and new is not None and new < old:
+                    self._reject()
+                values.append(new if new is not None else old)
+            self._usage = Usage(*values, source=UsageSource.PROVIDER)
+        choices = chunk.choices
+        if not isinstance(choices, (list, tuple)) or len(choices) > 1:
+            self._reject()
+        if not choices:  # Optional usage-only frame, including after finish.
+            return
+        choice = choices[0]
+        if type(choice.index) is not int or choice.index != 0:
+            self._reject()
+        delta = choice.delta
+        if getattr(delta, "role", None) not in (None, "assistant"):
+            self._reject()
+        if getattr(delta, "function_call", None) is not None:
+            self._reject("INVALID_TOOL_CALL")  # Legacy function_call deltas are not tool_calls.
+        content, reasoning = getattr(delta, "content", None), getattr(delta, "reasoning_content", None)
+        for text in (content, reasoning):
+            if text is not None:
+                self._text(text)
+        calls = getattr(delta, "tool_calls", None)
+        if calls is not None and not isinstance(calls, (list, tuple)):
+            self._reject("INVALID_TOOL_CALL")
+        if self._finish_reason is not None and (content or reasoning or calls):
+            self._reject()  # No response data after a terminal marker.
+        if content is not None:
+            self._content.append(content)
+        if reasoning is not None:
+            self._reasoning.append(reasoning)
+        if calls:
+            if len(calls) != 1:
+                self._reject("TOOL_CALL_LIMIT")
+            call = calls[0]
+            if type(call.index) is not int or call.index < 0:
+                self._reject("INVALID_TOOL_CALL")
+            if call.index != 0:
+                self._reject("TOOL_CALL_LIMIT")
+            self._call_seen = True
+            self._stable("_id", getattr(call, "id", None))
+            call_type = getattr(call, "type", None)
+            if call_type not in (None, ""):
+                if call_type != "function":
+                    self._reject("INVALID_TOOL_CALL")
+                self._type = call_type
+            function = getattr(call, "function", None)
+            if function is not None:
+                name = getattr(function, "name", None)
+                if name not in (None, ""):
+                    self._text(name, limit=64)
+                    # Repeated complete metadata is legal, conflicting names are not.
+                    if not (self._name in self._names and name == self._name):
+                        candidate = (self._name or "") + name
+                        if not any(known.startswith(candidate) for known in self._names):
+                            self._reject("INVALID_TOOL_CALL")
+                        self._name = candidate
+                arguments = getattr(function, "arguments", None)
+                if arguments is not None:
+                    self._arguments_seen = True
+                    self._argument_bytes += self._text(arguments)
+                    if self._argument_bytes > self.MAX_ARGUMENT_BYTES:
+                        self._reject("STREAM_BUFFER_LIMIT")
+                    self._arguments.append(arguments)
+        reason = getattr(choice, "finish_reason", None)
+        if reason is not None:
+            if reason not in ("stop", "tool_calls", "function_call"):
+                if reason in ("length", "content_filter"):
+                    self._finish_reason = reason  # Failure audit only; never executable.
+                self._reject("STREAM_TRUNCATED" if reason == "length" else "INVALID_STREAM_EVENT")
+            if self._finish_reason is not None and reason != self._finish_reason:
+                self._reject()
+            self._finish_reason = reason
+
+    def _validate_arguments(self, text):
+        # Bound nesting before json.loads, ignoring braces inside JSON strings.
+        depth = 0; quoted = escaped = False
+        for char in text:
+            if quoted:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    quoted = False
+            elif char == '"':
+                quoted = True
+            elif char in "[{":
+                depth += 1
+                if depth > self.MAX_JSON_DEPTH:
+                    self._reject("INVALID_TOOL_ARGUMENTS")
+            elif char in "]}":
+                depth -= 1
+        def object_pairs(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("duplicate key")
+                result[key] = value
+            return result
+        def invalid_constant(_):
+            raise ValueError("invalid constant")
+        try:
+            value = json.loads(text, object_pairs_hook=object_pairs, parse_constant=invalid_constant)
+            if not isinstance(value, dict):
+                raise ValueError("object required")
+            pending, nodes = [value], 0
+            while pending:
+                item = pending.pop(); nodes += 1
+                if nodes > self.MAX_JSON_NODES:
+                    raise ValueError("too many nodes")
+                if isinstance(item, dict):
+                    pending.extend(item.keys()); pending.extend(item.values())
+                elif isinstance(item, list):
+                    pending.extend(item)
+                elif isinstance(item, str):
+                    item.encode("utf-8")
+                elif isinstance(item, float) and not math.isfinite(item):
+                    raise ValueError("non-finite number")
+        except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError):
+            self._reject("INVALID_TOOL_ARGUMENTS")
+
+    def finish(self):
+        if self._finished or self._failed:
+            self._reject("INVALID_STREAM_STATE")
+        if self._finish_reason is None:
+            self._reject("STREAM_INTERRUPTED")
+        calls = ()
+        if self._call_seen:
+            if (not self._id or not self._id.strip() or self._type != "function"
+                    or self._name not in self._names or not self._arguments_seen):
+                self._reject("INVALID_TOOL_CALL")
+            arguments = "".join(self._arguments)
+            self._validate_arguments(arguments)
+            try:
+                calls = (ModelToolCall(self._id, self._name, arguments, type=self._type),)
+            except (ValueError, TypeError, RecursionError):
+                self._reject("INVALID_TOOL_CALL")
+        elif self._finish_reason != "stop":
+            self._reject("INVALID_TOOL_CALL")
+        text, reasoning = "".join(self._content), "".join(self._reasoning)
+        if not text.strip() and not calls:
+            self._reject("INVALID_RESPONSE")
+        self._finished = True
+        return ModelResponse(text if self._content or not calls else None, self._usage,
+            self._model, bool(reasoning), reasoning or None, tool_calls=calls, finish_reason=self._finish_reason)
+
+    @property
+    def observed_usage(self):
+        return self._usage
+
+    @property
+    def observed_finish_reason(self):
+        return self._finish_reason
 
 
 class OpenAICompatibleAdapter:
@@ -121,7 +353,7 @@ class OpenAICompatibleAdapter:
             raw = redact(raw)
         return ManualResponse(raw, _usage(getattr(response, "usage", None)))
 
-    def _bridge(self, kwargs, runtime, *, stream, manual=False):
+    def _bridge(self, kwargs, runtime, *, stream, manual=False, tool_definitions=None):
         """A request-owned loop/thread, bounded queue and actual cancellable SDK Task."""
         self._check_secret(runtime)
         handle = current_handle() or RequestHandle()
@@ -132,6 +364,14 @@ class OpenAICompatibleAdapter:
         inbox = queue.Queue(maxsize=32)
         stopped = threading.Event()
         deadline = handle.request_deadline(runtime.total_timeout_s)
+        stream_assembler = None
+
+        def safe_stream_error(error):
+            if tool_definitions is None or isinstance(error, StreamingModelError):
+                return error
+            return StreamingModelError(error.code,
+                usage=stream_assembler.observed_usage if stream_assembler is not None else Usage(),
+                finish_reason=stream_assembler.observed_finish_reason if stream_assembler is not None else None)
 
         async def put(item):
             while not stopped.is_set():
@@ -143,14 +383,18 @@ class OpenAICompatibleAdapter:
             raise asyncio.CancelledError()
 
         async def operation():
+            nonlocal stream_assembler
             emitted = False
-            attempts = 0 if manual else runtime.max_retries
+            assembling = tool_definitions is not None
+            attempts = 0 if manual or assembling else runtime.max_retries
             async with asyncio.timeout(self._remaining(deadline)):
                 for attempt in range(attempts + 1):
                     handle.check()
                     client = self._async_client_factory(runtime, self._remaining(deadline))
                     handle.io_closed = False
                     sdk_stream = None
+                    assembler = _ToolCallStreamAssembler(tool_definitions) if assembling else None
+                    stream_assembler = assembler
                     try:
                         self.request_attempts += 1
                         if manual:
@@ -163,9 +407,14 @@ class OpenAICompatibleAdapter:
                             sdk_stream = response
                             async for chunk in sdk_stream:
                                 handle.check()
-                                event = self._manual_response(chunk, runtime) if manual else self._event(chunk)
-                                emitted = emitted or manual or bool(event.delta or event.reasoning_delta)
-                                await put(("item", event))
+                                if assembler is not None:
+                                    self._remaining(deadline)  # Also bound immediately ready / CPU-only chunks.
+                                    emitted = True  # Tool metadata/arguments are observable too; never retry.
+                                    assembler.push(chunk)
+                                else:
+                                    event = self._manual_response(chunk, runtime) if manual else self._event(chunk)
+                                    emitted = emitted or manual or bool(event.delta or event.reasoning_delta)
+                                    await put(("item", event))
                         else:
                             handle.check()
                             normalized = self._manual_response(response, runtime) if manual else self._response(response)
@@ -173,7 +422,8 @@ class OpenAICompatibleAdapter:
                             # content) is observable before queuing or cleanup.
                             emitted = True
                             await put(("item", normalized))
-                        return
+                        if assembler is None:
+                            return
                     except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
                         handle.check()
                         error = self._map_error(exc)
@@ -193,6 +443,15 @@ class OpenAICompatibleAdapter:
                         finally:
                             await client.close()
                             handle.io_closed = True
+                    if assembler is not None:
+                        # Iterator exhausted AND cleanup succeeded; only now publish a complete call.
+                        handle.check()
+                        self._remaining(deadline)
+                        normalized = assembler.finish()
+                        handle.check()
+                        self._remaining(deadline)
+                        await put(("item", normalized))
+                        return
 
         async def run():
             loop = asyncio.get_running_loop()
@@ -208,17 +467,17 @@ class OpenAICompatibleAdapter:
                 try:
                     handle.check()
                 except GatewayError as exc:
-                    await put(("error", exc))
+                    await put(("error", safe_stream_error(exc)))
                 else:
-                    await put(("error", GatewayError("SDK_ERROR")))
+                    await put(("error", safe_stream_error(GatewayError("SDK_ERROR"))))
             except TimeoutError:
-                await put(("error", GatewayError("TOTAL_TIMEOUT")))
+                await put(("error", safe_stream_error(GatewayError("TOTAL_TIMEOUT"))))
             except GatewayError as exc:
-                await put(("error", exc))
+                await put(("error", safe_stream_error(exc)))
             except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
-                await put(("error", self._map_error(exc)))  # Cleanup failures do not restart operation.
+                await put(("error", safe_stream_error(self._map_error(exc))))  # Cleanup never retries.
             except Exception:
-                await put(("error", GatewayError("SDK_ERROR")))
+                await put(("error", safe_stream_error(GatewayError("SDK_ERROR"))))
             finally:
                 handle.unbind()
 
@@ -258,6 +517,8 @@ class OpenAICompatibleAdapter:
                     raise item
                 handle.check()
                 yield item
+        except GatewayError as exc:
+            raise safe_stream_error(exc) from None
         finally:
             if not ended:
                 handle.abort_io()
@@ -282,6 +543,33 @@ class OpenAICompatibleAdapter:
         if not request.streaming:
             raise GatewayError("INVALID_REQUEST")
         yield from self._bridge(json.loads(request.body_json), runtime, stream=True, manual=True)
+
+    def _complete_tool_stream(self, request: ModelRequest, runtime: RuntimeSnapshot) -> ModelResponse:
+        """Buffered internal transport; only explicitly configured coordinators opt in.
+
+        Keep the public stream() gate unchanged. All ordinary model capability,
+        options and Preset gates still apply to this explicit fixture entry.
+        """
+        kwargs = self._kwargs(request, runtime, stream=True, _assemble_tools=True)
+        events = self._bridge(kwargs, runtime, stream=True, tool_definitions=request.tools)
+        response = None
+        try:
+            response = next(events)
+            for _ in events:
+                pass
+            if current_handle() is not None:
+                current_handle().check()
+            return response
+        except GatewayError as exc:
+            if not isinstance(exc, StreamingModelError) and isinstance(response, ModelResponse):
+                raise StreamingModelError(exc.code, usage=response.usage, finish_reason=response.finish_reason) from None
+            raise
+        finally:
+            events.close()
+
+    def complete_tool_stream(self, request: ModelRequest, runtime: RuntimeSnapshot) -> ModelResponse:
+        """Return a closed, verified model step; never expose raw stream deltas."""
+        return self._complete_tool_stream(request, runtime)
 
     @staticmethod
     def _make_client(runtime: RuntimeSnapshot, remaining: float) -> OpenAI:
@@ -356,9 +644,9 @@ class OpenAICompatibleAdapter:
         return tuple(dict.fromkeys(values)), default
 
     @staticmethod
-    def _kwargs(request: ModelRequest, runtime: RuntimeSnapshot, *, stream: bool) -> dict:
+    def _kwargs(request: ModelRequest, runtime: RuntimeSnapshot, *, stream: bool, _assemble_tools=False) -> dict:
         from .model_gateway import validate_preset_response
-        validate_tool_request(request, runtime, streaming=stream)
+        validate_tool_request(request, runtime, streaming=stream and not _assemble_tools)
         validate_preset_response(runtime, streaming=stream)
         generation, reasoning = effective_options(request, runtime)
         try:

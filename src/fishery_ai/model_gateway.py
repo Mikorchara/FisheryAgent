@@ -539,6 +539,8 @@ class ModelEvent:
 
 class ModelGateway(Protocol):
     def complete(self, request: ModelRequest, runtime: RuntimeSnapshot) -> ModelResponse: ...
+    # Internal transport foundation, not the product stream()/Web capability gate.
+    def complete_tool_stream(self, request: ModelRequest, runtime: RuntimeSnapshot) -> ModelResponse: ...
     def stream(self, request: ModelRequest, runtime: RuntimeSnapshot) -> Iterator[ModelEvent]: ...
     def manual_complete(self, request: ManualRequest, runtime: RuntimeSnapshot) -> ManualResponse: ...
     def manual_stream(self, request: ManualRequest, runtime: RuntimeSnapshot) -> Iterator[ManualResponse]: ...
@@ -553,6 +555,16 @@ class GatewayError(Exception):
 
 class RetryableGatewayError(GatewayError):
     pass
+
+
+class StreamingModelError(GatewayError):
+    """Safe statistics of an unsuccessful stream; never partial text or calls."""
+
+    def __init__(self, code: str, *, usage: Usage, finish_reason: str | None = None):
+        super().__init__(code)
+        self.usage = usage if isinstance(usage, Usage) else Usage()
+        self.finish_reason = finish_reason if finish_reason in (
+            "stop", "length", "tool_calls", "function_call", "content_filter") else None
 
 
 class MockGateway:
