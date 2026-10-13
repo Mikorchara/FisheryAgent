@@ -93,6 +93,7 @@ Phase D 后实现集中在 `development/qualification/`，单向复用正式 Run
 - [development/qualification/assistant_qualification.py](development/qualification/assistant_qualification.py)：单 manifest 授权、预算、Assistant 资格执行和安全报告。
 - [development/qualification/multi_round_qualification.py](development/qualification/multi_round_qualification.py)：隔离合成 Snapshot 的单案例资格入口；保留旧实验模式，新增正式 Assistant Prompt / History / 来源门禁的 Qwen 精确范围验证，默认不联网。
 - [development/qualification/qualification_adapter.py](development/qualification/qualification_adapter.py)：单次实验的输出预算与有限 Provider 原始 / 归一观测。
+- [development/qualification/streaming_observation.py](development/qualification/streaming_observation.py)：开发资格专用的有限 SDK 分片计数、一致性与清理状态，未接 Web。
 - [development/qualification/qualification_history.py](development/qualification/qualification_history.py)：冻结合成 History、H case 和兼容白名单，非产品 Session。
 - [development/qualification/qualification_migration.py](development/qualification/qualification_migration.py)：已结束研究的多轮 fixture、矩阵与顺序兼容数据，不启动批次。
 - [development/qualification/qualification_projection.py](development/qualification/qualification_projection.py)：包装共享产品投影并计算冻结资格指纹，不改变 Web History。

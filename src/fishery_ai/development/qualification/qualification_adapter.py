@@ -59,26 +59,58 @@ def response_summary(response, model, registry, exposed_tools):
 class QualificationAdapter(OpenAICompatibleAdapter):
     """Scoped to one qualification, not installed in Web or the ordinary Gateway."""
 
-    def __init__(self, model, registry, exposed_tools, max_output_tokens, **factories):
+    def __init__(self, model, registry, exposed_tools, max_output_tokens, *, streaming=False, **factories):
         super().__init__(**factories)
+        if type(streaming) is not bool:
+            raise GatewayError("QUALIFICATION_INVALID_TRANSPORT")
+        self.streaming = streaming
         self.model, self.registry = model, registry
         self.exposed_tools = tuple(exposed_tools)
         self.max_output_tokens = max_output_tokens
         self.observations = []  # Only finite safe projections, never raw responses.
+        self._stream_row = None
+        if streaming:
+            from .streaming_observation import ObservedClient
+            factory = self._async_client_factory
+            self._async_client_factory = lambda runtime, remaining: ObservedClient(
+                factory(runtime, remaining), self._stream_row)
 
-    def _kwargs(self, request, runtime, *, stream):
-        if stream or runtime.max_retries != 0:
+    def _kwargs(self, request, runtime, *, stream, _assemble_tools=False):
+        if stream != self.streaming or runtime.max_retries != 0 or stream and not _assemble_tools:
             raise GatewayError("QUALIFICATION_INVALID_TRANSPORT")
-        kwargs = super()._kwargs(request, runtime, stream=False)
+        kwargs = super()._kwargs(request, runtime, stream=stream, _assemble_tools=_assemble_tools)
         # Mandatory cost budget is transport-scoped; do not manufacture model
         # capability evidence merely to send a maintainer-approved finite limit.
         encoded = runtime.protocol_spec.encode(GenerationOptions(max_output_tokens=self.max_output_tokens),
-                                               runtime.default_reasoning, streaming=False, include_usage=False)
+                                               runtime.default_reasoning, streaming=stream, include_usage=False)
         field = runtime.protocol_spec.max_output_tokens_field
         if field is None or encoded.get(field) != self.max_output_tokens:
             raise GatewayError("QUALIFICATION_TOKEN_BUDGET_UNAVAILABLE")
         kwargs[field] = self.max_output_tokens
         return kwargs
+
+    def _new_tool_stream_assembler(self, definitions):
+        if not self.streaming:
+            return super()._new_tool_stream_assembler(definitions)
+        from .streaming_observation import ObservedAssembler
+        return ObservedAssembler(definitions, self._stream_row, self.model, self.registry, self.exposed_tools)
+
+    def complete_tool_stream(self, request, runtime):
+        if not self.streaming or len(self.observations) >= 3:
+            raise GatewayError("QUALIFICATION_INVALID_TRANSPORT")
+        from .streaming_observation import empty_observation
+        row = empty_observation()
+        self._stream_row = row
+        self.observations.append(row)
+        try:
+            response = super().complete_tool_stream(request, runtime)
+            if not all(row[key] is True for key in (
+                    "sdk_iterator_exhausted", "sdk_stream_closed", "sdk_client_closed", "assembly_complete",
+                    "normalized_call_consistent", "normalized_metadata_consistent")):
+                raise GatewayError("QUALIFICATION_NORMALIZATION_MISMATCH")
+            return response
+        finally:
+            self._stream_row = None
 
     def _response(self, response):
         # This hook runs at the same boundary for inherited sync/AsyncOpenAI I/O.

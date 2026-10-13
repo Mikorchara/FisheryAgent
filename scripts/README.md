@@ -11,6 +11,8 @@
 
 真实资格请求必须获得本轮针对目标、计划及次数的明确授权，才使用 `--confirm-network`。旧研究授权不继续有效。正式凭据仍由既有私有 CredentialStore 组合解析，禁止读取源码根 `.env` 或复制 Key。
 
+`qualify_multi_round.py --streaming` 为独立的 Streaming candidate 单案例入口，自动复用正式 Assistant 多轮 Prompt / History / Commit Gate；支持三个固定 Preset，默认查询水质 + Knowledge，`--tool-set three-tools` 另建精确范围。默认 dry-run，最多2/2/3、每请求≤256 tokens、retry=0，不预览或保存正文、不自动发布、不开放 Web Streaming。逐案例命令和仍未知的协议边界见[Phase 5C 准备](../docs/deep-dive/research/ASSISTANT_STREAMING_TOOL_CALLING.md#10-推荐最小顺序与手动命令)。
+
 资格实现集中在 `src/fishery_ai/development/qualification/`，脚本是薄入口。该子包复用产品 Runtime、凭据快照、Gateway 与 Tool 合同，正式 Web / Assistant / Analysis 不导入资格实现。包初始化不装配服务、不解析凭据、不联网；实现随安装包提供，以保留安装后 CLI 的可用性。
 
 原 `fishery_ai.assistant_qualification` 等七个模块仅为历史导入兼容别名；新开发使用 `fishery_ai.development.qualification` 下的具体模块。别名指向同一个模块对象，历史私有函数导入和测试 monkeypatch 仍有效。冻结 H / P2E fixture 与指纹仅服务单次 Harness 的兼容校验，不参与正式 History。

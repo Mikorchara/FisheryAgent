@@ -71,6 +71,14 @@ Q1–Q4 保留为单次维护计划示例，使用空 History；不包含已结�
 
 History 的 Qwen、DeepSeek、Ollama A/B 批次和 P2E 多轮历史资格实验均已结束，正式产品迁移也已完成；对应一次性 runner、manifest / index / generator 和实验测试已移除。实验合同、结果及停止事故保留在[记录索引](records/README.md)与 Git；迁移依据见[History v2 判定](records/2026-10-history-v2-migration-decision.md)。不得按旧授权重跑或补样本。
 
+Streaming Tool Calling 资格使用同一单案例脚本的 `--streaming`，自动使用正式多轮 Assistant 合同。三个 Preset 独立 candidate、默认两工具、最多2/2/3；不继承 Normal 资格，不启用 Web Streaming。下面只检查计划，不联网：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/qualification/qualify_multi_round.py --streaming --preset dashscope-qwen38-flash-r1 --case current-do --dry-run
+```
+
+真实执行需逐案例另获明确批准，再使用 `--confirm-network`。Streaming 不支持 `--review-answer`；报告只保存有界 SDK 观察、执行 Steps、Ledger、Usage 和安全状态。[三 Provider 计划、案例预算与命令](deep-dive/research/ASSISTANT_STREAMING_TOOL_CALLING.md#10-推荐最小顺序与手动命令)。
+
 ## Managed Custom 凭据与取消
 
 正式凭据优先级为 `PROCESS_ENV > 用户私有 PROJECT_ENV > MISSING`。Windows 私有目录、Manual V2 凭据分离和热加载语义见[凭据存储说明](deep-dive/operations/PRIVATE_CREDENTIAL_STORAGE.md)。旧源码根 `.env` 不参与运行，Flask 不加载 dotenv。在途请求持有创建时不可变的 CredentialSnapshot。

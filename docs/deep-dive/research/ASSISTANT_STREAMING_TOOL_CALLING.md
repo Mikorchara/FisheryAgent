@@ -1,6 +1,6 @@
 # Assistant Streaming Tool Calling：分阶段方案
 
-2026-10-13。研究依据为当前源码与 Provider 官方资料。Phase 4D 完成 non-streaming 三 Tool 范围与 Activity 卡片；Phase 5A 完成组装协议基础，Phase 5B 完成内部 Streaming Transport 与共享多轮循环接入，见 §7–§8。产品 Streaming Tool 门禁仍关闭，没有真实模型请求。
+2026-10-13。研究依据为当前源码与 Provider 官方资料。Phase 4D 完成 non-streaming 三 Tool 范围与 Activity 卡片；Phase 5A 完成组装协议基础，Phase 5B 完成内部 Streaming Transport 与共享多轮循环接入，Phase 5C 已准备独立单案例资格入口（§9–§10）。产品 Streaming Tool 门禁仍关闭；本阶段没有真实模型请求。
 
 ## 1. 三层能力必须分开
 
@@ -133,13 +133,69 @@ Trace 仅在内部流式 Turn 增加 `model_transport=STREAMING`，保留原有�
 
 Phase 5B 新增 **28 项**离线端到端测试；相关 targeted **187 项通过**，FAST **149 项**，FULL PRODUCT **1020 项**（93.146 秒），Browser **205 项**，FULL QUALIFICATION **134 项完成**（133 通过，1 项既有目录 symlink 环境跳过）。Python AST / JS 语法、292 条 Markdown 本地文件链接、diff check 与改动文本敏感扫描通过。时间预算测试为首个 fake SDK 请求加入30ms固定延迟，避免立即返回的两个请求落在同一 Windows 时钟 tick 时误判“没有减少”；没有放宽产品 deadline。既有 Phase 5A 工作树变更保留，没有真实 Provider / Ollama 请求，没有 commit / push。
 
-## 9. Phase 5C 真实资格的前置条件
+## 9. Phase 5C：单案例 Streaming 资格准备已实现
 
-本轮没有新增真实 Qualification 命令，没有调用 Provider，也没有改现有发布 Scope。
+**REAL PROVIDER RESULTS: NOT RUN。** 复用 `scripts/qualification/qualify_multi_round.py --streaming`，自动使用正式 `ASSISTANT_BOUNDED_MULTI_ROUND@1`、完整 pair trimming 后的 `UNTRUSTED_TRANSCRIPT_V1@1`、AssistantService / ToolCallingService / Registry / Executor / Ledger / Commit Gate。未指定 `--streaming` 的旧实验和 Normal 正式资格入口保持原语义。
 
-1. **单案例入口**：扩展既有 `qualification/qualify_multi_round.py` 及开发实现，默认 dry-run；计划明确绑定 `model_transport=STREAMING`，不能沿用 Normal qualification_id 认证新组合。Harness 目前仍走原 Normal 路径。
-2. **精确 Scope**：Preset Identity / contract、ProtocolSpec、正式多轮 Prompt 指纹、History Projection、实际授权 Tool definitions、OFF、SDK / Provider（Ollama 服务）版本与 Streaming transport；新的发布范围保持 candidate，不绕过 Web 门禁。
-3. **有限授权**：用户逐案例批准一次 run。最多 2 Calls / 2 Rounds / 3 Requests、每请求小 token 上限（建议 ≤256）、retry=0，固定合成 Snapshot 和隔离 Policy；凭据只走正式 Runtime / CredentialSnapshot。错误不补跑，不复制 Secret 或修改 ACL。
-4. **真实协议观察**：当前资格工具对非流式完整 response 的观察不足以认证流式；需增加有界、安全的 Streaming observer，记录实际/归一化 call 数、name、参数存在/合法、finish、returned model、结果传递标记、清理状态、Ledger、请求次数/transport attempts、Usage 与失败原因，不保存原参数、正文、Prompt、证据或凭据。
-5. **案例与判定**：低氧查询→Knowledge→Final，正常/当前 DO 查询→提前 Final，概念直答与 History 追问。另获授权检查实际 Stop；技术通过与人工回答质量分别判定，不证明远端计费停止或长期可靠性。`[DONE]` 与版本方言边界必须如实报告。
-6. **维护者决策**：报告通过后另行批准精确 Streaming 组合与 UI 接入。普通 Streaming 支持、Normal Tool 资格和本轮 fake SDK 成功都不能自动发布真实 Streaming Tool Calling。
+### 独立计划与授权
+
+| Preset | 当前精确 Identity（service / adapter / normalized URL / model） | ProtocolSpec | Streaming 状态 |
+| --- | --- | --- | --- |
+| `dashscope-qwen38-flash-r1` | `dashscope` / `openai_chat` / `https://dashscope.aliyuncs.com/compatible-mode/v1` / `qwen3.8-flash` | `dashscope_chat@1` | candidate，未真实运行 |
+| `deepseek-flash-r1` | `deepseek_api` / `openai_chat` / `https://api.deepseek.com` / `deepseek-flash` | `deepseek_chat@1` | candidate，未真实运行 |
+| `ollama-qwen35-4b-r1` | `ollama` / `generic_openai_chat` / `http://127.0.0.1:11434/v1` / `qwen3.5:4b` | `ollama_openai_chat@1` | candidate，未真实运行；本机服务版本未知 |
+
+每个 Preset 的两个工具集合分别生成独立 `streaming_scope`：默认 `water-knowledge`（查询 + Knowledge），可显式选择 `three-tools`（查询 + 评分 + Knowledge）。Scope 从当前资源和 Registry 计算，不复制 Normal 资格；包含 contract、精确 Identity、完整 ProtocolSpec、Prompt 指纹、History 版本、实际 Tool definitions 指纹、OFF、Streaming Transport 和 assembler 版本。当前 contract 均为1.0.2，但不因此获得 Streaming Tool 发布资格。计划还包含 SDK 版本、整 Turn deadline、固定 Snapshot / History / 问题指纹、token 上限和预算，`plan_sha256` 绑定本次具体条件。发送前重新核对 scope；漂移在凭据解析与网络前拒绝。
+
+计划默认 dry-run，不解析凭据、不创建 SDK、不执行 Tool、不写运行报告。逐案例授权后才用 `--confirm-network`，一次进程仅一个案例，没有批次或恢复器。Runtime / CredentialSnapshot 仍用正式私有 composition；Ollama Auth NONE 不读取 Key。隔离 Snapshot 和 Policy 只存在本次进程，不能读取或改 Web 状态。错误不重跑、不切 Normal、不 failover。最多 **2 calls / 2 rounds / 3 requests**，每轮一个 Tool，每请求 **1–256 output tokens**、retry=0；整 Turn 使用该 Preset 已有 timeout，不逐请求续期。
+
+### 有界 SDK 观察与安全报告
+
+开发模块 `streaming_observation.py` 使用生产 assembler 的原验证/限制，并包装本次 SDK stream/client 生命周期。产品 Adapter 只增加一个内部 assembler factory，默认仍返回原类；正式 Runtime 不导入 qualification。没有第二套组装或执行循环。
+
+- 每请求保存有限计数：SDK chunks、Tool/arguments/text/reasoning/usage 分片数、累计缓冲字节、是否见多 call delta；不保存分片列表或内容。
+- 完整组装时 transient 比较已收集 SDK id/type/name/arguments 与 normalized calls，只保存 call 数、allowlisted name、id 是否有效、参数存在/Registry 验证结果、query_present/query_valid、model match、finish 和一致性布尔。未知名称仅保存 `unknown_tool`，不保存 id、arguments、query 或 Provider 任意字符串。
+- 分别记录 SDK iterator 正常耗尽、stream/client 关闭成功、assembly_complete。异常/取消/超时/length/清理失败没有可执行完整调用，不认证成功；已知的失败流 Usage 保留，但不等于完整账单。
+- 同一 Runtime 记录实际执行 Steps、Result 精确进入下一请求的布尔、独立 Ledger / Requirement、Source Gate、Trace、请求/transport attempts、Usage、提前 Final 和安全错误码。注入 fake SDK 的离线报告明确 `offline_fixture`、`actual_network_requests=0`，不能用于真实资格发布。
+- 安全 JSON 仍写固定 `outputs/assistant-qualification/<run_id>.json`，`experiment_version=assistant-streaming-multi-round@1`。不保存正文、原始 Tool 参数/Result、Evidence、完整 Prompt、Credential / 私有路径或 Authorization。Streaming 模式拒绝 `--review-answer`（包括内部 reviewer 回调），不从终端输出正文。
+
+技术资格需：精确 scope/model 匹配；正常结束/清理；协议与归一化一致；实际执行路径符合案例；Result 传递、Ledger / Requirement / Commit Gate / Trace 全部通过；没有预算外请求。成功仅为 `PENDING_MANUAL_REVIEW`，永远 `release_eligible=false`，不写 Evidence、不发布 scope、不启用 Web Streaming。安全报告不评价语言质量或最终答案真实性；人工质量审查需后续单独批准安全方法。
+
+**验证边界**：观察的是 SDK 解码后的分片，不是原始 SSE bytes。`[DONE]` 为 `NOT_OBSERVABLE_BY_SDK`，只有合法 finish + 正常耗尽 + 成功清理可认证。当前 SDK 版本由安装 metadata 读取；Provider 服务版本为 `NOT_OBSERVED`，未探测 Ollama `/api/version`。真实版本、拆分 ID/重复 name 方言、usage/finish 位置、Stop 的真实 I/O 表现仍须逐项验证；不根据 Provider 名放宽校验，不声明远端停止计算或计费。
+
+一致性检查比较的是同一 assembler 收集的候选字段与最终 ModelResponse，不是第二套独立 SSE parser 的证明。后续审阅只能据此判断分片存在、组装/执行和输出投影是否一致，不能声称独立验证了 SDK 解码实现。
+
+离线验证：新增 **26 项** Streaming 资格测试；相关 targeted **141 项通过**；FAST **149 项通过**；FULL PRODUCT **1020 项通过**（114.411秒）；Browser **205 项通过**；FULL QUALIFICATION **160 项完成**（159通过，1项既有目录 symlink 环境跳过，18.932秒）。Python AST **153文件**、JS语法、Markdown **295条本地文件链接**、diff check 和改动文本敏感扫描通过。没有读取真实凭据、联网或修改发布配置。测试覆盖三个精确计划、实际 SDK 分片计数/Unicode、Result 传递、History、评分来源、Usage-only/失败 Usage、断流/截断/非法多 call、有界缓冲、清理失败、Provider安全错误、Stop、deadline、Trace失败、scope漂移和不发布。
+
+## 10. 推荐最小顺序与手动命令
+
+先批准 Qwen 两工具的 `current-do`（一 Tool 后提前 Final），再批准 `low-oxygen`（真实 Result 决定检索），再批准 `concept`（无 Tool 直答）。三个案例最多9次请求，预期2+3+1=6次；每个分别授权执行，失败也是结果，不自动补样本。然后按需批准 `normal`、`history-current`、`history-explanation`；不得把首三个样本当作全部发布资格。DeepSeek / Ollama 在 Qwen 审核后独立重复三个最小案例；三工具组合另行批准 `current-score` 和 `low-oxygen`，不继承两工具结论。没有固定批次或一键执行整个矩阵。
+
+| 单案例 | 预期路径 | 预期模型请求 | 硬上限 |
+| --- | --- | --- | --- |
+| current-do | 查询 → Final | 2 | 3 |
+| low-oxygen | 查询 → Knowledge → Final | 3 | 3 |
+| concept | 直接 Final | 1 | 3 |
+| normal | 查询 → Final | 2 | 3 |
+| history-current | 旧值/NO_DATA 历史 → 本轮查询 → Final | 2 | 3 |
+| history-explanation | 根据旧值解释，无 Tool | 1 | 3 |
+| current-score（三工具专用） | 实验评分 → Final | 2 | 3 |
+
+从项目根目录一次运行一条。下面只有 dry-run 可在本阶段执行；真实命令仅供用户后续批准**该 Preset + case + tool-set 一次 run**后手动使用，不能按旧授权运行其他命令：
+
+```powershell
+# Qwen 两工具：默认 dry-run，也可显式写出
+.\.venv\Scripts\python.exe scripts/qualification/qualify_multi_round.py --streaming --preset dashscope-qwen38-flash-r1 --case current-do --max-output-tokens 256 --dry-run
+
+# 仅在此 case 获一次独立授权后执行（本阶段未执行）
+.\.venv\Scripts\python.exe scripts/qualification/qualify_multi_round.py --streaming --preset dashscope-qwen38-flash-r1 --case current-do --max-output-tokens 256 --confirm-network
+
+# DeepSeek / Ollama 的独立准备计划，不联网
+.\.venv\Scripts\python.exe scripts/qualification/qualify_multi_round.py --streaming --preset deepseek-flash-r1 --case current-do --dry-run
+.\.venv\Scripts\python.exe scripts/qualification/qualify_multi_round.py --streaming --preset ollama-qwen35-4b-r1 --case current-do --dry-run
+
+# 后续三工具计划：不能沿用两工具资格
+.\.venv\Scripts\python.exe scripts/qualification/qualify_multi_round.py --streaming --preset dashscope-qwen38-flash-r1 --tool-set three-tools --case current-score --dry-run
+```
+
+其他案例只在准备时替换 `--case`；其他 Provider / 三工具真实执行须逐案例再次批准，再将对应命令中的 `--dry-run` 改为 `--confirm-network`。没有新增 URL、model、credential path、Prompt、retry、budget 或 deadline 覆盖参数。

@@ -1,6 +1,7 @@
 """One isolated, opt-in multi-round experiment; no product or evidence writes."""
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
+from importlib.metadata import version
 from importlib.resources import files
 from pathlib import Path
 import hashlib
@@ -20,17 +21,19 @@ from ...credentials import CredentialFileError
 from ...domain import DiagnosisService
 from ...execution import RequestHandle, check_cancelled, request_scope
 from ...knowledge import KnowledgeService
-from ...model_gateway import GatewayError, ModelMessage, ModelRequest, ModelResponse, ProfileRegistry
+from ...model_gateway import GatewayError, StreamingModelError, ModelMessage, ModelRequest, ModelResponse, ProfileRegistry
 from ...model_options import ReasoningMode, Support
 from ...telemetry import CurrentSnapshotStore, CurrentWaterQualityReader
-from ...tool_conversation import ModelExecutionStep, ToolExecutionStep, ToolCallingService, ToolExecutionMode, _aggregate_usage
+from ...tool_conversation import ModelExecutionStep, ToolExecutionStep, ToolCallingService, ToolExecutionMode, ToolModelTransport, _aggregate_usage
 from ...tools.policy import ToolPolicy
-from ...tools.registry import CURRENT_WATER_QUALITY as WATER, SEARCH_FISHERY_KNOWLEDGE as KNOWLEDGE, ToolRegistry
+from ...tools.registry import CURRENT_WATER_QUALITY as WATER, WATER_QUALITY_SCORE as SCORE, SEARCH_FISHERY_KNOWLEDGE as KNOWLEDGE, ToolRegistry
 from .assistant_qualification import QualificationError, _credentials, _RunTrace, safe_code, write_report
 from .qualification_adapter import QualificationAdapter, response_summary
 
 
 DEFAULT_PRESET = "dashscope-qwen38-flash-r1"
+STREAMING_PRESETS = (DEFAULT_PRESET, "deepseek-flash-r1", "ollama-qwen35-4b-r1")
+STREAMING_TOOL_SETS = ("water-knowledge", "three-tools")
 # Deliberately separate from Assistant Prompt v2. No values are injected here.
 EXPERIMENT_INSTRUCTION = (
     "这是只读、有界的工具实验。确认当前系统事实时先查询可用工具，不能猜测或使用历史。"
@@ -91,6 +94,27 @@ def get_case(case_id, *, assistant_product=False):
     return case
 
 
+def _streaming_case(case_id, tool_set):
+    if tool_set not in STREAMING_TOOL_SETS:
+        raise QualificationError("QUALIFICATION_INVALID_TRANSPORT")
+    if case_id == "current-score":
+        if tool_set != "three-tools":
+            raise QualificationError("INVALID_MULTI_ROUND_CASE")
+        return ExperimentCase(case_id, "请查询当前系统水质评分，简短回答，不需要检索知识。", 6.4,
+            (WATER, SCORE, KNOWLEDGE), (SCORE,), (SourceRequirement.CURRENT_SCORE_EVALUATION,), 3)
+    case = get_case(case_id, assistant_product=True)
+    return replace(case, exposed_tools=(WATER, SCORE, KNOWLEDGE)) if tool_set == "three-tools" else case
+
+
+def _streaming_scope(profile, registry, case):
+    # Independent candidate, not a Normal release nor permission to use Web Streaming.
+    scope = release_scope(profile, ToolPolicy("assistant", True, case.exposed_tools),
+                          registry, DEFAULT_HISTORY_PROJECTION)
+    scope.update(response_mode="streaming", model_transport=ToolModelTransport.STREAMING.value,
+                 assembler_version="openai-tool-stream-assembler@1")
+    return scope
+
+
 def _product_scope(profile, registry):
     """Validate the maintainer candidate, without enabling/releasing anything."""
     policy = ToolPolicy("assistant", True, (WATER, KNOWLEDGE))
@@ -101,10 +125,14 @@ def _product_scope(profile, registry):
     return scope, records[0]
 
 
-def plan(case_id, preset_id=DEFAULT_PRESET, max_output_tokens=256, *, assistant_product=False):
-    if type(assistant_product) is not bool or assistant_product and preset_id != DEFAULT_PRESET:
+def plan(case_id, preset_id=DEFAULT_PRESET, max_output_tokens=256, *, assistant_product=False,
+         streaming=False, tool_set="water-knowledge"):
+    if (type(streaming) is not bool or type(assistant_product) is not bool
+            or streaming and preset_id not in STREAMING_PRESETS
+            or not streaming and (tool_set != "water-knowledge" or assistant_product and preset_id != DEFAULT_PRESET)):
         raise QualificationError("QUALIFICATION_IDENTITY_MISMATCH")
-    case = get_case(case_id, assistant_product=assistant_product)
+    assistant_product = assistant_product or streaming
+    case = _streaming_case(case_id, tool_set) if streaming else get_case(case_id, assistant_product=assistant_product)
     if type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 256:
         raise QualificationError("INVALID_MULTI_ROUND_TOKEN_BUDGET")
     try:
@@ -130,15 +158,25 @@ def plan(case_id, preset_id=DEFAULT_PRESET, max_output_tokens=256, *, assistant_
         "instruction_sha256": hashlib.sha256(EXPERIMENT_INSTRUCTION.encode()).hexdigest(),
         "question_sha256": hashlib.sha256(case.question.encode()).hexdigest()}
     if assistant_product:
-        scope, record = _product_scope(profile, _isolated_registry(case, utcnow()))
+        registry = _isolated_registry(case, utcnow())
+        scope, record = (None, None) if streaming else _product_scope(profile, registry)
         result.update(experiment_version="assistant-product-multi-round@1", prompt_id=MULTI_ROUND_PROMPT_ID,
             instruction_sha256=hashlib.sha256(MULTI_ROUND_SYSTEM_INSTRUCTION.encode()).hexdigest(),
-            release_scope=scope, release_id=record.release_id, release_status=record.status,
+            release_scope=scope, release_id=record.release_id if record else None,
+            release_status=record.status if record else "candidate",
             history="SYNTHETIC" if case.history else "EMPTY", history_turns=len(case.history),
             history_sha256=hashlib.sha256(json.dumps([asdict(turn) for turn in case.history],
                 sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
             expected_requests=len(case.expected_tools) + 1,
             human_review_required=True, release_eligible=False)
+        if streaming:
+            if profile.capabilities.streaming != Support.SUPPORTED:
+                raise QualificationError("QUALIFICATION_IDENTITY_MISMATCH")
+            result.update(experiment_version="assistant-streaming-multi-round@1", response_mode="streaming",
+                model_transport=ToolModelTransport.STREAMING.value, tool_set=tool_set,
+                streaming_scope=_streaming_scope(profile, registry, case), release_scope=None,
+                openai_sdk_version=version("openai"), provider_service_version="NOT_OBSERVED",
+                done_marker="NOT_OBSERVABLE_BY_SDK", turn_deadline_s=profile.total_timeout_s)
     result["plan_sha256"] = hashlib.sha256(json.dumps(result, sort_keys=True).encode()).hexdigest()
     return result
 
@@ -158,18 +196,33 @@ def _code(code):
         "QUALIFICATION_PATH_MISMATCH", "QUALIFICATION_RESULT_CONTEXT_MISMATCH",
         "QUALIFICATION_RELEASE_SCOPE_MISMATCH", "QUALIFICATION_PRODUCT_PROMPT_MISMATCH"}:
         return code
+    if code in {"INVALID_STREAM_EVENT", "INVALID_STREAM_STATE", "STREAM_INTERRUPTED", "STREAM_TRUNCATED",
+                "STREAM_CHUNK_LIMIT", "STREAM_BUFFER_LIMIT", "STREAM_UNSUPPORTED",
+                "TOOL_STREAM_TRANSPORT_NOT_IMPLEMENTED", "QUALIFICATION_STREAMING_SCOPE_MISMATCH"}:
+        return code
     return safe_code(code)
 
 
 class _ExperimentGateway:
     """Observe without retaining response text/arguments; impose the case ceiling."""
-    def __init__(self, gateway, runtime, registry, case, *, assistant_product=False):
+    def __init__(self, gateway, runtime, registry, case, *, assistant_product=False, streaming=False):
         self.gateway, self.runtime, self.registry, self.case = gateway, runtime, registry, case
         self.assistant_product = assistant_product
+        self.streaming = streaming
         self.rows = []
         self.contexts = []  # Transient tool protocol data, never serialized.
 
     def complete(self, request, runtime):
+        if self.streaming:
+            raise GatewayError("QUALIFICATION_INVALID_TRANSPORT")
+        return self._complete(request, runtime)
+
+    def complete_tool_stream(self, request, runtime):
+        if not self.streaming:
+            raise GatewayError("QUALIFICATION_INVALID_TRANSPORT")
+        return self._complete(request, runtime)
+
+    def _complete(self, request, runtime):
         check_cancelled()
         if len(self.rows) >= self.case.max_requests:
             raise GatewayError("QUALIFICATION_REQUEST_LIMIT")
@@ -186,10 +239,14 @@ class _ExperimentGateway:
             for message in request.messages if message.role == "tool"))
         observation_index = len(getattr(self.gateway, "observations", ()))
         try:
-            response = self.gateway.complete(request, runtime)
+            response = (self.gateway.complete_tool_stream if self.streaming else self.gateway.complete)(request, runtime)
             if not isinstance(response, ModelResponse):
                 raise GatewayError("INVALID_RESPONSE")
-            row.update(normalized=response_summary(response, runtime.model, self.registry, self.case.exposed_tools),
+            summary = response_summary
+            if self.streaming:
+                from .streaming_observation import stream_response_summary
+                summary = stream_response_summary
+            row.update(normalized=summary(response, runtime.model, self.registry, self.case.exposed_tools),
                 usage=asdict(response.usage or Usage()),
                 returned_model=runtime.model if response.returned_model == runtime.model else None,
                 outcome="tool_calls" if response.tool_calls else "final_answer")
@@ -203,6 +260,9 @@ class _ExperimentGateway:
             return response
         except GatewayError as error:
             row.update(outcome="failed", error_code=_code(error.code))
+            if isinstance(error, StreamingModelError):
+                row.update(usage=asdict(error.usage), finish_reason=error.finish_reason)
+                raise StreamingModelError(_code(error.code), usage=error.usage, finish_reason=error.finish_reason) from None
             raise GatewayError(_code(error.code)) from None
         except Exception:
             row.update(outcome="failed", error_code="QUALIFICATION_FAILED")
@@ -214,10 +274,15 @@ class _ExperimentGateway:
 
 
 def run(case_id, root, *, preset_id=DEFAULT_PRESET, max_output_tokens=256, confirm_network=False,
-        credential_store=None, gateway=None, handle=None, assistant_product=False, answer_reviewer=None):
+        credential_store=None, gateway=None, handle=None, assistant_product=False, answer_reviewer=None,
+        streaming=False, tool_set="water-knowledge"):
     """One run; test-only composition injections cannot be supplied by the CLI."""
-    approved = plan(case_id, preset_id, max_output_tokens, assistant_product=assistant_product)
-    case = get_case(case_id, assistant_product=assistant_product)
+    if streaming and answer_reviewer is not None:
+        raise QualificationError("QUALIFICATION_INVALID_TRANSPORT")
+    approved = plan(case_id, preset_id, max_output_tokens, assistant_product=assistant_product,
+                    streaming=streaming, tool_set=tool_set)
+    assistant_product = assistant_product or streaming
+    case = _streaming_case(case_id, tool_set) if streaming else get_case(case_id, assistant_product=assistant_product)
     empty_ledger = TurnSourceLedger()
     empty_requirements = [{"requirement": value.value,
         "satisfied": requirement_satisfied_by_ledger(value, empty_ledger)} for value in case.requirements]
@@ -249,21 +314,26 @@ def run(case_id, root, *, preset_id=DEFAULT_PRESET, max_output_tokens=256, confi
                     or profile.preset_protocol_spec.spec_id != approved["protocol_spec_id"]
                     or profile.preset_protocol_spec.version != approved["protocol_version"]):
                 raise GatewayError("QUALIFICATION_IDENTITY_MISMATCH")
+            registry = _isolated_registry(case, utcnow()) if streaming else None
+            if streaming and _streaming_scope(profile, registry, case) != approved["streaming_scope"]:
+                raise QualificationError("QUALIFICATION_STREAMING_SCOPE_MISMATCH")
             credentials = credential_store if credential_store is not None else _credentials(Path(root))
             runtime = ProfileRegistry([profile], credentials).snapshot(profile.profile_id)
             if runtime.credential.status.availability not in ("PRESENT", "NONE_REQUIRED"):
                 raise GatewayError("SECRET_MISSING")
-            registry = _isolated_registry(case, utcnow())
+            registry = registry or _isolated_registry(case, utcnow())
             policy = ToolPolicy("assistant", True, case.exposed_tools)
-            if assistant_product:
+            if assistant_product and not streaming:
                 scope, _ = _product_scope(profile, registry)
                 if scope != approved["release_scope"]:
                     raise QualificationError("QUALIFICATION_RELEASE_SCOPE_MISMATCH")
             adapter = gateway if gateway is not None else QualificationAdapter(
-                runtime.model, registry, case.exposed_tools, max_output_tokens)
-            bounded = _ExperimentGateway(adapter, runtime, registry, case, assistant_product=assistant_product)
+                runtime.model, registry, case.exposed_tools, max_output_tokens, streaming=streaming)
+            bounded = _ExperimentGateway(adapter, runtime, registry, case, assistant_product=assistant_product,
+                                         streaming=streaming)
             service = ToolCallingService(bounded, registry, traces, policy=policy,
-                execution_mode=ToolExecutionMode.BOUNDED_MULTI_ROUND)
+                execution_mode=ToolExecutionMode.BOUNDED_MULTI_ROUND,
+                model_transport=ToolModelTransport.STREAMING if streaming else ToolModelTransport.NORMAL)
             assistant_result = None
             if assistant_product:
                 turn = AssistantRequest(preset_id, case.question, history=case.history,

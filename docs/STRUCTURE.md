@@ -148,6 +148,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │     ├─ assistant_qualification.py                       # 单 manifest 授权、预算、运行与安全报告
 │  │  │     ├─ multi_round_qualification.py                       # 隔离 Snapshot、正式 Assistant 资格与安全来源报告
 │  │  │     ├─ qualification_adapter.py                         # 资格输出预算与有限 Provider 观测
+│  │  │     ├─ streaming_observation.py                         # 资格分片计数、一致性与资源清理安全观察
 │  │  │     ├─ qualification_history.py                         # 冻结历史 fixture 与 case 兼容白名单
 │  │  │     ├─ qualification_migration.py                       # 历史多轮资格 fixture 与矩阵兼容
 │  │  │     ├─ qualification_projection.py                      # 产品投影复用与冻结资格指纹
@@ -257,6 +258,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    │  ├─ test_assistant_qualification.py                                    # 单次实验、预算、取消与报告脱敏测试
    │  ├─ test_qualification_boundary.py                                      # 正式导入隔离、兼容别名与开发 CLI 边界测试
    │  ├─ test_multi_round_qualification.py                                   # 实验 / 正式 Assistant 资格、History、预算与脱敏报告
+   │  ├─ test_streaming_qualification.py                                     # 单案例流式资格、精确范围、清理与安全报告
    │  ├─ test_local_preset_qualification.py                                 # Local Preset 验证入口安全测试
    │  └─ test_preset_tool_qualification.py                                  # Preset Tool 完整资格流程测试
    ├─ security/                                                             # Credential、安全写入、ACL、快照与请求取消

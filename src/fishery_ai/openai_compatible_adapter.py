@@ -285,6 +285,10 @@ class OpenAICompatibleAdapter:
         self._async_client_factory = async_client_factory or self._make_async_client
         self.request_attempts = 0
 
+    def _new_tool_stream_assembler(self, definitions):
+        """Internal factory; qualification may observe without changing validation."""
+        return _ToolCallStreamAssembler(definitions)
+
     @staticmethod
     def _make_async_client(runtime, remaining):
         timeout = httpx.Timeout(connect=min(runtime.connect_timeout_s, remaining),
@@ -393,7 +397,7 @@ class OpenAICompatibleAdapter:
                     client = self._async_client_factory(runtime, self._remaining(deadline))
                     handle.io_closed = False
                     sdk_stream = None
-                    assembler = _ToolCallStreamAssembler(tool_definitions) if assembling else None
+                    assembler = self._new_tool_stream_assembler(tool_definitions) if assembling else None
                     stream_assembler = assembler
                     try:
                         self.request_attempts += 1
