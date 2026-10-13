@@ -47,7 +47,7 @@ class AssistantMultiRoundRelease:
         try:
             scope = json.loads(self.scope_json)
             if (not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", self.release_id)
-                    or self.status not in ("candidate", "released")
+                    or self.status not in ("candidate", "released", "local_experimental")
                     or set(scope) != {"preset_id", "preset_variant", "contract_version", "identity", "protocol_spec",
                         "thinking", "response_mode", "prompt_id", "prompt_sha256", "history_projection",
                         "history_version", "tools", "tool_definitions_sha256"}
@@ -62,6 +62,8 @@ class AssistantMultiRoundRelease:
                 if not isinstance(self.qualification_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", self.qualification_id):
                     raise ValueError()
                 parse_time(self.validated_at)
+            if self.status == "local_experimental" and (self.qualification_id is not None or self.validated_at is not None):
+                raise ValueError()  # Trial approval is not real model qualification.
             object.__setattr__(self, "scope_json", _json(scope))
         except (ValueError, TypeError, AttributeError):
             raise AssistantError("INVALID_ASSISTANT_EXECUTION_CONFIG") from None
@@ -111,16 +113,21 @@ def load_assistant_execution_config():
 class AssistantExecutionProfile:
     mode: ToolExecutionMode
     revision: str
+    release_status: str
+    mode_reason: str
 
     def public(self):
         return {"mode": self.mode.value, "max_model_requests":
-            3 if self.mode == ToolExecutionMode.BOUNDED_MULTI_ROUND else 2, "revision": self.revision}
+            3 if self.mode == ToolExecutionMode.BOUNDED_MULTI_ROUND else 2, "revision": self.revision,
+            "release_status": self.release_status, "mode_reason": self.mode_reason}
 
 
 def resolve_execution_profile(config, profile, policy, registry, *, epoch, projection):
     scope = release_scope(profile, policy, registry, projection)
-    multi = config.multi_round_enabled and any(r.status == "released" and r.scope_json == _json(scope)
-                                             for r in config.releases)
+    matched = next((r for r in config.releases if r.scope_json == _json(scope)), None)
+    multi = config.multi_round_enabled and matched is not None and matched.status in ("released", "local_experimental")
+    reason = ("active" if multi else "flag_disabled" if not config.multi_round_enabled else
+              "candidate" if matched is not None and matched.status == "candidate" else "scope_not_published")
     mode = ToolExecutionMode.BOUNDED_MULTI_ROUND if multi else ToolExecutionMode.SINGLE_ROUND
     revision = _hash({"epoch": epoch, "config": asdict(config), "scope": scope, "policy": asdict(policy),
         "mode": mode.value, "system_sha256": _hash(MULTI_ROUND_SYSTEM_INSTRUCTION if multi else SYSTEM_INSTRUCTION),
@@ -128,4 +135,4 @@ def resolve_execution_profile(config, profile, policy, registry, *, epoch, proje
             "timeouts": [profile.connect_timeout_s, profile.read_timeout_s, profile.total_timeout_s],
             "generation": asdict(profile.default_generation), "reasoning": asdict(profile.default_reasoning),
             "max_retries": profile.max_retries}})
-    return AssistantExecutionProfile(mode, revision)
+    return AssistantExecutionProfile(mode, revision, matched.status if matched else "unmatched", reason)

@@ -41,15 +41,18 @@ class ExecutionReleaseTests(AssistantFixture):
         return resolve_execution_profile(config, profile or self.profile, policy or self.policy, self.registry,
                                          projection=projection, epoch=epoch)
 
-    def test_packaged_candidate_never_automatically_released(self):
+    def test_packaged_local_trial_scopes_have_distinct_qualification_states(self):
         config = load_assistant_execution_config()
-        self.assertFalse(config.multi_round_enabled)
-        self.assertEqual(len(config.releases), 1)
-        self.assertEqual(config.releases[0].status, "candidate")
-        self.assertIsNone(config.releases[0].qualification_id)
+        self.assertTrue(config.multi_round_enabled)
+        self.assertEqual(len(config.releases), 3)
+        self.assertEqual([r.status for r in config.releases], ["released", "local_experimental", "local_experimental"])
+        self.assertTrue(config.releases[0].qualification_id)
+        for record in config.releases[1:]:
+            self.assertIsNone(record.qualification_id)
+            self.assertIsNone(record.validated_at)
         self.assertEqual(json.loads(config.releases[0].scope_json),
                          release_scope(self.profile, self.policy, self.registry, DEFAULT_HISTORY_PROJECTION))
-        self.assertEqual(self.effective(config).mode, ToolExecutionMode.SINGLE_ROUND)
+        self.assertEqual(self.effective(config).mode, ToolExecutionMode.BOUNDED_MULTI_ROUND)
         self.assertEqual(self.effective(offline_config(released=False)).mode, ToolExecutionMode.SINGLE_ROUND)
         self.assertEqual(self.effective(offline_config(enabled=False)).mode, ToolExecutionMode.SINGLE_ROUND)
 
@@ -83,7 +86,8 @@ class ExecutionReleaseTests(AssistantFixture):
 
     def test_release_without_qualification_and_bad_flag_fail_closed(self):
         candidate = load_assistant_execution_config().releases[0]
-        with self.assertRaises(AssistantError): replace(candidate, status="released")
+        with self.assertRaises(AssistantError): replace(candidate, status="released", qualification_id=None)
+        with self.assertRaises(AssistantError): replace(candidate, status="local_experimental")
         with self.assertRaises(AssistantError): AssistantExecutionConfig("true", ())
         with self.assertRaises(FrozenInstanceError): candidate.status = "released"
 
@@ -95,7 +99,29 @@ class ExecutionReleaseTests(AssistantFixture):
         self.assertNotEqual(original.revision, self.effective(replace(config, multi_round_enabled=False)).revision)
         self.assertNotEqual(original.revision, self.effective(config, policy=ToolPolicy("assistant", True, (QUERY,))).revision)
         self.assertNotEqual(original.revision, self.effective(config, replace(self.profile, total_timeout_s=60)).revision)
-        self.assertEqual(set(original.public()), {"mode", "max_model_requests", "revision"})
+        self.assertEqual(set(original.public()), {"mode", "max_model_requests", "revision", "release_status", "mode_reason"})
+
+    def test_all_three_scopes_are_exact_and_roll_back_without_inheriting_qualification(self):
+        config = load_assistant_execution_config()
+        self.assertFalse(AssistantExecutionConfig().multi_round_enabled)
+        for identifier, record in zip(ALLOWED_PRESET_IDS, config.releases):
+            profile = assistant_profile(identifier)
+            self.assertEqual(json.loads(record.scope_json), release_scope(profile, self.policy, self.registry, DEFAULT_HISTORY_PROJECTION))
+            active = self.effective(config, profile)
+            self.assertEqual(active.mode, ToolExecutionMode.BOUNDED_MULTI_ROUND)
+            self.assertEqual(active.public()["release_status"], record.status)
+            self.assertEqual(active.public()["mode_reason"], "active")
+            # Only the other models' records cannot authorize this exact identity.
+            others = replace(config, releases=tuple(r for r in config.releases if r != record))
+            self.assertEqual(self.effective(others, profile).mode, ToolExecutionMode.SINGLE_ROUND)
+            for names in ((), (QUERY,), (KNOWLEDGE,), (QUERY, KNOWLEDGE, SCORE)):
+                fallback = self.effective(config, profile, policy=ToolPolicy("assistant", True, names))
+                self.assertEqual(fallback.mode, ToolExecutionMode.SINGLE_ROUND)
+                self.assertEqual(fallback.mode_reason, "scope_not_published")
+            rollback = self.effective(replace(config, multi_round_enabled=False), profile)
+            self.assertEqual(rollback.mode, ToolExecutionMode.SINGLE_ROUND)
+            self.assertEqual(rollback.mode_reason, "flag_disabled")
+            self.assertNotEqual(active.revision, rollback.revision)
 
 
 class AssistantExecutionWebTests(AssistantWebFixture):
@@ -294,6 +320,90 @@ class AssistantExecutionWebTests(AssistantWebFixture):
     def test_web_cannot_set_flag_mode_budget_prompt_or_deadline(self):
         for name in ("multi_round_enabled", "execution_mode", "mode", "budget", "deadline", "prompt_id", "turn_timeout_s"):
             self.assertEqual(self.post(**{name: "injected"}).status_code, 400)
+        self.factory.assert_not_called()
+
+
+class LocalTrialWebTests(AssistantWebFixture):
+    """Packaged release configuration through real Flask routes, fake transport only."""
+
+    def make_app(self, credentials=None, **options):
+        credentials = credentials or CredentialStore(process_env={
+            "DASHSCOPE_API_KEY": "fictional-trial-qwen", "DEEPSEEK_API_KEY": "fictional-trial-deepseek"})
+        return super().make_app(credentials, **options)
+
+    def setUp(self):
+        super().setUp()
+        self.app.extensions["fishery_tool_policy_store"].save({"schema_version": 1, "modes": {
+            "analysis": {"selected_tools": [SCORE]}, "assistant": {"selected_tools": list(NAMES)}}})
+        self.app.extensions["fishery_snapshot_store"].set_current(self.reading(oxygen=2.2))
+
+    def bootstrap(self):
+        return self.client.get("/api/assistant/bootstrap").get_json()
+
+    def test_real_bootstrap_exposes_only_trial_labels_and_bound_three_request_budget(self):
+        data = self.bootstrap()
+        self.assertEqual([p["preset_id"] for p in data["presets"]], list(ALLOWED_PRESET_IDS))
+        self.assertEqual([p["execution_profile"]["release_status"] for p in data["presets"]],
+                         ["released", "local_experimental", "local_experimental"])
+        self.assertTrue(all(p["execution_profile"]["mode"] == "BOUNDED_MULTI_ROUND"
+                            and p["execution_profile"]["max_model_requests"] == 3 for p in data["presets"]))
+        for marker in ("fictional-trial", "qualification_id", "base_url", "protocol_spec", "credential_ref", "prompt_id"):
+            self.assertNotIn(marker, json.dumps(data))
+        self.factory.assert_not_called()
+
+    def test_all_three_web_presets_execute_same_bounded_loop_and_preserve_user_policy(self):
+        store = self.app.extensions["fishery_tool_policy_store"]
+        before = store.effective()
+        for identifier in ALLOWED_PRESET_IDS:
+            with self.subTest(preset=identifier):
+                def inspect(index, request, runtime):
+                    self.assertEqual(runtime.preset_id, identifier)
+                    self.assertEqual(runtime.max_retries, 0)
+                    if index == 2:
+                        self.assertEqual(json.loads(request.messages[-1].content)["water_quality"]["dissolved_oxygen_mg_l"], 2.2)
+                    if index == 3:
+                        self.assertEqual(request.tool_choice, "none")
+                        self.assertEqual(len([m for m in request.messages if m.role == "tool"]), 2)
+                gateway = RecordingGateway(call(call_id="first"),
+                    call(KNOWLEDGE, '{"query":"鳗鲡低氧表现"}', "second"), final("离线最终回答"), callback=inspect)
+                self.factory.return_value = gateway
+                response = self.post(preset_id=identifier)
+                self.assertEqual(response.status_code, 200)
+                result = response.get_json()["result"]
+                self.assertTrue(result["successful_turn"])
+                self.assertEqual(result["activity"]["budget"], {"tool_calls": 2, "tool_rounds": 2, "model_requests": 3})
+                self.assertEqual(len(result["activity"]["steps"]), 5)
+                self.assertEqual(result["activity"]["counts"]["tools_executed"], 2)
+                self.assertEqual(result["activity"]["state"], "COMPLETED")
+                self.assertTrue(all(r is gateway.runtimes[0] for r in gateway.runtimes))
+                self.assertEqual(store.effective(), before)
+
+    def test_fallback_requires_fresh_confirmation_and_does_not_run_transport(self):
+        revisions = {p["preset_id"]: p["execution_profile"]["revision"] for p in self.bootstrap()["presets"]}
+        self.app.extensions["fishery_tool_policy_store"].save({"schema_version": 1, "modes": {
+            "analysis": {"selected_tools": [SCORE]}, "assistant": {"selected_tools": [QUERY, KNOWLEDGE, SCORE]}}})
+        for p in self.bootstrap()["presets"]:
+            self.assertEqual(p["execution_profile"]["mode"], "SINGLE_ROUND")
+            self.assertEqual(p["execution_profile"]["mode_reason"], "scope_not_published")
+            response = self.post(preset_id=p["preset_id"], execution_profile_revision=revisions[p["preset_id"]])
+            self.assertEqual(response.status_code, 409)
+        self.factory.assert_not_called()
+        self.assertTrue(self.post(preset_id=ALLOWED_PRESET_IDS[1]).get_json()["result"]["successful_turn"])
+
+    def test_flag_off_restart_returns_all_presets_to_single_without_fake_qualification(self):
+        original = self.bootstrap()
+        config = replace(load_assistant_execution_config(), multi_round_enabled=False)
+        restarted = self.make_app(assistant_execution_config=config)
+        data = restarted.test_client().get("/api/assistant/bootstrap").get_json()
+        self.assertNotEqual(data["epoch"], original["epoch"])
+        self.assertTrue(all(p["execution_profile"]["mode"] == "SINGLE_ROUND"
+                            and p["execution_profile"]["mode_reason"] == "flag_disabled" for p in data["presets"]))
+        self.assertIsNone(config.releases[1].qualification_id)
+        self.assertIsNone(config.releases[2].validated_at)
+
+    def test_experimental_label_cannot_be_requested_by_browser(self):
+        for identifier in ALLOWED_PRESET_IDS:
+            self.assertEqual(self.post(preset_id=identifier, release_status="local_experimental").status_code, 400)
         self.factory.assert_not_called()
 
 

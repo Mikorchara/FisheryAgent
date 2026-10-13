@@ -159,7 +159,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  ├─ mock/                                                # 离线 Mock Runtime 配置
 │  │  │  │  └─ profiles.json                                     # 离线 Mock 模型配置
 │  │  │  ├─ profiles/                                            # Preset 与开发连接模板
-│  │  │  │  ├─ assistant_execution.json                          # 多轮默认关闭、Qwen candidate 精确范围
+│  │  │  │  ├─ assistant_execution.json                          # 三 Preset 本地多轮发布与实验范围
 │  │  │  │  ├─ deepseek_experimental.json                        # DeepSeek 开发 Profile 模板
 │  │  │  │  ├─ ollama_qwen35_local.json                          # Ollama 本地开发 Profile 模板
 │  │  │  │  ├─ presets.json                                      # 维护者发布的 Preset 固定合同

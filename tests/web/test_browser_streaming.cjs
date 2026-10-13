@@ -1286,6 +1286,34 @@ function multiAssistantBootstrap() {
   return bootstrap;
 }
 
+test('Assistant three local trial presets show verified versus experimental status without changing Analysis',async()=>{
+  const bootstrap=assistantBootstrap();
+  bootstrap.presets.forEach((p,i)=>{p.execution_profile={mode:'BOUNDED_MULTI_ROUND',max_model_requests:3,
+    revision:String(i+1).repeat(64),release_status:i===0?'released':'local_experimental',mode_reason:'active'};});
+  const page=assistantPage(undefined,bootstrap);await enterAssistant(page);
+  const analysis=vm.runInContext('selectedProfile()?.profile_id',page.context);
+  assert.match(page.element('assistant-execution-note').textContent,/有界多轮.*已验证资格/);
+  for(const id of ['deepseek-preset','ollama-preset']){
+    page.element('assistant-preset').value=id;await page.element('assistant-preset').dispatch('change');
+    assert.match(page.element('assistant-execution-note').textContent,/本地实验试用.*尚无真实多轮资格证据/);
+    assert.match(page.element('assistant-network-note').textContent,/最多三次/);
+    assert.equal(page.element('assistant-confirm-network').checked,false);
+    assert.equal(vm.runInContext('selectedProfile()?.profile_id',page.context),analysis);
+  }
+  assert.match(page.element('assistant-network-label').textContent,/LOCAL MODEL REQUEST/);
+});
+
+test('Assistant fallback and flag rollback explicitly display single-round reason',async()=>{
+  for(const [reason,label] of [['scope_not_published',/Tool 组合或运行配置/],['flag_disabled',/多轮功能已关闭/],['candidate',/候选范围尚未发布/]]){
+    const bootstrap=assistantBootstrap();bootstrap.presets[0].execution_profile={mode:'SINGLE_ROUND',max_model_requests:2,
+      revision:'b'.repeat(64),release_status:reason==='candidate'?'candidate':'unmatched',mode_reason:reason};
+    const page=assistantPage(undefined,bootstrap);await enterAssistant(page);
+    assert.match(page.element('assistant-execution-note').textContent,/单轮.*1 Tool.*2 Requests/);
+    assert.match(page.element('assistant-execution-note').textContent,label);
+    assert.match(page.element('assistant-network-note').textContent,/最多两次/);
+  }
+});
+
 test('Assistant network confirmation uses the selected effective profile and binds its revision',async()=>{
   const page=assistantPage(undefined,multiAssistantBootstrap());await enterAssistant(page);
   assert.match(page.element('assistant-network-note').textContent,/最多三次/);

@@ -43,6 +43,8 @@ Handler 固定 top_k=3，返回 status、retrieval_mode、result_count、evidenc
 
 ### Assistant
 
+Prototype 本地试用已获用户授权：仅 OFF + Normal 且恰好授权查询+Knowledge时，Qwen已验证发布、DeepSeek / Ollama独立实验范围可通过同一协调器使用2/2/3；其余范围和Analysis仍1/1/2。实验状态不等于真实资格，界面显示发布状态、有效预算与回退原因。Flag关闭并完整重启即可回滚；执行失败不重跑。见[发布与操作](../research/ASSISTANT_MULTI_ROUND_INTEGRATION.md#11-phase-4c-三预设本地试用发布)。
+
 仅三个已发布 Preset 的 OFF + Normal 连接可用。首轮不注入 Snapshot / Diagnosis / RAG；请求中的工具定义由 Assistant Policy 过滤。历史只接收完整成功 user / assistant 文本对，整轮裁剪后默认投影为一个未受信任的 user JSON transcript；当前问题独立。Tool 协议消息、原始 Result 与 Receipt 不进入历史。
 
 真实执行结果另外生成有限来源 Receipt，区分查询/评分/搜索完成与实际观测/评分/Evidence 是否存在。NO_DATA / NOT_SCORABLE / NO_MATCH 可以完成对应操作而不产生正向来源；ERROR 或文字仿调用不能满足操作要求。内部非 AUTO 要求不满足时拒绝成功提交；普通 Web 仍为 AUTO，不根据正文或用户自然语言自动授予来源。详见[Assistant 当前来源合同](../architecture/ASSISTANT_MODEL_V1_DESIGN.md#本轮来源与提交合同)。

@@ -122,7 +122,10 @@ class ExecutionTests(unittest.TestCase):
         def factory(runtime, remaining):
             timeout_values.append(remaining)
             return Client()
-        handle = RequestHandle(); handle.start(); handle.limit_turn(0.05)
+        # Exercise cancellation of already started I/O, not expiry during Windows
+        # event-loop startup. A 50ms pre-start deadline can expire before Client exists.
+        budget_s = 0.5
+        handle = RequestHandle(); handle.start(); handle.limit_turn(budget_s)
         adapter = OpenAICompatibleAdapter(async_client_factory=factory)
         with request_scope(handle), self.assertRaises(GatewayError) as error:
             adapter.complete(ModelRequest(Mode.CHAT, ()), self.runtime)
@@ -133,7 +136,7 @@ class ExecutionTests(unittest.TestCase):
         self.assertTrue(closed.is_set())
         self.assertTrue(handle.io_closed)
         self.assertEqual(adapter.request_attempts, 1)  # No retry after timeout.
-        self.assertTrue(0 < timeout_values[0] <= 0.051)
+        self.assertTrue(0 < timeout_values[0] <= budget_s + 0.001)
 
     def test_two_sdk_requests_use_remaining_turn_time_not_two_full_timeouts(self):
         calls, timeout_values, closed = [], [], []

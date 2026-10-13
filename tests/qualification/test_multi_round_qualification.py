@@ -366,8 +366,8 @@ class AssistantProductQualificationTests(unittest.TestCase):
     def test_product_plan_pins_candidate_prompt_history_schema_and_qwen(self):
         from fishery_ai.assistant import MULTI_ROUND_PROMPT_ID
         config = experiment.load_assistant_execution_config()
-        self.assertFalse(config.multi_round_enabled)
-        self.assertEqual(config.releases[0].status, "candidate")
+        self.assertTrue(config.multi_round_enabled)
+        self.assertEqual(config.releases[0].status, "released")
         self.assertEqual(len(experiment.PRODUCT_CASES), 6)
         for case in experiment.PRODUCT_CASES:
             plan = experiment.plan(case.case_id, assistant_product=True)
@@ -505,8 +505,10 @@ class AssistantProductQualificationTests(unittest.TestCase):
                 experiment.run("normal", self.root, assistant_product=True, confirm_network=True)
         self.assertEqual(error.exception.code, "QUALIFICATION_RELEASE_SCOPE_MISMATCH")
         actual = experiment.load_assistant_execution_config()
-        self.assertFalse(actual.multi_round_enabled)
-        self.assertEqual(actual.releases[0].status, "candidate")
+        self.assertEqual(len(actual.releases), 3)
+        self.assertEqual([r.status for r in actual.releases], ["released", "local_experimental", "local_experimental"])
+        self.assertTrue(actual.multi_round_enabled)
+        self.assertEqual(actual.releases[0].status, "released")
         self.assertFalse((self.root / "outputs/tool-policies").exists())
 
     def test_permissions_malformed_calls_and_budget_keep_single_executor(self):

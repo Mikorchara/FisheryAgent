@@ -1,12 +1,12 @@
 # Assistant 有界多轮接入与交互设计
 
-状态：2026-10-13，Phase 4A、4B-1 与 4B-2 Web 接入已实施并离线验证；Phase 4C 正式 Prompt / History 单案例资格入口已准备，**REAL PROVIDER RESULTS: NOT RUN**。默认产品仍为 **1 Tool / 1 round / 2 requests**。Web 能按精确发布范围选择 **2/2/3**，但包内 Flag 关闭且 Qwen 仍为 candidate，未批准真实多轮发布。
+状态：2026-10-13，Phase 4C Qwen 六案例真实技术资格通过，用户已批准三 Preset 本地多轮试用。Prototype Flag 开启；Qwen 为 released，DeepSeek / Ollama 为 local_experimental（无真实多轮资格证据）。仅 OFF + Normal + 查询/Knowledge精确组合启用2/2/3，否则1/1/2；Analysis不变。当前操作与回滚见 §11，§7–§10保留各阶段当时状态。
 
 依据当前 `assistant.py`、`tool_conversation.py`、`assistant_sources.py`、`execution.py`、`web.py`、`observability.py`、`resources/web/app.js` 及对应测试。[内部 Runtime](../tools/READ_ONLY_TOOL_CALLING.md)、[当前 Assistant 架构](../architecture/ASSISTANT_MODEL_V1_DESIGN.md)提供现有合同，本文件不替代它们。
 
 ## 1. 当前缺口与资格证据边界
 
-下表是接入前的设计基线，非当前缺陷清单；阶段 A 收口见 §7，内部后端收口见 §8，Web 门禁与确认收口见 §9。当前待解决的是正式 Prompt / History 的真实资格与维护者发布审批。
+下表是接入前的设计基线，非当前缺陷清单；阶段 A 收口见 §7，内部后端收口见 §8，Web 门禁与确认收口见 §9。该接入基线的资格与发布进展见 §11。
 
 | 当前实现 | 接入缺口 |
 | --- | --- |
@@ -231,7 +231,7 @@ result = service.send(request, frozen_runtime)
 
 ## 10. Phase 4C 正式 Assistant 资格准备
 
-**REAL PROVIDER RESULTS: NOT RUN。** 只准备 Qwen 3.8 Flash / OFF / Normal / 查询+Knowledge 的逐案例取证，不发布候选范围。
+**准备阶段当时：REAL PROVIDER RESULTS: NOT RUN。** 后续六份真实报告与本地发布见 §11；本节只准备 Qwen 3.8 Flash / OFF / Normal / 查询+Knowledge 的逐案例取证，不发布候选范围。
 
 ### 最小复用与安全边界
 
@@ -294,3 +294,47 @@ JSON 固定写到 `outputs/assistant-qualification/<run_id>.json`，独占创建
 默认每请求256 tokens，可通过 `--max-output-tokens` 收紧，不能超过256。核对 dry-run 的 case、plan_sha256、scope 后再确认；代码/计划变动必须重新审阅授权。遇到凭据文件错误立即停止：保留0-request报告，不改ACL、不复制Key、不读源码 `.env`，由用户正常PowerShell处理正式Credential路径。任何真实结果产生后停止，不自动启动下一项、重试或 failover。
 
 准备阶段离线验证：相关 targeted **137 项通过**；FAST **149 项通过**；FULL QUALIFICATION **134 项完成**（133 通过，1 项既有目录 symlink 环境条件跳过）。本入口保留原 23 项测试，新增 18 项正式产品资格测试；覆盖正式 Prompt / History parity、结果传递、提前 Final、来源与提交门禁、权限/预算、取消/整 Turn deadline、Trace 失败、脱敏预览及旧实验兼容。149 个 Python 文件 AST、现有 JS 语法、290 条 Markdown 本地文件链接、diff check 和 18 个改动文本路径敏感模式扫描通过；Git 未跟踪凭据或 outputs。实际 CLI dry-run 返回正式 Prompt、精确 Qwen scope、candidate、3 请求上限和0网络请求。本轮没有修改产品/UI执行路径，未重复无关 FULL PRODUCT / Browser；其既有 4B-2 结果见 §9。Web Flag 仍为 false，Qwen仍为 candidate；没有真实Provider请求，没有 commit/push。
+
+
+
+## 11. Phase 4C 三预设本地试用发布
+
+2026-10-13 用户明确批准本地 Prototype 三模型试用；本轮没有 Provider / Ollama 请求。包内 `multi_round_enabled=true`，不影响 `D:\Fishery_Project` 或 Analysis；类构造的安全默认值仍是 false，未登记范围不能凭 Flag 获得多轮。
+
+| Preset / exact model | 发布状态 | 本轮资格依据 |
+| --- | --- | --- |
+| `dashscope-qwen38-flash-r1` / `qwen3.8-flash` | `released` | 六案例真实技术资格通过，用户批准本地发布 |
+| `deepseek-flash-r1` / `deepseek-flash` | `local_experimental` | 用户明确批准未验证的本地实验；qualification_id / validated_at 均 null |
+| `ollama-qwen35-4b-r1` / `qwen3.5:4b` | `local_experimental` | 用户明确批准未验证的本地实验；qualification_id / validated_at 均 null |
+
+三份 Scope 分别由各自当前正式 Preset生成：service/adapter/normalized URL/exact model、contract 1.0.2、完整ProtocolSpec、OFF/Normal、`ASSISTANT_BOUNDED_MULTI_ROUND@1` 及指纹、`UNTRUSTED_TRANSCRIPT_V1@1`、查询+Knowledge两项实际Tool definitions指纹。两个实验模型不能继承Qwen的资格；实验记录如果含资格编号或验证时间，加载时安全拒绝。未修改 `presets.json`、Provider Capability 或正式凭据。
+
+Qwen维护记录 `phase4c-qwen38-six-cases-20261013` 对应以下现存安全报告（`outputs/assistant-qualification/`，Git ignored）：
+
+- low-oxygen：e54054aba9204d78bad4cb1c4e6c8b8b，查询→Knowledge→Final，3请求。
+- normal：647df8796458484396f1692fd9daeb48，查询→提前Final，2请求。
+- current-do：a412202b64cf490f9d057a9627b6df21，查询→Final，2请求。
+- concept：b32a45baae2d45fd841974259ef666cc，直接Final，1请求。
+- history-current：37d49ded924d41ba93ef17edaa9fe9fa，本轮重新查询→Final，2请求。
+- history-explanation：264c1d1f00624bf79eee62dca8a53f40，历史解释直接Final，1请求。
+
+合计6runs/11真实请求，Provider归一化一致、Result传递、Ledger、Requirement、Commit Gate及Trace全部通过，最终stop；最后报告完成时间作为validated_at。它们仍保留当时 `PREVIEWED_NOT_APPROVED` 的原记录，不回写报告或伪造人工内容结论。发布是后续用户维护者决策；有限技术样本不认证回答全部真实、检索相关性或长期稳定性。
+
+### Web 使用与回滚
+
+1. 在项目根目录运行 `.\.venv\Scripts\python.exe -m fishery_ai web`，浏览器打开 `http://127.0.0.1:8765`。已启动Web需完整重启以加载发布配置和新epoch。
+2. Analysis Apply低氧场景，切到Assistant选择三个Preset之一；Tool按钮→Assistant标签，仅选 `get_current_water_quality` 与 `search_fishery_knowledge`，取消评分。保存才更新Policy；程序不代用户改设置。
+3. UI应显示有界多轮2/2/3；Qwen显示“已验证资格”，另外两个显示“本地实验试用 · 尚无真实多轮资格证据”。Cloud确认最多三次真实请求；Ollama为最多三次本地模型请求，不是Mock。
+4. 手工勾选本次确认并提问：“请查询当前水质，若有异常再检索相关项目知识，最后简短说明。” Steps可出现Model→查询→Model→Knowledge→Model。模型也可提前Final；试用不强制双Tool，不预执行，不补跑。
+5. 少选Tool、多选评分、身份/协议/Prompt/History/Tool指纹失配时显示单轮和原因。配置/Policy变化导致revision失配时，联网前拒绝、刷新预算、取消旧确认；不能沿用旧勾选强行执行。
+6. 回滚：编辑 `src/fishery_ai/resources/profiles/assistant_execution.json`，仅把 `multi_round_enabled` 改为 false，完整重启Web。保留三份发布记录；新epoch拒绝旧Session，新请求均显示1/1/2。无需改Policy、Preset或Credential。
+
+共用原AssistantService / ToolCallingService / RequestHandle / Steps；每轮最多一个Tool、最多2calls/2rounds/3requests，整Turn deadline、Stop、Ledger、来源门禁和成功文本pair History保持。真正执行失败、取消或超时不切回单轮、不重试、不failover。Web不能提交release_status、mode、预算、deadline或Prompt。正式Web仍AUTO来源要求，允许模型自由选择，不是自然语言强路由。
+
+### 离线验证
+
+离线 targeted 228项通过（Web/qualification 65项，Assistant/Tool 163项），Security执行14项通过；FAST149项通过；FULL PRODUCT950项通过；Browser203项通过；FULL QUALIFICATION134项完成（133通过，1项既有目录symlink环境条件跳过）。新增6项Python测试及2项Browser测试，覆盖三模型实际Flask双Tool路径、独立发布状态/精确范围、未授权组合单轮回退、确认revision、实验标签及回滚。149个Python文件AST、JS语法、291条本地Markdown链接、diff和15个改动文本敏感扫描通过；没有凭据或outputs被Git跟踪。
+
+首次及串行复核FULL PRODUCT均暴露既有50ms阻塞SDK测试对Windows事件循环启动速度的假设；单项通过。只把该测试的I/O启动窗口改为500ms，保留TOTAL_TIMEOUT、实际close、非用户取消与一次attempt全部断言；未修改Adapter / Cancellation / 产品deadline。修改后Security14项及完整950项通过。
+
+两个实验模型的真实多轮表现、实际延迟及正文安全性均等待用户网页体验，不宣称已验证；长历史、评分Tool组合、Thinking ON、Streaming不在发布范围。本轮无真实Provider或Ollama推理请求，未commit/push。

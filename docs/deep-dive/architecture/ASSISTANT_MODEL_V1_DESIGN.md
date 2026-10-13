@@ -41,7 +41,7 @@ Analysis 可显式授权只读 Tool。授权后请求仍先携带开始时捕获
 
 有效工具集合由静态 Registry、对应模式的 Policy、可执行 Handler 和 Runtime 能力共同约束。当前工具为 `get_current_water_quality`、`score_current_water_quality`、`search_fishery_knowledge`；Knowledge 在注入共享 KnowledgeService 后绑定。Assistant 包内默认只开放查询，Knowledge 必须显式选择；用户 override 不因新注册自动重写。即使三个工具同时开放，模型每轮仍只能选一个。
 
-默认预算：最多 1 个 Tool Call、1 个 Tool round、2 次模型请求。第二次请求使用 `tool_choice=none`；第二轮继续请求 Tool 会被拒绝。Analysis 始终保持这个预算。Assistant 在启动 Flag 和维护者精确 released 范围均满足时才可使用有界 2/2/3；当前配置 Flag 关闭，Qwen 仅为 candidate，实际产品仍使用 1/1/2。没有自主 Agent 或无限循环。
+默认预算：最多 1 个 Tool Call、1 个 Tool round、2 次模型请求。第二次请求使用 `tool_choice=none`；第二轮继续请求 Tool 会被拒绝。Analysis 始终保持这个预算。Assistant 在启动 Flag 和维护者精确发布范围均满足时可使用有界 2/2/3；Prototype 本地 Flag 已开启，Qwen 为 `released`，DeepSeek / Ollama 为显式 `local_experimental`（没有真实多轮资格证据）。三个范围均只覆盖查询+Knowledge的精确组合，失配则显示并执行 1/1/2。没有自主 Agent 或无限循环。
 
 当前选择规则：当前水质数值/状态/告警使用查询 Tool；当前系统评分使用实验评分 Tool；同一轮不得同时调用。普通概念题可直接答；历史值的解释可基于历史回答，但“现在还……”必须重新查询。Tool 不可用时不能拿旧值冒充当前事实，也不能伪造系统评分。
 
@@ -53,7 +53,7 @@ Analysis 可显式授权只读 Tool。授权后请求仍先携带开始时捕获
 
 `assistant_sources.py` 从协调器的真实 ToolExecutionResult 推导不可变 `TurnSourceReceipt`，核对工具名、call id、结果状态和有限 payload 合同。模型正文、旧历史、浏览器声明与文字仿 Tool Call 不产生 Receipt。它只存来源类别、操作是否完成、质量/时效、时间及可用字段/证据数量，不复制水质值、评分、query 或 Evidence 正文。
 
-内部执行结果已使用有序 model / tool steps，旧单轮字段由序列只读投影。每个返回的 Tool 执行分别生成 Receipt，存入 `TurnSourceLedger.entries`，按执行 seq 关联；不同时间的观测不合并。Assistant 内部满足检查使用 Ledger，`source_receipt` 保留为单执行兼容投影。Ledger 不新增 Web/UI 字段，不进入 completed History；正式 Web 默认仍固定 1/1/2，内部显式模式可使用 2/2/3。多轮旧单 Tool/request 槽位不可用，不将最后一个 Tool 当作唯一来源。详细合同见[只读 Tool 当前实现](../tools/READ_ONLY_TOOL_CALLING.md#内部结果来源与预算合同)。
+内部执行结果已使用有序 model / tool steps，旧单轮字段由序列只读投影。每个返回的 Tool 执行分别生成 Receipt，存入 `TurnSourceLedger.entries`，按执行 seq 关联；不同时间的观测不合并。Assistant 内部满足检查使用 Ledger，`source_receipt` 保留为单执行兼容投影。Ledger 不新增 Web/UI 字段，不进入 completed History；正式 Web 按精确发布范围选择 1/1/2 或 2/2/3，内部显式模式仍可使用 2/2/3。多轮旧单 Tool/request 槽位不可用，不将最后一个 Tool 当作唯一来源。详细合同见[只读 Tool 当前实现](../tools/READ_ONLY_TOOL_CALLING.md#内部结果来源与预算合同)。
 
 | 内部 SourceRequirement | 满足条件 |
 | --- | --- |
@@ -92,7 +92,7 @@ History Projection、SourceRequirement / Receipt / Commit Gate、单调用单 ro
 
 输入附近“本次运行”展开为通用有序列表；最终消息下只显示实际执行 Tool 的轻量摘要，不设固定第二 Tool 槽位。status 的 Completed 不能提交 History；只有最终 chat 响应通过已有来源/完成/取消门禁和 Trace 后才提交一条最终回答。最终 Trace 与终态在同一短提交临界区中串行处理：此前 Stop 优先，已进入最终提交的迟到 Stop 不撤销成功；Trace 失败绝不提前发布 Completed。Clear、模型切换、epoch 和成功文本 pair 的 History 合同不变。
 
-AssistantService 默认仍拒绝多轮协调器。协调器与 AssistantService 必须同时显式选择 `ToolExecutionMode.BOUNDED_MULTI_ROUND`，才能使用固定 2/2/3。Web 服务端从启动冻结的 `assistant_execution.json` 决定模式：Flag ∩ released 精确范围 ∩ 当前实际授权 Tool 集合；不能由浏览器指定 mode、预算、Prompt 或 deadline。范围绑定 exact identity、Preset contract、ProtocolSpec、Prompt、History 版本与 Tool Definition 指纹。当前 Qwen candidate 不授予多轮运行资格，其他 Preset 不继承。
+AssistantService 默认仍拒绝多轮协调器。协调器与 AssistantService 必须同时显式选择 `ToolExecutionMode.BOUNDED_MULTI_ROUND`，才能使用固定 2/2/3。Web 服务端从启动冻结的 `assistant_execution.json` 决定模式：Flag ∩ 维护者 released / local_experimental 精确范围 ∩ 当前实际授权 Tool 集合；不能由浏览器指定 mode、预算、Prompt 或 deadline。范围绑定 exact identity、Preset contract、ProtocolSpec、Prompt、History 版本与 Tool Definition 指纹。当前三模型分别登记精确范围：Qwen 已验证，另外两个为本地实验；不互相继承资格。实验项不得填写 qualification_id / validated_at，Web 仅公开状态与回退原因，不公开 Prompt 或资格内部信息。
 
 内部多轮使用独立版本 `ASSISTANT_BOUNDED_MULTI_ROUND@1`，保留原 Assistant v2 的来源、安全和纯文本原则，仅把“Tool 后直接回答”改为“根据实际结果继续判断或提前 Final”。History 仍先完整 pair 裁剪，再应用原有投影，最终只提交成功 user/final assistant 文本对。
 

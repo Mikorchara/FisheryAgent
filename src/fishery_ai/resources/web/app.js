@@ -2565,7 +2565,7 @@ function renderToolCatalog() {
   $("tool-policy-assistant").setAttribute("aria-pressed", String(!analysis));
   $("tool-policy-note").textContent = analysis
     ? "保存后，新 Normal Analysis 请求可使用所选只读 Tool；仍需精确 Runtime 已支持 Tool Calling。最多一次 Tool、一次 follow-up；启用 Tool 时不支持 Streaming。"
-    : "保存后，新的 Assistant 请求使用该授权；最多择一调用、一个 Tool round。";
+    : "保存后，新的 Assistant 请求使用该授权；每轮最多一个 Tool，总预算以所选模型的当前运行模式为准。";
   const selected = toolPolicyDraft.modes[toolPolicyMode].selected_tools;
   const list = $("tool-catalog-list"); list.replaceChildren();
   for (const item of toolManagerData.catalog) {
@@ -2728,6 +2728,8 @@ async function loadAssistantBootstrap() {
           || !["cloud", "local"].includes(p.runtime_type)
           || !["SINGLE_ROUND", "BOUNDED_MULTI_ROUND"].includes(p.execution_profile?.mode)
           || p.execution_profile.max_model_requests !== (p.execution_profile.mode === "SINGLE_ROUND" ? 2 : 3)
+          || (p.execution_profile.release_status !== undefined && !["released", "local_experimental", "candidate", "unmatched"].includes(p.execution_profile.release_status))
+          || (p.execution_profile.mode_reason !== undefined && !["active", "flag_disabled", "candidate", "scope_not_published"].includes(p.execution_profile.mode_reason))
           || typeof p.execution_profile.revision !== "string" || !/^[a-f0-9]{64}$/.test(p.execution_profile.revision))) throw new Error("INVALID_RESPONSE");
     if (assistantState.epoch && assistantState.epoch !== data.epoch) {
       resetAssistantSession();
@@ -2756,6 +2758,16 @@ async function loadAssistantBootstrap() {
 
 function renderAssistantNetwork() {
   const local = assistantPreset()?.runtime_type === "local";
+  const profile = assistantPreset()?.execution_profile;
+  const multi = profile?.mode === "BOUNDED_MULTI_ROUND";
+  const qualification = profile?.release_status === "released" ? "已验证资格"
+    : profile?.release_status === "local_experimental" ? "本地实验试用 · 尚无真实多轮资格证据" : "";
+  const reason = profile?.mode_reason === "flag_disabled" ? "多轮功能已关闭"
+    : profile?.mode_reason === "candidate" ? "候选范围尚未发布"
+    : "当前 Tool 组合或运行配置不符合多轮发布范围";
+  $("assistant-execution-note").textContent = !profile ? "" : multi
+    ? `有界多轮 · 最多 2 Tool Calls / 2 Rounds / 3 Requests${qualification ? ` · ${qualification}` : ""}`
+    : `单轮 · 1 Tool / 1 Round / 2 Requests · ${reason}${qualification ? ` · ${qualification}` : ""}`;
   const count = assistantPreset()?.execution_profile.max_model_requests === 3 ? "三" : "两";
   $("assistant-network-label").textContent = local ? "LOCAL MODEL REQUEST" : "REAL NETWORK REQUEST";
   $("assistant-network-note").textContent = local ? `本次最多${count}次本地模型请求。` : `本次最多${count}次模型请求，Cloud 可能产生费用。`;
