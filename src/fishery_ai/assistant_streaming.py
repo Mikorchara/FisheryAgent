@@ -3,6 +3,7 @@
 from collections import deque
 from dataclasses import asdict, dataclass, field
 from copy import deepcopy
+from importlib.resources import files
 import json
 import re
 import threading
@@ -26,6 +27,7 @@ class AssistantStreamingRelease:
     status: str = "candidate"
     qualification_id: str | None = None
     validated_at: str | None = None
+    max_output_tokens: int = 256
 
     def __post_init__(self):
         try:
@@ -34,7 +36,8 @@ class AssistantStreamingRelease:
                 "thinking", "response_mode", "prompt_id", "prompt_sha256", "history_projection", "history_version",
                 "tools", "tool_definitions_sha256", "model_transport", "assembler_version"}
             if (set(scope) != expected or scope["thinking"] != "off" or scope["response_mode"] != "streaming"
-                    or scope["model_transport"] != "STREAMING" or self.status not in ("candidate", "released")
+                    or scope["model_transport"] != "STREAMING" or self.status not in ("candidate", "released", "local_experimental")
+                    or type(self.max_output_tokens) is not int or not 1 <= self.max_output_tokens <= 512
                     or not isinstance(scope["identity"], list) or len(scope["identity"]) != 4
                     or not isinstance(scope["tools"], list) or not 1 <= len(scope["tools"]) <= 3
                     or any(not isinstance(v, str) or not v for v in scope["identity"] + scope["tools"])
@@ -65,12 +68,35 @@ class AssistantStreamingConfig:
         object.__setattr__(self, "releases", tuple(self.releases))
 
 
+def load_assistant_streaming_config():
+    """Fixed package configuration, frozen once per app epoch; no Web path input."""
+    try:
+        data = json.loads(files("fishery_ai").joinpath(
+            "resources/profiles/assistant_streaming.json").read_text(encoding="utf-8"))
+        if (set(data) != {"schema_version", "enabled", "releases"}
+                or type(data["schema_version"]) is not int or data["schema_version"] != 1
+                or not isinstance(data["releases"], list)):
+            raise ValueError()
+        records = []
+        for record in data["releases"]:
+            if set(record) != {"scope", "status", "qualification_id", "validated_at", "max_output_tokens"}:
+                raise ValueError()
+            records.append(AssistantStreamingRelease(_json(record["scope"]), record["status"],
+                record["qualification_id"], record["validated_at"], record["max_output_tokens"]))
+        return AssistantStreamingConfig(data["enabled"], tuple(records))
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        raise AssistantError("INVALID_ASSISTANT_STREAMING_CONFIG") from None
+
+
 def resolve_streaming_profile(config, profile, policy, registry, *, epoch, projection):
     scope = streaming_scope(profile, policy, registry, projection)
     record = next((r for r in config.releases if r.scope_json == _json(scope)), None)
-    available = config.enabled and record is not None and record.status == "released"
+    available = config.enabled and record is not None and record.status in ("released", "local_experimental")
     return {"available": available, "mode": "BOUNDED_MULTI_ROUND", "max_model_requests": 3,
         "release_status": record.status if record else "unpublished",
+        "max_output_tokens": record.max_output_tokens if record else None,
+        "mode_reason": "active" if available else "flag_disabled" if not config.enabled else
+            "candidate" if record is not None else "scope_not_published",
         "revision": _hash({"epoch": epoch, "config": asdict(config), "scope": scope, "policy": asdict(policy),
             "timeouts": [profile.connect_timeout_s, profile.read_timeout_s, profile.total_timeout_s],
             "generation": asdict(profile.default_generation), "credential_ref": profile.credential_ref,

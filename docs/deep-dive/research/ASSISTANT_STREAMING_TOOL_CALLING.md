@@ -214,7 +214,7 @@ Phase 5B 新增 **28 项**离线端到端测试；相关 targeted **187 项通�
 
 ## 11. Phase 5D：Web Streaming 离线接入
 
-状态：**OFFLINE IMPLEMENTED / REAL WEB STREAMING NOT RELEASED**。本阶段没有真实 Provider / Ollama 请求，没有批准任何 Streaming 产品资格。Normal仍是默认及回滚路径，Analysis / Manual / Development仍用原入口。
+Phase 5D 初始状态（历史基线）：**OFFLINE IMPLEMENTED / REAL WEB STREAMING NOT RELEASED**。当前本地实验接入见§12。本阶段没有真实 Provider / Ollama 请求，没有批准任何 Streaming 产品资格。Normal仍是默认及回滚路径，Analysis / Manual / Development仍用原入口。
 
 ### 最小数据流
 
@@ -251,3 +251,21 @@ UI保留OFF只读标签，添加Normal / Streaming选择；未发布Streaming禁
 普通启动 `python -m fishery_ai web` 仍仅开放Normal；可人工检查Streaming禁用、原Analysis/Assistant/Manual/Development以及Stop。真实Streaming网页体验需先完成各精确范围的资格与人工回答质量审查，再另获发布/联网授权；Qwen的两个技术PASS不能替代概念/History等剩余检查，DeepSeek预算截断不能算通过，Ollama版本与方言仍待确认。三工具组合独立审核。资格完成后由维护者提供精确配置给run_web，关闭配置并重启即回滚Normal；不在同一epoch动态切换发布，也不因失败切Transport重跑。
 
 离线验收：新增20项Web SSE / Fake SDK测试、9项Browser测试；相关targeted168项通过，FAST149项通过，FULL PRODUCT1040项通过（41.489秒），Browser214项通过，FULL QUALIFICATION167项完成（166通过、1项既有symlink环境跳过）。Python AST155文件、JS语法、296条Markdown本地文件链接、diff check和改动文本敏感扫描通过。首次全量回归发现一条测试仍精确要求旧的“Thinking OFF · Normal”固定标签；改为校验OFF与默认Normal选择，未放宽运行门禁。保留上一轮512预算工作树变更，没有真实请求、commit/push或生产项目修改。
+
+## 12. Phase 5D.2：三 Preset Web Streaming 本地实验（2026-10-14）
+
+用户授权的是本地试用，不是正式产品 released。固定 `resources/profiles/assistant_streaming.json` 有六个精确记录：三个 Preset 的查询+Knowledge为local_experimental，查询+评分+Knowledge为candidate。均不填资格编号/日期，不自动读取报告发布、不继承Normal资格。Scope仍绑定Identity、合同版本、ProtocolSpec、正式多轮Prompt、History Projection、Tool definitions、Assembler和Transport。变更指纹后失配即拒绝。
+
+启动 `python -m fishery_ai web --assistant-streaming-trial`，默认仍选择Normal。普通无参数启动读取默认enabled=false配置。配置在app epoch内冻结，浏览器不能提交mode/budget/deadline/Prompt/路径；API端点选择Transport，revision绑定Policy、输出预算与完整配置。回滚为关闭配置Flag并不带试用参数重启，Normal原配置保持。
+
+Qwen每请求256tokens，DeepSeek/Ollama512tokens；整Turn deadline保持120/120/180秒，retry=0、2/2/3。输出限制作为冻结RuntimeSnapshot内的传输成本上限，经现有ProtocolSpec编码，不伪造max_output_tokens Capability，也不修改Preset合同。非Streaming和普通文本Streaming不使用这个内部预算。
+
+UI：清晰Response Mode控件；下一条选择与本次实际Transport分别显示。运行中不能切换，Normal→Streaming→Normal保留同一成功History；模式/模型/Policy/revision变化撤销确认。Streaming临时正文、独立Tool卡片、Steps、Usage保持原合同；截断预览给出提示。成功才提交一条最终回答，失败不降级、不重连重跑。
+
+评分Tool与其他只读Tool共用参数验证、Executor、JSON Result和Ledger，从传输上可复用Streaming；Fake SDK已验证评分→Final。三工具真实选择与回答质量尚未取得资格，仍关闭。Ollama真实记录有一次DO漏查及两次低氧查询后漏检索，单次成功不能代表稳定；Usage unavailable也不记为零。三个Provider的人工回答质量仍待用户检查。
+
+本轮只离线验证，没有Provider/Ollama请求、Policy修改、Secret读取、commit/push或生产项目改动。正式SourceRequirement继续AUTO；Receipt证明实际执行而不是保证模型一定正确选Tool。
+
+离线结果：Web SSE 27项（新增7项，含三Provider各3条路径子案例）、相关targeted151项、FAST149项、FULL PRODUCT1047项通过（42.103秒）；Browser219项通过；FULL QUALIFICATION167项完成（166通过、1项既有symlink环境跳过）。Python AST155文件、JS syntax、297条Markdown本地链接、diff check及改动/新增文本Secret字面量扫描通过，outputs/credential无Git跟踪。
+
+首次targeted与完整回归暴露旧断线测试只等待SDK关闭就清理临时目录，后台取消Trace尚未写完，Windows报目录非空；测试改为等待真实CANCELLED终态与USER_CANCELLED后再清理。没有忽略清理错误、放宽提交门禁或更改运行时取消语义。修正后targeted和完整产品回归通过。普通启动仍关闭试用；CLI启动/关闭配置传递与Flask load_dotenv=False另有离线断言。

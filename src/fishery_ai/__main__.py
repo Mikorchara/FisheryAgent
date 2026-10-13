@@ -39,12 +39,16 @@ def main() -> None:
                         choices=["network", "basic", "auto", "on", "off", "effort-low", "temperature", "top-p",
                                  "output-limit", "stream", "full-chain", "invalid-model"])
     parser.add_argument("--confirm-network", action="store_true")
+    parser.add_argument("--assistant-streaming-trial", action="store_true",
+                        help="Enable exact maintainer Streaming local-trial scopes for Web only")
     args = parser.parse_args()
+    if args.assistant_streaming_trial and args.command != "web":
+        parser.error("--assistant-streaming-trial is only available for web")
     if args.command == "web":
         if not 1 <= args.port <= 65535:
             parser.error("--port must be between 1 and 65535")
         from .web import run_web
-        run_web(port=args.port)
+        run_web(port=args.port, assistant_streaming_trial=args.assistant_streaming_trial)
         return
     if args.command == "validate-real":
         from .development.qualification.real_validation import run_real_validation

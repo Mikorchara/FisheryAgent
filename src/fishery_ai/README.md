@@ -13,7 +13,7 @@
 ## Assistant / Analysis · 正式 Runtime
 
 - [assistant.py](assistant.py)：Assistant 请求、完整历史 pair 裁剪、上下文构造与执行服务。
-- [assistant_streaming.py](assistant_streaming.py)：正式 Web Streaming 的独立维护者发布门禁、有界临时 SSE 事件；默认关闭，无 Tool 执行循环。
+- [assistant_streaming.py](assistant_streaming.py)：Web Streaming 的独立发布/本地实验门禁、固定配置加载、输出预算与临时 SSE 事件；默认关闭，无 Tool 执行循环。
 - [assistant_activity.py](assistant_activity.py)：正式 Runtime 的有序步骤安全投影，供状态轮询、最终响应和 Trace 复用，不保存第二份 Tool payload。
 - [assistant_execution.py](assistant_execution.py)：应用启动时冻结多轮发布范围，以精确合同与实际 Tool 集合决定模式，并绑定联网确认 revision；Prototype 已授权本地多轮试用：Qwen 为已验证发布，DeepSeek / Ollama 为独立实验范围。
 - [assistant_sources.py](assistant_sources.py)：本轮来源要求、逐执行 Receipt / Ledger 与成功提交满足关系。
@@ -22,7 +22,7 @@
 
 ## Tool Runtime · 正式 Runtime
 
-- [tool_conversation.py](tool_conversation.py)：默认 1/1/2 与内部显式 2/2/3 的共享协调；内部可选 Normal / 组装后的 Streaming Transport，保留有序 steps、Usage / 安全 Trace，以及开发界面的离线 Mock 模型。Web 仍使用 Normal。
+- [tool_conversation.py](tool_conversation.py)：默认 1/1/2 与显式 2/2/3 的共享协调；Normal / 组装后的 Streaming 复用同一循环，保留 steps、Usage / 安全 Trace；Web Streaming 由独立实验范围授权。
 - [tools/__init__.py](tools/__init__.py)：Tool 执行层公共接口导出。
 - [tools/contracts.py](tools/contracts.py)：Tool 定义、执行结果、业务状态与安全错误合同。
 - [tools/registry.py](tools/registry.py)：静态 allowlist、正式模型 Tool Definition 及固定 Handler 绑定。

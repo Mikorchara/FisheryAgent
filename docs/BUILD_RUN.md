@@ -22,7 +22,23 @@ Demo 使用 MockGateway。自动测试不发送真实网络请求；Cloud / Loca
 ## 当前工作区
 
 - **Analysis**：固定 Snapshot → Diagnosis → RAG → Model；Normal / Streaming 可用。用户可在 Tool Manager 明确授权只读 Tool；启用 Tool 时仅支持 Normal，且要求精确 Runtime Tool capability 为 SUPPORTED。
-- **Assistant**：仅 Qwen 3.8 Flash、DeepSeek Flash、Ollama Qwen3.5 4B 三个发布 Preset；固定 Thinking OFF，默认 Normal。Streaming Web 通道已离线实现，但独立发布配置默认关闭，未发布组合不可选择或发送。页面历史不持久化。Cloud Send 显示 REAL NETWORK REQUEST；Ollama 显示 LOCAL MODEL REQUEST。
+- **Assistant**：仅 Qwen 3.8 Flash、DeepSeek Flash、Ollama Qwen3.5 4B 三个发布 Preset；固定 Thinking OFF，默认 Normal。三个模型可显式开启 Streaming 本地实验，人工回答质量尚待审核。页面历史不持久化。Cloud Send 显示 REAL NETWORK REQUEST；Ollama 显示 LOCAL MODEL REQUEST。
+
+### Assistant Streaming 本地试用
+
+项目根目录执行（启动本身不发送模型请求）：
+
+```powershell
+python -m fishery_ai web --assistant-streaming-trial
+```
+
+打开 `http://127.0.0.1:8765`，切换到 Assistant，在 Tool 的 Assistant 标签中只授权 `get_current_water_quality` + `search_fishery_knowledge` 两项，然后选择 Preset 和 Normal / Streaming，逐次勾选请求确认后 Send。切换 Transport 保留成功 History，仅影响下一条消息；执行中禁用切换，Stop 后可重新选择。失败、断线或截断不会以 Normal 重跑，临时正文不进入 History。
+
+固定配置：[assistant_streaming.json](../src/fishery_ai/resources/profiles/assistant_streaming.json)，默认 `enabled=false`；启动参数只开启其精确已登记范围。三个模型均为 `local_experimental`，不填正式资格编号/日期。Qwen / DeepSeek / Ollama 每请求输出上限分别为256 / 512 / 512，整 Turn deadline分别为120 / 120 / 180秒，retry=0，仍最多2 Tool Calls / 2 rounds / 3 Requests。这是内部传输成本上限，不改变 Preset Capability。
+
+三工具组合（额外评分）为 candidate，尚未开放 Streaming；单工具和其他组合也未开放。评分 Handler 的 Streaming 离线适配通过，不代表真实模型的三工具选择已验证。页面会提示调整精确授权组合，不修改用户 Policy。
+
+回滚：停止 Web，移除 `--assistant-streaming-trial`，确认上述配置 `enabled=false` 后重新运行 `python -m fishery_ai web`。Streaming 禁用，Normal 保持原有执行配置；新 epoch 清空旧 Assistant Session。关闭 Streaming 不会关闭既有 Normal 多轮。
 - **Development / Test**：支持离线 Mock 与能力门禁下的真实 Tool Conversation；完整安全 Trace 仅在开发区显示。
 - **Managed Custom**：高级能力依赖精确 Identity 的 Evidence / Resolver；Probe 必须由用户逐项触发。
 - **Manual V1/V2**：Raw 请求路径；不进入 Fishery Analysis，不自动执行返回的 Tool Calls。

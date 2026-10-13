@@ -41,7 +41,8 @@ from .presets import preset_profiles, default_preset_id
 from .model_gateway import validate_preset_response
 from .execution import RequestRegistry, request_scope
 from .tool_conversation import ToolCallingService, MockToolGateway, ToolExecutionMode, ToolModelTransport
-from .assistant_streaming import AssistantStreamingConfig, AssistantEventChannel, resolve_streaming_profile
+from .assistant_streaming import (AssistantStreamingConfig, AssistantEventChannel,
+                                  resolve_streaming_profile, load_assistant_streaming_config)
 from .assistant import ALLOWED_PRESET_IDS, AssistantError, AssistantRequest, AssistantService, assistant_profile
 from .assistant_execution import (AssistantExecutionConfig, load_assistant_execution_config,
                                   resolve_execution_profile)
@@ -195,7 +196,8 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
                         else assistant_execution_config)
     if not isinstance(execution_config, AssistantExecutionConfig):
         raise ValueError("INVALID_ASSISTANT_EXECUTION_CONFIG")
-    streaming_config = assistant_streaming_config if assistant_streaming_config is not None else AssistantStreamingConfig()
+    streaming_config = (assistant_streaming_config if assistant_streaming_config is not None
+                        else load_assistant_streaming_config())
     if not isinstance(streaming_config, AssistantStreamingConfig):
         raise ValueError("INVALID_ASSISTANT_STREAMING_CONFIG")
     app = Flask(__name__)
@@ -1081,7 +1083,7 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
                                                  execution_mode=execution_profile.mode)
                 result = AssistantService(coordinator, history_projection=assistant_history_projection,
                     execution_mode=execution_profile.mode).send(turn, runtime)
-            return jsonify(result=result.to_dict()), (200 if result.status == Status.COMPLETED else
+            return jsonify(result={**result.to_dict(), "transport": "normal"}), (200 if result.status == Status.COMPLETED else
                 409 if result.status == Status.CANCELLED else 502)
         except (AssistantError, GatewayError) as exc:
             handle.finish(exc.code)
@@ -1118,12 +1120,15 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
         runtime, failure = request_runtime(profile)
         if failure is not None:
             return failure
+        # Maintainer-only per-request output ceiling, identical for every model step.
+        runtime = replace(runtime, transport_output_token_limit=streaming["max_output_tokens"])
         handle, failure = claim_execution(payload, required=True)
         if failure is not None:
             return failure
         channel = AssistantEventChannel(handle, assistant_epoch)
         handle._event_channel = channel
-        channel.emit("start", {"max_model_requests": 3})
+        channel.emit("start", {"max_model_requests": 3, "transport": "streaming",
+            "max_output_tokens": streaming["max_output_tokens"], "release_status": streaming["release_status"]})
 
         def execute():
             try:
@@ -1133,7 +1138,10 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
                     result = AssistantService(coordinator, history_projection=assistant_history_projection,
                         execution_mode=ToolExecutionMode.BOUNDED_MULTI_ROUND).send(turn, runtime)
                 channel.emit("final" if result.status == Status.COMPLETED else
-                    "cancelled" if result.status == Status.CANCELLED else "error", {"result": result.to_dict()}, terminal=True)
+                    "cancelled" if result.status == Status.CANCELLED else "error", {"result": {
+                        **result.to_dict(), "transport": "streaming",
+                        "release_status": streaming["release_status"],
+                        "max_output_tokens": streaming["max_output_tokens"]}}, terminal=True)
             except (AssistantError, GatewayError) as exc:
                 code = exc.code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", exc.code) else "INTERNAL_ERROR"
                 handle.finish(code)
@@ -1622,8 +1630,15 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
 
 def run_web(*, port: int = 8765,
             assistant_history_projection: ProjectionId = DEFAULT_HISTORY_PROJECTION,
-            assistant_streaming_config: AssistantStreamingConfig | None = None) -> None:
+            assistant_streaming_config: AssistantStreamingConfig | None = None,
+            assistant_streaming_trial: bool = False) -> None:
     """Fix the credential path at startup; each request resolves a fresh snapshot."""
+    if type(assistant_streaming_trial) is not bool:
+        raise ValueError("INVALID_ASSISTANT_STREAMING_CONFIG")
+    if assistant_streaming_config is None:
+        assistant_streaming_config = load_assistant_streaming_config()
+    if assistant_streaming_trial:
+        assistant_streaming_config = replace(assistant_streaming_config, enabled=True)
     try:
         location = private_project_location(Path.cwd())
     except CredentialLocationError:

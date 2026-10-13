@@ -2734,8 +2734,10 @@ async function loadAssistantBootstrap() {
           || (p.execution_profile.mode_reason !== undefined && !["active", "flag_disabled", "candidate", "scope_not_published"].includes(p.execution_profile.mode_reason))
           || (p.streaming_profile !== undefined && (typeof p.streaming_profile.available !== "boolean"
             || p.streaming_profile.mode !== "BOUNDED_MULTI_ROUND" || p.streaming_profile.max_model_requests !== 3
-            || !["released", "candidate", "unpublished"].includes(p.streaming_profile.release_status)
-            || p.streaming_profile.available && p.streaming_profile.release_status !== "released"
+            || !["released", "local_experimental", "candidate", "unpublished"].includes(p.streaming_profile.release_status)
+            || p.streaming_profile.available && !["released", "local_experimental"].includes(p.streaming_profile.release_status)
+            || (p.streaming_profile.max_output_tokens !== undefined && p.streaming_profile.max_output_tokens !== null
+              && (!Number.isSafeInteger(p.streaming_profile.max_output_tokens) || p.streaming_profile.max_output_tokens < 1 || p.streaming_profile.max_output_tokens > 512))
             || typeof p.streaming_profile.revision !== "string" || !/^[a-f0-9]{64}$/.test(p.streaming_profile.revision)))
           || typeof p.execution_profile.revision !== "string" || !/^[a-f0-9]{64}$/.test(p.execution_profile.revision))) throw new Error("INVALID_RESPONSE");
     if (assistantState.epoch && assistantState.epoch !== data.epoch) {
@@ -2773,22 +2775,30 @@ function renderAssistantNetwork() {
   }
   const streamingOption = Array.from(responses.children).find(o => o.value === "streaming");
   streamingOption.disabled = streamProfile?.available !== true;
-  streamingOption.textContent = streamingOption.disabled ? "Streaming · 尚未发布" : "Streaming";
+  streamingOption.textContent = streamingOption.disabled ? "Streaming · 未开放此组合"
+    : streamProfile.release_status === "local_experimental" ? "Streaming · 本地实验" : "Streaming";
   if (streamingOption.disabled) $("assistant-response-mode").value = "normal";
   const local = assistantPreset()?.runtime_type === "local";
   const profile = $("assistant-response-mode").value === "streaming" ? streamProfile : assistantPreset()?.execution_profile;
   const multi = profile?.mode === "BOUNDED_MULTI_ROUND";
   const qualification = profile?.release_status === "released" ? "已验证资格"
-    : profile?.release_status === "local_experimental" ? "本地实验试用 · 尚无真实多轮资格证据" : "";
+    : profile?.release_status === "local_experimental" ? ($("assistant-response-mode").value === "streaming"
+      ? "本地实验试用 · 技术样本通过，回答质量待审核" : "本地实验试用 · 尚无真实多轮资格证据") : "";
   const reason = profile?.mode_reason === "flag_disabled" ? "多轮功能已关闭"
     : profile?.mode_reason === "candidate" ? "候选范围尚未发布"
     : "当前 Tool 组合或运行配置不符合多轮发布范围";
+  const selectedMode = $("assistant-response-mode").value === "streaming" ? "Streaming" : "Normal";
+  $("assistant-transport-note").textContent = `下一条消息：${selectedMode} · 执行期间模式冻结，切换保留对话历史。${!streamProfile?.available
+    ? (streamProfile?.mode_reason === "flag_disabled" ? " Streaming 试用未启用。"
+      : " Streaming 目前仅开放“当前水质查询 + 项目知识检索”精确两工具组合；请在 Tool 中调整授权。") : ""}`;
   $("assistant-execution-note").textContent = !profile ? "" : multi
     ? `有界多轮 · 最多 2 Tool Calls / 2 Rounds / 3 Requests${qualification ? ` · ${qualification}` : ""}`
     : `单轮 · 1 Tool / 1 Round / 2 Requests · ${reason}${qualification ? ` · ${qualification}` : ""}`;
   const count = profile?.max_model_requests === 3 ? "三" : "两";
   $("assistant-network-label").textContent = local ? "LOCAL MODEL REQUEST" : "REAL NETWORK REQUEST";
-  $("assistant-network-note").textContent = local ? `本次最多${count}次本地模型请求。` : `本次最多${count}次模型请求，Cloud 可能产生费用。`;
+  const ceiling = selectedMode === "Streaming" && profile?.max_output_tokens
+    ? ` 每次最多 ${profile.max_output_tokens} output tokens。` : "";
+  $("assistant-network-note").textContent = (local ? `本次最多${count}次本地模型请求。` : `本次最多${count}次模型请求，Cloud 可能产生费用。`) + ceiling;
 }
 
 function changeAssistantPreset() {
@@ -2938,7 +2948,8 @@ function renderAssistantMessages() {
   }
   if (assistantState.preview) {
     const article = document.createElement("article"); article.classList.add("assistant-message", "preview");
-    const note = document.createElement("small"); note.textContent = "临时预览 · 未确认，不能作为成功回答";
+    const note = document.createElement("small"); note.textContent = "临时预览 · 未确认，不能作为成功回答"
+      + (assistantState.preview.truncated ? " · 预览已裁短，完整回答将在成功后显示" : "");
     const text = document.createElement("p"); text.textContent = assistantState.preview.text;
     article.append(note, text); messages.append(article);
   }
@@ -2963,10 +2974,16 @@ function safeAssistantUsage(value) {
 }
 
 function setAssistantRun(phase, result = null, code = null) {
-  const run = assistantState.run || {model: assistantPreset()?.display_name || "unavailable", phase: "Preparing"};
+  const run = assistantState.run || {model: assistantPreset()?.display_name || "unavailable", phase: "Preparing",
+    transport: $("assistant-response-mode").value === "streaming" ? "Streaming" : "Normal",
+    releaseStatus: ($("assistant-response-mode").value === "streaming" ? assistantPreset()?.streaming_profile
+      : assistantPreset()?.execution_profile)?.release_status,
+    outputBudget: $("assistant-response-mode").value === "streaming" ? assistantPreset()?.streaming_profile?.max_output_tokens : null};
   run.phase = phase;
   run.errorCode = code;
   if (result) {
+    if (["normal", "streaming"].includes(result.transport)) run.transport = result.transport === "streaming" ? "Streaming" : "Normal";
+    if (["released", "local_experimental"].includes(result.release_status)) run.releaseStatus = result.release_status;
     run.steps = safeAssistantSteps(result);
     run.requests = run.steps.filter(step => step.kind === "model" && step.request_started).length;
     if (result.final_finish_reason !== undefined) run.finishReason = ["stop", "length", "content_filter", "tool_calls"].includes(result.final_finish_reason) ? result.final_finish_reason : null;
@@ -2983,10 +3000,11 @@ function setAssistantRun(phase, result = null, code = null) {
   const attempts = (run.steps || []).filter(step => step.kind === "tool");
   live.hidden = !assistantState.busy || !attempts.length;
   if (!live.hidden) for (const tool of attempts) live.append(assistantToolCard(tool));
-  $("assistant-run-summary").textContent = `本次运行：${phase} · ${run.model}${run.requests !== undefined ? ` · ${tools.length} Tool · ${run.requests} Requests · ${assistantDuration(run.latency)}` : ""}`;
+  $("assistant-run-summary").textContent = `本次运行：${phase} · ${run.model} · ${run.transport}${run.releaseStatus === "local_experimental" ? " · 本地实验" : ""}${run.requests !== undefined ? ` · ${tools.length} Tool · ${run.requests} Requests · ${assistantDuration(run.latency)}` : ""}`;
   const container = $("assistant-run-details"); container.replaceChildren();
   const overview = document.createElement("dl"); overview.classList.add("facts-grid");
-  assistantRows(overview, [["Model", run.model], ["Stage", phase]]); container.append(overview);
+  assistantRows(overview, [["Model", run.model], ["实际模式", run.transport], ["发布状态", run.releaseStatus],
+    ["每请求 output tokens 上限", run.outputBudget], ["Stage", phase]]); container.append(overview);
   for (const step of run.steps || []) {
     if (step.kind === "model") {
       const section = document.createElement("section"); section.classList.add("assistant-model-step");
@@ -3098,7 +3116,7 @@ async function readAssistantEvents(response, execution) {
           if (data.provisional !== true || typeof data.text !== "string" || new TextEncoder().encode(data.text).length > 16384
             || ![1,2,3].includes(data.request_index)) throw new Error("STREAM_PROTOCOL_ERROR");
           if (execution.streamRequestIndex && data.request_index < execution.streamRequestIndex) continue;
-          assistantState.preview = {text:data.text, requestIndex:data.request_index}; renderAssistantMessages();
+          assistantState.preview = {text:data.text, requestIndex:data.request_index, truncated:data.preview_truncated === true}; renderAssistantMessages();
         } else if (["final", "error", "cancelled"].includes(data.kind)) {
           execution.streamTerminal = true; assistantState.preview = null;
           if (data.kind === "final" && (data.result?.trace_recorded !== true || data.result?.activity?.activity_schema_version !== 2
@@ -3147,6 +3165,7 @@ async function sendAssistant() {
     const data = streaming && response.ok ? await readAssistantEvents(response, execution) : await response.json();
     if (execution.cancelled || assistantState.pendingRequest !== execution) return;
     const result = data.result;
+    if (result?.transport && result.transport !== (streaming ? "streaming" : "normal")) throw new Error("STREAM_PROTOCOL_ERROR");
     const code = safeCredentialCode(result || data, "ASSISTANT_REQUEST_FAILED");
     if (!response.ok || !result?.successful_turn || result.status !== "completed") {
       if (result) setAssistantRun(result.status === "cancelled" ? "Cancelled" : "Failed", result, code);
@@ -3217,6 +3236,10 @@ async function sendAssistant() {
 
 function bindAssistantControls() {
   $("assistant-response-mode").addEventListener("change", () => {
+    if (activeExecution || assistantState.busy || executionPreparing) {
+      $("assistant-response-mode").value = assistantState.run?.transport === "Streaming" ? "streaming" : "normal";
+      return;
+    }
     $("assistant-confirm-network").checked = false; renderAssistantNetwork();
   });
   $("application-mode-toggle").addEventListener("click", switchApplicationMode);

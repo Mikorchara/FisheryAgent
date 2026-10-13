@@ -11,11 +11,13 @@ from unittest.mock import patch
 
 from fishery_ai.assistant import assistant_profile
 from fishery_ai.assistant_streaming import (AssistantStreamingConfig, AssistantStreamingRelease,
-    AssistantEventChannel, streaming_scope)
+    AssistantEventChannel, streaming_scope, load_assistant_streaming_config, resolve_streaming_profile)
 from fishery_ai.credentials import CredentialStore
 from fishery_ai.domain import DiagnosisService
 from fishery_ai.history_projection import DEFAULT_HISTORY_PROJECTION
 from fishery_ai.openai_compatible_adapter import OpenAICompatibleAdapter
+from fishery_ai.model_gateway import ModelRequest, ModelMessage, GatewayError
+from fishery_ai.contracts import Mode
 from fishery_ai.tools import ToolRegistry
 from fishery_ai.tools.policy import ToolPolicy
 import tests.assistant.test_assistant as fixture
@@ -37,19 +39,20 @@ class StreamingWebTests(fixture.AssistantWebFixture):
     def setUp(self):
         fixture.AssistantWebFixture.setUp(self)
         execution_fixture.ExecutionTests.setUp(self) # Windows asyncio wakeup exception, no Provider sockets.
-        self.clients, self.bodies, self.remaining = [], [], []
+        self.clients, self.bodies, self.remaining, self.runtimes = [], [], [], []
         self.blocked = threading.Event()
 
-    def config(self, *, enabled=True, released=True):
+    def config(self, *, enabled=True, released=True, preset=PRESET):
         registry = ToolRegistry(self.reader, DiagnosisService(), knowledge=fixture.FakeKnowledgeService())
-        scope = streaming_scope(assistant_profile(PRESET), ToolPolicy("assistant", True, NAMES),
+        scope = streaming_scope(assistant_profile(preset), ToolPolicy("assistant", True, NAMES),
                                 registry, DEFAULT_HISTORY_PROJECTION)
         record = AssistantStreamingRelease(json.dumps(scope), "released" if released else "candidate",
             "OFFLINE_FIXTURE_ONLY" if released else None, "2026-10-13T00:00:00Z" if released else None)
         return AssistantStreamingConfig(enabled, (record,))
 
-    def setup_app(self, frames, **config_options):
+    def setup_app(self, frames, *, preset=PRESET, stored_config=False, config_override=None, **config_options):
         owner = self
+        self.preset = preset
         class Stream:
             def __init__(self, items): self.items, self.closed = items, False
             def __aiter__(self): return self.events()
@@ -58,7 +61,7 @@ class StreamingWebTests(fixture.AssistantWebFixture):
                     if item is BLOCK:
                         owner.blocked.set(); await asyncio.Event().wait()
                     if isinstance(item, Exception): raise item
-                    item.model = "qwen3.8-flash"
+                    item.model = assistant_profile(preset).model
                     yield item
                     await asyncio.sleep(0)
             async def close(self): self.closed = True
@@ -74,11 +77,15 @@ class StreamingWebTests(fixture.AssistantWebFixture):
             async def close(self): self.closed = True
         def factory(runtime, remaining):
             owner.remaining.append(remaining)
+            owner.runtimes.append(runtime)
             client = Client(len(owner.clients)+1); owner.clients.append(client)
             return client
         self.factory.return_value = OpenAICompatibleAdapter(async_client_factory=factory)
-        self.app = self.make_app(CredentialStore(process_env={"DASHSCOPE_API_KEY": SECRET}),
-                                 assistant_streaming_config=self.config(**config_options))
+        config = replace(load_assistant_streaming_config(), enabled=True) if stored_config else self.config(preset=preset, **config_options)
+        if config_override is not None:
+            config = config_override
+        self.app = self.make_app(CredentialStore(process_env={"DASHSCOPE_API_KEY": SECRET, "DEEPSEEK_API_KEY": SECRET}),
+                                 assistant_streaming_config=config)
         self.app.extensions["fishery_tool_policy_store"].save({"schema_version":1,
             "modes":{"analysis":{"selected_tools":[]},"assistant":{"selected_tools":list(NAMES)}}})
         self.client = self.app.test_client()
@@ -86,11 +93,11 @@ class StreamingWebTests(fixture.AssistantWebFixture):
         self.headers = {"Origin":"http://localhost", "X-CSRF-Token":csrf}
         self.bootstrap = self.client.get("/api/assistant/bootstrap").get_json()
         self.epoch = self.bootstrap["epoch"]
-        self.stream_profile = next(p for p in self.bootstrap["presets"] if p["preset_id"] == PRESET)["streaming_profile"]
+        self.stream_profile = next(p for p in self.bootstrap["presets"] if p["preset_id"] == preset)["streaming_profile"]
 
     def payload(self, **changes):
         control = self.client.post("/api/requests", json={}, headers=self.headers).get_json()
-        return {"preset_id":PRESET,"question":"offline fixture question", "history":[],"epoch":self.epoch,
+        return {"preset_id":self.preset,"question":"offline fixture question", "history":[],"epoch":self.epoch,
             "confirm_network":True,"execution_profile_revision":self.stream_profile["revision"],
             "request_id":control["request_id"],"control_token":control["control_token"],**changes}
 
@@ -233,6 +240,17 @@ class StreamingWebTests(fixture.AssistantWebFixture):
         until=time.monotonic()+2
         while not self.clients[0].closed and time.monotonic()<until: time.sleep(.01)
         self.assertTrue(self.clients[0].closed)
+        # SDK closure precedes the final cancellation Trace. Wait for the actual
+        # Turn terminal before TemporaryDirectory cleanup (Windows file race).
+        state = None
+        while time.monotonic()<until:
+            state = self.client.post(f"/api/requests/{self.sent['request_id']}/status",
+                json={"control_token":self.sent["control_token"]},headers=self.headers).get_json()
+            if state["state"] == "CANCELLED": break
+            time.sleep(.01)
+        self.assertIsNotNone(state)
+        self.assertEqual(state["state"],"CANCELLED")
+        self.assertEqual(state["error_code"],"USER_CANCELLED")
         self.assertEqual(len(self.bodies),1)
 
     def test_stop_during_followup_streams_preserves_steps_but_never_final(self):
@@ -338,3 +356,131 @@ class StreamingWebTests(fixture.AssistantWebFixture):
         self.assertGreaterEqual(response.status_code,400)
         self.assertEqual(self.client.get("/api/assistant/chat/stream").status_code,405)
         self.assertEqual(len(self.bodies),0)
+
+    def test_three_local_trials_exact_budget_direct_single_double_paths(self):
+        presets = ((PRESET,256), ("deepseek-flash-r1",512), ("ollama-qwen35-4b-r1",512))
+        for preset, tokens in presets:
+            for count in (0,1,2):
+                with self.subTest(preset=preset, tools=count):
+                    self.clients.clear(); self.bodies.clear()
+                    frames = ([tool_chunks()] if count else []) + ([tool_chunks(fixture.KNOWLEDGE,"second",'{"query":"DO"}')] if count == 2 else []) + [final_chunks()]
+                    self.setup_app(frames, preset=preset, stored_config=True)
+                    self.assertTrue(self.stream_profile["available"])
+                    self.assertEqual(self.stream_profile["release_status"], "local_experimental")
+                    self.assertEqual(self.stream_profile["max_output_tokens"], tokens)
+                    rows = self.rows(self.send())
+                    self.assert_final(rows,count+1,count)
+                    self.assertEqual(rows[-1]["result"]["transport"], "streaming")
+                    self.assertTrue(all(b["max_tokens"] == tokens and b["stream"] for b in self.bodies))
+                    self.assertEqual(self.bodies[-1].get("tool_choice"), "none" if count == 2 else "auto")
+                    for body in self.bodies:
+                        self.assertEqual([t["function"]["name"] for t in body["tools"]], list(NAMES))
+
+    def test_transport_budget_is_not_generation_capability_and_invalid_values_fail_before_io(self):
+        self.setup_app([final_chunks()],stored_config=True)
+        self.rows(self.send())
+        runtime=self.runtimes[0]
+        self.assertIsNone(runtime.default_generation.max_output_tokens)
+        request=ModelRequest(Mode.CHAT,(ModelMessage("user","fixture"),))
+        for value in (True,False,0,513,256.5,"256"):
+            with self.assertRaises(GatewayError) as error:
+                OpenAICompatibleAdapter._kwargs(request,replace(runtime,transport_output_token_limit=value),
+                                                stream=True,_assemble_tools=True)
+            self.assertEqual(error.exception.code,"INVALID_STREAMING_OUTPUT_BUDGET")
+        with self.assertRaises(GatewayError):
+            OpenAICompatibleAdapter._kwargs(request,runtime,stream=False)
+        self.assertEqual(len(self.bodies),1)
+
+    def test_score_handler_streaming_compatible_offline_but_three_tool_product_scope_stays_candidate(self):
+        config=load_assistant_streaming_config()
+        record=next(r for r in config.releases if json.loads(r.scope_json)["preset_id"]==PRESET
+                    and r.status=="candidate")
+        # Offline authorization fixture only, not a product publication or model evidence.
+        temporary=AssistantStreamingConfig(True,(replace(record,status="local_experimental"),))
+        self.setup_app([tool_chunks(fixture.SCORE,"score","{}"),final_chunks()],config_override=temporary)
+        names=(fixture.QUERY,fixture.SCORE,fixture.KNOWLEDGE)
+        self.app.extensions["fishery_tool_policy_store"].save({"schema_version":1,
+            "modes":{"analysis":{"selected_tools":[]},"assistant":{"selected_tools":list(names)}}})
+        self.store.set_current(self.reading())
+        bootstrap=self.client.get("/api/assistant/bootstrap").get_json()
+        self.stream_profile=next(p for p in bootstrap["presets"] if p["preset_id"]==PRESET)["streaming_profile"]
+        rows=self.rows(self.send())
+        self.assert_final(rows,2,1)
+        tool=next(s for s in rows[-1]["result"]["activity"]["steps"] if s["kind"]=="tool")
+        self.assertEqual(tool["tool_name"],fixture.SCORE); self.assertTrue(tool["experimental"])
+        self.assertIn("score",json.loads(self.bodies[1]["messages"][-1]["content"]))
+        self.assertEqual(record.status,"candidate")
+
+    def test_trial_config_strict_budget_no_fake_qualification_and_revision(self):
+        from fishery_ai.assistant import AssistantError
+        config = load_assistant_streaming_config()
+        self.assertFalse(config.enabled)
+        self.assertEqual(len(config.releases),6)
+        record=config.releases[0]
+        self.assertEqual(record.status,"local_experimental")
+        self.assertIsNone(record.qualification_id); self.assertIsNone(record.validated_at)
+        for value in (True,False,0,513,256.0,"256",None):
+            with self.assertRaises(AssistantError): replace(record,max_output_tokens=value)
+        with self.assertRaises(AssistantError): replace(record,qualification_id="FAKE")
+        registry=ToolRegistry(self.reader,DiagnosisService(),knowledge=fixture.FakeKnowledgeService())
+        policy=ToolPolicy("assistant",True,NAMES)
+        def resolved(c):
+            return resolve_streaming_profile(c,assistant_profile(PRESET),policy,registry,
+                epoch="fixed",projection=DEFAULT_HISTORY_PROJECTION)
+        one=AssistantStreamingConfig(True,(record,))
+        two=AssistantStreamingConfig(True,(replace(record,max_output_tokens=257),))
+        self.assertNotEqual(resolved(one)["revision"],resolved(two)["revision"])
+        self.assertFalse(resolved(replace(one,enabled=False))["available"])
+
+    def test_three_tools_candidate_other_combinations_and_request_budget_override_blocked(self):
+        self.setup_app([final_chunks()],stored_config=True)
+        for names in ((fixture.QUERY,fixture.SCORE,fixture.KNOWLEDGE),(fixture.QUERY,), (fixture.SCORE,fixture.KNOWLEDGE)):
+            self.app.extensions["fishery_tool_policy_store"].save({"schema_version":1,
+                "modes":{"analysis":{"selected_tools":[]},"assistant":{"selected_tools":list(names)}}})
+            bootstrap=self.client.get("/api/assistant/bootstrap").get_json()
+            state=next(p for p in bootstrap["presets"] if p["preset_id"]==PRESET)["streaming_profile"]
+            self.assertFalse(state["available"])
+            response=self.send(execution_profile_revision=state["revision"])
+            self.assertEqual(response.get_json()["error_code"],"ASSISTANT_STREAMING_NOT_RELEASED")
+        self.assertEqual(self.bodies,[])
+
+    def test_normal_streaming_switch_preserves_same_completed_history_without_protocol(self):
+        self.setup_app([final_chunks()],stored_config=True)
+        adapter=self.factory.return_value
+        history=[{"user":"旧问题","assistant":"旧解释","completed_at":"2026-10-01T00:00:00Z"}]
+        gateway=fixture.RecordingGateway(fixture.final())
+        self.factory.return_value=gateway
+        payload=self.payload(history=history)
+        normal=next(p["execution_profile"] for p in self.bootstrap["presets"] if p["preset_id"]==PRESET)
+        payload["execution_profile_revision"]=normal["revision"]
+        result=self.client.post("/api/assistant/chat",json=payload,headers=self.headers).get_json()["result"]
+        self.assertEqual(result["transport"],"normal")
+        self.factory.return_value=adapter
+        rows=self.rows(self.send(history=history))
+        self.assert_final(rows,1,0)
+        projected=gateway.requests[0].messages[1].content
+        self.assertEqual(self.bodies[0]["messages"][1]["content"],projected)
+        self.assertFalse(any(m["role"]=="tool" for m in self.bodies[0]["messages"]))
+        self.assertEqual(history[0]["assistant"],"旧解释")
+
+    def test_cli_trial_flag_only_explicit_web_start(self):
+        from fishery_ai.__main__ import main
+        with patch("sys.argv",["fishery_ai","web","--assistant-streaming-trial"]), patch("fishery_ai.web.run_web") as run:
+            main()
+        run.assert_called_once_with(port=8765,assistant_streaming_trial=True)
+        with patch("sys.argv",["fishery_ai","web"]), patch("fishery_ai.web.run_web") as run:
+            main()
+        run.assert_called_once_with(port=8765,assistant_streaming_trial=False)
+        from fishery_ai.web import run_web
+        location=NS(env_path=self.root / "fictional-private" / ".env")
+        with patch("fishery_ai.web.private_project_location",return_value=location), \
+             patch("fishery_ai.web.private_manual_location",return_value=location), \
+             patch("fishery_ai.web.CredentialStore"), patch("fishery_ai.web.ProjectEnvWriter"), \
+             patch("fishery_ai.web.create_app") as factory, patch("builtins.print"):
+            run_web(assistant_streaming_trial=True)
+            config=factory.call_args.kwargs["assistant_streaming_config"]
+            self.assertTrue(config.enabled)
+            self.assertEqual(sum(r.status=="local_experimental" for r in config.releases),3)
+            self.assertIs(factory.return_value.run.call_args.kwargs["load_dotenv"],False)
+            run_web()
+            self.assertFalse(factory.call_args.kwargs["assistant_streaming_config"].enabled)

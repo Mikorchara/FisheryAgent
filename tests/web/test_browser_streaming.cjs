@@ -1286,6 +1286,96 @@ function streamingAssistantBootstrap() {
   return bootstrap;
 }
 
+function localTrialAssistantBootstrap() {
+  const bootstrap=assistantBootstrap();
+  bootstrap.presets.forEach((p,index)=>{p.streaming_profile={available:true,mode:'BOUNDED_MULTI_ROUND',
+    max_model_requests:3,release_status:'local_experimental',max_output_tokens:index?512:256,
+    mode_reason:'active',revision:String(index+1).repeat(64)};});
+  return bootstrap;
+}
+
+test('Streaming local trial three presets show independent budgets confirmation and experimental state',async()=>{
+  for(let index=0;index<3;index++) {
+    const bootstrap=localTrialAssistantBootstrap(), page=assistantPage(undefined,bootstrap);
+    await enterAssistant(page);
+    page.element('assistant-preset').value=bootstrap.presets[index].preset_id;
+    await page.element('assistant-preset').dispatch('change');
+    page.element('assistant-confirm-network').checked=true;
+    page.element('assistant-response-mode').value='streaming';
+    await page.element('assistant-response-mode').dispatch('change');
+    assert.equal(page.element('assistant-confirm-network').checked,false);
+    assert.match(page.element('assistant-network-note').textContent,new RegExp(`${index?512:256} output tokens`));
+    assert.match(page.element('assistant-execution-note').textContent,/本地实验.*回答质量待审核/);
+    assert.match(page.element('assistant-transport-note').textContent,/下一条消息：Streaming/);
+    assert.equal(page.element('assistant-network-label').textContent,index===2?'LOCAL MODEL REQUEST':'REAL NETWORK REQUEST');
+    assert.equal(page.calls.some(c=>c.url==='/api/assistant/chat/stream'),false);
+  }
+});
+
+test('Normal Streaming Normal keeps completed pairs and uses only the frozen transport endpoint',async()=>{
+  const page=assistantPage(async(url)=>url==='/api/assistant/chat/stream'
+    ? assistantStreamReply([assistantStreamEvent(1,'start',{max_model_requests:3}),
+        assistantStreamEvent(2,'final',{result:{...streamingAssistantResult(),transport:'streaming'}})])
+    : r2Reply({result:assistantResult({transport:'normal'})}),localTrialAssistantBootstrap());
+  await enterAssistant(page);await sendAssistantQuestion(page,'第一轮');
+  const first=assistantStateJson(page).completedTurns[0];
+  page.element('assistant-response-mode').value='streaming';await page.element('assistant-response-mode').dispatch('change');
+  assert.deepEqual(assistantStateJson(page).completedTurns,[first]);
+  await sendAssistantQuestion(page,'第二轮');
+  assert.match(page.element('assistant-run-summary').textContent,/Streaming/);
+  page.element('assistant-response-mode').value='normal';await page.element('assistant-response-mode').dispatch('change');
+  assert.equal(assistantStateJson(page).completedTurns.length,2);
+  await sendAssistantQuestion(page,'第三轮');
+  assert.match(page.element('assistant-run-summary').textContent,/Normal/);
+  const posts=page.calls.filter(c=>['/api/assistant/chat','/api/assistant/chat/stream'].includes(c.url));
+  assert.deepEqual(posts.map(c=>c.url),['/api/assistant/chat','/api/assistant/chat/stream','/api/assistant/chat']);
+  posts.forEach((c,i)=>{const body=JSON.parse(c.options.body);assert.equal(body.history.length,i);
+    assert.equal('transport' in body,false);assert.equal('max_output_tokens' in body,false);
+    assert.equal(body.history.some(t=>'tool_calls' in t || 'ledger' in t),false);});
+  assert.equal(assistantStateJson(page).completedTurns.length,3);
+});
+
+test('Pending turn cannot switch transport even through synthetic change event',async()=>{
+  let release;const page=assistantPage(async()=>new Promise(resolve=>{release=resolve;}),localTrialAssistantBootstrap());
+  await enterAssistant(page);const pending=sendAssistantQuestion(page);await new Promise(setImmediate);
+  assert.equal(page.element('assistant-response-mode').disabled,true);
+  page.element('assistant-response-mode').value='streaming';await page.element('assistant-response-mode').dispatch('change');
+  assert.equal(page.element('assistant-response-mode').value,'normal');
+  release(r2Reply({result:assistantResult({transport:'normal'})}));await pending;
+  assert.equal(page.calls.filter(c=>c.url==='/api/assistant/chat/stream').length,0);
+  assert.equal(assistantStateJson(page).completedTurns.length,1);
+});
+
+test('Candidate score combination and flag rollback disable Streaming without clearing History',async()=>{
+  const bootstrap=localTrialAssistantBootstrap(), page=assistantPage(undefined,bootstrap);
+  await enterAssistant(page);await sendAssistantQuestion(page);
+  const history=assistantStateJson(page).completedTurns;
+  page.element('assistant-response-mode').value='streaming';
+  bootstrap.presets[0].streaming_profile={...bootstrap.presets[0].streaming_profile,
+    available:false,release_status:'candidate',mode_reason:'candidate'};
+  await vm.runInContext('loadAssistantBootstrap()',page.context);
+  assert.equal(page.element('assistant-response-mode').value,'normal');
+  assert.equal(page.element('assistant-confirm-network').checked,false);
+  assert.match(page.element('assistant-transport-note').textContent,/精确两工具组合/);
+  assert.deepEqual(assistantStateJson(page).completedTurns,history);
+  bootstrap.presets[0].streaming_profile.mode_reason='flag_disabled';
+  await vm.runInContext('loadAssistantBootstrap()',page.context);
+  assert.match(page.element('assistant-transport-note').textContent,/试用未启用/);
+});
+
+test('Invalid trial budget or terminal transport mismatch cannot commit success',async()=>{
+  for(const value of [true,0,513,256.5,'256']) {
+    const bootstrap=localTrialAssistantBootstrap();bootstrap.presets[0].streaming_profile.max_output_tokens=value;
+    const page=assistantPage(undefined,bootstrap);await enterAssistant(page);
+    assert.equal(assistantStateJson(page).epoch,null);
+  }
+  const page=assistantPage(async()=>assistantStreamReply([assistantStreamEvent(1,'start',{max_model_requests:3}),
+    assistantStreamEvent(2,'final',{result:{...streamingAssistantResult(),transport:'normal'}})]),localTrialAssistantBootstrap());
+  await enterAssistant(page);page.element('assistant-response-mode').value='streaming';await sendAssistantQuestion(page);
+  assert.equal(assistantStateJson(page).completedTurns.length,0);
+  assert.match(page.element('assistant-notice').textContent,/STREAM_PROTOCOL_ERROR/);
+});
+
 function assistantStreamReply(events, observe=()=>{}) {
   const response=sseResponse(events.map(row=>['assistant',row]),23);
   response.headers={get:()=> 'text/event-stream; charset=utf-8'};

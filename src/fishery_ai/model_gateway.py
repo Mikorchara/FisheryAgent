@@ -272,6 +272,8 @@ class RuntimeSnapshot:
     preset_contract_version: str | None = None
     preset_response_modes: tuple[str, ...] = ()
     preset_protocol_spec: ProtocolSpec | None = field(default=None, repr=False)
+    # Internal transport cost ceiling; not a Profile field or capability grant.
+    transport_output_token_limit: int | None = field(default=None, repr=False)
 
     @property
     def protocol_spec(self):

@@ -21,7 +21,7 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from .contracts import Usage, UsageSource
 from .model_gateway import (GatewayError, ModelEvent, ModelRequest, ModelResponse, ModelToolCall,
                             RetryableGatewayError, StreamingModelError, RuntimeSnapshot, effective_options, validate_tool_request)
-from .model_options import (OptionValidationError, ReasoningMode,
+from .model_options import (GenerationOptions, OptionValidationError, ReasoningMode,
                             Support, validate_options)
 from .providers import AuthSpec
 from .execution import current_handle, RequestHandle
@@ -683,6 +683,18 @@ class OpenAICompatibleAdapter:
         try:
             kwargs.update(runtime.protocol_spec.encode(generation, reasoning, streaming=stream,
                 include_usage=runtime.capabilities.streaming_usage == Support.SUPPORTED))
+            limit = runtime.transport_output_token_limit
+            if limit is not None:
+                if (not stream or not _assemble_tools or runtime.max_retries != 0
+                        or type(limit) is not int or not 1 <= limit <= 512):
+                    raise GatewayError("INVALID_STREAMING_OUTPUT_BUDGET")
+                # Approved cost ceiling, encoded by ProtocolSpec, not Capability evidence.
+                encoded = runtime.protocol_spec.encode(GenerationOptions(max_output_tokens=limit),
+                    reasoning, streaming=stream, include_usage=False)
+                token_field = runtime.protocol_spec.max_output_tokens_field
+                if not token_field or encoded.get(token_field) != limit:
+                    raise GatewayError("STREAMING_OUTPUT_BUDGET_UNAVAILABLE")
+                kwargs[token_field] = min(kwargs.get(token_field, limit), limit)
         except ProtocolEncodingError as exc:
             raise GatewayError("OPTION_UNSUPPORTED", option=exc.option) from exc
         return kwargs
