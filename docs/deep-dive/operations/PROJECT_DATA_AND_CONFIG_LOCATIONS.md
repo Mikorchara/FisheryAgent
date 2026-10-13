@@ -11,6 +11,7 @@
 | Detection Mock | 固定 normal / count_jump DetectionEvent fixture；没有 Detection Simulator | `src/fishery_ai/resources/scenarios/detection/*.json` | 是 | 否 | 对应演示/测试需要 | 源码 fixture，不应删除 |
 | Knowledge / RAG | TF-IDF 实现与鳗鱼知识条目 | `src/fishery_ai/knowledge.py`；`src/fishery_ai/resources/knowledge/eel_knowledge.json`、`SOURCE.md` | 是 | 否 | Analysis 需要 | 不应删除；没有自动恢复完整权威来源 |
 | Preset 合同 | 精确身份、Capability、Variants、默认值、维护记录 | `src/fishery_ai/resources/profiles/presets.json`；加载器 `presets.py` | 是 | 否 | Preset / Assistant 需要 | 不应删除；发布合同 |
+| Assistant 多轮发布配置 | 启动冻结的 Flag、candidate / released 精确范围与资格依据；不是用户 Policy | `src/fishery_ai/resources/profiles/assistant_execution.json`；`assistant_execution.py` | 随代码纳入 Git | 否；不含 Key | Web 启动需要 | 不应删除；默认关闭，可关 Flag 后重启回滚 |
 | Provider 与 ProtocolSpec | Provider/Auth 元数据和请求参数编码 | `src/fishery_ai/providers.py`、`src/fishery_ai/protocol_specs.py` | 是 | 否 | 正式模型请求需要 | 不应删除 |
 | Managed / 实验连接模板 | 包内开发连接 profile；不是发布 Preset | `src/fishery_ai/resources/profiles/{qwen_experimental,deepseek_experimental,ollama_qwen35_local}.json` | 是 | 否 | 对应开发连接使用时需要 | 源码资源，不应删除 |
 | 用户 Managed Custom Profile | 用户连接参数、`credential_ref` 和 Runtime 偏好 | `outputs/custom_profiles/custom-*.json` | 否（Git 忽略） | 否；不含真实 Key | 选择用户连接时需要 | 删除会丢失 Profile / 偏好，先备份 |

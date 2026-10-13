@@ -41,7 +41,7 @@ Analysis 可显式授权只读 Tool。授权后请求仍先携带开始时捕获
 
 有效工具集合由静态 Registry、对应模式的 Policy、可执行 Handler 和 Runtime 能力共同约束。当前工具为 `get_current_water_quality`、`score_current_water_quality`、`search_fishery_knowledge`；Knowledge 在注入共享 KnowledgeService 后绑定。Assistant 包内默认只开放查询，Knowledge 必须显式选择；用户 override 不因新注册自动重写。即使三个工具同时开放，模型每轮仍只能选一个。
 
-固定预算：最多 1 个 Tool Call、1 个 Tool round、2 次模型请求。第二次请求使用 `tool_choice=none`；第二轮继续请求 Tool 会被拒绝。没有循环规划，不是 Agent。
+默认预算：最多 1 个 Tool Call、1 个 Tool round、2 次模型请求。第二次请求使用 `tool_choice=none`；第二轮继续请求 Tool 会被拒绝。Analysis 始终保持这个预算。Assistant 在启动 Flag 和维护者精确 released 范围均满足时才可使用有界 2/2/3；当前配置 Flag 关闭，Qwen 仅为 candidate，实际产品仍使用 1/1/2。没有自主 Agent 或无限循环。
 
 当前选择规则：当前水质数值/状态/告警使用查询 Tool；当前系统评分使用实验评分 Tool；同一轮不得同时调用。普通概念题可直接答；历史值的解释可基于历史回答，但“现在还……”必须重新查询。Tool 不可用时不能拿旧值冒充当前事实，也不能伪造系统评分。
 
@@ -78,7 +78,7 @@ NO_DATA 不授予观测或评分来源；ERROR、未调用、关联不符或畸�
 
 History Projection、SourceRequirement / Receipt / Commit Gate、单调用单 round 两请求预算、Policy / Executor、Capability / Credential / Adapter 和 Web 合同均不变。普通 Web 仍为 AUTO；Prompt 不构成来源认证或正文真实性校验。Registry description 为 Analysis 与 Assistant 共用，本次没有改 Analysis 的 Prompt、编排或合同。离线测试检查消息/描述及执行边界，不能据此宣称真实模型选择稳定性已提升。
 
-- Cloud 请求每次 Send 显式确认；Ollama 标记为本地模型请求。一个确认可覆盖首轮与必要的第二轮，本地只读 Handler 不单独确认。
+- Cloud 请求每次 Send 显式确认；Ollama 标记为本地模型请求。Bootstrap 为每个 Preset 返回有效 execution profile（mode、最大请求数、opaque revision），一个确认覆盖该预算内的模型请求，本地只读 Handler 不单独确认。chat 必须回传 revision；Policy / epoch / 配置失配时联网前拒绝，刷新后重新确认，不自动重发。
 - `RequestHandle`、不可变 Runtime / Credential Snapshot、Capability gate、Host / Origin / CSRF 和安全错误沿用 Gateway / Web 现有边界。
 - 停止会结束本机请求 I/O 与会话提交；无法据此证明远端模型计算或计费已停止。
 - Assistant 回答按纯文本安全渲染；只显示轻量 Tool Activity。Development/Test 才显示完整安全 Trace。Secret、Prompt、Credential 路径和原始 Tool JSON 不显示给聊天界面。
@@ -92,19 +92,20 @@ History Projection、SourceRequirement / Receipt / Commit Gate、单调用单 ro
 
 输入附近“本次运行”展开为通用有序列表；最终消息下只显示实际执行 Tool 的轻量摘要，不设固定第二 Tool 槽位。status 的 Completed 不能提交 History；只有最终 chat 响应通过已有来源/完成/取消门禁和 Trace 后才提交一条最终回答。最终 Trace 与终态在同一短提交临界区中串行处理：此前 Stop 优先，已进入最终提交的迟到 Stop 不撤销成功；Trace 失败绝不提前发布 Completed。Clear、模型切换、epoch 和成功文本 pair 的 History 合同不变。
 
-AssistantService 默认仍拒绝多轮协调器。内部调用必须在协调器与 AssistantService 同时显式选择 `ToolExecutionMode.BOUNDED_MULTI_ROUND`，才能使用固定 2/2/3；Web 不能指定 mode、预算、Prompt 或 deadline，正式 Assistant / Analysis 保持 1/1/2。
+AssistantService 默认仍拒绝多轮协调器。协调器与 AssistantService 必须同时显式选择 `ToolExecutionMode.BOUNDED_MULTI_ROUND`，才能使用固定 2/2/3。Web 服务端从启动冻结的 `assistant_execution.json` 决定模式：Flag ∩ released 精确范围 ∩ 当前实际授权 Tool 集合；不能由浏览器指定 mode、预算、Prompt 或 deadline。范围绑定 exact identity、Preset contract、ProtocolSpec、Prompt、History 版本与 Tool Definition 指纹。当前 Qwen candidate 不授予多轮运行资格，其他 Preset 不继承。
 
 内部多轮使用独立版本 `ASSISTANT_BOUNDED_MULTI_ROUND@1`，保留原 Assistant v2 的来源、安全和纯文本原则，仅把“Tool 后直接回答”改为“根据实际结果继续判断或提前 Final”。History 仍先完整 pair 裁剪，再应用原有投影，最终只提交成功 user/final assistant 文本对。
 
 内部整 Turn deadline 从 `send` 开始，覆盖上下文、模型请求、Tool、门禁与 Trace。上限为冻结 Runtime 的 `total_timeout_s`，内部 `turn_timeout_s` 只能收紧；同一 RequestHandle 不续期。Adapter 使用剩余时间真正取消本机异步 SDK I/O，`TOTAL_TIMEOUT` 与 `USER_CANCELLED`、Provider 错误分开；清理 I/O 不制造用户 Stop。同步本地 Handler/文件写入无法强制抢占，返回后仍检查超时，不能提交成功；SDK 清理有有限宽限，不证明远端已停止计算。
 
-若同步 Assistant Trace 写入跨越 deadline，追加同 request/trace id 的失败终态修正；最后一条 `assistant_turn` 是提交结果，先前执行 Trace 只记录执行阶段。多轮正式发布范围、启动 flag/epoch 与联网预算确认、正式 Prompt 真实资格仍待后续阶段；本阶段未启用 Web 多轮或 Streaming。
+若同步 Assistant Trace 写入跨越 deadline，追加同 request/trace id 的失败终态修正；最后一条 `assistant_turn` 是提交结果，先前执行 Trace 只记录执行阶段。Web 连接和安全门禁已通过离线测试，正式多轮 Prompt + History 的真实资格与维护者发布仍待单独批准。Flag 和范围在 app epoch 内固定，关闭 Flag 并重启会生成新 epoch；不在进行中的 Turn 切换或失败后回退重试。当前没有发布多轮，也没有 Streaming Tool Calling。
 
 ## 主要代码
 
 - `src/fishery_ai/application.py`：固定 Analysis 与可选 Analysis Tool 接入。
 - `src/fishery_ai/assistant.py`：Assistant Preset 白名单、历史投影、最终回答提交门禁。
 - `src/fishery_ai/assistant_activity.py`：正式 Assistant 累积进度与最终 Activity 的字段 allowlist。
+- `src/fishery_ai/assistant_execution.py`：维护者固定发布范围与 Web 确认 revision；不依赖资格开发子包。
 - `src/fishery_ai/history_projection.py`：完整 pair 裁剪后的正式 B 投影与内部 A 回滚。
 - `src/fishery_ai/assistant_sources.py`：本轮操作要求、有限 Receipt 与纯确定性满足关系。
 - `src/fishery_ai/tool_conversation.py`：共享有界协调器，正式产品仍使用单轮预算。

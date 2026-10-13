@@ -1,12 +1,12 @@
 # Assistant 有界多轮接入与交互设计
 
-状态：2026-10-12，阶段 A 与 Phase 4B-1 内部 Assistant 后端已实施；Web 多轮发布及后续资格仍待审核。默认产品仍为 **1 Tool / 1 round / 2 requests**；**2/2/3 仅限内部显式调用**。
+状态：2026-10-13，Phase 4A、4B-1 与 4B-2 Web 接入已实施并离线验证；Phase 4C 正式 Prompt / History 单案例资格入口已准备，**REAL PROVIDER RESULTS: NOT RUN**。默认产品仍为 **1 Tool / 1 round / 2 requests**。Web 能按精确发布范围选择 **2/2/3**，但包内 Flag 关闭且 Qwen 仍为 candidate，未批准真实多轮发布。
 
 依据当前 `assistant.py`、`tool_conversation.py`、`assistant_sources.py`、`execution.py`、`web.py`、`observability.py`、`resources/web/app.js` 及对应测试。[内部 Runtime](../tools/READ_ONLY_TOOL_CALLING.md)、[当前 Assistant 架构](../architecture/ASSISTANT_MODEL_V1_DESIGN.md)提供现有合同，本文件不替代它们。
 
 ## 1. 当前缺口与资格证据边界
 
-下表保留设计时识别的缺口；阶段 A 收口见 §7，内部后端收口见 §8。其余缺口仍需在 Web 多轮启用前解决。
+下表是接入前的设计基线，非当前缺陷清单；阶段 A 收口见 §7，内部后端收口见 §8，Web 门禁与确认收口见 §9。当前待解决的是正式 Prompt / History 的真实资格与维护者发布审批。
 
 | 当前实现 | 接入缺口 |
 | --- | --- |
@@ -69,7 +69,7 @@ Request #1 → Final 或 Tool A
 
 建议 bootstrap 为每个 Preset 返回有效模式、预算及非敏感 `execution_profile_revision`；确认文案从其 max requests 生成。chat 只增加该 revision 的一致性检查，不接受客户端要求的预算/模式。若另一标签页改变 Policy 或发布配置使预算变化，在联网前拒绝、刷新计划并重新确认，不能在“最多两次”的旧确认下发送第三次请求。
 
-单轮旧客户端可继续省略 revision 并保持旧合同；多轮必须携带匹配的 revision，否则联网前拒绝。不能因客户端省略该字段自动放宽到三次请求。
+实施选择：单轮与多轮统一要求匹配的 revision，旧页面缺少 revision 也会联网前拒绝并要求刷新重新确认；不保留绕过确认的一套旧 Web 合同。Assistant 后端内部调用仍保持原合同。不能因客户端省略该字段自动放宽到三次请求。
 
 status / 最终 result 共用同一安全投影器，推荐结构：
 
@@ -152,7 +152,7 @@ Assistant：仅最终成功后出现一条自然语言正文。
 
 实现阶段先 targeted，稳定后 FULL PRODUCT + Browser，qualification 合同变更时加离线 FULL QUALIFICATION；语法、链接、diff 与敏感检查。人工验收只在单独授权后使用正式 multi Prompt 和实际预算确认，核对一个 Turn 一条回答、即时 Stop、每个 Tool 时间/状态与真实日志一致。
 
-阶段 A 和内部后端接入已完成，Web 多轮门禁仍关闭。不能仅凭这两个实验样本直接开放多轮；正式多轮 Prompt 资格与维护者发布范围仍需审核。本阶段未执行真实请求。
+Web 发布门禁现已接入但默认关闭。不能仅凭这两个实验样本直接开放多轮；正式多轮 Prompt 资格与维护者发布范围仍需审核。本阶段未执行真实请求。
 
 ## 7. 阶段 A 实施结果
 
@@ -191,4 +191,106 @@ result = service.send(request, frozen_runtime)
 
 离线验证：新增 20 项内部 Assistant 测试与 5 项执行安全测试；主要 targeted 83 项通过，Assistant 分组 140 项、Tool 分组 268 项通过；FAST 149 项通过；FULL PRODUCT 926 项通过（32.6 秒）；FULL QUALIFICATION 116 项完成（115 通过、1 项既有目录 symlink 环境条件跳过）；Browser 196 项通过。覆盖 direct Final、Tool 后提前 Final、完整两轮及真实结果传递、独立 Ledger、单次最终提交、History、去重/轮次限制、Provider/Tool/Trace 错误、取消和 deadline。147 个 Python 文件 AST、JS 语法、286 条 Markdown 本地文件链接、diff 与改动文本敏感模式检查通过；核对原单轮 System Prompt 与 HEAD 文本完全一致。未执行真实 Provider，未 commit/push。
 
-剩余产品集成：维护者发布的 exact Preset/contract/工具组合多轮范围；正式多轮 Prompt+History 的单独真实 qualification；稳定于 epoch 的启动 flag 与 rollback；bootstrap/联网确认最多三次请求的预算及 revision 绑定。现有 UI 已能展示通用五步，但上述授权与预算尚未接入，因此 Web 继续 1/1/2。本阶段不自动扩大 Qwen/DeepSeek/Ollama 的发布能力。
+4B-1 完成时的剩余集成项：exact 发布范围、正式 Prompt+History 的真实资格、启动 flag/epoch、联网确认 revision。4B-2 已接入后三项的运行门禁与预算确认，真实资格和正式发布仍未批准，见下节；不扩大 Qwen/DeepSeek/Ollama 的已发布能力。
+
+## 9. Phase 4B-2 Web 接入记录
+
+### 发布范围与有效执行模式
+
+新增产品模块 `assistant_execution.py`，只负责启动配置、精确范围匹配和确认 revision，没有 Tool Loop 或 qualification 开发依赖。固定资源 `resources/profiles/assistant_execution.json` 在 `create_app` 时加载为不可变配置，同一 epoch 不热切换。内部构造参数可注入类型明确的配置用于离线测试，浏览器不能配置路径、Flag、mode、budget、deadline 或 Prompt。
+
+配置当前只有 `qwen38-water-knowledge-multi-v1` **candidate**，`multi_round_enabled=false`。它绑定：
+
+- Qwen Preset `dashscope-qwen38-flash-r1`，OFF Variant，contract `1.0.2`；exact identity 为 dashscope / openai_chat / `https://dashscope.aliyuncs.com/compatible-mode/v1` / `qwen3.8-flash`。
+- 完整 ProtocolSpec（含 id/version/编码字段）、`ASSISTANT_BOUNDED_MULTI_ROUND@1` 及指令指纹、History 投影 id/version。
+- 实际可执行的 Tool definitions **精确集合**：查询 + Knowledge，以及名称、description、Schema 的整体指纹。多选评分、少选一个或改了 Schema 都不匹配；不为匹配范围自动修改 Policy。
+- released 必须显式具有资格记录 id 和带时区的验证时间。这是维护者审批记录，不是运行时自动读取 Evidence 或实验结果。
+
+只有 Flag 开启且全部 scope 与 **released** 记录相等，才构造同一个 `ToolCallingService` / `AssistantService` 的 2/2/3 模式。未匹配范围继续显示并执行 1/1/2；损坏配置启动时安全失败。当前真实配置没有任何 released 多轮范围，`presets.json` 和原 Tool capability 合同未改。
+
+### Bootstrap、确认与冻结
+
+每个 bootstrap Preset 增加 `execution_profile={mode,max_model_requests,revision}`；不公开完整发布 scope、Prompt 或连接细节。revision 绑定 epoch、启动配置、精确 scope、当前 Assistant Policy、实际 System 与 Runtime 偏好/超时。chat 回传确认 revision；缺失/失配为 `ASSISTANT_EXECUTION_PROFILE_CHANGED`，epoch 失配仍为 `ASSISTANT_SESSION_EXPIRED`，两者都在凭据解析和 Gateway I/O 前拒绝。
+
+前端确认文案根据选中 Preset 显示最多两次或三次请求。成功保存/恢复 Tool Policy 后刷新 bootstrap、清除旧勾选；其他标签页改变 Policy 时服务端拒绝旧确认，UI 刷新预算并保留输入/成功历史，要求重新确认，不自动 resend。应用重启沿用原 epoch 清理语义。已接受的 Turn 使用同一冻结 Runtime、CredentialSnapshot、Policy、Executor 和 RequestHandle，后续 Policy 修改只影响下一 Turn。
+
+### 执行与通用 UI
+
+没有改执行循环、Prompt、Handler、Source Contract 或 Analysis。Web 使用已有整 Turn deadline、Ledger、Commit Gate 和 safe Activity；status 与最终结果投影同一组 steps。完整两轮只产生 Model #1 → Tool A → Model #2 → Tool B → Model #3 五步；提前 Final 只展示实际步骤。一轮只提交一条最终回答及一个成功文本 pair；失败/取消/超时/Trace 失败不提交。多结果不能套用单 Tool 兼容槽位，现有 UI 已读取通用数组。
+
+离线 Web fixture 通过实际 Flask `/api/assistant/chat` 发起双 Tool Turn，使用临时 Store、虚构 Credential 和 Scripted Gateway；核对 Result A 进入 Request #2、两项结果进入 Request #3、末轮 `none`、五步累积状态及冻结 Runtime。Browser 再把这些真实安全 HTTP 结果/轮询快照送入原 UI，验证 Request #3、两个 Tool 和单次最终 History 提交。不是仅用手写的未来 UI fixture，也不是真实模型资格证据。
+
+### 下一阶段资格与手动启用
+
+1. 先单独批准有限真实 Qwen qualification，覆盖候选 scope 的**正式多轮 Prompt、正式 History Projection、实际两 Tool 定义**，至少验证低氧两 Tool、正常提前 Final、知识概念直接 Final；若要发布带 History 的范围，需补相应当前追问/历史解释样本。保留真实步骤、Ledger/Usage、预算、取消与 safe report；不把 scripted 结果当真实资格。
+2. 不带 `--assistant-product` 的 `scripts/qualification/qualify_multi_round.py` 保留独立实验指令，两个既有 smoke 只能作参考，不能据此发布当前正式 Prompt。4B-2 当时未修改 Harness；4C 已复用同一入口加入正式 product-scope qualification，见 §10。均未执行新的真实请求。
+3. 资格通过且维护者明确批准后，核对冻结 scope 与验证配置完全一致，填写 `qualification_id` / `validated_at`，将 candidate 改为 released，再将 `multi_round_enabled` 改为 true；完整重启 Web。在既有 Assistant Tool Manager 手动选择查询+Knowledge，bootstrap 应显示最多三次请求，再重新勾选确认。无需修改 Preset capability 或 Credential，不自动更改用户 Policy。
+4. 回滚只需设 Flag=false 并完整重启；新 epoch 使旧 Session/确认失效，页面回到两请求预算。失败不自动切回单轮、不补跑、不 failover。关闭 Flag 后可保留 released 维护记录。
+
+离线验证：相关 Python targeted **195 项通过**（新增发布/确认/Web 集成测试 18 项）；FAST **149 项通过**；FULL PRODUCT **944 项通过**（34.8 秒）；FULL QUALIFICATION **116 项完成**（115 通过、1 项既有目录 symlink 环境条件跳过）；Browser **201 项通过**（新增 5 项，含实际 Flask 双 Tool response/status → 原 UI 的离线端到端验证）。覆盖启动冻结/回滚、candidate 不发布、精确范围/版本/Schema 失配、Policy 修改与重新确认、未经授权 Tool/并行 calls/第四次请求拒绝、每次 Request Stop、整 Turn timeout、Trace 失败以及单轮/Analysis/History 回归。149 个 Python 文件 AST、JS 语法、288 条 Markdown 本地文件链接、diff 与 14 个改动文本路径敏感模式检查通过；Git 未跟踪凭据或 outputs。未运行真实 Provider，未改正式 Preset 合同或用户 Policy，未 commit/push。
+
+## 10. Phase 4C 正式 Assistant 资格准备
+
+**REAL PROVIDER RESULTS: NOT RUN。** 只准备 Qwen 3.8 Flash / OFF / Normal / 查询+Knowledge 的逐案例取证，不发布候选范围。
+
+### 最小复用与安全边界
+
+同一 `scripts/qualification/qualify_multi_round.py` 新增 `--assistant-product` 模式；开发实现仍在 `multi_round_qualification.py`。没有新 runner、manifest 矩阵或执行循环。旧实验默认路径和报告版本保留，新版本为 `assistant-product-multi-round@1`，不能将旧 smoke 混作正式 Prompt 证据。
+
+正式模式直接构造 `AssistantRequest` → `AssistantService(BOUNDED_MULTI_ROUND)` → 原 `ToolCallingService` / Registry / Executor：使用未修改的 `ASSISTANT_BOUNDED_MULTI_ROUND@1`、原完整 pair 裁剪和 `UNTRUSTED_TRANSCRIPT_V1@1`。每次发送前核对 System 精确文本；每个案例检查当前 Qwen maintainer scope（Identity、contract、完整 ProtocolSpec、Prompt / History 版本及两 Tool 定义指纹）。失配时停止，不改 Scope 或恢复旧实验指令。
+
+隔离的 Store 每次建立一份合成 Snapshot（温度28℃、pH7.5、DO见下表），固定 query clock，不读取 Web Snapshot、Scenario 或用户历史。历史都是固定合成文本。局部 `ToolPolicy` 只授权两 Tool，不读取/修改用户 Policy；资格内部显式 2/2/3 不通过 Web，因此不绕过或修改 Web candidate 门禁。正式 Credential composition、冻结 Runtime / CredentialSnapshot、retry=0、单一 RequestHandle、整 Turn deadline、Ledger、提交与 Trace 合同全部复用。
+
+### 案例、标准与预算
+
+建议每次只批准表中 **1 个 case × 1 run**，取到报告后停止审阅，再批准下一项。六项均批准时理论上限18模型请求、每请求最多256输出 tokens；预期路径合计11请求。没有本轮真实授权，也没有自动批次或补跑。
+
+| 建议顺序 / case | 合成场景与问题 | 预期实际 Tool 顺序 / 请求数 | 确定性来源标准 |
+| --- | --- | --- | --- |
+| 1 `low-oxygen` | DO2.2；“请查询当前水质，若有异常再检索相关项目知识，最后简短说明。” | 查询→模型看到异常后选择Knowledge→Final / 3 | 当前查询完成 + 项目搜索完成 |
+| 2 `normal` | DO6.4；与低氧相同问题 | 查询→在 `auto` 下提前Final / 2 | 当前查询完成；不得为对称而预执行Knowledge |
+| 3 `current-do` | DO6.4；“现在溶氧是多少？请查询后直接简短回答，不需要检索知识。” | 查询→Final / 2 | 当前查询完成 |
+| 4 `concept` | “什么是溶氧？请用一两句话解释这个概念，不需要当前现场数据。” | 无Tool直接Final / 1 | AUTO；无本轮Receipt也可成功 |
+| 5 `history-current` | 旧DO2.2→旧NO_DATA；新Snapshot为DO6.4；“那现在溶氧是多少？…” | 本轮重新查询→Final / 2 | 新查询Receipt；历史文字不能产生来源 |
+| 6 `history-explanation` | 旧DO2.2；“刚才2.2 mg/L是什么意思？请解释旧值，不需要当前现场数据。” | 无Tool直接Final / 1 | AUTO；允许历史解释，记录不必要查询为路径失配 |
+
+**每个案例的真实 Runtime cap 都是 2 calls / 2 rounds / 3 requests**，不会按预期1/2请求提前把 `tool_choice` 改为 none，也不会为概念题强行屏蔽 Tool 执行。不必要 Tool 或未提前 Final 是实际观测结果，判为该案例路径不符合，不自动纠正或重试。首轮没有 Tool 也不补发；一轮多个调用、未授权评分、非法参数、重复查询、第三个 Tool/第四次请求仍按硬合同拒绝。
+
+技术检查需要：精确 Identity / returned model 一致、Provider 原始与 normalized 调用/元数据一致、Tool 权限与参数合法、实际结果带同 call id 进入下一请求、预期 Tool 顺序、完整最终 stop 正文、Ledger 来源要求、Product Commit Gate / Trace / deadline / Cancellation 都通过。每次实际执行保留独立 Receipt 和时间，不合并水质与知识为一个当前现场事实。
+
+资格 scripted request 使用既有内部 SourceRequirement 检查当前查询或 AUTO，低氧另外通过同一 Ledger 满足函数检查 Knowledge 操作；这没有改变普通 Web 的 AUTO 或新增自然语言路由。`product_commit_gate_passed` 与资格技术 verdict 分开：例如低氧查询后直接 Final 可通过查询 Gate，但仍因缺少项目搜索而不符合本案例。NO_MATCH 证明搜索完成，不认证证据命中；NO_DATA 同样不认证有效观测。技术步骤通过不等于回答真实、相关或安全。
+
+### 安全报告与人工质量检查
+
+JSON 固定写到 `outputs/assistant-qualification/<run_id>.json`，独占创建、不覆盖旧报告。记录 case/plan hash、精确 scope、实际 Request/tool_choice、Provider/normalized 安全摘要、Steps、实际执行与 Result 状态/传递布尔、Ledger、Requirements、Usage、请求/attempt数量、最终 finish 和安全错误。记录 History 收到/保留/裁剪数量，不记录历史原文；不保存回答正文、System、query、Tool payload、Credential、Authorization 或私有路径。
+
+`success/technical_success=true` 只代表技术标准通过，仍为 `qualification_verdict=PENDING_MANUAL_REVIEW`、`release_eligible=false`。离线注入明确标记 `offline_fixture`、actual_network_requests=0，不作为 Provider 证据。真实错误/未查询/错误 Tool/路径不符/截断都保留为结果，不补跑。
+
+可选 `--review-answer` 仅在终端 stderr 预览 Assistant Gate 后的完整最终正文：复用 Assistant Secret 脱敏，过滤终端控制字符，JSON stdout 与安全文件没有正文。预览标记 PREVIEWED_NOT_APPROVED；不自动判断语言质量或发布。不要开启 PowerShell transcript、重定向该预览或截图记录秘密。失败/取消/截断不预览部分正文；报告中的 `final_answer_present` 不代替人工检查。
+
+人工核对：
+
+- 低氧按本轮DO2.2与确定性状态回答，项目知识只作背景，不能据此诊断现场疾病或给出药物/剂量；检索未命中时诚实说明。
+- 正常和单DO查询没有多余检索，正确说明当前查询不等于新采样。
+- 当前追问使用新DO6.4，不能复用旧2.2或旧NO_DATA；历史解释明确旧值，不伪称本轮已查询。
+- 概念直答不编造“已查询/检索/评分”；最终正文简洁纯文本，无 Raw JSON、Prompt、工具内部指令或敏感信息。
+
+只有对应真实报告技术通过 **且** 用户完成质量/安全审阅，才可讨论该精确范围的 maintainer 发布。一次/案例是有限 smoke，不证明长期可靠性；长History、评分、多Provider、Thinking ON、Streaming不获资格。
+
+### 手动 PowerShell 命令
+
+在项目根目录使用已安装项目的 venv。先只 dry-run；`--case` 可选择表中六项，每个进程只处理一个：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/qualification/qualify_multi_round.py --assistant-product --case low-oxygen --dry-run
+```
+
+**以下只在用户明确批准该 case 一次真实 run 后使用**；其他 case 须分别批准、分别替换 case，不能粘成批次：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/qualification/qualify_multi_round.py --assistant-product --case low-oxygen --confirm-network --review-answer
+```
+
+默认每请求256 tokens，可通过 `--max-output-tokens` 收紧，不能超过256。核对 dry-run 的 case、plan_sha256、scope 后再确认；代码/计划变动必须重新审阅授权。遇到凭据文件错误立即停止：保留0-request报告，不改ACL、不复制Key、不读源码 `.env`，由用户正常PowerShell处理正式Credential路径。任何真实结果产生后停止，不自动启动下一项、重试或 failover。
+
+准备阶段离线验证：相关 targeted **137 项通过**；FAST **149 项通过**；FULL QUALIFICATION **134 项完成**（133 通过，1 项既有目录 symlink 环境条件跳过）。本入口保留原 23 项测试，新增 18 项正式产品资格测试；覆盖正式 Prompt / History parity、结果传递、提前 Final、来源与提交门禁、权限/预算、取消/整 Turn deadline、Trace 失败、脱敏预览及旧实验兼容。149 个 Python 文件 AST、现有 JS 语法、290 条 Markdown 本地文件链接、diff check 和 18 个改动文本路径敏感模式扫描通过；Git 未跟踪凭据或 outputs。实际 CLI dry-run 返回正式 Prompt、精确 Qwen scope、candidate、3 请求上限和0网络请求。本轮没有修改产品/UI执行路径，未重复无关 FULL PRODUCT / Browser；其既有 4B-2 结果见 §9。Web Flag 仍为 false，Qwen仍为 candidate；没有真实Provider请求，没有 commit/push。

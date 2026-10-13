@@ -9,7 +9,10 @@ import logging
 import time
 import uuid
 
-from ...assistant import AssistantError, assistant_profile
+from ...assistant import (AssistantError, AssistantHistoryTurn, AssistantRequest, AssistantService,
+    MULTI_ROUND_PROMPT_ID, MULTI_ROUND_SYSTEM_INSTRUCTION, assistant_profile)
+from ...assistant_execution import load_assistant_execution_config, release_scope
+from ...history_projection import DEFAULT_HISTORY_PROJECTION
 from ...assistant_sources import SourceRequirement, TurnSourceLedger, ledger_from_execution, requirement_satisfied_by_ledger
 from ...contracts import Mode, Status, Usage, WaterQualityReading, utcnow
 from ...credential_paths import CredentialLocationError
@@ -50,6 +53,7 @@ class ExperimentCase:
     expected_tools: tuple[str, ...]
     requirements: tuple[SourceRequirement, ...]
     max_requests: int
+    history: tuple[AssistantHistoryTurn, ...] = field(default=(), repr=False)
 
 
 CASES = (
@@ -65,15 +69,42 @@ CASES = (
 )
 
 
-def get_case(case_id):
-    case = next((item for item in CASES if item.case_id == case_id), None)
+PRODUCT_CASES = (
+    # The effective Runtime budget is exactly the product 2/2/3 for every case;
+    # expected early exits are assertions, not strengthened transport ceilings.
+    *(ExperimentCase(c.case_id, c.question, c.oxygen, c.exposed_tools, c.expected_tools,
+                     c.requirements, 3) for c in CASES),
+    ExperimentCase("history-current", "那现在溶氧是多少？请查询后简短回答，不需要检索知识。", 6.4,
+        (WATER, KNOWLEDGE), (WATER,), (SourceRequirement.CURRENT_OBSERVATION_QUERY,), 3,
+        (AssistantHistoryTurn("现在溶氧是多少？", "刚才查询到溶氧为2.2 mg/L。", "2026-10-01T01:00:00Z"),
+         AssistantHistoryTurn("后来水质怎么样？", "刚才查询过当前水质，但没有数据，NO_DATA。", "2026-10-01T02:00:00Z"))),
+    ExperimentCase("history-explanation", "刚才2.2 mg/L是什么意思？请解释旧值，不需要当前现场数据。", 6.4,
+        (WATER, KNOWLEDGE), (), (SourceRequirement.AUTO,), 3,
+        (AssistantHistoryTurn("现在溶氧是多少？", "刚才查询到溶氧为2.2 mg/L。", "2026-10-01T01:00:00Z"),)),
+)
+
+
+def get_case(case_id, *, assistant_product=False):
+    case = next((item for item in (PRODUCT_CASES if assistant_product else CASES) if item.case_id == case_id), None)
     if case is None:
         raise QualificationError("INVALID_MULTI_ROUND_CASE")
     return case
 
 
-def plan(case_id, preset_id=DEFAULT_PRESET, max_output_tokens=256):
-    case = get_case(case_id)
+def _product_scope(profile, registry):
+    """Validate the maintainer candidate, without enabling/releasing anything."""
+    policy = ToolPolicy("assistant", True, (WATER, KNOWLEDGE))
+    scope = release_scope(profile, policy, registry, DEFAULT_HISTORY_PROJECTION)
+    records = [r for r in load_assistant_execution_config().releases if json.loads(r.scope_json) == scope]
+    if len(records) != 1:
+        raise QualificationError("QUALIFICATION_RELEASE_SCOPE_MISMATCH")
+    return scope, records[0]
+
+
+def plan(case_id, preset_id=DEFAULT_PRESET, max_output_tokens=256, *, assistant_product=False):
+    if type(assistant_product) is not bool or assistant_product and preset_id != DEFAULT_PRESET:
+        raise QualificationError("QUALIFICATION_IDENTITY_MISMATCH")
+    case = get_case(case_id, assistant_product=assistant_product)
     if type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 256:
         raise QualificationError("INVALID_MULTI_ROUND_TOKEN_BUDGET")
     try:
@@ -98,6 +129,16 @@ def plan(case_id, preset_id=DEFAULT_PRESET, max_output_tokens=256):
         "requirements": [item.value for item in case.requirements],
         "instruction_sha256": hashlib.sha256(EXPERIMENT_INSTRUCTION.encode()).hexdigest(),
         "question_sha256": hashlib.sha256(case.question.encode()).hexdigest()}
+    if assistant_product:
+        scope, record = _product_scope(profile, _isolated_registry(case, utcnow()))
+        result.update(experiment_version="assistant-product-multi-round@1", prompt_id=MULTI_ROUND_PROMPT_ID,
+            instruction_sha256=hashlib.sha256(MULTI_ROUND_SYSTEM_INSTRUCTION.encode()).hexdigest(),
+            release_scope=scope, release_id=record.release_id, release_status=record.status,
+            history="SYNTHETIC" if case.history else "EMPTY", history_turns=len(case.history),
+            history_sha256=hashlib.sha256(json.dumps([asdict(turn) for turn in case.history],
+                sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
+            expected_requests=len(case.expected_tools) + 1,
+            human_review_required=True, release_eligible=False)
     result["plan_sha256"] = hashlib.sha256(json.dumps(result, sort_keys=True).encode()).hexdigest()
     return result
 
@@ -114,15 +155,17 @@ def _isolated_registry(case, now):
 def _code(code):
     if code in {"TOOL_REQUEST_ALREADY_EXECUTED", "TOOL_CALL_ALREADY_EXECUTED", "MODEL_RESPONSE_TRUNCATED",
         "MODEL_RESPONSE_EMPTY", "MODEL_RESPONSE_INCOMPLETE", "MODEL_TOOL_CALL_INCOMPLETE",
-        "QUALIFICATION_PATH_MISMATCH", "QUALIFICATION_RESULT_CONTEXT_MISMATCH"}:
+        "QUALIFICATION_PATH_MISMATCH", "QUALIFICATION_RESULT_CONTEXT_MISMATCH",
+        "QUALIFICATION_RELEASE_SCOPE_MISMATCH", "QUALIFICATION_PRODUCT_PROMPT_MISMATCH"}:
         return code
     return safe_code(code)
 
 
 class _ExperimentGateway:
     """Observe without retaining response text/arguments; impose the case ceiling."""
-    def __init__(self, gateway, runtime, registry, case):
+    def __init__(self, gateway, runtime, registry, case, *, assistant_product=False):
         self.gateway, self.runtime, self.registry, self.case = gateway, runtime, registry, case
+        self.assistant_product = assistant_product
         self.rows = []
         self.contexts = []  # Transient tool protocol data, never serialized.
 
@@ -133,6 +176,9 @@ class _ExperimentGateway:
         if (runtime is not self.runtime or runtime.max_retries != 0
                 or tuple(tool.name for tool in request.tools) != self.case.exposed_tools):
             raise GatewayError("QUALIFICATION_IDENTITY_MISMATCH")
+        if self.assistant_product and (request.messages[0].role != "system"
+                or request.messages[0].content != MULTI_ROUND_SYSTEM_INSTRUCTION):
+            raise GatewayError("QUALIFICATION_PRODUCT_PROMPT_MISMATCH")
         row = {"request_number": len(self.rows) + 1, "tool_definitions": list(self.case.exposed_tools),
             "tool_choice": request.tool_choice, "outcome": "started", "error_code": None}
         self.rows.append(row)
@@ -168,10 +214,10 @@ class _ExperimentGateway:
 
 
 def run(case_id, root, *, preset_id=DEFAULT_PRESET, max_output_tokens=256, confirm_network=False,
-        credential_store=None, gateway=None, handle=None):
+        credential_store=None, gateway=None, handle=None, assistant_product=False, answer_reviewer=None):
     """One run; test-only composition injections cannot be supplied by the CLI."""
-    approved = plan(case_id, preset_id, max_output_tokens)
-    case = get_case(case_id)
+    approved = plan(case_id, preset_id, max_output_tokens, assistant_product=assistant_product)
+    case = get_case(case_id, assistant_product=assistant_product)
     empty_ledger = TurnSourceLedger()
     empty_requirements = [{"requirement": value.value,
         "satisfied": requirement_satisfied_by_ledger(value, empty_ledger)} for value in case.requirements]
@@ -182,6 +228,9 @@ def run(case_id, root, *, preset_id=DEFAULT_PRESET, max_output_tokens=256, confi
         "requirement_satisfied": all(row["satisfied"] for row in empty_requirements),
         "final_answer_present": False, "final_finish_reason": None,
         "evidence_kind": "offline_fixture" if gateway is not None else "real_provider"}
+    if assistant_product:
+        report.update(technical_success=False, qualification_verdict="NOT_RUN",
+                      human_review_status="NOT_RUN", release_eligible=False)
     if confirm_network is not True:
         return report  # In particular, do not open credential files or construct SDK/Registry.
     traces, handle = _RunTrace(), handle or RequestHandle()
@@ -206,15 +255,35 @@ def run(case_id, root, *, preset_id=DEFAULT_PRESET, max_output_tokens=256, confi
                 raise GatewayError("SECRET_MISSING")
             registry = _isolated_registry(case, utcnow())
             policy = ToolPolicy("assistant", True, case.exposed_tools)
+            if assistant_product:
+                scope, _ = _product_scope(profile, registry)
+                if scope != approved["release_scope"]:
+                    raise QualificationError("QUALIFICATION_RELEASE_SCOPE_MISMATCH")
             adapter = gateway if gateway is not None else QualificationAdapter(
                 runtime.model, registry, case.exposed_tools, max_output_tokens)
-            bounded = _ExperimentGateway(adapter, runtime, registry, case)
+            bounded = _ExperimentGateway(adapter, runtime, registry, case, assistant_product=assistant_product)
             service = ToolCallingService(bounded, registry, traces, policy=policy,
                 execution_mode=ToolExecutionMode.BOUNDED_MULTI_ROUND)
-            request = ModelRequest(Mode.CHAT, (ModelMessage("system", EXPERIMENT_INSTRUCTION),
-                ModelMessage("user", case.question)))
-            result = service.run_request(request, runtime)
-            ledger = ledger_from_execution(result)
+            assistant_result = None
+            if assistant_product:
+                turn = AssistantRequest(preset_id, case.question, history=case.history,
+                                        source_requirement=case.requirements[0])
+                assistant_result = AssistantService(service, execution_mode=ToolExecutionMode.BOUNDED_MULTI_ROUND,
+                    history_projection=DEFAULT_HISTORY_PROJECTION).send(turn, runtime)
+                result, ledger = assistant_result.execution, assistant_result.source_ledger
+                report.update(product_commit_gate_passed=assistant_result.status == Status.COMPLETED,
+                    trace_recorded=assistant_result.trace_recorded, prompt_id=assistant_result.prompt_id,
+                    history_projection={"projection_id": DEFAULT_HISTORY_PROJECTION.value,
+                        "received": assistant_result.context.history_turns_received,
+                        "sent": assistant_result.context.history_turns_sent,
+                        "trimmed": assistant_result.context.history_trimmed,
+                        "history_bytes_sent": assistant_result.context.history_bytes_sent},
+                    activity=assistant_result.to_dict()["activity"])
+            else:
+                request = ModelRequest(Mode.CHAT, (ModelMessage("system", EXPERIMENT_INSTRUCTION),
+                    ModelMessage("user", case.question)))
+                result = service.run_request(request, runtime)
+                ledger = ledger_from_execution(result)
             executions = [step for step in result.steps if isinstance(step, ToolExecutionStep)]
             requirements = [{"requirement": value.value, "satisfied": requirement_satisfied_by_ledger(value, ledger)}
                 for value in case.requirements]
@@ -236,11 +305,12 @@ def run(case_id, root, *, preset_id=DEFAULT_PRESET, max_output_tokens=256, confi
                 and row["provider_observation"].get("normalized_call_consistent") is True
                 and row["provider_observation"].get("normalized_metadata_consistent") is True
                 and row.get("normalized", {}).get("provider_model_matches") is True for row in bounded.rows)
-            error = result.error_code or ("ASSISTANT_SOURCE_REQUIREMENT_UNMET" if not source_met else
+            error = (assistant_result.error_code if assistant_result else result.error_code) or (
+                "ASSISTANT_SOURCE_REQUIREMENT_UNMET" if not source_met else
                 "QUALIFICATION_PATH_MISMATCH" if not path_matches else
                 "QUALIFICATION_RESULT_CONTEXT_MISMATCH" if not context_matches else
                 "QUALIFICATION_NORMALIZATION_MISMATCH" if gateway is None and not protocol_verified else None)
-            success = result.status == Status.COMPLETED and error is None
+            success = (assistant_result.status if assistant_result else result.status) == Status.COMPLETED and error is None
             report.update(success=success, status="completed" if success else result.status.value if result.error_code else "failed",
                 execution_status=result.status.value, error_code=_code(error) if error else None,
                 ledger=ledger.to_dict(), requirements=requirements, requirement_satisfied=source_met,
@@ -251,6 +321,18 @@ def run(case_id, root, *, preset_id=DEFAULT_PRESET, max_output_tokens=256, confi
                 steps=[{"seq": step.seq, "kind": "model" if isinstance(step, ModelExecutionStep) else "tool",
                     "outcome": step.result.outcome if isinstance(step, ModelExecutionStep) else
                         step.result.status.value if step.result else "not_completed"} for step in result.steps])
+            if assistant_product:
+                report.update(technical_success=success, qualification_verdict=
+                    "PENDING_MANUAL_REVIEW" if success else "FAILED",
+                    human_review_status="PENDING" if assistant_result.final_text else "NOT_AVAILABLE",
+                    final_answer_present=bool(assistant_result.final_text))
+                if answer_reviewer is not None and assistant_result.final_text:
+                    # Redacted by AssistantService; transient review, never in the report/Trace.
+                    try:
+                        answer_reviewer(assistant_result.final_text)
+                        report["human_review_status"] = "PREVIEWED_NOT_APPROVED"
+                    except Exception:
+                        report["human_review_status"] = "PREVIEW_UNAVAILABLE"
     except (CredentialFileError, CredentialLocationError):
         report.update(status="failed", error_code="CREDENTIAL_FILE_ERROR")
     except KeyboardInterrupt:
@@ -258,6 +340,8 @@ def run(case_id, root, *, preset_id=DEFAULT_PRESET, max_output_tokens=256, confi
         report.update(status="cancelled", error_code="USER_CANCELLED")
     except GatewayError as error:
         report.update(status="cancelled" if error.code == "USER_CANCELLED" else "failed", error_code=_code(error.code))
+    except (AssistantError, QualificationError) as error:
+        report.update(status="failed", error_code=_code(error.code))
     except Exception:
         report.update(status="failed", error_code="QUALIFICATION_FAILED")
     finally:
@@ -274,4 +358,7 @@ def run(case_id, root, *, preset_id=DEFAULT_PRESET, max_output_tokens=256, confi
             finished_at=utcnow().isoformat())
         if gateway is not None:
             report["actual_network_requests"] = 0  # Injected fixtures never count as Provider evidence.
+        if assistant_product:
+            report["technical_success"] = report["success"]
+            report["qualification_verdict"] = "PENDING_MANUAL_REVIEW" if report["success"] else "FAILED"
     return report

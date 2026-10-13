@@ -14,6 +14,7 @@
 
 - [assistant.py](assistant.py)：Assistant 请求、完整历史 pair 裁剪、上下文构造与执行服务。
 - [assistant_activity.py](assistant_activity.py)：正式 Runtime 的有序步骤安全投影，供状态轮询、最终响应和 Trace 复用，不保存第二份 Tool payload。
+- [assistant_execution.py](assistant_execution.py)：应用启动时冻结多轮发布范围，以精确合同与实际 Tool 集合决定模式，并绑定联网确认 revision；包内配置默认关闭且 Qwen 仍为 candidate。
 - [assistant_sources.py](assistant_sources.py)：本轮来源要求、逐执行 Receipt / Ledger 与成功提交满足关系。
 - [history_projection.py](history_projection.py)：正式默认的未受信任历史投影，以及原生投影回滚路径；资格工具复用同一投影。
 - [application.py](application.py)：固定 Analysis 上下文、Normal / Streaming 执行、可选 Tool 接入与结果投影。
@@ -90,7 +91,7 @@ Phase D 后实现集中在 `development/qualification/`，单向复用正式 Run
 - [development/__init__.py](development/__init__.py)：无副作用的开发包标记。
 - [development/qualification/__init__.py](development/qualification/__init__.py)：资格边界标记，导入包本身不装配服务、解析凭据或联网。
 - [development/qualification/assistant_qualification.py](development/qualification/assistant_qualification.py)：单 manifest 授权、预算、Assistant 资格执行和安全报告。
-- [development/qualification/multi_round_qualification.py](development/qualification/multi_round_qualification.py)：隔离合成 Snapshot 的单案例有界多轮资格实验，默认不联网。
+- [development/qualification/multi_round_qualification.py](development/qualification/multi_round_qualification.py)：隔离合成 Snapshot 的单案例资格入口；保留旧实验模式，新增正式 Assistant Prompt / History / 来源门禁的 Qwen candidate 验证，默认不联网。
 - [development/qualification/qualification_adapter.py](development/qualification/qualification_adapter.py)：单次实验的输出预算与有限 Provider 原始 / 归一观测。
 - [development/qualification/qualification_history.py](development/qualification/qualification_history.py)：冻结合成 History、H case 和兼容白名单，非产品 Session。
 - [development/qualification/qualification_migration.py](development/qualification/qualification_migration.py)：已结束研究的多轮 fixture、矩阵与顺序兼容数据，不启动批次。

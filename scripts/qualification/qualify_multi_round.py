@@ -3,9 +3,10 @@
 import argparse
 import json
 from pathlib import Path
+import sys
 
 from fishery_ai.development.qualification.multi_round_qualification import (
-    CASES, DEFAULT_PRESET, QualificationError, plan, run, write_report)
+    CASES, PRODUCT_CASES, DEFAULT_PRESET, QualificationError, plan, run, write_report)
 
 
 class SafeParser(argparse.ArgumentParser):
@@ -15,27 +16,39 @@ class SafeParser(argparse.ArgumentParser):
 
 def main(argv=None):
     parser = SafeParser(description="单个隔离多轮资格案例；默认 dry-run，不联网")
-    parser.add_argument("--case", required=True, choices=[case.case_id for case in CASES])
+    parser.add_argument("--case", required=True, choices=sorted({case.case_id for case in (*CASES, *PRODUCT_CASES)}))
     parser.add_argument("--preset", default=DEFAULT_PRESET)
+    parser.add_argument("--assistant-product", action="store_true", help="正式 Assistant Prompt / History / Commit Gate；Qwen candidate 专用")
+    parser.add_argument("--review-answer", action="store_true", help="仅在终端 stderr 预览完整成功回答，不保存正文，不代表人工批准")
     parser.add_argument("--max-output-tokens", type=int, default=256)
     consent = parser.add_mutually_exclusive_group()
     consent.add_argument("--dry-run", action="store_true")
     consent.add_argument("--confirm-network", action="store_true")
     args = parser.parse_args(argv)
+    if args.review_answer and not args.assistant_product:
+        parser.error("product review only")
     report = None
     try:
         root = Path.cwd()
         if not (root / "pyproject.toml").is_file():
             raise QualificationError("WORKSPACE_REQUIRED")
-        approved = plan(args.case, args.preset, args.max_output_tokens)
+        approved = plan(args.case, args.preset, args.max_output_tokens, assistant_product=args.assistant_product)
         if not args.confirm_network:
             print(json.dumps({"dry_run": True, "plan": approved, "actual_network_requests": 0}, ensure_ascii=True, indent=2))
             return 0
-        report = run(args.case, root, preset_id=args.preset, max_output_tokens=args.max_output_tokens, confirm_network=True)
+        def review(text):
+            # Plain text only; strip terminal control characters. Never redirect this preview into reports.
+            safe = ''.join(c for c in text if c in '\n\t' or ord(c) >= 32 and not 127 <= ord(c) <= 159)
+            print("\n人工回答预览（不保存，不代表资格批准）：\n" + safe, file=sys.stderr)
+        report = run(args.case, root, preset_id=args.preset, max_output_tokens=args.max_output_tokens,
+            confirm_network=True, assistant_product=args.assistant_product,
+            answer_reviewer=review if args.review_answer else None)
         filename = write_report(root, report)
         print(json.dumps({key: report[key] for key in (
             "run_id", "status", "success", "error_code", "request_count", "actual_network_requests")}
-            | {"report": "outputs/assistant-qualification/" + filename}, ensure_ascii=True))
+            | {"report": "outputs/assistant-qualification/" + filename}
+            | ({"qualification_verdict": report["qualification_verdict"],
+                "human_review_status": report["human_review_status"]} if args.assistant_product else {}), ensure_ascii=True))
         return 0 if report["success"] else 1
     except QualificationError as error:
         print(json.dumps({"error_code": error.code} | ({key: report[key] for key in (

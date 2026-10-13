@@ -593,15 +593,20 @@ class AssistantWebFixture(AssistantFixture):
         self.headers = {"Origin": "http://localhost", "X-CSRF-Token": csrf}
         self.epoch = self.client.get("/api/assistant/bootstrap").get_json()["epoch"]
 
-    def make_app(self, credentials=None):
+    def make_app(self, credentials=None, **options):
         return create_app(trace_path=self.trace, custom_profiles_dir=self.root / "profiles",
             capability_evidence_dir=self.root / "evidence", manual_experiments_dir=self.root / "experiments",
             scenario_templates_dir=self.root / "templates", tool_policy_dir=self.root / "policies",
-            credential_store=credentials or CredentialStore(process_env={}), real_gateway_factory=self.factory)
+            credential_store=credentials or CredentialStore(process_env={}), real_gateway_factory=self.factory, **options)
+
+    def execution_revision(self, preset_id=LOCAL):
+        data = self.client.get("/api/assistant/bootstrap").get_json()
+        return next((p["execution_profile"]["revision"] for p in data["presets"] if p["preset_id"] == preset_id), "invalid-preset")
 
     def post(self, **changes):
         control = self.client.post("/api/requests", json={}, headers=self.headers).get_json()
         return self.client.post("/api/assistant/chat", json={"preset_id": LOCAL, "question": "什么是溶氧？",
+            "execution_profile_revision": self.execution_revision(changes.get("preset_id", LOCAL)),
             "epoch": self.epoch, "confirm_network": True, "request_id": control["request_id"],
             "control_token": control["control_token"], **changes}, headers=self.headers)
 
@@ -644,6 +649,7 @@ class AssistantWebTests(AssistantWebFixture):
             observe(); return original()
         with patch.object(reader, "query", query):
             response = self.client.post("/api/assistant/chat", json={"preset_id": LOCAL,
+                "execution_profile_revision": self.execution_revision(),
                 "question": "当前水质？", "epoch": self.epoch, "confirm_network": True,
                 "request_id": control["request_id"], "control_token": control["control_token"]}, headers=self.headers)
         self.assertEqual(response.status_code, 200)
@@ -722,6 +728,8 @@ class AssistantWebTests(AssistantWebFixture):
         self.factory.return_value.callback = rotate
         control = client.post("/api/requests", json={}, headers=headers).get_json()
         response = client.post("/api/assistant/chat", json={"preset_id": profile.preset_id,
+            "execution_profile_revision": next(p["execution_profile"]["revision"] for p in
+                client.get("/api/assistant/bootstrap").get_json()["presets"] if p["preset_id"] == profile.preset_id),
             "question": "现在水质？", "epoch": epoch, "confirm_network": True,
             "request_id": control["request_id"], "control_token": control["control_token"]}, headers=headers)
         self.assertEqual(response.status_code, 200)
@@ -740,6 +748,7 @@ class AssistantWebTests(AssistantWebFixture):
             self.assertEqual(response.status_code, 200)
         self.factory.return_value = RecordingGateway(call(), callback=cancel)
         response = self.client.post("/api/assistant/chat", json={"preset_id": LOCAL,
+            "execution_profile_revision": self.execution_revision(),
             "question": "当前水质？", "epoch": self.epoch, "confirm_network": True,
             "request_id": request_id, "control_token": token}, headers=self.headers)
         self.assertEqual(response.status_code, 409)

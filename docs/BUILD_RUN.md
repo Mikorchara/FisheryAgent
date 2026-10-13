@@ -27,7 +27,7 @@ Demo 使用 MockGateway。自动测试不发送真实网络请求；Cloud / Loca
 - **Managed Custom**：高级能力依赖精确 Identity 的 Evidence / Resolver；Probe 必须由用户逐项触发。
 - **Manual V1/V2**：Raw 请求路径；不进入 Fishery Analysis，不自动执行返回的 Tool Calls。
 
-只读 Tool 当前为 `get_current_water_quality`、Experimental `score_current_water_quality` 和默认关闭的 `search_fishery_knowledge`。最多一个 Tool call、一轮、两次模型请求；不是 Agent。当前设计与限制见[Analysis / Assistant 当前架构](deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)和[只读 Tool 当前实现](deep-dive/tools/READ_ONLY_TOOL_CALLING.md)。
+只读 Tool 当前为 `get_current_water_quality`、Experimental `score_current_water_quality` 和默认关闭的 `search_fishery_knowledge`。默认最多一个 Tool call、一轮、两次模型请求；不是 Agent。Assistant 多轮启动配置位于 `src/fishery_ai/resources/profiles/assistant_execution.json`，默认关闭，Qwen 查询+Knowledge 仍为 candidate；真实资格与维护者发布通过后才可启用 2/2/3，不能仅打开 Flag。Web 显示当前有效的最多两次或三次模型请求，确认 revision 失配时联网前拒绝并要求重新确认。关闭 Flag 并完整重启可回滚；当前未发布任何多轮范围。具体启用条件与待验收项见[多轮接入记录](deep-dive/research/ASSISTANT_MULTI_ROUND_INTEGRATION.md#9-phase-4b-2-web-接入记录)。当前设计与限制见[Analysis / Assistant 当前架构](deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)和[只读 Tool 当前实现](deep-dive/tools/READ_ONLY_TOOL_CALLING.md)。
 
 ## Tool / Preset 维护
 
@@ -60,6 +60,14 @@ Q1–Q4 保留为单次维护计划示例，使用空 History；不包含已结�
 可选 case：`low-oxygen`（当前水质→异常知识→Final，最多 3 次请求）、`normal`（查询→Final，最多 2 次）、`current-do`（查询→Final，最多 2 次）、`concept`（无 Tool 直答，最多 1 次）。每次只选择一个 case；没有批次、自动重试或 failover。独立进程使用合成 Snapshot，不读取或修改 Web Snapshot / Policy。正式产品仍为 1/1/2。
 
 真实运行需用户针对该 case 单独授权，再将 `--dry-run` 换成 `--confirm-network`；默认每请求最多 256 输出 tokens，retry=0。其他已发布 Preset 可用 `--preset` 指定，但不能沿用 Qwen 授权。安全报告仍写入固定 `outputs/assistant-qualification/`，以 `bounded-multi-round@1` 标记；不保存最终正文、query、完整 Tool Result 或 Prompt。详见[实验边界和通过条件](deep-dive/tools/READ_ONLY_TOOL_CALLING.md#单案例多轮资格入口)。
+
+上述不带 `--assistant-product` 的入口仍是旧实验指令。正式多轮资格必须明确添加 `--assistant-product`，只允许当前 Qwen candidate，直接复用正式 AssistantService / Prompt / History / Commit Gate；每案例最多 2 calls / 2 rounds / 3 requests。准备命令如下（不联网、不解析凭据）：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/qualification/qualify_multi_round.py --assistant-product --case low-oxygen --dry-run
+```
+
+可选 case 为 low-oxygen / normal / current-do / concept / history-current / history-explanation。真实执行仍需逐案例单独批准才改用 `--confirm-network`；可添加 `--review-answer` 在终端 stderr 查看完整成功回答，JSON 报告不保存正文。不要重定向预览或开启终端 transcript。技术检查通过仅为 `PENDING_MANUAL_REVIEW`，不会发布 candidate 或打开 Web Flag。详见[Phase 4C 计划、预算与人工标准](deep-dive/research/ASSISTANT_MULTI_ROUND_INTEGRATION.md#10-phase-4c-正式-assistant-资格准备)。
 
 History 的 Qwen、DeepSeek、Ollama A/B 批次和 P2E 多轮历史资格实验均已结束，正式产品迁移也已完成；对应一次性 runner、manifest / index / generator 和实验测试已移除。实验合同、结果及停止事故保留在[记录索引](records/README.md)与 Git；迁移依据见[History v2 判定](records/2026-10-history-v2-migration-decision.md)。不得按旧授权重跑或补样本。
 

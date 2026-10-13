@@ -2627,6 +2627,10 @@ async function saveToolPolicy(reset = false) {
   toolManagerLock(true); $("tool-policy-status").textContent = reset ? "正在恢复默认…" : "正在保存…";
   try {
     setToolManagerData(await toolPolicyApi(reset ? "DELETE" : "PUT", reset ? {} : toolPolicyDraft));
+    if (assistantState.epoch) {
+      $("assistant-confirm-network").checked = false;
+      await loadAssistantBootstrap(); // Rebind confirmation; do not alter history or saved Policy.
+    }
     $("tool-policy-status").textContent = reset ? "已恢复内置默认；新请求使用默认策略。" : "已保存；新的 Normal Analysis / Assistant 请求使用该授权，仍受模型能力门禁保护。";
   } catch (exc) { $("tool-policy-status").textContent = `操作失败：${scenarioErrorText(exc)}；草稿保留，请重新读取确认实际状态。`; }
   finally { toolManagerLock(false); }
@@ -2721,13 +2725,18 @@ async function loadAssistantBootstrap() {
     if (!Array.isArray(data.presets) || !data.presets.length || typeof data.epoch !== "string"
         || data.fixed_mode?.thinking !== "off" || data.fixed_mode?.response_mode !== "normal"
         || data.presets.some(p => typeof p.preset_id !== "string" || typeof p.display_name !== "string"
-          || !["cloud", "local"].includes(p.runtime_type))) throw new Error("INVALID_RESPONSE");
+          || !["cloud", "local"].includes(p.runtime_type)
+          || !["SINGLE_ROUND", "BOUNDED_MULTI_ROUND"].includes(p.execution_profile?.mode)
+          || p.execution_profile.max_model_requests !== (p.execution_profile.mode === "SINGLE_ROUND" ? 2 : 3)
+          || typeof p.execution_profile.revision !== "string" || !/^[a-f0-9]{64}$/.test(p.execution_profile.revision))) throw new Error("INVALID_RESPONSE");
     if (assistantState.epoch && assistantState.epoch !== data.epoch) {
       resetAssistantSession();
       assistantNotice("Assistant 后端已重启，请重新发送当前问题。");
     }
     assistantState.epoch = data.epoch;
-    assistantState.presets = data.presets.map(p => ({preset_id: p.preset_id, display_name: p.display_name, runtime_type: p.runtime_type}));
+    assistantState.presets = data.presets.map(p => ({preset_id: p.preset_id, display_name: p.display_name,
+      runtime_type: p.runtime_type, execution_profile: {...p.execution_profile}}));
+    $("assistant-confirm-network").checked = false; // Every refreshed profile requires a new explicit confirmation.
     if (!assistantPreset()) assistantState.selectedPresetId = assistantState.presets.some(p => p.preset_id === data.default_preset_id)
       ? data.default_preset_id : "";
     const select = $("assistant-preset"); select.replaceChildren();
@@ -2747,8 +2756,9 @@ async function loadAssistantBootstrap() {
 
 function renderAssistantNetwork() {
   const local = assistantPreset()?.runtime_type === "local";
+  const count = assistantPreset()?.execution_profile.max_model_requests === 3 ? "三" : "两";
   $("assistant-network-label").textContent = local ? "LOCAL MODEL REQUEST" : "REAL NETWORK REQUEST";
-  $("assistant-network-note").textContent = local ? "本次最多两次本地模型请求。" : "本次最多两次模型请求，Cloud 可能产生费用。";
+  $("assistant-network-note").textContent = local ? `本次最多${count}次本地模型请求。` : `本次最多${count}次模型请求，Cloud 可能产生费用。`;
 }
 
 function changeAssistantPreset() {
@@ -2980,6 +2990,7 @@ async function sendAssistant() {
   if (!assistantState.epoch) { await loadAssistantBootstrap(); assistantNotice("请确认本次请求后重新发送。"); return; }
   if (!assistantPreset()) { assistantNotice("请选择模型。", true); return; }
   if (!$("assistant-confirm-network").checked) { assistantNotice("NETWORK_CONFIRMATION_REQUIRED", true); return; }
+  const executionRevision = assistantPreset().execution_profile.revision;
   assistantState.busy = true; assistantState.run = null; $("assistant-run").open = false;
   setAssistantRun("Preparing"); assistantNotice(""); updateAssistantControls();
   const userEntry = {kind: "user", text: question, pending: true};
@@ -2993,6 +3004,7 @@ async function sendAssistant() {
     const response = await fetch("/api/assistant/chat", {method: "POST", headers: execution.headers,
       signal: execution.controller.signal, body: JSON.stringify({preset_id: assistantState.selectedPresetId,
         question, history, epoch: assistantState.epoch, confirm_network: true,
+        execution_profile_revision: executionRevision,
         request_id: execution.request_id, control_token: execution.control_token})});
     const data = await response.json();
     if (execution.cancelled || assistantState.pendingRequest !== execution) return;
@@ -3004,6 +3016,10 @@ async function sendAssistant() {
         resetAssistantSession(); assistantState.epoch = null;
         await loadAssistantBootstrap();
         assistantNotice("Assistant 后端已重启，请重新发送当前问题。", true);
+      }
+      if (code === "ASSISTANT_EXECUTION_PROFILE_CHANGED") {
+        await loadAssistantBootstrap();
+        assistantNotice("运行配置或 Tool 授权已变化，请按新请求预算重新确认后发送。", true);
       }
       throw new Error(code);
     }
@@ -3036,7 +3052,7 @@ async function sendAssistant() {
     userEntry.pending = false;
     assistantState.displayEntries.push({kind: "state", text: code});
     setAssistantRun(code === "USER_CANCELLED" ? "Cancelled" : "Failed", null, code);
-    if (code !== "ASSISTANT_SESSION_EXPIRED") assistantNotice(code, true);
+    if (!["ASSISTANT_SESSION_EXPIRED", "ASSISTANT_EXECUTION_PROFILE_CHANGED"].includes(code)) assistantNotice(code, true);
     renderAssistantMessages();
   } finally {
     clearTimeout(execution?.phaseTimer);

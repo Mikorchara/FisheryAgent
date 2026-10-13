@@ -138,6 +138,8 @@ class ProductHistoryWebTests(assistant.AssistantWebFixture):
         gateway = RecordingGateway(final())
         self.factory.return_value = gateway
         response = client.post("/api/assistant/chat", headers=headers, json={
+            "execution_profile_revision": next(p["execution_profile"]["revision"] for p in
+                client.get("/api/assistant/bootstrap").get_json()["presets"] if p["preset_id"] == assistant.LOCAL),
             "preset_id": self.profile.preset_id, "question": "什么是溶氧？",
             "epoch": client.get("/api/assistant/bootstrap").get_json()["epoch"],
             "confirm_network": True, "request_id": control["request_id"],

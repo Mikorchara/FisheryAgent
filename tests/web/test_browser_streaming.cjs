@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
+const {spawnSync} = require('node:child_process');
 
 const sourcePath = path.join(__dirname, '..', '..', 'src', 'fishery_ai', 'resources', 'web', 'app.js');
 const source = fs.readFileSync(sourcePath, 'utf8').replace(/\binit\(\);\s*$/, '');
@@ -1128,7 +1129,8 @@ function assistantBootstrap(epoch='assistant-epoch') {
   return {epoch,default_preset_id:'qwen-preset',fixed_mode:{thinking:'off',response_mode:'normal'},
     presets:[{preset_id:'qwen-preset',display_name:'Qwen 3.8 Flash',runtime_type:'cloud'},
       {preset_id:'deepseek-preset',display_name:'DeepSeek Flash',runtime_type:'cloud'},
-      {preset_id:'ollama-preset',display_name:'Ollama Qwen3.5 4B',runtime_type:'local'}]};
+      {preset_id:'ollama-preset',display_name:'Ollama Qwen3.5 4B',runtime_type:'local'}].map(p=>({...p,
+        execution_profile:{mode:'SINGLE_ROUND',max_model_requests:2,revision:'a'.repeat(64)}}))};
 }
 
 function assistantResult(changes={}) {
@@ -1254,13 +1256,13 @@ test('Assistant early Final has one model step and no phantom Tool or later mode
   assert.match(allElementText(page.element('assistant-messages')),/未调用 Tool/);
 });
 
-function assistantPage(handler=async()=>r2Reply({result:assistantResult()}), bootstrap=assistantBootstrap()) {
+function assistantPage(handler=async()=>r2Reply({result:assistantResult()}), bootstrap=assistantBootstrap(), options={}) {
   const calls=[];
   const page=makePage(async(url,options={})=>{
     calls.push({url,options});
     if(url==='/api/assistant/bootstrap')return r2Reply(bootstrap);
     return handler(url,options);
-  });
+  },options);
   page.calls=calls;
   vm.runInContext('credentialCsrf="offline-csrf"; bindToolManagerControls(); bindAssistantControls()',page.context);
   return page;
@@ -1277,6 +1279,109 @@ function assistantStateJson(page, expression='assistantState') {
   return JSON.parse(vm.runInContext(`JSON.stringify(${expression},(key,value)=>key==='pendingRequest'?null:value)`,page.context));
 }
 function allElementText(node) { return node.textContent+' '+node.children.map(allElementText).join(' '); }
+
+function multiAssistantBootstrap() {
+  const bootstrap=assistantBootstrap();
+  bootstrap.presets[0].execution_profile={mode:'BOUNDED_MULTI_ROUND',max_model_requests:3,revision:'b'.repeat(64)};
+  return bootstrap;
+}
+
+test('Assistant network confirmation uses the selected effective profile and binds its revision',async()=>{
+  const page=assistantPage(undefined,multiAssistantBootstrap());await enterAssistant(page);
+  assert.match(page.element('assistant-network-note').textContent,/最多三次/);
+  await sendAssistantQuestion(page);
+  const body=JSON.parse(page.calls.find(c=>c.url==='/api/assistant/chat').options.body);
+  assert.equal(body.execution_profile_revision,'b'.repeat(64));
+  assert.ok(!['mode','budget','deadline','prompt_id'].some(k=>k in body));
+  page.context.window.confirm=()=>true;
+  page.element('assistant-preset').value='ollama-preset';await page.element('assistant-preset').dispatch('change');
+  assert.match(page.element('assistant-network-note').textContent,/最多两次本地/);
+  assert.equal(page.element('assistant-confirm-network').checked,false);
+});
+
+test('Assistant malformed execution profile fails bootstrap closed without a guessed budget',async()=>{
+  for(const profile of [undefined,{mode:'BOUNDED_MULTI_ROUND',max_model_requests:2,revision:'b'.repeat(64)},
+    {mode:'BOUNDED_MULTI_ROUND',max_model_requests:3,revision:'forged'}]) {
+    const bootstrap=assistantBootstrap();bootstrap.presets[0].execution_profile=profile;
+    const page=assistantPage(undefined,bootstrap);await enterAssistant(page);
+    assert.equal(assistantStateJson(page).epoch,null);
+    assert.match(page.element('assistant-notice').textContent,/加载失败/);
+    await sendAssistantQuestion(page);
+    assert.equal(page.calls.filter(c=>c.url==='/api/assistant/chat').length,0);
+  }
+});
+
+test('Assistant stale execution revision refreshes confirmation without resending or clearing history',async()=>{
+  const bootstrap=multiAssistantBootstrap();let attempts=0;
+  const page=assistantPage(async()=>{
+    if(++attempts===1)return r2Reply({result:assistantResult()});
+    bootstrap.presets[0].execution_profile={mode:'SINGLE_ROUND',max_model_requests:2,revision:'c'.repeat(64)};
+    return {ok:false,status:409,json:async()=>({error_code:'ASSISTANT_EXECUTION_PROFILE_CHANGED'})};
+  },bootstrap);
+  await enterAssistant(page);await sendAssistantQuestion(page);
+  const history=assistantStateJson(page).completedTurns;
+  await sendAssistantQuestion(page,'保留本次问题');
+  assert.equal(attempts,2);
+  assert.deepEqual(assistantStateJson(page).completedTurns,history);
+  assert.equal(page.element('assistant-input').value,'保留本次问题');
+  assert.equal(page.element('assistant-confirm-network').checked,false);
+  assert.match(page.element('assistant-network-note').textContent,/最多两次/);
+  assert.match(page.element('assistant-notice').textContent,/重新确认/);
+  assert.equal(page.calls.filter(c=>c.url==='/api/assistant/bootstrap').length,2);
+  await page.element('assistant-send').dispatch('click');assert.equal(attempts,2);
+});
+
+test('Assistant Tool Policy save refreshes the effective budget and clears old network confirmation',async()=>{
+  const bootstrap=multiAssistantBootstrap();
+  const page=assistantPage(async(_url,options)=>{
+    if(options.method==='PUT')bootstrap.presets[0].execution_profile={mode:'SINGLE_ROUND',max_model_requests:2,revision:'c'.repeat(64)};
+    return r2Reply(toolManagerFixture());
+  },bootstrap);
+  await enterAssistant(page);page.element('assistant-input').value='草稿';
+  await page.element('assistant-input').dispatch('input');
+  page.element('assistant-confirm-network').checked=true;
+  await page.element('assistant-tool').dispatch('click');await page.element('tool-policy-save').dispatch('click');
+  assert.equal(page.element('assistant-confirm-network').checked,false);
+  assert.match(page.element('assistant-network-note').textContent,/最多两次/);
+  assert.equal(page.element('assistant-input').value,'草稿');
+  assert.equal(page.calls.filter(c=>c.url==='/api/assistant/bootstrap').length,2);
+  assert.match(page.element('tool-policy-status').textContent,/已保存/);
+});
+
+test('Actual offline Flask Web double-Tool turn projects all five steps into the existing Browser UI',async()=>{
+  // Execute the real Web API with Scripted Gateway and temporary stores, then replay only safe HTTP data.
+  const root=path.join(__dirname,'..','..');
+  const python=path.join(root,'.venv',process.platform==='win32'?'Scripts':'bin',process.platform==='win32'?'python.exe':'python');
+  const produced=spawnSync(python,['-m','tests.web.test_assistant_execution_web','--browser-fixture'],
+    {cwd:root,encoding:'utf8',timeout:20000,maxBuffer:2*1024*1024});
+  assert.equal(produced.status,0,produced.stderr);
+  const fixture=JSON.parse(produced.stdout);let release;
+  const page=assistantPage(async(url)=>{
+    if(url==='/api/requests')return r2Reply({request_id:fixture.request_id,control_token:'fictional-browser-control'});
+    if(url.endsWith('/status'))return r2Reply(fixture.statuses[0]);
+    if(url==='/api/assistant/chat')return new Promise(done=>{release=done;});
+    assert.fail('unexpected route');
+  },fixture.bootstrap,{ownExecutionRoutes:true});
+  await enterAssistant(page);assert.match(page.element('assistant-network-note').textContent,/最多三次/);
+  const pending=sendAssistantQuestion(page,'现在水质如何？');while(!release)await new Promise(done=>setImmediate(done));
+  for(const status of fixture.statuses)vm.runInContext(`acceptAssistantProgress(activeExecution,${JSON.stringify(status)})`,page.context);
+  const inProgress=assistantStateJson(page);
+  assert.equal(inProgress.run.steps.length,5);
+  assert.deepEqual(inProgress.run.steps.filter(s=>s.kind==='tool').map(s=>s.tool_name),
+    ['get_current_water_quality','search_fishery_knowledge']);
+  assert.equal(inProgress.completedTurns.length,0);
+  assert.match(page.element('assistant-run-summary').textContent,/Request #3/);
+  release(r2Reply({result:fixture.result}));await pending;
+  const state=assistantStateJson(page);
+  assert.equal(state.completedTurns.length,1);assert.equal(state.displayEntries.filter(e=>e.kind==='assistant').length,1);
+  assert.equal(state.run.steps.length,5);
+  assert.match(page.element('assistant-run-summary').textContent,/Completed.*2 Tool.*3 Requests/);
+  assert.match(allElementText(page.element('assistant-run-details')),/Request #3|Model #3/);
+  assert.doesNotMatch(JSON.stringify(state),/鳗鲡低氧表现|arguments_json|fictional-web-multi-key|water_quality.*dissolved_oxygen/);
+  const sent=JSON.parse(page.calls.find(c=>c.url==='/api/assistant/chat').options.body);
+  assert.equal(sent.execution_profile_revision,fixture.bootstrap.presets[0].execution_profile.revision);
+  assert.deepEqual(sent.history,[]);
+});
 
 test('Assistant single fixed-width toggle replaces both old status buttons',()=>{
   assert.match(html,/id="application-mode-toggle"/);
@@ -1339,7 +1444,7 @@ test('Assistant success commits only complete pairs and sends no Analysis facts 
   assert.equal(page.element('assistant-confirm-network').checked,false);
   assert.match(page.element('assistant-run-summary').textContent,/Completed.*Qwen.*0 Tool.*1 Requests.*3.20s/);
   const body=JSON.parse(page.calls.find(c=>c.url==='/api/assistant/chat').options.body);
-  assert.deepEqual(Object.keys(body).sort(),['control_token','epoch','history','preset_id','question','request_id','confirm_network'].sort());
+  assert.deepEqual(Object.keys(body).sort(),['control_token','epoch','history','preset_id','question','request_id','confirm_network','execution_profile_revision'].sort());
   assert.deepEqual(body.history,[]);assert.equal(body.epoch,'assistant-epoch');
   await sendAssistantQuestion(page,'再解释一下');
   const sent=JSON.parse(page.calls.filter(c=>c.url==='/api/assistant/chat')[1].options.body);

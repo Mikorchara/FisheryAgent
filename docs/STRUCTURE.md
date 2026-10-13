@@ -27,6 +27,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  ├─ PRIVATE_CREDENTIAL_STORAGE.md                                   # 用户私有凭据安全边界
 │  │  │  └─ PROJECT_DATA_AND_CONFIG_LOCATIONS.md                            # 数据与配置实际位置地图
 │  │  ├─ research/                                                          # 带历史标记的研究与未来议题
+│  │  │  ├─ ASSISTANT_MULTI_ROUND_INTEGRATION.md                             # 多轮 Web 发布门禁、确认与实施边界
 │  │  │  ├─ BOUNDED_MULTI_ROUND_TOOL_RUNTIME.md                              # 多轮与流式研究，内部非流式两轮已实现
 │  │  │  ├─ DEVELOPMENT_BACKLOG.md                                          # 未立项候选与用户原始笔记，保留历史
 │  │  │  ├─ RUNTIME_PROMPT_AUDIT.md                                       # 运行 Prompt 来源与职责审计，含版本边界
@@ -89,7 +90,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  └─ assistant-Q4.json                                               # 三 Tool 选择 Knowledge 的资格计划
 │  │  ├─ qualify_assistant_turn.py                                          # 单 manifest Assistant 资格入口，默认 dry-run
 │  │  ├─ qualify_local_preset_request.py                                    # Local Preset 最小请求资格验证
-│  │  ├─ qualify_multi_round.py                                             # 单案例有界多轮资格实验，默认 dry-run
+│  │  ├─ qualify_multi_round.py                                             # 单案例实验 / 正式 Assistant candidate 资格，默认 dry-run
 │  │  └─ qualify_preset_tools.py                                            # Preset Tool Calling 资格验证入口
 │  └─ README.md                                                             # 辅助工具用途与逐次真实联网授权边界
 ├─ src/                                                          # Runtime/Core 应用源码与安装 metadata
@@ -101,6 +102,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ history_projection.py                                   # 产品默认 B 与原生 A 回滚的共享历史投影
 │  │  ├─ assistant.py                                            # Assistant 上下文、历史与执行服务
 │  │  ├─ assistant_activity.py                                   # 有序 Steps 的安全 Activity 投影
+│  │  ├─ assistant_execution.py                                  # 启动冻结的多轮发布范围与确认版本
 │  │  ├─ assistant_qualification.py                             # 旧路径模块别名，兼容历史导入与补丁
 │  │  ├─ assistant_sources.py                                    # 逐执行 Receipt、Ledger 与来源满足关系
 │  │  ├─ capability_probe.py                                     # 显式 Streaming 与 Thinking 验证
@@ -143,7 +145,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  └─ qualification/                                     # 资格实现，单向复用正式产品合同
 │  │  │     ├─ __init__.py                                      # 无装配、凭据解析或联网的包入口
 │  │  │     ├─ assistant_qualification.py                       # 单 manifest 授权、预算、运行与安全报告
-│  │  │     ├─ multi_round_qualification.py                       # 隔离 Snapshot、多轮资格与安全来源报告
+│  │  │     ├─ multi_round_qualification.py                       # 隔离 Snapshot、正式 Assistant 资格与安全来源报告
 │  │  │     ├─ qualification_adapter.py                         # 资格输出预算与有限 Provider 观测
 │  │  │     ├─ qualification_history.py                         # 冻结历史 fixture 与 case 兼容白名单
 │  │  │     ├─ qualification_migration.py                       # 历史多轮资格 fixture 与矩阵兼容
@@ -157,6 +159,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  ├─ mock/                                                # 离线 Mock Runtime 配置
 │  │  │  │  └─ profiles.json                                     # 离线 Mock 模型配置
 │  │  │  ├─ profiles/                                            # Preset 与开发连接模板
+│  │  │  │  ├─ assistant_execution.json                          # 多轮默认关闭、Qwen candidate 精确范围
 │  │  │  │  ├─ deepseek_experimental.json                        # DeepSeek 开发 Profile 模板
 │  │  │  │  ├─ ollama_qwen35_local.json                          # Ollama 本地开发 Profile 模板
 │  │  │  │  ├─ presets.json                                      # 维护者发布的 Preset 固定合同
@@ -251,7 +254,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    │  ├─ __init__.py                                                        # 测试子包标记，支持规范 unittest discovery
    │  ├─ test_assistant_qualification.py                                    # 单次实验、预算、取消与报告脱敏测试
    │  ├─ test_qualification_boundary.py                                      # 正式导入隔离、兼容别名与开发 CLI 边界测试
-   │  ├─ test_multi_round_qualification.py                                   # 单案例预算、隔离 Snapshot、结果关联与安全报告
+   │  ├─ test_multi_round_qualification.py                                   # 实验 / 正式 Assistant 资格、History、预算与脱敏报告
    │  ├─ test_local_preset_qualification.py                                 # Local Preset 验证入口安全测试
    │  └─ test_preset_tool_qualification.py                                  # Preset Tool 完整资格流程测试
    ├─ security/                                                             # Credential、安全写入、ACL、快照与请求取消
@@ -285,6 +288,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    │  ├─ test_a316_runtime_defaults.py                                      # 运行默认偏好与安全回退测试
    │  ├─ test_access_web.py                                                 # Preset、Manual 与取消 Web 边界测试
    │  ├─ test_analysis_tool_web.py                                          # 正式 Analysis Tool Web 接入测试
+   │  ├─ test_assistant_execution_web.py                                    # Web 多轮发布、确认、五步执行与回滚测试
    │  ├─ test_browser_streaming.cjs                                         # 页面交互、状态与浏览器回归测试
    │  ├─ test_clean_room_reset.py                                           # Clean-room 空目录启动测试
    │  ├─ test_default_preference_ui.py                                      # 默认偏好与能力门禁同步测试

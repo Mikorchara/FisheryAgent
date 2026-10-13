@@ -41,6 +41,8 @@ from .model_gateway import validate_preset_response
 from .execution import RequestRegistry, request_scope
 from .tool_conversation import ToolCallingService, MockToolGateway
 from .assistant import ALLOWED_PRESET_IDS, AssistantError, AssistantRequest, AssistantService, assistant_profile
+from .assistant_execution import (AssistantExecutionConfig, load_assistant_execution_config,
+                                  resolve_execution_profile)
 from .tool_capability_probe import run_tool_calling_probe
 from .tools.policy import load_tool_policies, UserToolPolicyStore, ToolPolicyError
 from .tools.catalog import argument_summary, tool_catalog
@@ -168,6 +170,7 @@ def _builtin_profiles() -> tuple[ModelProfile, ...]:
 
 
 def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_PROJECTION,
+               assistant_execution_config: AssistantExecutionConfig | None = None,
                trace_path: Path | None = None,
                custom_profiles_dir: Path | None = None,
                capability_evidence_dir: Path | None = None,
@@ -185,6 +188,10 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
     """Construct without loading .env or making a network request."""
     if not isinstance(assistant_history_projection, ProjectionId):
         raise ValueError("INVALID_HISTORY_PROJECTION")
+    execution_config = (load_assistant_execution_config() if assistant_execution_config is None
+                        else assistant_execution_config)
+    if not isinstance(execution_config, AssistantExecutionConfig):
+        raise ValueError("INVALID_ASSISTANT_EXECUTION_CONFIG")
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
     credentials = credential_store if credential_store is not None else CredentialStore()
@@ -1021,7 +1028,9 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
             policy = policy_store.effective()["assistant"]
             default = default_preset_id()
             return jsonify(presets=[{"preset_id": p.preset_id,
-                "display_name": p.display_name.rsplit(" · ", 1)[0], "runtime_type": p.provider_kind}
+                "display_name": p.display_name.rsplit(" · ", 1)[0], "runtime_type": p.provider_kind,
+                "execution_profile": resolve_execution_profile(execution_config, p, policy, tool_registry,
+                    epoch=assistant_epoch, projection=assistant_history_projection).public()}
                 for p in allowed], default_preset_id=default if default in ALLOWED_PRESET_IDS else None,
                 fixed_mode={"thinking": "off", "response_mode": "normal"}, epoch=assistant_epoch,
                 tools=[{"name": definition.name} for definition in policy.model_definitions(tool_registry)])
@@ -1034,7 +1043,7 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
         if failure is not None:
             return failure
         payload = request.get_json(silent=True)
-        envelope = {"epoch", "confirm_network", "request_id", "control_token"}
+        envelope = {"epoch", "confirm_network", "request_id", "control_token", "execution_profile_revision"}
         allowed = envelope | {"preset_id", "question", "history", "conversation_id"}
         if not isinstance(payload, dict) or set(payload) - allowed:
             return error("INVALID_ASSISTANT_REQUEST", 400)
@@ -1044,10 +1053,14 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
             turn = AssistantRequest.from_dict({k: v for k, v in payload.items() if k not in envelope})
             profile = assistant_profile(turn.preset_id)
             policy = policy_store.effective()["assistant"]  # Freeze before any model I/O.
+            execution_profile = resolve_execution_profile(execution_config, profile, policy, tool_registry,
+                epoch=assistant_epoch, projection=assistant_history_projection)
         except (AssistantError, ToolPolicyError) as exc:
             return error(exc.code, 400)
         if payload.get("confirm_network") is not True:
             return error("NETWORK_CONFIRMATION_REQUIRED", 403)
+        if payload.get("execution_profile_revision") != execution_profile.revision:
+            return error("ASSISTANT_EXECUTION_PROFILE_CHANGED", 409)
         runtime, failure = request_runtime(profile)
         if failure is not None:
             return failure
@@ -1056,8 +1069,10 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
             return failure
         try:
             with request_scope(handle):
-                coordinator = ToolCallingService(real_gateway_factory(), tool_registry, traces, policy=policy)
-                result = AssistantService(coordinator, history_projection=assistant_history_projection).send(turn, runtime)
+                coordinator = ToolCallingService(real_gateway_factory(), tool_registry, traces, policy=policy,
+                                                 execution_mode=execution_profile.mode)
+                result = AssistantService(coordinator, history_projection=assistant_history_projection,
+                    execution_mode=execution_profile.mode).send(turn, runtime)
             return jsonify(result=result.to_dict()), (200 if result.status == Status.COMPLETED else
                 409 if result.status == Status.CANCELLED else 502)
         except (AssistantError, GatewayError) as exc:

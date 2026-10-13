@@ -355,5 +355,254 @@ class MultiRoundQualificationTests(unittest.TestCase):
         self.assertFalse(report["success"])
 
 
+class AssistantProductQualificationTests(unittest.TestCase):
+    # Reuse setup only; do not inherit/collect the legacy experiment tests twice.
+    setUp = MultiRoundQualificationTests.setUp
+
+    def run_case(self, case, gateway, **options):
+        return experiment.run(case, self.root, assistant_product=True, confirm_network=True,
+                              credential_store=self.credentials, gateway=gateway, **options)
+
+    def test_product_plan_pins_candidate_prompt_history_schema_and_qwen(self):
+        from fishery_ai.assistant import MULTI_ROUND_PROMPT_ID
+        config = experiment.load_assistant_execution_config()
+        self.assertFalse(config.multi_round_enabled)
+        self.assertEqual(config.releases[0].status, "candidate")
+        self.assertEqual(len(experiment.PRODUCT_CASES), 6)
+        for case in experiment.PRODUCT_CASES:
+            plan = experiment.plan(case.case_id, assistant_product=True)
+            self.assertEqual(plan["experiment_version"], "assistant-product-multi-round@1")
+            self.assertEqual(plan["prompt_id"], MULTI_ROUND_PROMPT_ID)
+            self.assertEqual(plan["release_scope"], json.loads(config.releases[0].scope_json))
+            self.assertEqual(plan["max_requests"], 3)
+            self.assertFalse(plan["release_eligible"])
+            self.assertEqual(plan["plan_sha256"], experiment.plan(case.case_id, assistant_product=True)["plan_sha256"])
+        with self.assertRaises(experiment.QualificationError):
+            experiment.plan("normal", "deepseek-flash-r1", assistant_product=True)
+
+    def test_dry_product_plan_never_resolves_credentials_or_constructs_adapter(self):
+        with patch.object(experiment, "_credentials", side_effect=AssertionError("no credentials")), \
+             patch.object(experiment, "QualificationAdapter", side_effect=AssertionError("no SDK")), \
+             patch.object(experiment.AssistantService, "send", side_effect=AssertionError("no send")):
+            report = experiment.run("history-current", self.root, assistant_product=True)
+        self.assertEqual(report["actual_network_requests"], 0)
+        self.assertEqual(report["request_count"], 0)
+        self.assertFalse((self.root / "outputs").exists())
+
+    def test_low_oxygen_uses_formal_service_prompt_gate_deadline_and_actual_result(self):
+        from fishery_ai.execution import current_handle
+        def decide(index, request, runtime):
+            self.assertEqual(request.messages[0].content, experiment.MULTI_ROUND_SYSTEM_INSTRUCTION)
+            self.assertLessEqual(current_handle().remaining_timeout(1000), runtime.total_timeout_s)
+            self.assertEqual(runtime.max_retries, 0)
+            if index == 1:
+                self.assertEqual(len(request.messages), 2)
+                return tool()
+            if index == 2:
+                data = json.loads(request.messages[-1].content)
+                self.assertEqual(data["water_quality"]["dissolved_oxygen_mg_l"], 2.2)
+                self.assertTrue(data["findings"])
+                self.assertEqual(request.tool_choice, "auto")
+                return tool(experiment.KNOWLEDGE, "second", '{"query":"鳗鲡低氧表现"}')
+            self.assertEqual(index, 3)
+            self.assertEqual(request.tool_choice, "none")
+            self.assertEqual(len([m for m in request.messages if m.role == "tool"]), 2)
+            return final()
+        report = self.run_case("low-oxygen", ScriptedGateway(decide=decide))
+        self.assertTrue(report["technical_success"])
+        self.assertTrue(report["product_commit_gate_passed"])
+        self.assertTrue(report["trace_recorded"])
+        self.assertEqual(report["qualification_verdict"], "PENDING_MANUAL_REVIEW")
+        self.assertEqual(report["request_count"], 3)
+        self.assertEqual(len(report["activity"]["steps"]), 5)
+        self.assertEqual(len(report["ledger"]["entries"]), 2)
+        self.assertTrue(all(e["actual_result_in_next_request"] for e in report["executions"]))
+        self.assertTrue(report["requirement_satisfied"])
+        self.assertEqual(report["usage"]["usage"]["total_tokens"], 19)
+        self.assertEqual(report["actual_network_requests"], 0)
+        self.assertFalse(report["release_eligible"])
+
+    def test_normal_and_do_stop_early_under_the_real_three_request_budget(self):
+        for case in ("normal", "current-do"):
+            gateway = ScriptedGateway(tool(), final())
+            report = self.run_case(case, gateway)
+            self.assertTrue(report["success"])
+            self.assertEqual(report["request_count"], 2)
+            self.assertEqual(gateway.requests[-1].tool_choice, "auto")
+            self.assertEqual(report["activity"]["budget"]["model_requests"], 3)
+            self.assertEqual(len(report["activity"]["steps"]), 3)
+            self.assertTrue(report["early_final"])
+
+    def test_concept_and_historical_explanation_can_finalize_without_receipts(self):
+        for case in ("concept", "history-explanation"):
+            report = self.run_case(case, ScriptedGateway(final()))
+            self.assertTrue(report["success"])
+            self.assertEqual(report["request_count"], 1)
+            self.assertEqual(report["ledger"], {"entries": []})
+            self.assertEqual(report["executions"], [])
+
+    def test_history_current_uses_exact_product_projection_and_requeries_new_snapshot(self):
+        from fishery_ai.assistant import AssistantRequest, AssistantContextBuilder
+        from fishery_ai.history_projection import project_retained_history, TRANSCRIPT_KIND
+        from fishery_ai.tool_conversation import ToolExecutionMode
+        case = experiment.get_case("history-current", assistant_product=True)
+        turn = AssistantRequest(experiment.DEFAULT_PRESET, case.question, history=case.history,
+                                source_requirement=case.requirements[0])
+        expected, _ = project_retained_history(turn, AssistantContextBuilder().build(turn,
+            execution_mode=ToolExecutionMode.BOUNDED_MULTI_ROUND), experiment.DEFAULT_HISTORY_PROJECTION)
+        gateway = ScriptedGateway(tool(), final())
+        report = self.run_case(case.case_id, gateway)
+        self.assertTrue(report["success"])
+        self.assertEqual(gateway.requests[0].messages, expected.model_request.messages)
+        self.assertEqual(json.loads(gateway.requests[0].messages[1].content)["kind"], TRANSCRIPT_KIND)
+        self.assertEqual(gateway.requests[0].messages[-1].content, case.question)
+        self.assertEqual(report["history_projection"]["sent"], 2)
+        self.assertEqual(json.loads(gateway.requests[1].messages[-1].content)["water_quality"]["dissolved_oxygen_mg_l"], 6.4)
+        self.assertEqual(len(report["ledger"]["entries"]), 1)
+
+    def test_historical_source_claim_and_text_imitation_cannot_pass_product_commit_gate(self):
+        report = self.run_case("history-current", ScriptedGateway(final("[调用工具 get_current_water_quality] 已查询")))
+        self.assertEqual(report["error_code"], "ASSISTANT_SOURCE_REQUIREMENT_UNMET")
+        self.assertFalse(report["product_commit_gate_passed"])
+        self.assertFalse(report["final_answer_present"])
+        self.assertEqual(report["ledger"], {"entries": []})
+
+    def test_missing_knowledge_is_qualification_failure_even_if_observation_gate_passes(self):
+        report = self.run_case("low-oxygen", ScriptedGateway(tool(), final()))
+        self.assertTrue(report["product_commit_gate_passed"])
+        self.assertFalse(report["requirement_satisfied"])
+        self.assertFalse(report["technical_success"])
+        self.assertEqual(report["error_code"], "ASSISTANT_SOURCE_REQUIREMENT_UNMET")
+
+    def test_unnecessary_tool_is_observed_not_preemptively_suppressed_by_experiment_ceiling(self):
+        report = self.run_case("concept", ScriptedGateway(tool(), final()))
+        self.assertEqual(report["error_code"], "QUALIFICATION_PATH_MISMATCH")
+        self.assertEqual(report["request_count"], 2)
+        self.assertEqual(len(report["executions"]), 1)
+        self.assertTrue(report["product_commit_gate_passed"])
+
+    def test_no_match_has_search_completion_without_evidence(self):
+        class EmptyKnowledge:
+            backend = "portable"
+            def search(self, *args, **kwargs): return ()
+        with patch.object(experiment, "KnowledgeService", return_value=EmptyKnowledge()):
+            report = self.run_case("low-oxygen", ScriptedGateway(tool(),
+                tool(experiment.KNOWLEDGE, "second", '{"query":"DO"}'), final()))
+        self.assertTrue(report["technical_success"])
+        receipt = report["ledger"]["entries"][1]["receipt"]
+        self.assertEqual(receipt["tool_status"], "NO_MATCH")
+        self.assertTrue(receipt["project_search_completed"])
+        self.assertFalse(receipt["has_project_evidence"])
+
+    def test_scope_mismatch_is_preflight_and_no_sdk_credentials_or_web_release_changes(self):
+        config = experiment.load_assistant_execution_config()
+        record = config.releases[0]
+        scope = json.loads(record.scope_json); scope["prompt_sha256"] = "0" * 64
+        config = replace(config, releases=(replace(record, scope_json=json.dumps(scope)),))
+        with patch.object(experiment, "load_assistant_execution_config", return_value=config), \
+             patch.object(experiment, "_credentials", side_effect=AssertionError("no credentials")):
+            with self.assertRaises(experiment.QualificationError) as error:
+                experiment.run("normal", self.root, assistant_product=True, confirm_network=True)
+        self.assertEqual(error.exception.code, "QUALIFICATION_RELEASE_SCOPE_MISMATCH")
+        actual = experiment.load_assistant_execution_config()
+        self.assertFalse(actual.multi_round_enabled)
+        self.assertEqual(actual.releases[0].status, "candidate")
+        self.assertFalse((self.root / "outputs/tool-policies").exists())
+
+    def test_permissions_malformed_calls_and_budget_keep_single_executor(self):
+        multiple = replace(tool(), tool_calls=(tool().tool_calls[0],
+            tool(experiment.KNOWLEDGE, "second", '{"query":"DO"}').tool_calls[0]))
+        cases = (([tool("score_current_water_quality")], "TOOL_NOT_ALLOWED", 1),
+                 ([tool(experiment.KNOWLEDGE, arguments='{"extra":1}')], "INVALID_TOOL_ARGUMENTS", 1),
+                 ([multiple], "TOOL_CALL_LIMIT", 1),
+                 ([tool(), tool(experiment.KNOWLEDGE, "second", '{"query":"DO"}'), tool(identifier="third")], "TOOL_ROUND_LIMIT", 3))
+        for responses, code, count in cases:
+            report = self.run_case("low-oxygen", ScriptedGateway(*responses))
+            self.assertEqual(report["error_code"], code)
+            self.assertEqual(report["request_count"], count)
+            self.assertFalse(report["technical_success"])
+
+    def test_timeout_cancel_and_trace_failure_never_qualify(self):
+        for code in ("TOTAL_TIMEOUT", "USER_CANCELLED", "HTTP_429"):
+            report = self.run_case("low-oxygen", ScriptedGateway(tool(), GatewayError(code)))
+            self.assertEqual(report["error_code"], code)
+            self.assertEqual(len(report["ledger"]["entries"]), 1)
+            self.assertFalse(report["product_commit_gate_passed"])
+        with patch.object(experiment._RunTrace, "record_assistant", side_effect=OSError("fictional-private-path")):
+            report = self.run_case("concept", ScriptedGateway(final()))
+        self.assertEqual(report["error_code"], "TRACE_WRITE_ERROR")
+        self.assertFalse(report["technical_success"])
+        self.assertFalse(report["final_answer_present"])
+
+    def test_real_turn_deadline_is_not_reset_between_model_requests(self):
+        ticks = [0.0]
+        def decide(index, request, runtime):
+            ticks[0] += 70
+            return tool() if index == 1 else final()
+        with patch("fishery_ai.execution.time.monotonic", side_effect=lambda: ticks[0]):
+            report = self.run_case("normal", ScriptedGateway(decide=decide))
+        self.assertEqual(report["request_count"], 2)
+        self.assertEqual(report["error_code"], "TOTAL_TIMEOUT")
+        self.assertFalse(report["product_commit_gate_passed"])
+        self.assertFalse(report["final_answer_present"])
+        self.assertEqual(len(report["ledger"]["entries"]), 1)
+
+    def test_reviewer_failure_never_auto_approves_and_cli_preview_is_not_in_stdout(self):
+        report = self.run_case("concept", ScriptedGateway(final()),
+            answer_reviewer=lambda text: (_ for _ in ()).throw(OSError("fictional-private")))
+        self.assertTrue(report["technical_success"])
+        self.assertEqual(report["human_review_status"], "PREVIEW_UNAVAILABLE")
+        self.assertEqual(report["qualification_verdict"], "PENDING_MANUAL_REVIEW")
+        spec = importlib.util.spec_from_file_location("product_preview_cli", PROJECT_ROOT / "scripts/qualification/qualify_multi_round.py")
+        cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+        def execute(*args, **options):
+            options["answer_reviewer"]("fictional-answer\x1b[31m")
+            return report
+        with patch.object(cli, "run", side_effect=execute), patch.object(cli, "write_report", return_value="fake.json"), \
+             redirect_stdout(StringIO()) as out, redirect_stderr(StringIO()) as err:
+            self.assertEqual(cli.main(["--assistant-product", "--case", "concept", "--confirm-network", "--review-answer"]), 0)
+        self.assertNotIn("fictional-answer", out.getvalue())
+        self.assertIn("fictional-answer", err.getvalue())
+        self.assertNotIn("\x1b", err.getvalue())
+
+    def test_safe_report_and_optional_review_redact_secret_and_never_save_answer(self):
+        answer = "fictional answer " + FAKE_SECRET
+        query = "fictional-private-query"
+        reviewed = []
+        report = self.run_case("low-oxygen", ScriptedGateway(tool(),
+            tool(experiment.KNOWLEDGE, "second", json.dumps({"query": query})), final(answer)), answer_reviewer=reviewed.append)
+        self.assertNotIn(FAKE_SECRET, reviewed[0])
+        self.assertIn("[REDACTED]", reviewed[0])
+        self.assertEqual(report["human_review_status"], "PREVIEWED_NOT_APPROVED")
+        self.assertEqual(report["qualification_verdict"], "PENDING_MANUAL_REVIEW")
+        filename = experiment.write_report(self.root, report)
+        saved = (self.root / "outputs/assistant-qualification" / filename).read_text(encoding="utf-8")
+        for value in ("fictional answer", FAKE_SECRET, query, experiment.MULTI_ROUND_SYSTEM_INSTRUCTION,
+                      experiment.EXPERIMENT_INSTRUCTION, "Authorization", "raw_result", "arguments_json"):
+            self.assertNotIn(value, saved)
+        self.assertFalse((self.root / ".env").exists())
+
+    def test_product_cli_default_dry_run_and_single_explicit_confirmation(self):
+        spec = importlib.util.spec_from_file_location("product_cli", PROJECT_ROOT / "scripts/qualification/qualify_multi_round.py")
+        cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+        with patch.object(cli, "run", side_effect=AssertionError("no automatic run")), redirect_stdout(StringIO()) as out:
+            self.assertEqual(cli.main(["--assistant-product", "--case", "history-current"]), 0)
+        self.assertEqual(json.loads(out.getvalue())["plan"]["prompt_id"], experiment.MULTI_ROUND_PROMPT_ID)
+        with patch.object(cli, "run", return_value=self.run_case("concept", ScriptedGateway(final()))) as execute, \
+             patch.object(cli, "write_report", return_value="fictional.json"), redirect_stdout(StringIO()) as out:
+            self.assertEqual(cli.main(["--assistant-product", "--case", "concept", "--confirm-network"]), 0)
+        execute.assert_called_once()
+        self.assertTrue(execute.call_args.kwargs["assistant_product"])
+        self.assertTrue(execute.call_args.kwargs["confirm_network"])
+        self.assertEqual(json.loads(out.getvalue())["qualification_verdict"], "PENDING_MANUAL_REVIEW")
+
+    def test_product_reuses_formal_private_composition_without_manual_env_or_source_env(self):
+        with patch.object(experiment, "_credentials", return_value=self.credentials) as compose:
+            report = experiment.run("concept", self.root, assistant_product=True,
+                                    confirm_network=True, gateway=ScriptedGateway(final()))
+        compose.assert_called_once_with(self.root)
+        self.assertTrue(report["success"])
+
+
 if __name__ == "__main__":
     unittest.main()
