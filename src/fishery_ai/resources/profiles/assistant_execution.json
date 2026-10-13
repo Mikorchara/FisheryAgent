@@ -112,6 +112,120 @@
       },
       "qualification_id": null,
       "validated_at": null
+    },
+    {
+      "release_id": "qwen38-three-tools-local-v1",
+      "status": "local_experimental",
+      "scope": {
+        "preset_id": "dashscope-qwen38-flash-r1",
+        "preset_variant": "off",
+        "contract_version": "1.0.2",
+        "identity": [
+          "dashscope",
+          "openai_chat",
+          "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          "qwen3.8-flash"
+        ],
+        "protocol_spec": {
+          "spec_id": "dashscope_chat",
+          "version": "1",
+          "max_output_tokens_field": "max_tokens",
+          "thinking_encoding": "enable_thinking",
+          "effort_field": "reasoning_effort",
+          "stream_field": "stream",
+          "usage_options_field": "stream_options"
+        },
+        "thinking": "off",
+        "response_mode": "normal",
+        "prompt_id": "ASSISTANT_BOUNDED_MULTI_ROUND@1",
+        "prompt_sha256": "51906f193e00749e4a6cf6c1f067e65798252b49c9a352ddf1b44139cd54b066",
+        "history_projection": "UNTRUSTED_TRANSCRIPT_V1",
+        "history_version": "1",
+        "tools": [
+          "get_current_water_quality",
+          "score_current_water_quality",
+          "search_fishery_knowledge"
+        ],
+        "tool_definitions_sha256": "6126309ccadca9329519b395be174fe5737046f61ea2cabbd1efde88cf8e757b"
+      },
+      "qualification_id": null,
+      "validated_at": null
+    },
+    {
+      "release_id": "deepseek-flash-three-tools-local-v1",
+      "status": "local_experimental",
+      "scope": {
+        "preset_id": "deepseek-flash-r1",
+        "preset_variant": "off",
+        "contract_version": "1.0.2",
+        "identity": [
+          "deepseek_api",
+          "openai_chat",
+          "https://api.deepseek.com",
+          "deepseek-flash"
+        ],
+        "protocol_spec": {
+          "spec_id": "deepseek_chat",
+          "version": "1",
+          "max_output_tokens_field": "max_tokens",
+          "thinking_encoding": "thinking_type",
+          "effort_field": "reasoning_effort",
+          "stream_field": "stream",
+          "usage_options_field": "stream_options"
+        },
+        "thinking": "off",
+        "response_mode": "normal",
+        "prompt_id": "ASSISTANT_BOUNDED_MULTI_ROUND@1",
+        "prompt_sha256": "51906f193e00749e4a6cf6c1f067e65798252b49c9a352ddf1b44139cd54b066",
+        "history_projection": "UNTRUSTED_TRANSCRIPT_V1",
+        "history_version": "1",
+        "tools": [
+          "get_current_water_quality",
+          "score_current_water_quality",
+          "search_fishery_knowledge"
+        ],
+        "tool_definitions_sha256": "6126309ccadca9329519b395be174fe5737046f61ea2cabbd1efde88cf8e757b"
+      },
+      "qualification_id": null,
+      "validated_at": null
+    },
+    {
+      "release_id": "ollama-qwen35-three-tools-local-v1",
+      "status": "local_experimental",
+      "scope": {
+        "preset_id": "ollama-qwen35-4b-r1",
+        "preset_variant": "off",
+        "contract_version": "1.0.2",
+        "identity": [
+          "ollama",
+          "generic_openai_chat",
+          "http://127.0.0.1:11434/v1",
+          "qwen3.5:4b"
+        ],
+        "protocol_spec": {
+          "spec_id": "ollama_openai_chat",
+          "version": "1",
+          "max_output_tokens_field": "max_tokens",
+          "thinking_encoding": "effort_high_none",
+          "effort_field": null,
+          "stream_field": "stream",
+          "usage_options_field": "stream_options"
+        },
+        "thinking": "off",
+        "response_mode": "normal",
+        "prompt_id": "ASSISTANT_BOUNDED_MULTI_ROUND@1",
+        "prompt_sha256": "51906f193e00749e4a6cf6c1f067e65798252b49c9a352ddf1b44139cd54b066",
+        "history_projection": "UNTRUSTED_TRANSCRIPT_V1",
+        "history_version": "1",
+        "tools": [
+          "get_current_water_quality",
+          "score_current_water_quality",
+          "search_fishery_knowledge"
+        ],
+        "tool_definitions_sha256": "6126309ccadca9329519b395be174fe5737046f61ea2cabbd1efde88cf8e757b"
+      },
+      "qualification_id": null,
+      "validated_at": null
     }
   ]
 }

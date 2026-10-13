@@ -98,7 +98,7 @@ AssistantService 默认仍拒绝多轮协调器。协调器与 AssistantService 
 
 内部整 Turn deadline 从 `send` 开始，覆盖上下文、模型请求、Tool、门禁与 Trace。上限为冻结 Runtime 的 `total_timeout_s`，内部 `turn_timeout_s` 只能收紧；同一 RequestHandle 不续期。Adapter 使用剩余时间真正取消本机异步 SDK I/O，`TOTAL_TIMEOUT` 与 `USER_CANCELLED`、Provider 错误分开；清理 I/O 不制造用户 Stop。同步本地 Handler/文件写入无法强制抢占，返回后仍检查超时，不能提交成功；SDK 清理有有限宽限，不证明远端已停止计算。
 
-若同步 Assistant Trace 写入跨越 deadline，追加同 request/trace id 的失败终态修正；最后一条 `assistant_turn` 是提交结果，先前执行 Trace 只记录执行阶段。Web 连接和安全门禁已通过离线测试，正式多轮 Prompt + History 的真实资格与维护者发布仍待单独批准。Flag 和范围在 app epoch 内固定，关闭 Flag 并重启会生成新 epoch；不在进行中的 Turn 切换或失败后回退重试。当前没有发布多轮，也没有 Streaming Tool Calling。
+若同步 Assistant Trace 写入跨越 deadline，追加同 request/trace id 的失败终态修正；最后一条 `assistant_turn` 是提交结果，先前执行 Trace 只记录执行阶段。当前三个 Preset 在精确查询+Knowledge 范围开放本地多轮，Qwen 为 released，DeepSeek / Ollama 为 local_experimental；三个模型的查询+评分+Knowledge 范围均为独立 local_experimental，不继承两 Tool 资格。授权三项不代表执行三项，仍最多两次 Tool 执行。Flag 和范围在 app epoch 内固定，关闭 Flag 并重启会生成新 epoch；不在进行中的 Turn 切换或失败后回退重试。尚无 Streaming Tool Calling。
 
 ## 主要代码
 
@@ -108,7 +108,7 @@ AssistantService 默认仍拒绝多轮协调器。协调器与 AssistantService 
 - `src/fishery_ai/assistant_execution.py`：维护者固定发布范围与 Web 确认 revision；不依赖资格开发子包。
 - `src/fishery_ai/history_projection.py`：完整 pair 裁剪后的正式 B 投影与内部 A 回滚。
 - `src/fishery_ai/assistant_sources.py`：本轮操作要求、有限 Receipt 与纯确定性满足关系。
-- `src/fishery_ai/tool_conversation.py`：共享有界协调器，正式产品仍使用单轮预算。
+- `src/fishery_ai/tool_conversation.py`：共享有界协调器；Analysis / 默认实例单轮，Assistant 精确发布范围可使用 2/2/3。
 - `src/fishery_ai/tools/`：Registry、Policy、Executor、Catalog 与 Handler。
 - `src/fishery_ai/resources/web/`：Analysis / Assistant 独立工作区及 Development/Test UI。
 - `tests/assistant/test_assistant.py`、`tests/assistant/test_assistant_sources.py`、`tests/assistant/test_history_projection.py`、`tests/tools/test_analysis_tools.py`、`tests/web/test_analysis_tool_web.py`、`tests/web/test_browser_streaming.cjs`：主要回归覆盖。

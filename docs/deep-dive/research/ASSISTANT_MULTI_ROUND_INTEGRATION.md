@@ -299,6 +299,8 @@ JSON 固定写到 `outputs/assistant-qualification/<run_id>.json`，独占创建
 
 ## 11. Phase 4C 三预设本地试用发布
 
+本节保留两 Tool 发布依据；三 Tool 新实验范围与当前 UI 见 §12。
+
 2026-10-13 用户明确批准本地 Prototype 三模型试用；本轮没有 Provider / Ollama 请求。包内 `multi_round_enabled=true`，不影响 `D:\Fishery_Project` 或 Analysis；类构造的安全默认值仍是 false，未登记范围不能凭 Flag 获得多轮。
 
 | Preset / exact model | 发布状态 | 本轮资格依据 |
@@ -338,3 +340,23 @@ Qwen维护记录 `phase4c-qwen38-six-cases-20261013` 对应以下现存安全报
 首次及串行复核FULL PRODUCT均暴露既有50ms阻塞SDK测试对Windows事件循环启动速度的假设；单项通过。只把该测试的I/O启动窗口改为500ms，保留TOTAL_TIMEOUT、实际close、非用户取消与一次attempt全部断言；未修改Adapter / Cancellation / 产品deadline。修改后Security14项及完整950项通过。
 
 两个实验模型的真实多轮表现、实际延迟及正文安全性均等待用户网页体验，不宣称已验证；长历史、评分Tool组合、Thinking ON、Streaming不在发布范围。本轮无真实Provider或Ollama推理请求，未commit/push。
+
+## 12. Phase 4D：三 Tool 本地实验与 Activity 卡片
+
+用户批准在相同 OFF / Normal、2 Calls / 2 Rounds / 3 Requests 边界内，同时授权查询、实验评分与 Knowledge。保留 §11 三份两 Tool 记录，新增三份各自 exact Identity 的 `local_experimental` 范围；共六份 Scope。三 Tool 的 qualification_id / validated_at 均为 null，Qwen 两 Tool 真实资格不推广到三 Tool。Preset contract 仍为 1.0.2，未修改 `presets.json` 或 Provider Capability。
+
+| 实际授权组合 | Qwen | DeepSeek / Ollama | 预算 |
+| --- | --- | --- | --- |
+| 查询 + Knowledge | released | local_experimental | 2/2/3 |
+| 查询 + 评分 + Knowledge | local_experimental | local_experimental | 2/2/3 |
+| 其他未登记组合 | 单轮回退 | 单轮回退 | 1/1/2 |
+
+仍按完整 Identity、协议、Prompt、History、实际 definitions 和指纹精确匹配，不改为子集匹配。三 Tool 是可选集合，不保证某轮执行两次，也不允许执行第三个 Tool；模型可直接或提前 Final。未修改用户 Policy、Handler、Source Gate 或 Runtime 执行循环。
+
+已启动 Web 需完整重启加载六份 Scope。进入 Assistant Tool Manager 后由用户选择并保存三个 Tool；新 bootstrap 显示“本地实验试用”及最多三次请求，保存 Policy 会取消旧联网确认。没有自动勾选、真实调用或重跑。关闭 `multi_round_enabled` 并重启仍回滚到单轮；两 Tool 的原资格记录保留。
+
+Activity 不再把多个 Tool 详细字段拼入同一个 dl：聊天回答与“本次运行”中，每个实际 Tool 都有独立卡片，默认显示名称、执行状态和有限业务摘要，详细字段分别折叠。评分卡片明确 Experimental；Knowledge 只显示检索状态/命中数量，不冒充水质观测。运行详情保留完整有序 Model/Tool Steps、Usage、错误与取消信息；调用尝试不计为 Handler 执行，没有参数、Raw Result、Prompt 或凭据。一个 Turn 仍只提交一条最终回答。
+
+离线验证：Web targeted 28 项；Assistant/Tool/Web targeted 191 项；Browser targeted 42 项；FAST 149 项；FULL PRODUCT 954 项；FULL Browser 205 项；FULL QUALIFICATION 134 项（133 通过，1 项既有 symlink 环境跳过）。三模型实际 Flask API 覆盖评分→Knowledge、查询→评分、直接/提前 Final、独立 Ledger、权限预算、同轮多调用拒绝、确认 revision、Stop 与回滚；真实安全 Web 结果回放到 Node UI 验证独立卡片及五步进度。
+
+Streaming 只做官方协议和源码研究，见 [Streaming Tool Calling 分阶段方案](ASSISTANT_STREAMING_TOOL_CALLING.md)。当前正式 Streaming Tool 门禁保持拒绝，未进行任何 Provider / Ollama 推理请求。没有 commit / push。

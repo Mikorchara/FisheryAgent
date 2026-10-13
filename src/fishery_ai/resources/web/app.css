@@ -60,6 +60,11 @@ select, textarea, input[type="text"], input[type="url"], input[type="password"],
 .assistant-composer { border-top: 1px solid #e2e9e4; padding-top: 14px; }
 .assistant-run { padding: 10px 12px; border: 1px solid #d8e5dc; border-radius: 9px; font-size: 12px; }
 .assistant-run dl { margin-top: 14px; }
+.assistant-tool-card, .assistant-model-step { margin-top: 12px; padding: 12px; border: 1px solid #d8e5dc; border-radius: 9px; }
+.assistant-tool-card { background: #f3f8f4; }
+.assistant-tool-card h4, .assistant-model-step h4 { margin: 0 0 6px; font-size: 13px; overflow-wrap: anywhere; }
+.assistant-tool-card p { font-size: 12px; color: #496456; }
+.assistant-tool-card details { margin-top: 8px; }
 .assistant-composer .status { min-height: 0; margin: 8px 0; }
 .assistant-network { margin-top: 12px; padding: 10px 12px; }
 .assistant-network p { margin: 5px 0; font-size: 12px; }

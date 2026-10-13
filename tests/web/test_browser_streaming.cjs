@@ -1420,6 +1420,60 @@ test('Assistant single fixed-width toggle replaces both old status buttons',()=>
   assert.doesNotMatch(workspace,/tool-trace|Reasoning|capability|Base URL/);
 });
 
+test('Assistant three-Tool Web scope renders separate score and Knowledge cards with collapsed fields',async()=>{
+  const root=path.join(__dirname,'..','..');
+  const python=path.join(root,'.venv',process.platform==='win32'?'Scripts':'bin',process.platform==='win32'?'python.exe':'python');
+  const produced=spawnSync(python,['-m','tests.web.test_assistant_execution_web','--browser-three-tool-fixture'],
+    {cwd:root,encoding:'utf8',timeout:20000,maxBuffer:2*1024*1024});
+  assert.equal(produced.status,0,produced.stderr);
+  const fixture=JSON.parse(produced.stdout);let release;
+  const page=assistantPage(async(url)=>{
+    if(url==='/api/requests')return r2Reply({request_id:fixture.request_id,control_token:'fictional-control'});
+    if(url.endsWith('/status'))return r2Reply(fixture.statuses[0]);
+    if(url==='/api/assistant/chat')return new Promise(done=>{release=done;});
+    assert.fail('unexpected route');
+  },fixture.bootstrap,{ownExecutionRoutes:true});
+  await enterAssistant(page);
+  assert.match(page.element('assistant-execution-note').textContent,/本地实验试用/);
+  assert.match(page.element('assistant-network-note').textContent,/最多三次/);
+  const pending=sendAssistantQuestion(page);while(!release)await new Promise(done=>setImmediate(done));
+  for(const status of fixture.statuses)vm.runInContext(`acceptAssistantProgress(activeExecution,${JSON.stringify(status)})`,page.context);
+  const progress=page.element('assistant-run-details');
+  assert.match(allElementText(progress),/Step #1.*Step #2.*Step #3.*Step #4.*Step #5/);
+  const toolCards=progress.children.filter(c=>c.children[2]?.children[0]?.textContent==='详细字段');
+  assert.equal(toolCards.length,2);
+  assert.match(allElementText(toolCards[0]),/score_current_water_quality.*EXPERIMENTAL/);
+  assert.match(allElementText(toolCards[1]),/search_fishery_knowledge/);
+  assert.ok(toolCards.every(c=>!c.children[2].open));
+  release(r2Reply({result:fixture.result}));await pending;
+  const state=assistantStateJson(page);
+  assert.equal(state.completedTurns.length,1);
+  const article=page.element('assistant-messages').children.find(c=>c.children[0]?.textContent===fixture.result.final_text);
+  const group=article.children.find(c=>c.children[0]?.textContent==='使用了 2 个 Tool');
+  assert.equal(group.children.length,3); // Count label + one independent card per actual Tool.
+  const score=group.children[1],knowledge=group.children[2];
+  assert.match(score.children[0].textContent,/评分.*COMPLETED/);
+  assert.match(score.children[1].textContent,/执行完成.*EXPERIMENTAL/);
+  assert.match(knowledge.children[1].textContent,/知识命中|无知识命中/);
+  assert.ok(!score.children[2].open && !knowledge.children[2].open);
+  assert.doesNotMatch(allElementText(group),/离线测试主题|arguments_json|water_quality.*dissolved_oxygen|fictional-trial/);
+  assert.equal(state.completedTurns[0].assistant,fixture.result.final_text);
+});
+
+test('Assistant Tool cards distinguish attempts, cancellation, failure and missing data',()=>{
+  const page=assistantPage();
+  for(const [state,started,status,label] of [
+    ['REJECTED',false,'ERROR',/Handler 未执行/],['CANCELLED',true,null,/已取消/],
+    ['FAILED',true,'ERROR',/执行失败/],['RUNNING',true,null,/执行中/],
+    ['COMPLETED',true,'NO_DATA',/无当前数据/],['COMPLETED',true,'PARTIAL',/部分结果/],
+    ['COMPLETED',true,'NOT_SCORABLE',/无法评分/]]) {
+    const card=vm.runInContext(`assistantToolCard({tool_name:'score_current_water_quality',state:'${state}',
+      handler_started:${started},tool_status:${JSON.stringify(status)},experimental:true})`,page.context);
+    assert.match(card.children[1].textContent,label);
+    assert.ok(!card.children[2].open);
+  }
+});
+
 test('Assistant workspace switch preserves Analysis DOM runtime scenario result drafts and scroll',async()=>{
   const page=assistantPage(async()=>assert.fail('switch must not generate or Apply'));
   vm.runInContext('accessMode="managed_custom"; profiles=[{profile_id:"origin"}]; formMode="edit"; editDraft={model:"draft-model"}',page.context);
@@ -3703,7 +3757,7 @@ test('Assistant knowledge activity shows catalog labels and never water snapshot
   assert.doesNotMatch(text,/unavailable/);
   assert.doesNotMatch(text,/observed_at|quality|freshness/);
   const run=allElementText(page.element('assistant-run-details'));
-  assert.match(run,/Tool name\s+search_fishery_knowledge\s+Tool result status\s+NO_MATCH/);
+  assert.match(run,/Tool Name\s+知识检索（search_fishery_knowledge）\s+Result Status\s+NO_MATCH/);
 });
 
 test('Assistant water activity keeps its catalog summary and gains no knowledge wording',async()=>{

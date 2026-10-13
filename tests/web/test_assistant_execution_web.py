@@ -4,7 +4,7 @@ from dataclasses import FrozenInstanceError, replace
 import json
 from unittest.mock import patch
 
-from fishery_ai.assistant import ALLOWED_PRESET_IDS, AssistantError, assistant_profile
+from fishery_ai.assistant import ALLOWED_PRESET_IDS, AssistantError, AssistantService, assistant_profile
 from fishery_ai.assistant_execution import (AssistantExecutionConfig, AssistantMultiRoundRelease,
     load_assistant_execution_config, release_scope, resolve_execution_profile)
 from fishery_ai.credentials import CredentialStore
@@ -44,8 +44,8 @@ class ExecutionReleaseTests(AssistantFixture):
     def test_packaged_local_trial_scopes_have_distinct_qualification_states(self):
         config = load_assistant_execution_config()
         self.assertTrue(config.multi_round_enabled)
-        self.assertEqual(len(config.releases), 3)
-        self.assertEqual([r.status for r in config.releases], ["released", "local_experimental", "local_experimental"])
+        self.assertEqual(len(config.releases), 6)
+        self.assertEqual([r.status for r in config.releases], ["released"] + ["local_experimental"] * 5)
         self.assertTrue(config.releases[0].qualification_id)
         for record in config.releases[1:]:
             self.assertIsNone(record.qualification_id)
@@ -114,7 +114,7 @@ class ExecutionReleaseTests(AssistantFixture):
             # Only the other models' records cannot authorize this exact identity.
             others = replace(config, releases=tuple(r for r in config.releases if r != record))
             self.assertEqual(self.effective(others, profile).mode, ToolExecutionMode.SINGLE_ROUND)
-            for names in ((), (QUERY,), (KNOWLEDGE,), (QUERY, KNOWLEDGE, SCORE)):
+            for names in ((), (QUERY,), (KNOWLEDGE,), (QUERY, SCORE), (SCORE, KNOWLEDGE)):
                 fallback = self.effective(config, profile, policy=ToolPolicy("assistant", True, names))
                 self.assertEqual(fallback.mode, ToolExecutionMode.SINGLE_ROUND)
                 self.assertEqual(fallback.mode_reason, "scope_not_published")
@@ -122,6 +122,24 @@ class ExecutionReleaseTests(AssistantFixture):
             self.assertEqual(rollback.mode, ToolExecutionMode.SINGLE_ROUND)
             self.assertEqual(rollback.mode_reason, "flag_disabled")
             self.assertNotEqual(active.revision, rollback.revision)
+
+    def test_three_tool_scopes_are_independent_experiments_with_exact_definitions(self):
+        config = load_assistant_execution_config()
+        policy = ToolPolicy("assistant", True, (QUERY, SCORE, KNOWLEDGE))
+        for identifier, record in zip(ALLOWED_PRESET_IDS, config.releases[3:]):
+            profile = assistant_profile(identifier)
+            self.assertEqual(record.status, "local_experimental")
+            self.assertIsNone(record.qualification_id)
+            self.assertIsNone(record.validated_at)
+            self.assertEqual(json.loads(record.scope_json), release_scope(profile, policy, self.registry, DEFAULT_HISTORY_PROJECTION))
+            active = self.effective(config, profile, policy)
+            self.assertEqual(active.mode, ToolExecutionMode.BOUNDED_MULTI_ROUND)
+            self.assertEqual(active.release_status, "local_experimental")
+            self.assertEqual(active.public()["max_model_requests"], 3)
+            # Neither the two-tool scope nor another model's three-tool scope authorizes it.
+            without = replace(config, releases=tuple(r for r in config.releases if r != record))
+            self.assertEqual(self.effective(without, profile, policy).mode, ToolExecutionMode.SINGLE_ROUND)
+            self.assertNotEqual(active.revision, self.effective(config, profile).revision)
 
 
 class AssistantExecutionWebTests(AssistantWebFixture):
@@ -381,7 +399,7 @@ class LocalTrialWebTests(AssistantWebFixture):
     def test_fallback_requires_fresh_confirmation_and_does_not_run_transport(self):
         revisions = {p["preset_id"]: p["execution_profile"]["revision"] for p in self.bootstrap()["presets"]}
         self.app.extensions["fishery_tool_policy_store"].save({"schema_version": 1, "modes": {
-            "analysis": {"selected_tools": [SCORE]}, "assistant": {"selected_tools": [QUERY, KNOWLEDGE, SCORE]}}})
+            "analysis": {"selected_tools": [SCORE]}, "assistant": {"selected_tools": [QUERY, SCORE]}}})
         for p in self.bootstrap()["presets"]:
             self.assertEqual(p["execution_profile"]["mode"], "SINGLE_ROUND")
             self.assertEqual(p["execution_profile"]["mode_reason"], "scope_not_published")
@@ -406,14 +424,123 @@ class LocalTrialWebTests(AssistantWebFixture):
             self.assertEqual(self.post(preset_id=identifier, release_status="local_experimental").status_code, 400)
         self.factory.assert_not_called()
 
+    def three_tool_turn(self, identifier=QWEN, first=SCORE, second=KNOWLEDGE):
+        store = self.app.extensions["fishery_tool_policy_store"]
+        store.save({"schema_version": 1, "modes": {
+            "analysis": {"selected_tools": [SCORE]},
+            "assistant": {"selected_tools": [QUERY, SCORE, KNOWLEDGE]}}})
+        before = store.effective()
+        control = self.client.post("/api/requests", json={}, headers=self.headers).get_json()
+        observed, captured = [], []
+        original = AssistantService.send
+        def capture(service, request, runtime):
+            result = original(service, request, runtime); captured.append(result)
+            return result
+        def inspect(index, request, runtime):
+            observed.append(self.client.post(f"/api/requests/{control['request_id']}/status",
+                json={"control_token": control["control_token"]}, headers=self.headers).get_json())
+            self.assertEqual([d.name for d in request.tools], [QUERY, SCORE, KNOWLEDGE])
+            self.assertEqual(runtime.max_retries, 0)
+            if index == 2:
+                self.assertEqual(request.messages[-1].role, "tool")
+                self.assertEqual(json.loads(request.messages[-1].content)["status"], "OK")
+            if index == 3:
+                self.assertEqual(request.tool_choice, "none")
+                self.assertEqual(len([m for m in request.messages if m.role == "tool"]), 2)
+        arguments = '{"query":"离线测试主题"}' if second == KNOWLEDGE else '{}'
+        gateway = RecordingGateway(call(first, call_id="first"), call(second, arguments, "second"), final(), callback=inspect)
+        self.factory.return_value = gateway
+        with patch.object(AssistantService, "send", capture):
+            response = self.post(preset_id=identifier, request_id=control["request_id"], control_token=control["control_token"])
+        self.assertEqual(response.status_code, 200)
+        result = response.get_json()["result"]
+        self.assertTrue(result["successful_turn"])
+        self.assertEqual(result["activity"]["budget"], {"tool_calls": 2, "tool_rounds": 2, "model_requests": 3})
+        tools = [s for s in result["activity"]["steps"] if s["kind"] == "tool"]
+        self.assertEqual([s["tool_name"] for s in tools], [first, second])
+        self.assertTrue(next(s for s in tools if s["tool_name"] == SCORE)["experimental"])
+        self.assertEqual(len(gateway.requests), 3)
+        self.assertTrue(all(runtime is gateway.runtimes[0] for runtime in gateway.runtimes))
+        self.assertEqual(store.effective(), before)
+        receipts = captured[0].source_ledger.entries
+        self.assertEqual([e.receipt.tool_name for e in receipts], [first, second])
+        self.assertEqual([e.execution_seq for e in receipts], [2, 4])
+        score = next(e.receipt for e in receipts if e.receipt.tool_name == SCORE)
+        self.assertTrue(score.score_evaluation_completed)
+        self.assertIn("CURRENT_TOOL_SCORE", score.sources)
+        other = next(e.receipt for e in receipts if e.receipt.tool_name != SCORE)
+        self.assertFalse(other.score_evaluation_completed)
+        self.assertNotIn("CURRENT_TOOL_SCORE", other.sources)
+        self.assertIsNone(result["tool_activity"])
+        for marker in ("离线测试主题", "fictional-trial", "arguments_json", '"water_quality":'):
+            self.assertNotIn(marker, json.dumps(result, ensure_ascii=False))
+        return result, observed, control
 
-def browser_fixture():
+    def test_three_tool_web_paths_preserve_independent_score_receipts(self):
+        for identifier in ALLOWED_PRESET_IDS:
+            for first, second in ((SCORE, KNOWLEDGE), (QUERY, SCORE)):
+                with self.subTest(preset=identifier, path=(first, second)):
+                    self.three_tool_turn(identifier, first, second)
+
+    def test_three_tool_budget_stop_and_reconfirmation(self):
+        store = self.app.extensions["fishery_tool_policy_store"]
+        previous = self.bootstrap()["presets"][0]["execution_profile"]["revision"]
+        store.save({"schema_version": 1, "modes": {"analysis": {"selected_tools": [SCORE]},
+            "assistant": {"selected_tools": [QUERY, SCORE, KNOWLEDGE]}}})
+        self.assertEqual(self.post(execution_profile_revision=previous).status_code, 409)
+        self.factory.assert_not_called()
+        self.assertTrue(all(p["execution_profile"]["release_status"] == "local_experimental" for p in self.bootstrap()["presets"]))
+        self.factory.return_value = RecordingGateway(call(SCORE, call_id="one"), call(call_id="two"),
+            call(KNOWLEDGE, '{"query":"offline"}', "three"), final())
+        result = self.post().get_json()["result"]
+        self.assertEqual(result["error_code"], "TOOL_ROUND_LIMIT")
+        self.assertFalse(result["successful_turn"])
+        self.assertEqual(result["activity"]["counts"]["tools_executed"], 2)
+        self.assertEqual(len(self.factory.return_value.requests), 3)
+        both = replace(call(), tool_calls=(call().tool_calls[0], call(SCORE, call_id="another").tool_calls[0]))
+        self.factory.return_value = RecordingGateway(both)
+        result = self.post().get_json()["result"]
+        self.assertEqual(result["error_code"], "TOOL_CALL_LIMIT")
+        self.assertEqual(result["activity"]["counts"]["tools_executed"], 0)
+        for stop_index in (1, 2, 3):
+            control = self.client.post("/api/requests", json={}, headers=self.headers).get_json()
+            def stop(index, *_):
+                if index == stop_index:
+                    self.client.post(f"/api/requests/{control['request_id']}/cancel",
+                        json={"control_token": control["control_token"]}, headers=self.headers)
+            self.factory.return_value = RecordingGateway(call(SCORE, call_id="one"), call(call_id="two"), final(), callback=stop)
+            result = self.post(request_id=control["request_id"], control_token=control["control_token"]).get_json()["result"]
+            self.assertEqual(result["error_code"], "USER_CANCELLED")
+            self.assertFalse(result["successful_turn"])
+            self.assertEqual(result["final_text"], "")
+            self.assertEqual(len(self.factory.return_value.requests), stop_index)
+
+    def test_three_tool_web_direct_early_final_and_flag_rollback(self):
+        store = self.app.extensions["fishery_tool_policy_store"]
+        store.save({"schema_version": 1, "modes": {"analysis": {"selected_tools": [SCORE]},
+            "assistant": {"selected_tools": [QUERY, SCORE, KNOWLEDGE]}}})
+        for identifier in ALLOWED_PRESET_IDS:
+            for responses in ((final(),), (call(SCORE), final())):
+                self.factory.return_value = RecordingGateway(*responses)
+                result = self.post(preset_id=identifier).get_json()["result"]
+                self.assertTrue(result["successful_turn"])
+                self.assertEqual(result["usage"]["request_count"], len(responses))
+                self.assertEqual(result["activity"]["budget"]["model_requests"], 3)
+        rollback = self.make_app(assistant_execution_config=replace(load_assistant_execution_config(), multi_round_enabled=False))
+        bootstrap = rollback.test_client().get("/api/assistant/bootstrap").get_json()
+        self.assertTrue(all(p["execution_profile"]["mode"] == "SINGLE_ROUND"
+            and p["execution_profile"]["max_model_requests"] == 2
+            and p["execution_profile"]["mode_reason"] == "flag_disabled" for p in bootstrap["presets"]))
+
+
+def browser_fixture(three_tools=False):
     """Replay only actual safe Web response/status into Node UI, no live HTTP server."""
-    fixture = AssistantExecutionWebTests("test_actual_web_two_tool_turn_and_cumulative_status")
+    fixture = (LocalTrialWebTests("test_three_tool_web_paths_preserve_independent_score_receipts") if three_tools else
+               AssistantExecutionWebTests("test_actual_web_two_tool_turn_and_cumulative_status"))
     fixture.setUp()
     try:
+        result, observed, control = fixture.three_tool_turn() if three_tools else fixture.full_turn()
         bootstrap = fixture.client.get("/api/assistant/bootstrap").get_json()
-        result, observed, control = fixture.full_turn()
         return {"bootstrap": bootstrap, "result": result, "statuses": observed,
                 "request_id": control["request_id"]}  # Never include the control token or raw model requests.
     finally:
@@ -424,6 +551,8 @@ if __name__ == "__main__":
     import sys
     if sys.argv[1:] == ["--browser-fixture"]:
         print(json.dumps(browser_fixture(), ensure_ascii=True))
+    elif sys.argv[1:] == ["--browser-three-tool-fixture"]:
+        print(json.dumps(browser_fixture(three_tools=True), ensure_ascii=True))
     else:
         import unittest
         unittest.main()

@@ -28,6 +28,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  └─ PROJECT_DATA_AND_CONFIG_LOCATIONS.md                            # 数据与配置实际位置地图
 │  │  ├─ research/                                                          # 带历史标记的研究与未来议题
 │  │  │  ├─ ASSISTANT_MULTI_ROUND_INTEGRATION.md                             # 多轮 Web 发布门禁、确认与实施边界
+│  │  │  ├─ ASSISTANT_STREAMING_TOOL_CALLING.md                              # 三 Provider 流式工具协议与分阶段研究
 │  │  │  ├─ BOUNDED_MULTI_ROUND_TOOL_RUNTIME.md                              # 多轮与流式研究，内部非流式两轮已实现
 │  │  │  ├─ DEVELOPMENT_BACKLOG.md                                          # 未立项候选与用户原始笔记，保留历史
 │  │  │  ├─ RUNTIME_PROMPT_AUDIT.md                                       # 运行 Prompt 来源与职责审计，含版本边界

@@ -117,7 +117,7 @@ Development/Test 可使用离线 Mock 或满足能力门禁的真实 Runtime，�
 - 不支持 Streaming Tool Calling、tool delta 拼接或 Streaming Tool Execution。
 - Knowledge 已注册，真实受控资格实验与 History v2 迁移已完成；有限样本不代表长期 Tool 选择稳定性。普通 AUTO 下无 Tool 却声称已查询 / 评分 / 检索的正文仍可能提交成功；Prompt 与历史文字不构成执行证明。
 - Assistant 按需 Knowledge 与 Analysis 自动 RAG 的双重来源、检索相关性和产品 AUTO 的来源保证仍待评估；History 默认 B 可内部回滚，不会因失败自动改投影或重发。
-- 正式应用没有第二个 Tool round；内部模式最多两轮。没有多个 Tool 并行、Agent、Detection Tool、设备控制或写入操作。
+- Analysis 与默认构造的 Assistant 仍为单轮；Web Assistant 仅在启动 Flag 和精确发布范围匹配时使用最多两轮。没有多个 Tool 并行、Agent、Detection Tool、设备控制或写入操作。
 - Protocol support、Preset 固定合同、Managed Evidence 和用户 Tool Policy 是不同层次，不能互相代替。
 
 ## 主要测试
@@ -126,6 +126,6 @@ T1/T2/T3：`test_gateway_tool_contract.py`、`test_read_only_tools.py`、`test_t
 
 `test_bounded_multi_round.py` 覆盖内部三种路径、真实结果驱动下一模型决策、提前 Final、固定预算、同轮多调用拒绝、归一参数去重、逐执行 Ledger、取消/Usage/安全 Trace 与默认 1/1/2 请求编码兼容。
 
-`tests/assistant/test_assistant_multi_round.py` 覆盖内部 Assistant 显式启用、独立 Prompt、History/来源门禁、多步骤安全投影、失败与取消、整 Turn deadline 和默认单轮回退；`tests/security/test_execution.py` 使用阻塞的虚构 SDK 验证剩余时间限制及本机 I/O 关闭。正式 Web 尚未开放多轮，不以离线测试授予任何新 Provider 能力。
+`tests/assistant/test_assistant_multi_round.py` 覆盖内部 Assistant 显式启用、独立 Prompt、History/来源门禁、多步骤安全投影、失败与取消、整 Turn deadline 和默认单轮回退；`tests/security/test_execution.py` 使用阻塞的虚构 SDK 验证剩余时间限制及本机 I/O 关闭。正式 Web 通过精确发布范围开放本地多轮：查询+Knowledge 两 Tool，或查询+评分+Knowledge 三 Tool；后者三模型均标记实验试用。不以离线测试授予真实 Provider 资格或 Streaming 能力。
 
 参数与知识执行覆盖：`test_tool_argument_contract.py`、`test_tool_status_no_match.py`、`test_knowledge_handler.py`、`test_knowledge_registration.py`、`test_knowledge_assembly.py`。历史实施与独立审计见[阶段总结](../../records/archive/knowledge-tool-v1/2026-10-knowledge-tool-v1-summary.md)，不能把历史测试数量当作当前验收。

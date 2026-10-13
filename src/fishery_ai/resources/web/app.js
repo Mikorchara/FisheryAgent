@@ -2866,6 +2866,33 @@ function assistantRows(parent, rows) {
   }
 }
 
+function assistantToolCard(tool, stepLabel = null) {
+  const card = document.createElement("section"); card.classList.add("assistant-tool-card");
+  const title = document.createElement("h4");
+  title.textContent = `${stepLabel ? `${stepLabel} · ` : ""}${tool.display_name || tool.tool_name || "Tool"} · ${tool.state || tool.tool_status || "unavailable"}`;
+  const summary = document.createElement("p");
+  const status = tool.state === "CANCELLED" ? "已取消"
+    : tool.handler_started === false ? "调用尝试；Handler 未执行"
+    : tool.state === "FAILED" ? "执行失败"
+    : tool.state === "RUNNING" ? "执行中"
+    : tool.tool_status === "NO_DATA" ? "查询完成；无当前数据"
+    : tool.tool_status === "NO_MATCH" ? "检索完成；无知识命中"
+    : tool.tool_status === "NOT_SCORABLE" ? "评估完成；无法评分"
+    : tool.tool_status === "PARTIAL" ? "仅有部分结果"
+    : tool.tool_status === "ERROR" ? "执行失败"
+    : tool.tool_status === "OK" ? "执行完成" : "执行中";
+  summary.textContent = [status, tool.quality, tool.freshness,
+    tool.evidence_count !== undefined ? `${tool.evidence_count} 条知识命中` : null,
+    tool.experimental ? "EXPERIMENTAL / NOT PROFESSIONAL STANDARD" : null].filter(Boolean).join(" · ");
+  const details = document.createElement("details"), toggle = document.createElement("summary"), dl = document.createElement("dl");
+  toggle.textContent = "详细字段"; dl.classList.add("facts-grid");
+  const rows = assistantToolRows(tool);
+  rows.push(["执行", tool.handler_started === false ? "调用尝试；Handler 未执行" : "Handler 已开始"]);
+  if (tool.safe_error_code) rows.push(["Safe error", tool.safe_error_code]);
+  assistantRows(dl, rows); details.append(toggle, dl); card.append(title, summary, details);
+  return card;
+}
+
 function renderAssistantMessages() {
   const messages = $("assistant-messages"); messages.replaceChildren();
   for (const entry of assistantState.displayEntries) {
@@ -2880,9 +2907,10 @@ function renderAssistantMessages() {
       if (!tools.length) {
         const note = document.createElement("small"); note.textContent = "未调用 Tool"; article.append(note);
       } else {
-        const details = document.createElement("details"), summary = document.createElement("summary"), dl = document.createElement("dl");
-        summary.textContent = `使用了 ${tools.length} 个 Tool`; dl.classList.add("facts-grid");
-        assistantRows(dl, tools.flatMap(assistantToolRows)); details.append(summary, dl); article.append(details);
+        const group = document.createElement("section"); group.classList.add("assistant-tool-activity");
+        const label = document.createElement("small"); label.textContent = `使用了 ${tools.length} 个 Tool`; group.append(label);
+        for (const tool of tools) group.append(assistantToolCard(tool));
+        article.append(group);
       }
     }
     messages.append(article);
@@ -2923,22 +2951,27 @@ function setAssistantRun(phase, result = null, code = null) {
   $("assistant-run").hidden = false;
   const tools = (run.steps || []).filter(step => step.kind === "tool" && step.handler_started);
   $("assistant-run-summary").textContent = `本次运行：${phase} · ${run.model}${run.requests !== undefined ? ` · ${tools.length} Tool · ${run.requests} Requests · ${assistantDuration(run.latency)}` : ""}`;
-  const rows = [["Model", run.model], ["Stage", phase]];
+  const container = $("assistant-run-details"); container.replaceChildren();
+  const overview = document.createElement("dl"); overview.classList.add("facts-grid");
+  assistantRows(overview, [["Model", run.model], ["Stage", phase]]); container.append(overview);
   for (const step of run.steps || []) {
-    rows.push([`Step #${step.seq}`, step.kind === "model" ? `Request #${step.request_index} · ${step.state}` : `Tool · ${step.state}`]);
     if (step.kind === "model") {
-      rows.push([`Request #${step.request_index} outcome`, step.outcome], ["Finish reason", step.finish_reason]);
+      const section = document.createElement("section"); section.classList.add("assistant-model-step");
+      const title = document.createElement("h4"); title.textContent = `Step #${step.seq} · Request #${step.request_index} · ${step.state}`;
+      const dl = document.createElement("dl"); dl.classList.add("facts-grid");
+      const rows = [[`Request #${step.request_index} outcome`, step.outcome], ["Finish reason", step.finish_reason]];
       for (const [key, value] of Object.entries(step.usage || {})) rows.push([key, value ?? "unavailable"]);
+      if (step.safe_error_code) rows.push(["Safe error", step.safe_error_code]);
+      assistantRows(dl, rows); section.append(title, dl); container.append(section);
     } else {
-      rows.push(["Tool name", step.tool_name], ["Tool result status", step.tool_status],
-        ["执行", step.handler_started ? "Handler 已开始" : "调用尝试；Handler 未执行"], ...assistantToolRows(step).slice(2));
+      container.append(assistantToolCard(step, `Step #${step.seq}`));
     }
-    if (step.safe_error_code) rows.push(["Safe error", step.safe_error_code]);
   }
-  rows.push(["Finish reason", run.finishReason], ["Total latency", assistantDuration(run.latency)]);
+  const rows = [["Finish reason", run.finishReason], ["Total latency", assistantDuration(run.latency)]];
   for (const [key, value] of Object.entries(run.usage || {})) rows.push([key, value ?? "unavailable"]);
   if (run.errorCode) rows.push(["Safe error", run.errorCode]);
-  assistantRows($("assistant-run-details"), rows);
+  const totals = document.createElement("dl"); totals.classList.add("facts-grid");
+  assistantRows(totals, rows); container.append(totals);
 }
 
 function acceptAssistantProgress(execution, data, stopping = false) {
