@@ -23,7 +23,8 @@ def main(argv=None):
     parser.add_argument("--tool-set", choices=STREAMING_TOOL_SETS, default="water-knowledge",
                         help="Streaming 精确工具集合，默认查询水质+Knowledge；不改变产品 Policy")
     parser.add_argument("--review-answer", action="store_true", help="仅在终端 stderr 预览完整成功回答，不保存正文，不代表人工批准")
-    parser.add_argument("--max-output-tokens", type=int, default=256)
+    parser.add_argument("--max-output-tokens", type=int, default=256,
+                        help="每请求输出预算：Streaming 1–512，非流式 1–256；默认256")
     consent = parser.add_mutually_exclusive_group()
     consent.add_argument("--dry-run", action="store_true")
     consent.add_argument("--confirm-network", action="store_true")

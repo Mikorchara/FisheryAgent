@@ -1278,6 +1278,172 @@ function assistantStateJson(page, expression='assistantState') {
   // Inspect UI records, never serialize transient control tokens or Node timer handles.
   return JSON.parse(vm.runInContext(`JSON.stringify(${expression},(key,value)=>key==='pendingRequest'?null:value)`,page.context));
 }
+
+function streamingAssistantBootstrap() {
+  const bootstrap=assistantBootstrap();
+  bootstrap.presets[0].streaming_profile={available:true,mode:'BOUNDED_MULTI_ROUND',max_model_requests:3,
+    release_status:'released',revision:'d'.repeat(64)};
+  return bootstrap;
+}
+
+function assistantStreamReply(events, observe=()=>{}) {
+  const response=sseResponse(events.map(row=>['assistant',row]),23);
+  response.headers={get:()=> 'text/event-stream; charset=utf-8'};
+  const get=response.body.getReader;
+  response.body.getReader=()=>{
+    const reader=get();const read=reader.read;
+    reader.read=async()=>{observe();return read();};
+    reader.cancel=async()=>{};reader.releaseLock=()=>{};return reader;
+  };
+  return response;
+}
+
+function assistantStreamEvent(seq,kind,fields={}) {
+  return {event_schema_version:1,epoch:'assistant-epoch',request_id:'offline-request',seq,kind,...fields};
+}
+
+function streamingAssistantResult(tools=0) {
+  const steps=[{seq:1,kind:'model',request_index:1,request_started:true,state:'COMPLETED',
+    outcome:tools?'tool_calls':'final_answer',finish_reason:tools?'tool_calls':'stop'}];
+  for(let i=0;i<tools;i++) {
+    steps.push({seq:steps.length+1,kind:'tool',state:'COMPLETED',handler_started:true,
+      tool_name:i?'search_fishery_knowledge':'get_current_water_quality',display_name:i?'知识检索':'当前水质',
+      result_status:'OK',duration_ms:2,...(i?{evidence_count:3}:{freshness:'fresh'})});
+    steps.push({seq:steps.length+1,kind:'model',request_index:i+2,request_started:true,state:'COMPLETED',
+      outcome:i+1===tools?'final_answer':'tool_calls',finish_reason:i+1===tools?'stop':'tool_calls'});
+  }
+  return assistantResult({activity:assistantStepsActivity({steps,budget:{tool_calls:2,tool_rounds:2,model_requests:3}}),trace_recorded:true});
+}
+
+test('Assistant Streaming is separately released, Normal default and confirmation resets on transport change',async()=>{
+  const page=assistantPage(undefined,streamingAssistantBootstrap());await enterAssistant(page);
+  assert.equal(page.element('assistant-response-mode').value,''); // mock DOM default, interpreted as Normal
+  const option=page.element('assistant-response-mode').children.find(o=>o.value==='streaming');
+  assert.equal(option.disabled,false);
+  page.element('assistant-confirm-network').checked=true;
+  page.element('assistant-response-mode').value='streaming';await page.element('assistant-response-mode').dispatch('change');
+  assert.equal(page.element('assistant-confirm-network').checked,false);
+  assert.match(page.element('assistant-network-note').textContent,/三/);
+  const normal=assistantPage();await enterAssistant(normal);
+  assert.equal(normal.element('assistant-response-mode').children.find(o=>o.value==='streaming').disabled,true);
+});
+
+test('Assistant Streaming previews are safe text and never enter History before Final',async()=>{
+  let page,observed=false;
+  const events=[assistantStreamEvent(1,'start',{max_model_requests:3}),
+    assistantStreamEvent(2,'preview',{request_index:1,text:'临时 <script>evil()</script>',provisional:true}),
+    assistantStreamEvent(3,'final',{result:streamingAssistantResult()})];
+  page=assistantPage(async()=>assistantStreamReply(events,()=>{
+    if(assistantStateJson(page).preview) {
+      observed=true;assert.equal(assistantStateJson(page).completedTurns.length,0);
+      assert.match(allElementText(page.element('assistant-messages')),/临时预览.*未确认/);
+    }
+  }),streamingAssistantBootstrap());
+  await enterAssistant(page);page.element('assistant-response-mode').value='streaming';await sendAssistantQuestion(page);
+  assert.equal(observed,true);assert.equal(assistantStateJson(page).completedTurns.length,1);
+  assert.equal(assistantStateJson(page).preview,null);
+  assert.equal(page.calls.filter(c=>c.url==='/api/assistant/chat/stream').length,1);
+  assert.equal(page.calls.filter(c=>c.url==='/api/assistant/chat').length,0);
+  assert.equal(vm.runInContext('typeof evil',page.context),'undefined');
+});
+
+test('Assistant Streaming single and double Tool keep independent cards and full ordered Steps',async()=>{
+  for(const tools of [1,2]) {
+    const result=streamingAssistantResult(tools);
+    const events=[assistantStreamEvent(1,'start',{max_model_requests:3}),
+      assistantStreamEvent(2,'activity',{state:'RUNNING',phase:'REQUEST_3',activity:{...result.activity,state:'RUNNING'}}),
+      assistantStreamEvent(3,'final',{result})];
+    const page=assistantPage(async()=>assistantStreamReply(events),streamingAssistantBootstrap());
+    await enterAssistant(page);page.element('assistant-response-mode').value='streaming';await sendAssistantQuestion(page);
+    const state=assistantStateJson(page);
+    assert.equal(state.completedTurns.length,1);
+    assert.equal(state.displayEntries.find(e=>e.kind==='assistant').steps.length,tools*2+1);
+    assert.match(allElementText(page.element('assistant-messages')),new RegExp(`使用了 ${tools} 个 Tool`));
+    assert.equal(page.element('assistant-live-tools').hidden,true);
+  }
+});
+
+test('Assistant Streaming duplicate and older events cannot replace preview or create another successful turn',async()=>{
+  const events=[assistantStreamEvent(1,'start',{max_model_requests:3}),
+    assistantStreamEvent(2,'preview',{request_index:1,text:'valid',provisional:true}),
+    assistantStreamEvent(2,'preview',{request_index:1,text:'stale',provisional:true}),
+    assistantStreamEvent(1,'preview',{request_index:1,text:'older',provisional:true}),
+    assistantStreamEvent(3,'final',{result:streamingAssistantResult()})];
+  const page=assistantPage(async()=>assistantStreamReply(events),streamingAssistantBootstrap());
+  await enterAssistant(page);page.element('assistant-response-mode').value='streaming';await sendAssistantQuestion(page);
+  assert.equal(assistantStateJson(page).completedTurns.length,1);
+  assert.doesNotMatch(allElementText(page.element('assistant-messages')),/stale|older/);
+});
+
+test('Assistant Streaming gaps disconnect invalid epoch and malformed events fail closed without automatic reconnect',async()=>{
+  const initial=assistantStreamEvent(1,'start',{max_model_requests:3});
+  for(const events of [[initial], [initial,assistantStreamEvent(3,'final',{result:streamingAssistantResult()})],
+    [initial,{...assistantStreamEvent(2,'final',{result:streamingAssistantResult()}),epoch:'expired'}],
+    [initial,assistantStreamEvent(2,'raw_tool_result',{text:'must-not-display'})]]) {
+    const page=assistantPage(async(url)=>url.endsWith('/cancel')?r2Reply({state:'CANCEL_REQUESTED'}):assistantStreamReply(events),streamingAssistantBootstrap());
+    await enterAssistant(page);page.element('assistant-response-mode').value='streaming';await sendAssistantQuestion(page);
+    assert.equal(assistantStateJson(page).completedTurns.length,0);
+    assert.equal(assistantStateJson(page).preview,null);
+    assert.equal(page.calls.filter(c=>c.url==='/api/assistant/chat/stream').length,1);
+    assert.equal(page.calls.filter(c=>c.url.endsWith('/cancel')).length,1);
+    assert.doesNotMatch(allElementText(page.element('assistant-messages')),/must-not-display/);
+  }
+});
+
+test('Assistant Streaming Error cancels preview and cannot commit a false completed result',async()=>{
+  for(const data of [{result:assistantResult({successful_turn:false,status:'failed',error_code:'STREAM_TRUNCATED',final_text:''})},
+                     {result:streamingAssistantResult()}]) {
+    const events=[assistantStreamEvent(1,'start',{max_model_requests:3}),
+      assistantStreamEvent(2,'preview',{request_index:1,text:'provisional',provisional:true}),assistantStreamEvent(3,'error',data)];
+    const page=assistantPage(async()=>assistantStreamReply(events),streamingAssistantBootstrap());
+    await enterAssistant(page);page.element('assistant-response-mode').value='streaming';await sendAssistantQuestion(page);
+    assert.equal(assistantStateJson(page).completedTurns.length,0);
+    assert.equal(assistantStateJson(page).preview,null);
+    assert.doesNotMatch(allElementText(page.element('assistant-messages')),/provisional/);
+  }
+});
+
+test('Assistant Streaming Stop ignores late Final and keeps History empty',async()=>{
+  let release,startedResolve;
+  const gate=new Promise(resolve=>release=resolve),started=new Promise(resolve=>startedResolve=resolve);
+  const first=new TextEncoder().encode(`data: ${JSON.stringify(assistantStreamEvent(1,'start',{max_model_requests:3}))}\n\n`);
+  const late=new TextEncoder().encode(`data: ${JSON.stringify(assistantStreamEvent(2,'final',{result:streamingAssistantResult()}))}\n\n`);
+  let reads=0;
+  const page=assistantPage(async(url)=> {
+    if(url.endsWith('/cancel'))return r2Reply({state:'CANCELLED',backend_io_closed:true});
+    return {ok:true,headers:{get:()=> 'text/event-stream'},body:{getReader:()=>({
+      async read(){ if(++reads===1)return {done:false,value:first};startedResolve();await gate;return {done:false,value:late}; },
+      async cancel(){},releaseLock(){}
+    })}};
+  },streamingAssistantBootstrap());
+  await enterAssistant(page);page.element('assistant-response-mode').value='streaming';
+  const running=sendAssistantQuestion(page);await started;
+  assert.equal(page.element('application-mode-toggle').disabled,true);
+  await page.element('assistant-stop').dispatch('click');release();await running;
+  assert.equal(assistantStateJson(page).completedTurns.length,0);
+  assert.equal(assistantStateJson(page).preview,null);
+  assert.match(allElementText(page.element('assistant-messages')),/USER_CANCELLED/);
+  assert.equal(page.calls.filter(c=>c.url==='/api/assistant/chat/stream').length,1);
+});
+
+test('Assistant Streaming malformed release profile cannot enable controls',async()=>{
+  const bootstrap=streamingAssistantBootstrap();bootstrap.presets[0].streaming_profile.release_status='candidate';
+  const page=assistantPage(undefined,bootstrap);await enterAssistant(page);
+  assert.equal(assistantStateJson(page).epoch,null);
+  assert.equal(page.element('assistant-send').disabled,true);
+});
+
+test('Assistant Streaming failed turn retains safe Tool cards but no successful History',async()=>{
+  const result=streamingAssistantResult(1);
+  result.status='failed';result.successful_turn=false;result.final_text='';result.error_code='READ_TIMEOUT';
+  result.activity.state='FAILED';
+  const events=[assistantStreamEvent(1,'start',{max_model_requests:3}),assistantStreamEvent(2,'error',{result})];
+  const page=assistantPage(async()=>assistantStreamReply(events),streamingAssistantBootstrap());
+  await enterAssistant(page);page.element('assistant-response-mode').value='streaming';await sendAssistantQuestion(page);
+  assert.equal(assistantStateJson(page).completedTurns.length,0);
+  assert.match(allElementText(page.element('assistant-messages')),/当前水质/);
+  assert.match(allElementText(page.element('assistant-messages')),/执行完成/);
+});
 function allElementText(node) { return node.textContent+' '+node.children.map(allElementText).join(' '); }
 
 function multiAssistantBootstrap() {
@@ -1416,7 +1582,8 @@ test('Assistant single fixed-width toggle replaces both old status buttons',()=>
   assert.doesNotMatch(html,/analysis-mode-entry|assistant-mode-entry|application-mode-status|Coming Soon/);
   assert.match(css,/#application-mode-toggle\s*\{[^}]*width: 240px/);
   const workspace=html.slice(html.indexOf('id="assistant-workspace"'),html.indexOf('id="tool-manager"'));
-  assert.match(workspace,/Thinking OFF · Normal/);
+  assert.match(workspace,/Thinking OFF/);
+  assert.match(workspace,/id="assistant-response-mode".*value="normal">Normal/);
   assert.doesNotMatch(workspace,/tool-trace|Reasoning|capability|Base URL/);
 });
 

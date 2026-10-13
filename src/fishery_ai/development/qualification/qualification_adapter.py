@@ -13,6 +13,17 @@ from ...tools.registry import SEARCH_FISHERY_KNOWLEDGE
 
 
 FINISH_REASONS = {"stop", "length", "tool_calls", "function_call", "content_filter"}
+NORMAL_MAX_OUTPUT_TOKENS = 256
+STREAMING_MAX_OUTPUT_TOKENS = 512
+
+
+def validate_qualification_token_budget(value, *, streaming):
+    """One finite budget rule for plans/CLI and transport; bool is not an int here."""
+    if type(streaming) is not bool:
+        raise GatewayError("QUALIFICATION_INVALID_TRANSPORT")
+    limit = STREAMING_MAX_OUTPUT_TOKENS if streaming else NORMAL_MAX_OUTPUT_TOKENS
+    if type(value) is not int or not 1 <= value <= limit:
+        raise GatewayError("INVALID_MULTI_ROUND_TOKEN_BUDGET")
 
 
 def call_summary(call, registry, exposed_tools):
@@ -63,6 +74,7 @@ class QualificationAdapter(OpenAICompatibleAdapter):
         super().__init__(**factories)
         if type(streaming) is not bool:
             raise GatewayError("QUALIFICATION_INVALID_TRANSPORT")
+        validate_qualification_token_budget(max_output_tokens, streaming=streaming)
         self.streaming = streaming
         self.model, self.registry = model, registry
         self.exposed_tools = tuple(exposed_tools)
@@ -78,6 +90,7 @@ class QualificationAdapter(OpenAICompatibleAdapter):
     def _kwargs(self, request, runtime, *, stream, _assemble_tools=False):
         if stream != self.streaming or runtime.max_retries != 0 or stream and not _assemble_tools:
             raise GatewayError("QUALIFICATION_INVALID_TRANSPORT")
+        validate_qualification_token_budget(self.max_output_tokens, streaming=self.streaming)
         kwargs = super()._kwargs(request, runtime, stream=stream, _assemble_tools=_assemble_tools)
         # Mandatory cost budget is transport-scoped; do not manufacture model
         # capability evidence merely to send a maintainer-approved finite limit.

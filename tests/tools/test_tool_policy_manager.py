@@ -243,7 +243,9 @@ class ToolPolicyManagerTests(unittest.TestCase):
             self.assertIn('id="'+identifier+'"',html)
         self.assertNotIn("Coming Soon",html)
         self.assertIn('id="assistant-workspace" class="panel assistant-workspace" hidden', html)
-        self.assertIn("Thinking OFF · Normal", html)
+        self.assertIn("Thinking OFF", html)
+        self.assertIn('id="assistant-response-mode"', html)
+        self.assertIn('<option value="normal">Normal</option>', html)
 
 
 if __name__ == "__main__": unittest.main()

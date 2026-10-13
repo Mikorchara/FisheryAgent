@@ -102,6 +102,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ application.py                                          # 固定 Analysis 上下文与执行主流程
 │  │  ├─ history_projection.py                                   # 产品默认 B 与原生 A 回滚的共享历史投影
 │  │  ├─ assistant.py                                            # Assistant 上下文、历史与执行服务
+│  │  ├─ assistant_streaming.py                                  # 独立流式发布门禁与有界临时事件通道
 │  │  ├─ assistant_activity.py                                   # 有序 Steps 的安全 Activity 投影
 │  │  ├─ assistant_execution.py                                  # 启动冻结的多轮发布范围与确认版本
 │  │  ├─ assistant_qualification.py                             # 旧路径模块别名，兼容历史导入与补丁
@@ -294,6 +295,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    │  ├─ test_access_web.py                                                 # Preset、Manual 与取消 Web 边界测试
    │  ├─ test_analysis_tool_web.py                                          # 正式 Analysis Tool Web 接入测试
    │  ├─ test_assistant_execution_web.py                                    # Web 多轮发布、确认、五步执行与回滚测试
+   │  ├─ test_assistant_streaming_web.py                                    # Web SSE、真实 Adapter 与 Fake SDK 多轮验证
    │  ├─ test_browser_streaming.cjs                                         # 页面交互、状态与浏览器回归测试
    │  ├─ test_clean_room_reset.py                                           # Clean-room 空目录启动测试
    │  ├─ test_default_preference_ui.py                                      # 默认偏好与能力门禁同步测试

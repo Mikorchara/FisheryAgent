@@ -22,7 +22,7 @@ Demo 使用 MockGateway。自动测试不发送真实网络请求；Cloud / Loca
 ## 当前工作区
 
 - **Analysis**：固定 Snapshot → Diagnosis → RAG → Model；Normal / Streaming 可用。用户可在 Tool Manager 明确授权只读 Tool；启用 Tool 时仅支持 Normal，且要求精确 Runtime Tool capability 为 SUPPORTED。
-- **Assistant**：仅 Qwen 3.8 Flash、DeepSeek Flash、Ollama Qwen3.5 4B 三个发布 Preset；固定 Thinking OFF + Normal。页面历史不持久化。Cloud Send 显示 REAL NETWORK REQUEST；Ollama 显示 LOCAL MODEL REQUEST。
+- **Assistant**：仅 Qwen 3.8 Flash、DeepSeek Flash、Ollama Qwen3.5 4B 三个发布 Preset；固定 Thinking OFF，默认 Normal。Streaming Web 通道已离线实现，但独立发布配置默认关闭，未发布组合不可选择或发送。页面历史不持久化。Cloud Send 显示 REAL NETWORK REQUEST；Ollama 显示 LOCAL MODEL REQUEST。
 - **Development / Test**：支持离线 Mock 与能力门禁下的真实 Tool Conversation；完整安全 Trace 仅在开发区显示。
 - **Managed Custom**：高级能力依赖精确 Identity 的 Evidence / Resolver；Probe 必须由用户逐项触发。
 - **Manual V1/V2**：Raw 请求路径；不进入 Fishery Analysis，不自动执行返回的 Tool Calls。

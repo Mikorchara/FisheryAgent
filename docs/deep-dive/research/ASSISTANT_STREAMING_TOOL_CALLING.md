@@ -147,7 +147,7 @@ Phase 5B 新增 **28 项**离线端到端测试；相关 targeted **187 项通�
 
 每个 Preset 的两个工具集合分别生成独立 `streaming_scope`：默认 `water-knowledge`（查询 + Knowledge），可显式选择 `three-tools`（查询 + 评分 + Knowledge）。Scope 从当前资源和 Registry 计算，不复制 Normal 资格；包含 contract、精确 Identity、完整 ProtocolSpec、Prompt 指纹、History 版本、实际 Tool definitions 指纹、OFF、Streaming Transport 和 assembler 版本。当前 contract 均为1.0.2，但不因此获得 Streaming Tool 发布资格。计划还包含 SDK 版本、整 Turn deadline、固定 Snapshot / History / 问题指纹、token 上限和预算，`plan_sha256` 绑定本次具体条件。发送前重新核对 scope；漂移在凭据解析与网络前拒绝。
 
-计划默认 dry-run，不解析凭据、不创建 SDK、不执行 Tool、不写运行报告。逐案例授权后才用 `--confirm-network`，一次进程仅一个案例，没有批次或恢复器。Runtime / CredentialSnapshot 仍用正式私有 composition；Ollama Auth NONE 不读取 Key。隔离 Snapshot 和 Policy 只存在本次进程，不能读取或改 Web 状态。错误不重跑、不切 Normal、不 failover。最多 **2 calls / 2 rounds / 3 requests**，每轮一个 Tool，每请求 **1–256 output tokens**、retry=0；整 Turn 使用该 Preset 已有 timeout，不逐请求续期。
+计划默认 dry-run，不解析凭据、不创建 SDK、不执行 Tool、不写运行报告。逐案例授权后才用 `--confirm-network`，一次进程仅一个案例，没有批次或恢复器。Runtime / CredentialSnapshot 仍用正式私有 composition；Ollama Auth NONE 不读取 Key。隔离 Snapshot 和 Policy 只存在本次进程，不能读取或改 Web 状态。错误不重跑、不切 Normal、不 failover。最多 **2 calls / 2 rounds / 3 requests**，每轮一个 Tool，每请求 **1–512 output tokens（默认256）**、retry=0；整 Turn 使用该 Preset 已有 timeout，不逐请求续期。非流式资格继续限制1–256，不因 Streaming 调整而放宽。
 
 ### 有界 SDK 观察与安全报告
 
@@ -199,3 +199,55 @@ Phase 5B 新增 **28 项**离线端到端测试；相关 targeted **187 项通�
 ```
 
 其他案例只在准备时替换 `--case`；其他 Provider / 三工具真实执行须逐案例再次批准，再将对应命令中的 `--dry-run` 改为 `--confirm-network`。没有新增 URL、model、credential path、Prompt、retry、budget 或 deadline 覆盖参数。
+
+### 输出预算小调整（2026-10-13）
+
+经用户批准，Streaming 资格的显式 `--max-output-tokens` 上限从256调整为512，默认仍为256；计划/CLI与QualificationAdapter共用严格校验，拒绝bool、非int和越界值，Adapter发送前再次检查。没有 Provider 特例，不修改 assembler、Prompt、Preset、Tool Policy、Ledger或Commit Gate。
+
+此参数作用于每次模型请求，512配置的三请求输出预算最多1536 tokens；DeepSeek仍为120秒整Turn deadline、2/2/3、retry=0，不自动放宽时间或追加请求。Scope不变，实际512预算进入计划并产生不同的`plan_sha256`；旧256失败报告保留，新真实run须另获逐案例授权。512仍返回length时继续`STREAM_TRUNCATED`，不能提交半成品或自动补跑。本次只执行离线测试和dry-run，没有真实复测。
+
+新增7项预算测试：范围/类型、CLI、默认与Hash兼容、三次fake SDK参数传递、length失败保留Ledger/Usage、发送前重校验、512下Source Gate/取消/120秒deadline。Streaming资格33项通过；相关资格targeted126项完成（1项既有symlink环境跳过）；FULL QUALIFICATION167项完成（166通过、1跳过）；FAST149项、Assembler/Streaming Runtime66项通过。未改产品Runtime或Web，无需重跑无关Browser测试。
+
+```powershell
+.\.venv\Scripts\python.exe scripts/qualification/qualify_multi_round.py --streaming --preset deepseek-flash-r1 --case low-oxygen --max-output-tokens 512 --dry-run
+```
+
+## 11. Phase 5D：Web Streaming 离线接入
+
+状态：**OFFLINE IMPLEMENTED / REAL WEB STREAMING NOT RELEASED**。本阶段没有真实 Provider / Ollama 请求，没有批准任何 Streaming 产品资格。Normal仍是默认及回滚路径，Analysis / Manual / Development仍用原入口。
+
+### 最小数据流
+
+```text
+Bootstrap：Normal profile + 独立 Streaming profile / revision / 可用状态
+  → 选择模式、确认最多2或3次请求、prepare同一RequestHandle
+  → POST /api/assistant/chat/stream（Host / Origin / CSRF / epoch / revision / released scope）
+  → 冻结 Runtime / Credential / Policy → 同一 AssistantService / ToolCallingService
+  → SDK 正文临时预览；完整收流和清理后才执行 Tool
+  → 原累计 Activity Steps / Ledger / Source Gate / Trace / Commit Gate
+  → 唯一 Final 或 Error / Cancelled → 前端仅 Final 完整成功后提交历史
+```
+
+实现：`assistant_streaming.py` 提供独立冻结的 `AssistantStreamingConfig / Release`、共享精确 `streaming_scope` 与请求内临时事件通道。`create_app` / `run_web` 可接维护者内部启动配置，默认 `enabled=false`、没有发布记录。只有 `released` 且有资格标识/时间、精确 Identity / Preset contract / ProtocolSpec / Prompt / History / Tool definitions / assembler / transport匹配才可用；candidate、Normal released、local_experimental 均不能授权 Streaming。资格与产品共用 Scope 算法，旧资格预算与计划Hash语义不变。没有 Web Publisher，也不读取安全报告自动发布。
+
+开启仍需用户批准具体范围和维护者发布配置；本阶段只在临时离线测试配置中使用 `OFFLINE_FIXTURE_ONLY` released记录。浏览器只能选择已有受管模式端点，不能提交 mode、budget、deadline、Prompt或配置路径。Streaming revision绑定配置、epoch、Policy、精确Scope、timeout/生成默认值/凭据引用；不匹配在凭据解析、SDK及联网前拒绝。不静默降级或失败后重试。
+
+### 事件与临时预览
+
+POST SSE不是EventSource：控制令牌在JSON请求体，不进URL；无GET重连、无游标恢复、无自动模型重发。每条事件含schema版本、request_id、epoch、单调seq；类型为start、activity、preview_reset、preview、final、error、cancelled，另有无数据heartbeat。Tool开始/完成/拒绝来自原Activity中的handler_started/state；累计Steps和有序事件同时保留，快速完成不会被轮询遗漏。一个请求内worker仅承载已有Service，没有第二个Tool循环或持久后台任务。
+
+Adapter增加可选正文观察钩子，不改assembler验证和正常收流/关闭顺序。只观察已接受SDK content；tool_calls/arguments、Raw Result、Prompt和reasoning不作为事件字段。累计正文在输出前脱敏，并暂扣可能是Credential前缀的末尾，避免Key跨chunk泄露。每Turn最多128次预览、每次最多16KiB UTF-8、约50ms节流；整个通道最多512条非终态事件，超限安全失败，终态仍可报告。不持久化事件或预览，不写Trace/History。完整最终正文仍受既有assembler大小限制与Assistant脱敏约束；资格入口的512 token预算不自动注入Web请求。
+
+UI保留OFF只读标签，添加Normal / Streaming选择；未发布Streaming禁用。临时正文用textContent、虚线卡片明确标记未确认；返回Tool Call、开始下一请求、失败或Stop时撤销。实际Tool逐个独立卡片显示名称、状态、业务摘要，细节单独展开；完整Model/Tool Steps、Usage、Trace是否记录和安全Trace ID仍在折叠运行详情。只接受完成、stop、Trace成功、Activity COMPLETED的唯一Final，才保存成功user/final pair。
+
+失败/取消的Turn也保留已观察到的安全Tool卡片，不把它们计入成功对话；临时正文撤销，仍可查看已执行步骤及失败状态。
+
+重复/旧seq忽略，事件缺号、错误epoch/request_id、未知类型、无Final EOF或断线均失败，不自动重连；发送取消API针对原request。Stop与迟到事件仍用原RequestHandle和前端pending guard。断开响应（包括首次迭代前关闭）取消原I/O，刷新清空页面Session，不恢复旧生成；同request_id再次POST被拒绝。已提交完成的Turn不被迟到Stop重写。远端计算/计费是否停止仍UNKNOWN。
+
+### 验收与真实接入缺口
+
+离线端到端覆盖Direct Final、一Tool提前Final、查询→Knowledge→Final、真实Result传递、NO_DATA、Tool开始/完成及拒绝、Usage、第三轮限额、Stop（各模型轮次）、断线、deadline、Trace/线程启动失败、分片Secret、reasoning/参数不公开、revision/Policy/epoch/CSRF/Origin/Host、关闭/候选门禁、Normal回归。Browser覆盖预览与History隔离、独立卡片、重复/乱序、错误、断线不重发、Stop迟到Final、模式确认和未发布门禁。
+
+普通启动 `python -m fishery_ai web` 仍仅开放Normal；可人工检查Streaming禁用、原Analysis/Assistant/Manual/Development以及Stop。真实Streaming网页体验需先完成各精确范围的资格与人工回答质量审查，再另获发布/联网授权；Qwen的两个技术PASS不能替代概念/History等剩余检查，DeepSeek预算截断不能算通过，Ollama版本与方言仍待确认。三工具组合独立审核。资格完成后由维护者提供精确配置给run_web，关闭配置并重启即回滚Normal；不在同一epoch动态切换发布，也不因失败切Transport重跑。
+
+离线验收：新增20项Web SSE / Fake SDK测试、9项Browser测试；相关targeted168项通过，FAST149项通过，FULL PRODUCT1040项通过（41.489秒），Browser214项通过，FULL QUALIFICATION167项完成（166通过、1项既有symlink环境跳过）。Python AST155文件、JS语法、296条Markdown本地文件链接、diff check和改动文本敏感扫描通过。首次全量回归发现一条测试仍精确要求旧的“Thinking OFF · Normal”固定标签；改为校验OFF与默认Normal选择，未放宽运行门禁。保留上一轮512预算工作树变更，没有真实请求、commit/push或生产项目修改。

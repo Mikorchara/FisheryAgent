@@ -30,7 +30,7 @@ Analysis 可显式授权只读 Tool。授权后请求仍先携带开始时捕获
 ## Assistant 会话
 
 - UI 从 `/api/assistant/bootstrap` 取得允许的 Preset 名称与 ID；服务端仍按固定白名单解析，客户端不能提交 URL、模型名、Credential 或连接参数。
-- Assistant 固定使用已发布的 Thinking OFF + Normal。Analysis 的模型选择、结果、Scenario 与运行状态互相独立。
+- Assistant 固定 Thinking OFF，默认 Normal；Web Streaming 必须另有维护者精确发布范围，默认关闭，技术资格 PASS 不自动开放。Analysis 的模型选择、结果、Scenario 与运行状态互相独立。
 - 首轮 Context 不预读当前水质、评分、Detection 或 RAG。当前事实问题必须由模型在本轮选择相应 Tool；历史中旧数值只能作为历史语境，不能代替新的当前查询。
 - 前端页面内保存历史，刷新清空；后端不保存会话。后端只接受完整成功的 user / assistant 文本对，先限制最多 6 轮，再按序列化 pair 的 6 KiB 预算从最旧整轮裁剪。Tool Call、Tool Result、Trace 不进入后续历史。
 - 正式 History Projection 为 `UNTRUSTED_TRANSCRIPT_V1@1`：原有完整 pair 裁剪后，将保留对话转换为单个 `role=user` JSON transcript，包含 speaker / completed_at / 顺序 / 原文；当前问题是独立最后一条 user 消息。空历史不添加 transcript。6 KiB 约束保留的 pair 序列化，不是投影后的完整上下文；JSON 包装会增加字节，不重新裁剪。

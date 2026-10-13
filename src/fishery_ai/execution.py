@@ -31,6 +31,7 @@ class RequestHandle:
         self._activity_revision = 0
         self._committing = False
         self._deadline = None  # Internal Turn scope only; never accepted from Web input.
+        self._event_channel = None  # Only explicitly gated Web Streaming requests attach this.
 
     def __repr__(self):
         return f"RequestHandle(state={self.state})"
@@ -94,6 +95,12 @@ class RequestHandle:
         with self._lock:
             if self.state == "RUNNING":
                 self.phase = phase
+        if self._event_channel is not None:
+            self._event_channel.activity(self.public_info())
+
+    def report_preview(self, text, secret):
+        if self._event_channel is not None and self.state == "RUNNING":
+            self._event_channel.preview(text, secret)
 
     def report_steps(self, steps, *, budget, total_latency_ms=None):
         from .assistant_activity import project_activity
@@ -104,6 +111,8 @@ class RequestHandle:
             self._activity = project_activity(steps, request_id=self.request_id, budget=budget,
                 state=self.state, revision=self._activity_revision, phase=self.phase,
                 total_latency_ms=total_latency_ms)
+        if self._event_channel is not None:
+            self._event_channel.activity(self.public_info())
 
     def finalize_result(self, record_result):
         """Serialize Stop against final trace+commit; never publish success before recording."""

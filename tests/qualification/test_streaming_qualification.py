@@ -50,7 +50,7 @@ class StreamingQualificationTests(unittest.TestCase):
                                                       "DEEPSEEK_API_KEY": FAKE_SECRET})
         self.clients, self.bodies, self.runtimes, self.remaining = [], [], [], []
 
-    def adapter(self, plan, preset=qualification.DEFAULT_PRESET, *, close_failure=False):
+    def adapter(self, plan, preset=qualification.DEFAULT_PRESET, *, close_failure=False, max_output_tokens=256):
         fixture = self
         model = assistant_profile(preset).model
         case = qualification._streaming_case("low-oxygen", "water-knowledge")
@@ -81,11 +81,12 @@ class StreamingQualificationTests(unittest.TestCase):
             self.runtimes.append(runtime); self.remaining.append(remaining)
             client = Client(len(self.clients) + 1); self.clients.append(client)
             return client
-        return QualificationAdapter(model, registry, case.exposed_tools, 256,
+        return QualificationAdapter(model, registry, case.exposed_tools, max_output_tokens,
                                     streaming=True, async_client_factory=factory)
 
     def execute(self, case, frames, *, preset=qualification.DEFAULT_PRESET, tool_set="water-knowledge", **options):
-        adapter = self.adapter(frames, preset, close_failure=options.pop("close_failure", False))
+        adapter = self.adapter(frames, preset, close_failure=options.pop("close_failure", False),
+                               max_output_tokens=options.get("max_output_tokens", 256))
         if tool_set == "three-tools":
             adapter.exposed_tools = qualification._streaming_case(case, tool_set).exposed_tools
         report = qualification.run(case, self.root, preset_id=preset, streaming=True, tool_set=tool_set,
@@ -99,6 +100,151 @@ class StreamingQualificationTests(unittest.TestCase):
             observed = row["provider_observation"]
             self.assertTrue(observed["sdk_stream_closed"])
             self.assertTrue(observed["sdk_client_closed"])
+
+    def test_budget_rules_shared_by_plan_and_adapter_with_strict_types(self):
+        case = qualification._streaming_case("low-oxygen", "water-knowledge")
+        registry = qualification._isolated_registry(case, qualification.utcnow())
+        for streaming in (False, True):
+            valid = (1, 256, 257, 512) if streaming else (1, 256)
+            invalid = (0, -1, 513, True, False, 256.0, 512.0, "256", "512", None)
+            if not streaming: invalid += (257, 512)
+            for value in valid:
+                with self.subTest(streaming=streaming, value=value):
+                    self.assertEqual(qualification.plan("low-oxygen", max_output_tokens=value,
+                        streaming=streaming)["max_output_tokens"], value)
+                    adapter = QualificationAdapter("fictional-model", registry, case.exposed_tools, value,
+                        streaming=streaming, async_client_factory=lambda *args: self.fail("no SDK"))
+                    self.assertEqual(adapter.request_attempts, 0)
+            for value in invalid:
+                with self.subTest(streaming=streaming, value=value):
+                    with self.assertRaises(qualification.QualificationError) as error:
+                        qualification.plan("low-oxygen", max_output_tokens=value, streaming=streaming)
+                    self.assertEqual(error.exception.code, "INVALID_MULTI_ROUND_TOKEN_BUDGET")
+                    with self.assertRaises(GatewayError) as error:
+                        QualificationAdapter("fictional-model", registry, case.exposed_tools, value,
+                            streaming=streaming, async_client_factory=lambda *args: self.fail("no SDK"))
+                    self.assertEqual(error.exception.code, "INVALID_MULTI_ROUND_TOKEN_BUDGET")
+
+    def test_budget_512_changes_only_plan_budget_and_hash_not_scope_or_deadline(self):
+        for preset in qualification.STREAMING_PRESETS:
+            old = qualification.plan("low-oxygen", preset, streaming=True)
+            explicit = qualification.plan("low-oxygen", preset, streaming=True, max_output_tokens=256)
+            new = qualification.plan("low-oxygen", preset, streaming=True, max_output_tokens=512)
+            self.assertEqual(old, explicit)
+            self.assertNotEqual(old["plan_sha256"], new["plan_sha256"])
+            self.assertEqual({k:v for k,v in old.items() if k not in ("max_output_tokens", "plan_sha256")},
+                             {k:v for k,v in new.items() if k not in ("max_output_tokens", "plan_sha256")})
+        self.assertEqual(qualification.plan("low-oxygen", "deepseek-flash-r1", streaming=True,
+            max_output_tokens=512)["turn_deadline_s"], 120)
+
+    def test_deepseek_512_reaches_all_three_fake_requests_with_original_runtime_limits(self):
+        def decide(index, body):
+            self.assertEqual(body["max_tokens"], 512)
+            self.assertTrue(body["stream"])
+            self.assertEqual(body["extra_body"]["thinking"]["type"], "disabled")
+            if index == 1: return tool_frames()
+            messages = [m for m in body["messages"] if m["role"] == "tool"]
+            self.assertEqual(len(messages), index - 1)
+            if index == 2:
+                self.assertEqual(json.loads(messages[-1]["content"])["status"], "OK")
+                return tool_frames(qualification.KNOWLEDGE, "second", '{"query":"DO"}')
+            self.assertEqual(index, 3); self.assertEqual(body["tool_choice"], "none")
+            return final_frames()
+        report, adapter = self.execute("low-oxygen", decide, preset="deepseek-flash-r1", max_output_tokens=512)
+        self.assertTrue(report["success"])
+        self.assertEqual(report["plan"]["max_output_tokens"], 512)
+        self.assertEqual((report["request_count"], adapter.request_attempts, len(report["executions"])), (3,3,2))
+        self.assertTrue(all(runtime is self.runtimes[0] for runtime in self.runtimes))
+        self.assertTrue(all(runtime.max_retries == 0 and runtime.total_timeout_s == 120 for runtime in self.runtimes))
+        self.assertTrue(all(0 < remaining <= 120 for remaining in self.remaining))
+        self.assertTrue(all(row["actual_result_in_next_request"] for row in report["executions"]))
+        self.assertTrue(report["product_commit_gate_passed"])
+        self.assertFalse(report["release_eligible"])
+        self.assertEqual(report["actual_network_requests"], 0)
+        self.assert_closed(report)
+
+    def test_length_at_512_still_rejects_final_preserving_ledger_and_failure_usage(self):
+        statistics = NS(prompt_tokens=2, completion_tokens=512, total_tokens=514)
+        report, adapter = self.execute("low-oxygen", [tool_frames(),
+            tool_frames(qualification.KNOWLEDGE, "second", '{"query":"DO"}'),
+            [chunk(content="fictional-partial", finish="length", usage=statistics)]],
+            preset="deepseek-flash-r1", max_output_tokens=512)
+        self.assertEqual(report["error_code"], "STREAM_TRUNCATED")
+        self.assertFalse(report["success"])
+        self.assertFalse(report["product_commit_gate_passed"])
+        self.assertFalse(report["final_answer_present"])
+        self.assertEqual(len(report["ledger"]["entries"]), 2)
+        self.assertEqual(report["usage"]["usage"]["output_tokens"], 518)
+        self.assertEqual((report["request_count"], adapter.request_attempts), (3,3))
+        self.assert_closed(report)
+
+    def test_adapter_rechecks_changed_budget_before_sdk_and_normal_keeps_256(self):
+        from fishery_ai.model_gateway import ModelMessage, ModelRequest, ProfileRegistry
+        from fishery_ai.contracts import Mode
+        profile = assistant_profile(qualification.DEFAULT_PRESET)
+        runtime = ProfileRegistry([profile], self.credentials).snapshot(profile.profile_id)
+        request = ModelRequest(Mode.CHAT, (ModelMessage("user", "offline"),))
+        adapter = self.adapter([final_frames()])
+        for value in (True, "512", 513):
+            adapter.max_output_tokens = value
+            with self.assertRaises(GatewayError) as error:
+                adapter.complete_tool_stream(request, runtime)
+            self.assertEqual(error.exception.code, "INVALID_MULTI_ROUND_TOKEN_BUDGET")
+            self.assertEqual(adapter.request_attempts, 0)
+        normal = QualificationAdapter(runtime.model, adapter.registry, (), 256)
+        self.assertEqual(normal._kwargs(request, runtime, stream=False)["max_tokens"], 256)
+        normal.max_output_tokens = 512
+        with self.assertRaises(GatewayError) as error: normal._kwargs(request, runtime, stream=False)
+        self.assertEqual(error.exception.code, "INVALID_MULTI_ROUND_TOKEN_BUDGET")
+
+    def test_cli_512_dry_run_is_allowed_only_for_streaming_and_rejects_nonintegers(self):
+        spec = importlib.util.spec_from_file_location("budget_qualification_cli",
+            PROJECT_ROOT / "scripts/qualification/qualify_multi_round.py")
+        cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+        common = ["--case", "low-oxygen", "--dry-run"]
+        with patch.object(cli, "run", side_effect=AssertionError("no automatic request")), redirect_stdout(StringIO()) as out:
+            self.assertEqual(cli.main(common + ["--streaming", "--preset", "deepseek-flash-r1",
+                "--max-output-tokens", "512"]), 0)
+        self.assertEqual(json.loads(out.getvalue())["plan"]["max_output_tokens"], 512)
+        for flags, value in (([], "512"), (["--streaming"], "513"), (["--streaming"], "0")):
+            with patch.object(cli, "run", side_effect=AssertionError("no request")), redirect_stdout(StringIO()) as out:
+                self.assertEqual(cli.main(common + flags + ["--max-output-tokens", value]), 2)
+            self.assertEqual(json.loads(out.getvalue())["error_code"], "INVALID_MULTI_ROUND_TOKEN_BUDGET")
+        for value in ("True", "False", "256.0", "512.0", "text"):
+            with redirect_stderr(StringIO()), self.assertRaises(SystemExit) as error:
+                cli.main(common + ["--streaming", "--max-output-tokens", value])
+            self.assertEqual(error.exception.code, 2)
+
+    def test_source_gate_and_cancellation_are_not_relaxed_by_512_budget(self):
+        report, _ = self.execute("current-do", [final_frames()], max_output_tokens=512)
+        self.assertFalse(report["product_commit_gate_passed"])
+        self.assertEqual(report["error_code"], "ASSISTANT_SOURCE_REQUIREMENT_UNMET")
+        self.assertEqual(report["ledger"], {"entries": []})
+        self.clients.clear(); self.bodies.clear()
+        handle = RequestHandle()
+        def cancel():
+            handle.cancel()
+            return chunk(content="fictional-partial")
+        report, _ = self.execute("low-oxygen", [[chunk(content="first", usage=STATISTICS), cancel]],
+            max_output_tokens=512, handle=handle)
+        self.assertEqual(report["error_code"], "USER_CANCELLED")
+        self.assertFalse(report["product_commit_gate_passed"])
+        self.assertEqual(report["request_count"], 1)
+        self.assertEqual(report["executions"], [])
+        self.assert_closed(report)
+        self.clients.clear(); self.bodies.clear()
+        ticks = [0.0]
+        def expire():
+            ticks[0] = 121.0
+            return chunk(content="fictional-partial")
+        with patch("fishery_ai.execution.time.monotonic", side_effect=lambda: ticks[0]):
+            report, _ = self.execute("low-oxygen", [[chunk(content="first", usage=STATISTICS), expire]],
+                preset="deepseek-flash-r1", max_output_tokens=512)
+        self.assertEqual(report["error_code"], "TOTAL_TIMEOUT")
+        self.assertFalse(report["product_commit_gate_passed"])
+        self.assertEqual(report["request_count"], 1)
+        self.assertEqual(report["executions"], [])
+        self.assert_closed(report)
 
     def test_independent_precise_plans_for_three_presets_and_both_tool_sets(self):
         hashes = set()

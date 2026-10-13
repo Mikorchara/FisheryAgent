@@ -13,6 +13,7 @@ import uuid
 from ...assistant import (AssistantError, AssistantHistoryTurn, AssistantRequest, AssistantService,
     MULTI_ROUND_PROMPT_ID, MULTI_ROUND_SYSTEM_INSTRUCTION, assistant_profile)
 from ...assistant_execution import load_assistant_execution_config, release_scope
+from ...assistant_streaming import streaming_scope
 from ...history_projection import DEFAULT_HISTORY_PROJECTION
 from ...assistant_sources import SourceRequirement, TurnSourceLedger, ledger_from_execution, requirement_satisfied_by_ledger
 from ...contracts import Mode, Status, Usage, WaterQualityReading, utcnow
@@ -28,7 +29,7 @@ from ...tool_conversation import ModelExecutionStep, ToolExecutionStep, ToolCall
 from ...tools.policy import ToolPolicy
 from ...tools.registry import CURRENT_WATER_QUALITY as WATER, WATER_QUALITY_SCORE as SCORE, SEARCH_FISHERY_KNOWLEDGE as KNOWLEDGE, ToolRegistry
 from .assistant_qualification import QualificationError, _credentials, _RunTrace, safe_code, write_report
-from .qualification_adapter import QualificationAdapter, response_summary
+from .qualification_adapter import QualificationAdapter, response_summary, validate_qualification_token_budget
 
 
 DEFAULT_PRESET = "dashscope-qwen38-flash-r1"
@@ -108,11 +109,8 @@ def _streaming_case(case_id, tool_set):
 
 def _streaming_scope(profile, registry, case):
     # Independent candidate, not a Normal release nor permission to use Web Streaming.
-    scope = release_scope(profile, ToolPolicy("assistant", True, case.exposed_tools),
-                          registry, DEFAULT_HISTORY_PROJECTION)
-    scope.update(response_mode="streaming", model_transport=ToolModelTransport.STREAMING.value,
-                 assembler_version="openai-tool-stream-assembler@1")
-    return scope
+    return streaming_scope(profile, ToolPolicy("assistant", True, case.exposed_tools),
+                           registry, DEFAULT_HISTORY_PROJECTION)
 
 
 def _product_scope(profile, registry):
@@ -133,8 +131,10 @@ def plan(case_id, preset_id=DEFAULT_PRESET, max_output_tokens=256, *, assistant_
         raise QualificationError("QUALIFICATION_IDENTITY_MISMATCH")
     assistant_product = assistant_product or streaming
     case = _streaming_case(case_id, tool_set) if streaming else get_case(case_id, assistant_product=assistant_product)
-    if type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 256:
-        raise QualificationError("INVALID_MULTI_ROUND_TOKEN_BUDGET")
+    try:
+        validate_qualification_token_budget(max_output_tokens, streaming=streaming)
+    except GatewayError as error:
+        raise QualificationError(error.code) from None
     try:
         profile = assistant_profile(preset_id)  # Published OFF + Normal; no secrets/evidence resolved.
     except AssistantError:

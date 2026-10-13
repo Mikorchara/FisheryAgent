@@ -51,6 +51,7 @@ select, textarea, input[type="text"], input[type="url"], input[type="password"],
 .assistant-message { max-width: 90%; border: 1px solid #e2e9e4; border-radius: 13px; padding: 14px 18px; background: #f7faf7; }
 .assistant-message.user { align-self: flex-end; background: #eaf4ed; }
 .assistant-message.assistant { align-self: flex-start; }
+.assistant-message.preview { align-self: flex-start; border-style: dashed; background: #fbfcfa; }
 .assistant-message.state { align-self: stretch; font-size: 13px; color: #a3332c; }
 .assistant-message p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
 .assistant-message small { display: block; margin-top: 8px; color: #718483; font-size: 11px; }

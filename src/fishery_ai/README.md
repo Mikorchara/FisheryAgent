@@ -13,6 +13,7 @@
 ## Assistant / Analysis · 正式 Runtime
 
 - [assistant.py](assistant.py)：Assistant 请求、完整历史 pair 裁剪、上下文构造与执行服务。
+- [assistant_streaming.py](assistant_streaming.py)：正式 Web Streaming 的独立维护者发布门禁、有界临时 SSE 事件；默认关闭，无 Tool 执行循环。
 - [assistant_activity.py](assistant_activity.py)：正式 Runtime 的有序步骤安全投影，供状态轮询、最终响应和 Trace 复用，不保存第二份 Tool payload。
 - [assistant_execution.py](assistant_execution.py)：应用启动时冻结多轮发布范围，以精确合同与实际 Tool 集合决定模式，并绑定联网确认 revision；Prototype 已授权本地多轮试用：Qwen 为已验证发布，DeepSeek / Ollama 为独立实验范围。
 - [assistant_sources.py](assistant_sources.py)：本轮来源要求、逐执行 Receipt / Ledger 与成功提交满足关系。

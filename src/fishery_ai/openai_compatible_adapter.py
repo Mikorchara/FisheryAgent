@@ -415,6 +415,9 @@ class OpenAICompatibleAdapter:
                                     self._remaining(deadline)  # Also bound immediately ready / CPU-only chunks.
                                     emitted = True  # Tool metadata/arguments are observable too; never retry.
                                     assembler.push(chunk)
+                                    if handle._event_channel is not None:
+                                        # Only content; arguments/reasoning remain inside the assembler.
+                                        handle.report_preview("".join(assembler._content), runtime.credential._for_adapter())
                                 else:
                                     event = self._manual_response(chunk, runtime) if manual else self._event(chunk)
                                     emitted = emitted or manual or bool(event.delta or event.reasoning_delta)

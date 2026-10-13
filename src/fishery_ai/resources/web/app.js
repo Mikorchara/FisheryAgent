@@ -2669,6 +2669,7 @@ function updateAssistantControls() {
   const blocked = !!activeExecution || executionPreparing || assistantState.busy;
   $("application-mode-toggle").disabled = blocked || toolConversationBusy || toolPolicyBusy || scenarioBusy || probeInProgress;
   $("assistant-preset").disabled = blocked || assistantState.loading;
+  $("assistant-response-mode").disabled = blocked || assistantState.loading;
   $("assistant-input").disabled = blocked;
   $("assistant-send").disabled = blocked || assistantState.loading || !assistantPreset() || !assistantState.epoch;
   $("assistant-clear").disabled = blocked;
@@ -2704,6 +2705,7 @@ async function switchApplicationMode() {
 }
 
 function resetAssistantSession() {
+  assistantState.preview = null;
   assistantState.completedTurns = [];
   assistantState.displayEntries = [];
   assistantState.toolActivity = null;
@@ -2730,6 +2732,11 @@ async function loadAssistantBootstrap() {
           || p.execution_profile.max_model_requests !== (p.execution_profile.mode === "SINGLE_ROUND" ? 2 : 3)
           || (p.execution_profile.release_status !== undefined && !["released", "local_experimental", "candidate", "unmatched"].includes(p.execution_profile.release_status))
           || (p.execution_profile.mode_reason !== undefined && !["active", "flag_disabled", "candidate", "scope_not_published"].includes(p.execution_profile.mode_reason))
+          || (p.streaming_profile !== undefined && (typeof p.streaming_profile.available !== "boolean"
+            || p.streaming_profile.mode !== "BOUNDED_MULTI_ROUND" || p.streaming_profile.max_model_requests !== 3
+            || !["released", "candidate", "unpublished"].includes(p.streaming_profile.release_status)
+            || p.streaming_profile.available && p.streaming_profile.release_status !== "released"
+            || typeof p.streaming_profile.revision !== "string" || !/^[a-f0-9]{64}$/.test(p.streaming_profile.revision)))
           || typeof p.execution_profile.revision !== "string" || !/^[a-f0-9]{64}$/.test(p.execution_profile.revision))) throw new Error("INVALID_RESPONSE");
     if (assistantState.epoch && assistantState.epoch !== data.epoch) {
       resetAssistantSession();
@@ -2737,7 +2744,8 @@ async function loadAssistantBootstrap() {
     }
     assistantState.epoch = data.epoch;
     assistantState.presets = data.presets.map(p => ({preset_id: p.preset_id, display_name: p.display_name,
-      runtime_type: p.runtime_type, execution_profile: {...p.execution_profile}}));
+      runtime_type: p.runtime_type, execution_profile: {...p.execution_profile},
+      streaming_profile: p.streaming_profile}));
     $("assistant-confirm-network").checked = false; // Every refreshed profile requires a new explicit confirmation.
     if (!assistantPreset()) assistantState.selectedPresetId = assistantState.presets.some(p => p.preset_id === data.default_preset_id)
       ? data.default_preset_id : "";
@@ -2757,8 +2765,18 @@ async function loadAssistantBootstrap() {
 }
 
 function renderAssistantNetwork() {
+  const streamProfile = assistantPreset()?.streaming_profile;
+  const responses = $("assistant-response-mode");
+  if (!responses.children.length) {
+    appendChoice(responses, "normal", "Normal", false);
+    appendChoice(responses, "streaming", "Streaming · 尚未发布", true);
+  }
+  const streamingOption = Array.from(responses.children).find(o => o.value === "streaming");
+  streamingOption.disabled = streamProfile?.available !== true;
+  streamingOption.textContent = streamingOption.disabled ? "Streaming · 尚未发布" : "Streaming";
+  if (streamingOption.disabled) $("assistant-response-mode").value = "normal";
   const local = assistantPreset()?.runtime_type === "local";
-  const profile = assistantPreset()?.execution_profile;
+  const profile = $("assistant-response-mode").value === "streaming" ? streamProfile : assistantPreset()?.execution_profile;
   const multi = profile?.mode === "BOUNDED_MULTI_ROUND";
   const qualification = profile?.release_status === "released" ? "已验证资格"
     : profile?.release_status === "local_experimental" ? "本地实验试用 · 尚无真实多轮资格证据" : "";
@@ -2768,7 +2786,7 @@ function renderAssistantNetwork() {
   $("assistant-execution-note").textContent = !profile ? "" : multi
     ? `有界多轮 · 最多 2 Tool Calls / 2 Rounds / 3 Requests${qualification ? ` · ${qualification}` : ""}`
     : `单轮 · 1 Tool / 1 Round / 2 Requests · ${reason}${qualification ? ` · ${qualification}` : ""}`;
-  const count = assistantPreset()?.execution_profile.max_model_requests === 3 ? "三" : "两";
+  const count = profile?.max_model_requests === 3 ? "三" : "两";
   $("assistant-network-label").textContent = local ? "LOCAL MODEL REQUEST" : "REAL NETWORK REQUEST";
   $("assistant-network-note").textContent = local ? `本次最多${count}次本地模型请求。` : `本次最多${count}次模型请求，Cloud 可能产生费用。`;
 }
@@ -2913,7 +2931,16 @@ function renderAssistantMessages() {
         article.append(group);
       }
     }
+    if (entry.kind === "state") {
+      for (const step of entry.steps || []) if (step.kind === "tool") article.append(assistantToolCard(step));
+    }
     messages.append(article);
+  }
+  if (assistantState.preview) {
+    const article = document.createElement("article"); article.classList.add("assistant-message", "preview");
+    const note = document.createElement("small"); note.textContent = "临时预览 · 未确认，不能作为成功回答";
+    const text = document.createElement("p"); text.textContent = assistantState.preview.text;
+    article.append(note, text); messages.append(article);
   }
   messages.scrollTop = messages.scrollHeight;
 }
@@ -2944,12 +2971,18 @@ function setAssistantRun(phase, result = null, code = null) {
     run.requests = run.steps.filter(step => step.kind === "model" && step.request_started).length;
     if (result.final_finish_reason !== undefined) run.finishReason = ["stop", "length", "content_filter", "tool_calls"].includes(result.final_finish_reason) ? result.final_finish_reason : null;
     run.usage = safeAssistantUsage(result.usage?.usage || result.activity?.aggregate_usage);
+    if (result.trace_recorded !== undefined) run.traceRecorded = result.trace_recorded === true;
+    if (/^[a-f0-9]{32}$/.test(result.trace_id || "")) run.traceId = result.trace_id;
     const latency = result.total_latency_ms ?? result.activity?.total_latency_ms;
     run.latency = Number.isFinite(latency) && latency >= 0 ? latency : null;
   }
   assistantState.run = run;
   $("assistant-run").hidden = false;
   const tools = (run.steps || []).filter(step => step.kind === "tool" && step.handler_started);
+  const live = $("assistant-live-tools"); live.replaceChildren();
+  const attempts = (run.steps || []).filter(step => step.kind === "tool");
+  live.hidden = !assistantState.busy || !attempts.length;
+  if (!live.hidden) for (const tool of attempts) live.append(assistantToolCard(tool));
   $("assistant-run-summary").textContent = `本次运行：${phase} · ${run.model}${run.requests !== undefined ? ` · ${tools.length} Tool · ${run.requests} Requests · ${assistantDuration(run.latency)}` : ""}`;
   const container = $("assistant-run-details"); container.replaceChildren();
   const overview = document.createElement("dl"); overview.classList.add("facts-grid");
@@ -2967,7 +3000,8 @@ function setAssistantRun(phase, result = null, code = null) {
       container.append(assistantToolCard(step, `Step #${step.seq}`));
     }
   }
-  const rows = [["Finish reason", run.finishReason], ["Total latency", assistantDuration(run.latency)]];
+  const rows = [["Finish reason", run.finishReason], ["Total latency", assistantDuration(run.latency)],
+    ["Trace recorded", run.traceRecorded === undefined ? "unavailable" : run.traceRecorded], ["Trace ID", run.traceId]];
   for (const [key, value] of Object.entries(run.usage || {})) rows.push([key, value ?? "unavailable"]);
   if (run.errorCode) rows.push(["Safe error", run.errorCode]);
   const totals = document.createElement("dl"); totals.classList.add("facts-grid");
@@ -3013,9 +3047,12 @@ function monitorAssistantPhase(execution) {
 function completeAssistantStop(execution, code) {
   if (assistantState.pendingRequest !== execution) return;
   if (execution.userEntry) execution.userEntry.pending = false;
-  assistantState.displayEntries.push({kind: "state", text: code});
+  assistantState.preview = null;
+  assistantState.displayEntries.push({kind: "state", text: execution.streaming ? `${code} · 临时预览已撤销，不计入成功对话。` : code,
+    steps: execution.streaming ? assistantState.run?.steps || [] : []});
   setAssistantRun(code === "USER_CANCELLED" ? "Cancelled" : code === "STOP_AFTER_COMPLETION" ? "Completed" : "Failed", null, code);
   assistantState.pendingRequest = null; assistantState.busy = false;
+  $("assistant-live-tools").hidden = true;
   $("assistant-confirm-network").checked = false;
   renderAssistantMessages(); updateAssistantControls();
 }
@@ -3024,6 +3061,58 @@ function boundedAssistantHistory() {
   const turns = assistantState.completedTurns.slice(-6).map(t => ({user: t.user, assistant: t.assistant, completed_at: t.completed_at}));
   while (turns.length && new TextEncoder().encode(JSON.stringify(turns)).length > 6144) turns.shift();
   return turns;
+}
+
+async function readAssistantEvents(response, execution) {
+  if (!response.body || !response.headers?.get("content-type")?.includes("text/event-stream")) throw new Error("STREAM_UNAVAILABLE");
+  const reader = response.body.getReader(), decoder = new TextDecoder("utf-8", {fatal:true});
+  let buffer = "", sequence = 0;
+  try {
+    while (true) {
+      const {done, value} = await reader.read();
+      if (execution.cancelled || assistantState.pendingRequest !== execution || activeExecution !== execution) return null;
+      buffer += decoder.decode(value || new Uint8Array(), {stream:!done});
+      buffer = buffer.replace(/\r\n/g, "\n");
+      if (buffer.length > 524288) throw new Error("STREAM_PROTOCOL_ERROR");
+      let boundary;
+      while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
+        const line = frame.split("\n").find(s => s.startsWith("data: "));
+        if (!line) continue; // heartbeat only
+        const data = JSON.parse(line.slice(6));
+        if (data.event_schema_version !== 1 || data.request_id !== execution.request_id || data.epoch !== assistantState.epoch
+          || !Number.isSafeInteger(data.seq) || data.seq < 1) throw new Error("STREAM_PROTOCOL_ERROR");
+        if (data.seq <= sequence) continue; // idempotent duplicate / stale event
+        if (data.seq !== sequence + 1) throw new Error("STREAM_EVENT_ORDER_INVALID");
+        sequence = data.seq;
+        if (data.kind === "start") {
+          if (sequence !== 1 || data.max_model_requests !== 3) throw new Error("STREAM_PROTOCOL_ERROR");
+        } else if (data.kind === "activity") {
+          if (/^REQUEST_[123]$/.test(data.phase || "")) execution.streamRequestIndex = Number(data.phase.slice(-1));
+          acceptAssistantProgress(execution, data);
+        } else if (data.kind === "preview_reset") {
+          if (![1,2,3].includes(data.request_index)) throw new Error("STREAM_PROTOCOL_ERROR");
+          execution.streamRequestIndex = Math.max(execution.streamRequestIndex || 0, data.request_index);
+          assistantState.preview = null; renderAssistantMessages();
+        } else if (data.kind === "preview") {
+          if (data.provisional !== true || typeof data.text !== "string" || new TextEncoder().encode(data.text).length > 16384
+            || ![1,2,3].includes(data.request_index)) throw new Error("STREAM_PROTOCOL_ERROR");
+          if (execution.streamRequestIndex && data.request_index < execution.streamRequestIndex) continue;
+          assistantState.preview = {text:data.text, requestIndex:data.request_index}; renderAssistantMessages();
+        } else if (["final", "error", "cancelled"].includes(data.kind)) {
+          execution.streamTerminal = true; assistantState.preview = null;
+          if (data.kind === "final" && (data.result?.trace_recorded !== true || data.result?.activity?.activity_schema_version !== 2
+            || data.result.activity.state !== "COMPLETED" || data.result.activity.request_id !== execution.request_id)) throw new Error("STREAM_PROTOCOL_ERROR");
+          if (data.kind !== "final" && data.result?.successful_turn) throw new Error("STREAM_PROTOCOL_ERROR");
+          return data.result ? {result:data.result} : {error_code:data.error_code || "ASSISTANT_REQUEST_FAILED"};
+        } else throw new Error("STREAM_PROTOCOL_ERROR");
+      }
+      if (done) throw new Error("STREAM_INTERRUPTED"); // EOF is never an implicit Final.
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock?.();
+  }
 }
 
 async function sendAssistant() {
@@ -3035,7 +3124,11 @@ async function sendAssistant() {
   if (!assistantState.epoch) { await loadAssistantBootstrap(); assistantNotice("请确认本次请求后重新发送。"); return; }
   if (!assistantPreset()) { assistantNotice("请选择模型。", true); return; }
   if (!$("assistant-confirm-network").checked) { assistantNotice("NETWORK_CONFIRMATION_REQUIRED", true); return; }
-  const executionRevision = assistantPreset().execution_profile.revision;
+  const streaming = $("assistant-response-mode").value === "streaming";
+  const selectedExecution = streaming ? assistantPreset().streaming_profile : assistantPreset().execution_profile;
+  if (streaming && selectedExecution?.available !== true) { assistantNotice("ASSISTANT_STREAMING_NOT_RELEASED", true); return; }
+  const executionRevision = selectedExecution.revision;
+  assistantState.preview = null;
   assistantState.busy = true; assistantState.run = null; $("assistant-run").open = false;
   setAssistantRun("Preparing"); assistantNotice(""); updateAssistantControls();
   const userEntry = {kind: "user", text: question, pending: true};
@@ -3043,15 +3136,15 @@ async function sendAssistant() {
   const history = boundedAssistantHistory(), locallyTrimmed = assistantState.completedTurns.length - history.length;
   let execution;
   try {
-    execution = await beginExecution("assistant"); execution.userEntry = userEntry;
+    execution = await beginExecution("assistant"); execution.userEntry = userEntry; execution.streaming = streaming;
     assistantState.pendingRequest = execution;
-    monitorAssistantPhase(execution);
-    const response = await fetch("/api/assistant/chat", {method: "POST", headers: execution.headers,
+    if (!streaming) monitorAssistantPhase(execution);
+    const response = await fetch(streaming ? "/api/assistant/chat/stream" : "/api/assistant/chat", {method: "POST", headers: execution.headers,
       signal: execution.controller.signal, body: JSON.stringify({preset_id: assistantState.selectedPresetId,
         question, history, epoch: assistantState.epoch, confirm_network: true,
         execution_profile_revision: executionRevision,
         request_id: execution.request_id, control_token: execution.control_token})});
-    const data = await response.json();
+    const data = streaming && response.ok ? await readAssistantEvents(response, execution) : await response.json();
     if (execution.cancelled || assistantState.pendingRequest !== execution) return;
     const result = data.result;
     const code = safeCredentialCode(result || data, "ASSISTANT_REQUEST_FAILED");
@@ -3075,6 +3168,7 @@ async function sendAssistant() {
     if (result.final_finish_reason !== "stop") throw new Error(result.final_finish_reason === "length" ? "ASSISTANT_RESPONSE_TRUNCATED" : "ASSISTANT_RESPONSE_INCOMPLETE");
     if (typeof result.completed_at !== "string" || !Number.isFinite(Date.parse(result.completed_at))) throw new Error("INVALID_RESPONSE");
     userEntry.pending = false;
+    assistantState.preview = null;
     const steps = safeAssistantSteps(result);
     const tool = steps.find(step => step.kind === "tool" && step.handler_started);
     const activity = tool ? safeAssistantActivity(tool) : safeAssistantActivity();
@@ -3094,10 +3188,18 @@ async function sendAssistant() {
   } catch (exc) {
     if (execution?.cancelled || (execution && assistantState.pendingRequest !== execution)) return;
     const code = scenarioErrorText(exc);
+    if (streaming && execution && !execution.streamTerminal) {
+      // Cancel the original request after transport failure; never reconnect or resend.
+      try { await fetch(`/api/requests/${execution.request_id}/cancel`, {method:"POST", headers:execution.headers,
+        body:JSON.stringify({control_token:execution.control_token})}); } catch (_) { /* safe unknown remote state */ }
+    }
+    assistantState.preview = null;
     userEntry.pending = false;
-    assistantState.displayEntries.push({kind: "state", text: code});
+    assistantState.displayEntries.push({kind: "state", text: code,
+      steps: streaming ? assistantState.run?.steps || [] : []});
     setAssistantRun(code === "USER_CANCELLED" ? "Cancelled" : "Failed", null, code);
-    if (!["ASSISTANT_SESSION_EXPIRED", "ASSISTANT_EXECUTION_PROFILE_CHANGED"].includes(code)) assistantNotice(code, true);
+    if (!["ASSISTANT_SESSION_EXPIRED", "ASSISTANT_EXECUTION_PROFILE_CHANGED"].includes(code))
+      assistantNotice(streaming ? `${code} · 临时预览已撤销，不计入成功对话。` : code, true);
     renderAssistantMessages();
   } finally {
     clearTimeout(execution?.phaseTimer);
@@ -3109,10 +3211,14 @@ async function sendAssistant() {
       }
     }
     updateAssistantControls();
+    $("assistant-live-tools").hidden = true;
   }
 }
 
 function bindAssistantControls() {
+  $("assistant-response-mode").addEventListener("change", () => {
+    $("assistant-confirm-network").checked = false; renderAssistantNetwork();
+  });
   $("application-mode-toggle").addEventListener("click", switchApplicationMode);
   $("assistant-preset").addEventListener("change", changeAssistantPreset);
   $("assistant-tool").addEventListener("click", () => { if (!activeExecution && !assistantState.busy) return openToolManager("assistant"); });

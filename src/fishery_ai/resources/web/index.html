@@ -370,13 +370,16 @@
         <h2 id="assistant-title">Assistant Model</h2>
         <label class="sr-only" for="assistant-preset">Preset Model</label>
         <select id="assistant-preset"><option value="">请选择模型</option></select>
-        <span class="assistant-fixed-mode">Thinking OFF · Normal</span>
+        <span class="assistant-fixed-mode">Thinking OFF</span>
+        <label class="sr-only" for="assistant-response-mode">Response Mode</label>
+        <select id="assistant-response-mode"><option value="normal">Normal</option><option value="streaming" disabled>Streaming · 尚未发布</option></select>
         <button id="assistant-tool" class="secondary compact-action" type="button">Tool</button>
       </div>
       <p id="assistant-execution-note" class="helper" role="status" aria-live="polite"></p>
       <div id="assistant-messages" class="assistant-messages" role="log" aria-label="对话消息"></div>
       <p id="assistant-history-notice" class="helper" role="status"></p>
       <div class="assistant-composer">
+        <div id="assistant-live-tools" class="assistant-tool-activity" hidden aria-live="polite"></div>
         <details id="assistant-run" class="assistant-run" hidden>
           <summary id="assistant-run-summary" aria-live="polite">本次运行</summary>
           <div id="assistant-run-details"></div>

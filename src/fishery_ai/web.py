@@ -11,6 +11,7 @@ import json
 import re
 import time
 import uuid
+import threading
 from contextlib import nullcontext
 
 from flask import Flask, Response, jsonify, request, stream_with_context
@@ -39,7 +40,8 @@ from .repositories import MockRepository
 from .presets import preset_profiles, default_preset_id
 from .model_gateway import validate_preset_response
 from .execution import RequestRegistry, request_scope
-from .tool_conversation import ToolCallingService, MockToolGateway
+from .tool_conversation import ToolCallingService, MockToolGateway, ToolExecutionMode, ToolModelTransport
+from .assistant_streaming import AssistantStreamingConfig, AssistantEventChannel, resolve_streaming_profile
 from .assistant import ALLOWED_PRESET_IDS, AssistantError, AssistantRequest, AssistantService, assistant_profile
 from .assistant_execution import (AssistantExecutionConfig, load_assistant_execution_config,
                                   resolve_execution_profile)
@@ -171,6 +173,7 @@ def _builtin_profiles() -> tuple[ModelProfile, ...]:
 
 def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_PROJECTION,
                assistant_execution_config: AssistantExecutionConfig | None = None,
+               assistant_streaming_config: AssistantStreamingConfig | None = None,
                trace_path: Path | None = None,
                custom_profiles_dir: Path | None = None,
                capability_evidence_dir: Path | None = None,
@@ -192,6 +195,9 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
                         else assistant_execution_config)
     if not isinstance(execution_config, AssistantExecutionConfig):
         raise ValueError("INVALID_ASSISTANT_EXECUTION_CONFIG")
+    streaming_config = assistant_streaming_config if assistant_streaming_config is not None else AssistantStreamingConfig()
+    if not isinstance(streaming_config, AssistantStreamingConfig):
+        raise ValueError("INVALID_ASSISTANT_STREAMING_CONFIG")
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
     credentials = credential_store if credential_store is not None else CredentialStore()
@@ -396,7 +402,7 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
         # Prepared handles that fail preflight must not consume active slots until TTL.
         if response.status_code == 413:
             return response  # Do not parse an oversized body again during error cleanup.
-        if (request.path in ("/api/analyze", "/api/analyze/stream", "/api/manual", "/api/manual-v2", "/api/tool-conversation", "/api/assistant/chat")
+        if (request.path in ("/api/analyze", "/api/analyze/stream", "/api/manual", "/api/manual-v2", "/api/tool-conversation", "/api/assistant/chat", "/api/assistant/chat/stream")
                 or request.path.endswith("/tool-probe")) and response.status_code >= 400:
             payload = request.get_json(silent=True)
             if isinstance(payload, dict) and "request_id" in payload:
@@ -1030,7 +1036,9 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
             return jsonify(presets=[{"preset_id": p.preset_id,
                 "display_name": p.display_name.rsplit(" · ", 1)[0], "runtime_type": p.provider_kind,
                 "execution_profile": resolve_execution_profile(execution_config, p, policy, tool_registry,
-                    epoch=assistant_epoch, projection=assistant_history_projection).public()}
+                    epoch=assistant_epoch, projection=assistant_history_projection).public(),
+                "streaming_profile": resolve_streaming_profile(streaming_config, p, policy, tool_registry,
+                    epoch=assistant_epoch, projection=assistant_history_projection)}
                 for p in allowed], default_preset_id=default if default in ALLOWED_PRESET_IDS else None,
                 fixed_mode={"thinking": "off", "response_mode": "normal"}, epoch=assistant_epoch,
                 tools=[{"name": definition.name} for definition in policy.model_definitions(tool_registry)])
@@ -1081,6 +1089,72 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
         except Exception:
             handle.finish("INTERNAL_ERROR")
             return error("INTERNAL_ERROR", 500)
+
+    @app.post("/api/assistant/chat/stream")
+    def assistant_chat_stream():
+        failure = credential_gate()
+        if failure is not None:
+            return failure
+        payload = request.get_json(silent=True)
+        envelope = {"epoch", "confirm_network", "request_id", "control_token", "execution_profile_revision"}
+        if not isinstance(payload, dict) or set(payload) - (envelope | {"preset_id", "question", "history", "conversation_id"}):
+            return error("INVALID_ASSISTANT_REQUEST", 400)
+        if payload.get("epoch") != assistant_epoch:
+            return error("ASSISTANT_SESSION_EXPIRED", 409)
+        try:
+            turn = AssistantRequest.from_dict({k:v for k,v in payload.items() if k not in envelope})
+            profile = assistant_profile(turn.preset_id)
+            policy = policy_store.effective()["assistant"]
+            streaming = resolve_streaming_profile(streaming_config, profile, policy, tool_registry,
+                epoch=assistant_epoch, projection=assistant_history_projection)
+        except (AssistantError, ToolPolicyError) as exc:
+            return error(exc.code, 400)
+        if not streaming["available"]:
+            return error("ASSISTANT_STREAMING_NOT_RELEASED", 403)
+        if payload.get("confirm_network") is not True:
+            return error("NETWORK_CONFIRMATION_REQUIRED", 403)
+        if payload.get("execution_profile_revision") != streaming["revision"]:
+            return error("ASSISTANT_EXECUTION_PROFILE_CHANGED", 409)
+        runtime, failure = request_runtime(profile)
+        if failure is not None:
+            return failure
+        handle, failure = claim_execution(payload, required=True)
+        if failure is not None:
+            return failure
+        channel = AssistantEventChannel(handle, assistant_epoch)
+        handle._event_channel = channel
+        channel.emit("start", {"max_model_requests": 3})
+
+        def execute():
+            try:
+                with request_scope(handle):
+                    coordinator = ToolCallingService(real_gateway_factory(), tool_registry, traces, policy=policy,
+                        execution_mode=ToolExecutionMode.BOUNDED_MULTI_ROUND, model_transport=ToolModelTransport.STREAMING)
+                    result = AssistantService(coordinator, history_projection=assistant_history_projection,
+                        execution_mode=ToolExecutionMode.BOUNDED_MULTI_ROUND).send(turn, runtime)
+                channel.emit("final" if result.status == Status.COMPLETED else
+                    "cancelled" if result.status == Status.CANCELLED else "error", {"result": result.to_dict()}, terminal=True)
+            except (AssistantError, GatewayError) as exc:
+                code = exc.code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", exc.code) else "INTERNAL_ERROR"
+                handle.finish(code)
+                channel.emit("cancelled" if code == "USER_CANCELLED" else "error", {"error_code": code}, terminal=True)
+            except Exception:
+                handle.finish("INTERNAL_ERROR")
+                channel.emit("error", {"error_code": "INTERNAL_ERROR"}, terminal=True)
+            finally:
+                handle._event_channel = None
+
+        try:
+            threading.Thread(target=execute, name="fishery-assistant-turn", daemon=True).start()
+        except Exception:
+            handle._event_channel = None
+            handle.finish("INTERNAL_ERROR")
+            return error("INTERNAL_ERROR", 500)
+        response = Response(stream_with_context(channel.events()), mimetype="text/event-stream")
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Accel-Buffering"] = "no"
+        response.call_on_close(handle.cancel) # Also cover disconnect before the iterator first starts.
+        return response
 
     @app.post("/api/tool-conversation")
     def tool_conversation():
@@ -1547,7 +1621,8 @@ def create_app(*, assistant_history_projection: ProjectionId = DEFAULT_HISTORY_P
 
 
 def run_web(*, port: int = 8765,
-            assistant_history_projection: ProjectionId = DEFAULT_HISTORY_PROJECTION) -> None:
+            assistant_history_projection: ProjectionId = DEFAULT_HISTORY_PROJECTION,
+            assistant_streaming_config: AssistantStreamingConfig | None = None) -> None:
     """Fix the credential path at startup; each request resolves a fresh snapshot."""
     try:
         location = private_project_location(Path.cwd())
@@ -1558,6 +1633,7 @@ def run_web(*, port: int = 8765,
     manual_location = private_manual_location(Path.cwd())
     manual_credentials = CredentialStore(manual_location.env_path, process_env={}, private_location=manual_location)
     app = create_app(assistant_history_projection=assistant_history_projection,
+                     assistant_streaming_config=assistant_streaming_config,
                      credential_store=credentials,
                      credential_writer=ProjectEnvWriter(location.env_path.parent, credentials,
                                                         require_git_ignored=False),
