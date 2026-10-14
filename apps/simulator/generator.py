@@ -18,21 +18,34 @@ class WaterQualityGenerator:
     def generate(self, begin, end, phase, state_at):
         duration_s = end-begin
         values = {key: [] for key in METRICS}
+        invalid = dict.fromkeys(METRICS, 0)
         sample_count = round(duration_s/self.sample_period_s)
         for i in range(sample_count):
             current = state_at(begin+(i+1)*self.sample_period_s)
             for key in METRICS:
                 amplitude = .04 if key == "ph" else .15
                 self.noise[key] = self.noise[key]*.8+self.random.uniform(-amplitude, amplitude)*.2
-                if key not in (phase["missing_metric"], phase["invalid_metric"]):
-                    values[key].append(round(current[key]+self.noise[key], 3))
+                if not current["online"] or not current["water_online"] or key == current["missing_metric"]:
+                    continue
+                value = current[key]
+                if value is None:
+                    continue
+                if (key == current["invalid_metric"] or type(value) not in (int, float)
+                        or not math.isfinite(value) or not METRICS[key][2] <= value <= METRICS[key][3]):
+                    invalid[key] += 1
+                else:
+                    measured = round(value+self.noise[key], 3)
+                    if METRICS[key][2] <= measured <= METRICS[key][3]:
+                        values[key].append(measured)
+                    else:
+                        invalid[key] += 1
         stats = {}
         for key, (_label, unit, _lo, _hi) in METRICS.items():
             samples = values[key]
             stats[key] = {"unit": unit, "mean": round(sum(samples)/len(samples), 3) if samples else None,
                 "min": min(samples) if samples else None, "max": max(samples) if samples else None,
                 "latest": samples[-1] if samples else None, "valid_samples": len(samples),
-                "invalid_samples": sample_count if phase["invalid_metric"] == key else 0}
+                "invalid_samples": invalid[key]}
         return {"aggregation": "window_mean", "sample_count": sample_count, "metrics": stats}
 
 
@@ -41,34 +54,48 @@ class VisualDetectionGenerator:
         self.random = random.Random(seed)
         self.frame_period_s = frame_period_s
 
+    def sample_frame(self, current):
+        if not current["online"] or not current["visual_online"]:
+            return None  # Invalid/unavailable frame, never a zero-fish observation.
+        anomalies = tuple(key for key, rate in zip(ANOMALIES,
+            ("lesion_rate", "surface_rate", "death_rate")) if self.random.random() < current[rate])
+        r, cumulative, selected = self.random.random(), 0, "normal_activity"
+        for key in ("feeding_anomaly", "reduced_activity", "feeding", "unknown"):
+            cumulative += current["unknown_behavior" if key == "unknown" else key]
+            if r < cumulative:
+                selected = key
+                break
+        visible = self.random.randint(0, 10)
+        # Some visible fish have no valid length measurement; calibration is per frame.
+        lengths = [20+self.random.uniform(-1, 1) for _ in range(self.random.randint(0, visible))] if current["calibrated"] else []
+        return {"visible_fish_count": visible, "lengths_cm": lengths,
+                "anomalies": anomalies, "behavior": selected}
+
     def generate(self, begin, end, phase, state_at):
-        duration_s = end-begin
-        count = round(duration_s/self.frame_period_s)
-        anomalies = dict.fromkeys(ANOMALIES, 0)
-        behaviors = dict.fromkeys(BEHAVIORS, 0)
-        counts, lengths = [], []
-        for i in range(count):
-            current = state_at(begin+(i+1)*self.frame_period_s)
-            for key, rate in zip(ANOMALIES, ("lesion_rate", "surface_rate", "death_rate")):
-                anomalies[key] += int(self.random.random() < current[rate])
-            r = self.random.random()
-            cumulative = 0
-            selected = "normal_activity"
-            for key in ("feeding_anomaly", "reduced_activity", "feeding", "unknown"):
-                cumulative += current["unknown_behavior" if key == "unknown" else key]
-                if r < cumulative:
-                    selected = key
-                    break
-            behaviors[selected] += 1
-            counts.append(8+self.random.randint(-2, 2))
-            if phase["calibrated"]:
-                lengths.append(20+self.random.uniform(-1, 1))
-        return {"aggregation": "window_summary", "frames_processed": count,
-            "anomaly_counts": anomalies, "behavior_ratios": {k: v/count for k, v in behaviors.items()},
-            "length": {"average_length_cm": round(sum(lengths)/len(lengths), 3) if lengths else None,
-                "length_sample_count": len(lengths), "calibration": "simulated" if lengths else "uncalibrated",
-                "calibration_id": "synthetic-calibration-v1" if lengths else None},
-            "visible_fish_count": sum(counts)/count, "model_version": "synthetic-visual-v1"}
+        count = round((end-begin)/self.frame_period_s)
+        frames = [self.sample_frame(state_at(begin+(i+1)*self.frame_period_s)) for i in range(count)]
+        return summarize_visual_frames(frames)
+
+
+def summarize_visual_frames(frames):
+    """Internal detection records; None marks a failed frame, count=0 valid zero fish.
+
+    Each lengths_cm item is one valid calibrated detection, not a unique fish.
+    Frames come from the producer, never from HTTP input.
+    """
+    valid = [frame for frame in frames if frame is not None]
+    counts = [frame["visible_fish_count"] for frame in valid]
+    lengths = [value for frame in valid for value in frame["lengths_cm"]]
+    length_frames = sum(bool(frame["lengths_cm"]) for frame in valid)
+    anomalies = {key: sum(key in frame["anomalies"] for frame in valid) for key in ANOMALIES}
+    behaviors = {key: sum(frame["behavior"] == key for frame in valid) for key in BEHAVIORS}
+    return {"aggregation": "window_summary", "frames_processed": len(frames), "valid_frames": len(valid),
+        "anomaly_counts": anomalies, "behavior_ratios": {k: v/len(valid) if valid else 0 for k, v in behaviors.items()},
+        "length": {"average_length_cm": round(math.fsum(lengths)/len(lengths), 3) if lengths else None,
+            "length_sample_count": len(lengths), "valid_frame_count": length_frames,
+            "calibration": "simulated" if lengths else "uncalibrated",
+            "calibration_id": "synthetic-calibration-v1" if lengths else None},
+        "visible_fish_count": sum(counts)/len(counts) if counts else None, "model_version": "synthetic-visual-v2"}
 
 
 class Simulator:
@@ -95,6 +122,11 @@ class Simulator:
             raise ValueError("UNKNOWN_SCENARIO")
         # A scenario change never resets time, RNG or batch sequence.
         self.scenario = scenario
+
+    def skip_windows(self, count, duration_s):
+        """Missed real-time windows produce no samples or reports; retain time gaps."""
+        self.elapsed_s += count*duration_s
+        self.sequence += count
 
     def advance(self, duration_s=10):
         if type(duration_s) not in (int, float) or not math.isfinite(duration_s) or not 1 <= duration_s <= 60:

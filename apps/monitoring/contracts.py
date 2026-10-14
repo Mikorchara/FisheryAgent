@@ -170,23 +170,34 @@ def validate_batch(value, *, now, device_ids):
                 if not stat["min"] <= stat["mean"] <= stat["max"] or not stat["min"] <= stat["latest"] <= stat["max"]:
                     fail()
     if visual is not None:
+        # Additive statistics: legacy v1 windows remain readable/acceptable.
         object_keys(visual, ("aggregation", "frames_processed", "anomaly_counts", "behavior_ratios",
-                            "length", "visible_fish_count", "model_version"))
+                            "length", "visible_fish_count", "model_version") +
+                    (("valid_frames",) if "valid_frames" in visual else ()))
         if visual["aggregation"] != "window_summary":
             fail()
         integer(visual["frames_processed"], 1, 6000)
+        valid_frames = visual.get("valid_frames", visual["frames_processed"])
+        integer(valid_frames, 0, visual["frames_processed"])
         identifier(visual["model_version"])
         object_keys(visual["anomaly_counts"], ANOMALIES)
         for count in visual["anomaly_counts"].values():
-            integer(count, 0, visual["frames_processed"])
+            integer(count, 0, valid_frames)
         object_keys(visual["behavior_ratios"], BEHAVIORS)
         for ratio in visual["behavior_ratios"].values():
             number(ratio, 0, 1)
-        if abs(sum(visual["behavior_ratios"].values())-1) > .00001:
+        if abs(sum(visual["behavior_ratios"].values())-(1 if valid_frames else 0)) > .00001:
             fail("INVALID_BEHAVIOR_RATIOS")
         length = visual["length"]
-        object_keys(length, ("average_length_cm", "length_sample_count", "calibration", "calibration_id"))
+        object_keys(length, ("average_length_cm", "length_sample_count", "calibration", "calibration_id") +
+                    (("valid_frame_count",) if "valid_frame_count" in length else ()))
         integer(length["length_sample_count"], 0, 6000)
+        if "valid_frame_count" in length:
+            integer(length["valid_frame_count"], 0, min(valid_frames, length["length_sample_count"]))
+            if bool(length["valid_frame_count"]) != bool(length["length_sample_count"]):
+                fail()
+        if not valid_frames and (length["length_sample_count"] or visual["visible_fish_count"] is not None):
+            fail()
         if length["calibration"] not in ("uncalibrated", "simulated"):
             fail()
         if length["length_sample_count"] == 0:

@@ -58,6 +58,6 @@ export function trendChart(snapshot,key){
   for(let i=0;i<4;i++){const y=53+i*52;append('line',{x1:52,y1:y,x2:742,y2:y,stroke:'#e6edf0','stroke-dasharray':'4 5'});append('text',{x:9,y:y+4,fill:'#81919a','font-size':11},(data.high-i/3*(data.high-data.low)).toFixed(1));}
   for(const segment of data.segments){const path=segment.map(([x,y],i)=>`${i?'L':'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');append('path',{d:path,fill:'none',stroke:'#168c83','stroke-width':2.8});}
   for(const[x,y]of data.points)append('circle',{cx:x,cy:y,r:3,fill:'#fff',stroke:'#168c83','stroke-width':1.8});
-  [0,3,7,11].forEach(i=>append('text',{x:data.points[Math.min(i,data.points.length-1)][0],y:241,fill:'#81919a','font-size':11,'text-anchor':'middle'},timeText(data.rows[Math.min(i,data.rows.length-1)].observed_at)));
-  return el('div',{class:'chart-container'},[svg,el('p',{class:'chart-note',text:snapshot?.source_kind==='simulator'?'模拟上报窗口 · 有界历史 · 非真实设备':'独立 R1 Demo 历史'})]);
+  [0,3,7,11].forEach(i=>append('text',{x:data.points[Math.min(i,data.points.length-1)][0],y:241,fill:'#81919a','font-size':11,'text-anchor':'middle'},timeText(data.rows[Math.min(i,data.rows.length-1)].observed_at,true)));
+  return el('div',{class:'chart-container'},[svg,el('p',{class:'chart-note',text:'北京时间 UTC+8 · '+(snapshot?.source_kind==='simulator'?'模拟上报窗口 · 有界历史 · 非真实设备':'独立 R1 Demo 历史')})]);
 }

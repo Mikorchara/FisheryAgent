@@ -45,11 +45,12 @@ Simulator：Scenario → 逻辑采样 → 10 秒窗口 → HTTP
   "visual": {
     "aggregation": "window_summary",
     "frames_processed": 20,
+    "valid_frames": 20,
     "anomaly_counts": {"suspected_lesion":0,"surface_anomaly":0,"suspected_dead":0},
     "behavior_ratios": {"normal_activity":0.8,"reduced_activity":0.1,"feeding":0.1,"feeding_anomaly":0,"unknown":0},
-    "length": {"average_length_cm":null,"length_sample_count":0,"calibration":"uncalibrated","calibration_id":null},
+    "length": {"average_length_cm":null,"length_sample_count":0,"valid_frame_count":0,"calibration":"uncalibrated","calibration_id":null},
     "visible_fish_count": 8.5,
-    "model_version": "synthetic-visual-v1"
+    "model_version": "synthetic-visual-v2"
   }
 }
 ```
@@ -63,12 +64,15 @@ water 或 visual 可以为 null，但不能同时为空。两个通道独立更�
 ## 3. 窗口与业务语义
 
 - 窗口定义为 (start, end]，默认 10 秒。水质逻辑采样默认每 1 秒，视觉逻辑帧默认每 0.5 秒；与上报周期独立，周期须整除窗口。本模拟器在推进窗口时生成逻辑样本，不执行真实采集或视频推理。
-- water.mean 是各指标**有效样本的平均**，不是单次值。min/max/latest 同样只包含有效样本；valid_samples + invalid_samples ≤ sample_count，差值为缺失样本。有效数为零时四个值都必须 null。
+- 温度、pH、DO 的 water.mean 是各指标**窗口内有效样本的算术平均**，输出保留三位小数，不是单次值。每个样本按其采样时的通道状态、缺失/无效标记与物理范围过滤，不使用窗口结束状态代替整窗质量。min/max/latest 同样只包含有效样本；valid_samples + invalid_samples ≤ sample_count，差值为缺失样本。有效数为零时四个值都必须 null。
 - 任一明确 invalid 样本使 canonical 水质质量为 INVALID；无有效指标也为 INVALID；仅部分指标存在为 PARTIAL；全部存在且无 invalid 为 VALID。每指标质量/样本证据另保留，不因平均得到数值就抹掉无效样本。
 - 完全未收到 water 是 NO_DATA；已有全缺失/无效窗口仍是一个存在但不可用的 Snapshot。STALE 和连接 OFFLINE 是独立时间维度，不能改成正常。
-- 视觉 anomaly_counts 是每类信号出现的帧数，类别可重叠；全零只表示本窗口没有所列信号，不证明健康。疑似病灶、体表异常、疑似死亡均为检测信号，非最终疾病诊断。
-- behavior_ratios 是互斥窗口行为帧比例，总和为 1；不同于鱼池所有个体的行为概率。
-- 默认未标定：体长 null、样本数 0。手写 Phase 可启用纯 simulated 标定，同时提供模拟 calibration_id；不宣称真实厘米精度。visible_fish_count 是画面平均可见数，不是存量。
+- 视觉 frames_processed 是窗口内尝试的帧数，valid_frames 是有效帧数，无效帧不参与统计。anomaly_counts 是每类信号出现的有效帧数，类别可重叠；全零只表示有效帧未出现所列信号，不证明健康。疑似病灶、体表异常、疑似死亡均为检测信号，非最终疾病诊断。
+- behavior_ratios 是互斥行为的有效帧比例，总和为 1；没有有效帧时均为 0，页面显示“无有效帧”，不能解释为正常活动。无有效视觉帧不使已有异常事件自动消退。
+- **画面平均可见数** = 有效帧可见鱼数之和 / valid_frames；零鱼帧计入，无效帧排除。valid_frames 为 0 时 visible_fish_count 为 null，不是 0；不是累计鱼数或鱼池存量。
+- **窗口平均体长** = Σ(帧平均体长 × 该帧有效体长测量数) / Σ(有效体长测量数)，等价于所有有效体长检测记录的算术平均，保留三位小数。两帧分别 2 条有效测量、均值 10 cm 和 6 条、均值 20 cm，结果 17.5 cm。length_sample_count 是有效体长检测记录总数，valid_frame_count 是有有效体长测量的帧数；测量数不一定等于可见鱼数，零鱼帧无体长测量。重复检测记录不代表独立鱼个体，更不代表全池平均体长。
+- 默认未标定：体长 null、测量数/体长有效帧数为 0。手写 Phase 可启用纯 simulated 标定，同时提供模拟 calibration_id；逐帧检查标定状态，不宣称真实厘米精度。
+- 上述帧数为 v1 的受限可选统计字段，旧 v1 批次仍可接收，已有 SQLite 不迁移、不回算旧窗口。新生产端 model_version 为 synthetic-visual-v2；旧体长计数曾表示帧数，页面明确标为旧语义，不冒充新的测量计数。新增字段仍严格校验，拒绝额外未知字段和相互矛盾的统计。
 - model_version 保留模型来源位置，当前只有 synthetic 生产端。未来 boxes、track IDs、受控媒体引用须增加受限合同/版本，不使用任意扩展字典或本地路径；R2A 未生成截图、录像或检测框。
 
 ## 4. SQLite 与状态生命周期
@@ -96,11 +100,13 @@ water 或 visual 可以为 null，但不能同时为空。两个通道独立更�
 
 WaterQualityGenerator 与 VisualDetectionGenerator 使用独立 RNG（seed、seed+1），视觉采样周期不会改变水质随机序列。seed 默认 42；固定 start、session_id、seed、场景和周期时完整批次可复现。真实运行自动生成新的 session_id/启动时间，值的随机序列固定，ID/时间按本次实例变化。advance 可离线快速推进；switch_scenario 不重置时间/RNG/sequence，新场景按全局 elapsed 求值，人工切换处允许场景值跳变。
 
-实时 CLI 使用 monotonic 定时，默认首批在 10 秒后发送。失败即停止，无透明 retry、重定向或代理；Ctrl+C 关闭上报资源。device_offline 不发送任何批次，服务器自行变过期/中断。
+实时 CLI 使用 monotonic 定时，默认首批在 10 秒后发送，维持 10 秒时间网格。阻塞/唤醒迟到时只生成并发送最近一个完整窗口，跳过更早错过的窗口（elapsed 与 sequence 同步推进，历史保留缺口），不生成/补发追赶批次；下次等待下一网格边界。固定 seed 在相同推进/跳过条件下可复现，不承诺阻塞运行与未阻塞运行数值相同。失败即停止，无透明 retry、重定向或代理；Ctrl+C 关闭上报资源。device_offline 不发送任何批次，服务器自行变过期/中断。
 
 ## 6. Web 与未来 AI 的统一读取
 
 正常启动的四页面来自 MonitoringService；浏览器每 5 秒只读 Bootstrap。历史和事件不由页面生成；读取失败显示失效，恢复后重新读取，旧异步响应不能覆盖新区域选择。页面保留草稿/筛选；没有实时视频或生产权限声明。
+
+所有页面时间统一经 timeText 使用 Intl.DateTimeFormat 的 Asia/Shanghai 时区转换，显示到秒并标记“北京时间”；趋势轴显示时分秒，图注标明北京时间 UTC+8。内部通信/存储仍为带时区的 UTC，不手动加 8 小时。观测、服务器接收、查询、窗口起止、历史和事件时间使用同一格式化入口；30 秒过期/90 秒离线判断不受显示时区影响。
 
 HTTP 读取：/api/bootstrap?device、/api/monitoring?device、/api/monitoring/history?device&channel=water|visual&limit=N、原事件 API。历史上限不超过 repository.history_limit；缺省查询 60 条。
 

@@ -69,13 +69,14 @@ function video(){const cameras=state.data.cameras;const camera=cameras.find(c=>c
   return [el('div',{class:'video-layout'},[
     card('监控预览','未播放任何视频流。',[videoPlaceholder(),el('div',{class:'card-foot'},[el('span',{text:camera?.name||'无设备'}),badge('视频未接入','neutral')])]),
     el('div',{class:'side-stack'},[card('监测设备','视觉与水质共享设备和时间窗。',[el('div',{class:'camera-list'},cameras.map(c=>button(c.name,()=>{state.camera=c.id;render();},state.camera===c.id?'selected':'secondary')))]),
-      card('视觉数据状态','统计来自模拟器，不是真实 NPU 推理。',[rows([['来源',sourceName(camera?.source_kind)],['上报状态',connectionName(camera?.status)],['新鲜度',freshnessNames[camera?.freshness]||'未知'],['检测信号',camera?.signal_status==='no_obvious_anomaly'?'未出现所列异常信号（模拟）':camera?.signal_status==='suspected_anomaly'?'疑似异常（模拟，非确诊）':'暂无信号'],['观测时间',timeText(camera?.observed_at)],['接收时间',timeText(camera?.received_at)]])])])]),
+      card('视觉数据状态','统计来自模拟器，不是真实 NPU 推理。',[rows([['来源',sourceName(camera?.source_kind)],['上报状态',connectionName(camera?.status)],['新鲜度',freshnessNames[camera?.freshness]||'未知'],['检测信号',camera?.signal_status==='no_obvious_anomaly'?'未出现所列异常信号（模拟）':camera?.signal_status==='suspected_anomaly'?'疑似异常（模拟，非确诊）':camera?.signal_status==='no_valid_frames'?'无有效帧，信号未知':'暂无信号'],['观测时间',timeText(camera?.observed_at)],['接收时间',timeText(camera?.received_at)]])])])]),
     ...(summary?[card('疾病与异常检测信号','窗口内出现该信号的帧数；类别可重叠，不能作为最终疾病诊断。',[
-      badge('SIMULATOR · 非诊断','demo'),rows(Object.entries(anomalies).map(([key,label])=>[label,`${summary.anomaly_counts[key]} / ${summary.frames_processed} 帧`]))]),
-      card('行为识别','窗口内帧比例，不是绝对行为结论。',[rows(Object.entries(behaviors).map(([key,label])=>[label,`${(summary.behavior_ratios[key]*100).toFixed(1)}%`]))]),
-      card('体长与可见数量','无标定时不显示厘米值；可见鱼数不代表鱼池存量。',[rows([
+      badge('SIMULATOR · 非诊断','demo'),rows(Object.entries(anomalies).map(([key,label])=>[label,`${summary.anomaly_counts[key]} / ${summary.valid_frames??summary.frames_processed} 有效帧`]))]),
+      card('行为识别','窗口内有效帧比例，不是绝对行为结论。',[rows(Object.entries(behaviors).map(([key,label])=>[label,summary.valid_frames===0?'无有效帧':`${(summary.behavior_ratios[key]*100).toFixed(1)}%`]))]),
+      card('体长与可见数量','体长按有效检测记录加权；无标定时不显示厘米值；可见鱼数不代表鱼池存量。',[rows([
         ['平均体长',summary.length.average_length_cm===null?'不可测量':`${summary.length.average_length_cm} cm（模拟标定）`],
-        ['有效体长样本',summary.length.length_sample_count],['标定',summary.length.calibration==='uncalibrated'?'未标定':'纯模拟标定'],
+        [summary.length.valid_frame_count===undefined?'旧窗口体长计数（旧语义）':'有效体长检测记录',summary.length.length_sample_count],['体长有效帧',summary.length.valid_frame_count??'旧窗口未记录'],
+        ['有效画面 / 总帧',`${summary.valid_frames??summary.frames_processed} / ${summary.frames_processed}`],['标定',summary.length.calibration==='uncalibrated'?'未标定':'纯模拟标定'],
         ['画面平均可见数',summary.visible_fish_count??'缺失'],['模型版本',summary.model_version],['窗口开始',timeText(camera.window?.start)],
         ['窗口结束',timeText(camera.window?.end)],['关联批次',camera.batch_id]])])]
       :[card('视觉窗口汇总','没有补造另一通道数据。',[empty('NO_DATA · 暂无视觉上报','启动模拟器后显示窗口统计；不会生成假录像。','camera')])])];}

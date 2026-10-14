@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {routes,routeFor,metricText,filterItems,chartGeometry,timeText,validateBootstrap} from '../static/view-model.js';
 import fs from 'node:fs';
+import {execFileSync} from 'node:child_process';
 
 test('seven distinct modules navigate safely including unknown hash',()=>{
   assert.equal(routes.length,7);assert.equal(new Set(routes.map(r=>r.id)).size,7);
@@ -31,6 +32,16 @@ test('chart geometry bounded flat and varied values; unavailable series empty',(
 });
 test('bad timestamps display unavailable instead of fabricated time',()=>{
   assert.equal(timeText(null),'暂无时间');assert.equal(timeText('wrong'),'暂无时间');
+});
+test('timestamps use Beijing time to seconds, across midnight and independent of host zone',()=>{
+  const utc='2026-10-14T16:00:05Z';
+  assert.match(timeText(utc),/2026\/10\/15 00:00:05 北京时间/);
+  assert.equal(timeText(utc),timeText('2026-10-15T00:00:05+08:00'));
+  assert.equal(timeText(utc,true),'00:00:05');
+  const source=`import {timeText} from ${JSON.stringify(new URL('../static/view-model.js',import.meta.url).href)};process.stdout.write(timeText(${JSON.stringify(utc)}));`;
+  for(const TZ of ['UTC','America/New_York','Asia/Shanghai']) {
+    assert.equal(execFileSync(process.execPath,['--input-type=module','-e',source],{env:{...process.env,TZ},encoding:'utf8'}),timeText(utc));
+  }
 });
 
 test('missing metrics and interrupted windows never become fabricated connecting trends',()=>{

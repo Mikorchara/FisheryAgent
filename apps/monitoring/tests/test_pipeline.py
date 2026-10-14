@@ -55,6 +55,53 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(d['events'], [])
         self.assertIsNone(self.service.bind('sim-pond-1').water_reader.query())
 
+    def test_weighted_frame_statistics_survive_ingestion_storage_and_web(self):
+        from apps.simulator.generator import summarize_visual_frames
+        frames=[dict(visible_fish_count=2,lengths_cm=[10]*2,anomalies=(),behavior='normal_activity'),
+                dict(visible_fish_count=8,lengths_cm=[20]*6,anomalies=(),behavior='normal_activity'),
+                dict(visible_fish_count=0,lengths_cm=[],anomalies=(),behavior='unknown'),None]
+        self.batch['visual']=summarize_visual_frames(frames)
+        self.assertEqual(self.post(self.batch).status_code,200)
+        summary=self.client.get('/api/bootstrap').get_json()['cameras'][0]['summary']
+        self.assertEqual(summary,self.batch['visual'])
+        self.assertEqual(summary['length']['average_length_cm'],17.5)
+        self.assertEqual(summary['length']['length_sample_count'],8)
+        self.assertEqual(summary['length']['valid_frame_count'],2)
+        self.assertAlmostEqual(summary['visible_fish_count'],10/3)
+        self.assertEqual(self.repo.history('sim-pond-1','visual')[0]['payload']['data'],summary)
+
+    def test_additive_frame_metadata_validated_and_legacy_v1_accepted(self):
+        from copy import deepcopy
+        from apps.monitoring.contracts import validate_batch
+        for change in (
+            lambda b:b['visual'].update(valid_frames=True),
+            lambda b:b['visual'].update(valid_frames=21),
+            lambda b:b['visual'].update(valid_frames=0),
+            lambda b:b['visual']['length'].update(valid_frame_count=1),
+            lambda b:b['visual']['length'].update(valid_frame_count=True),
+            lambda b:b['visual'].update(unrecognized_stat=1),
+        ):
+            b=deepcopy(self.batch);change(b)
+            with self.assertRaises(IngestionError):validate_batch(b,now=self.now,device_ids=('sim-pond-1',))
+        legacy=deepcopy(self.batch)
+        del legacy['visual']['valid_frames'];del legacy['visual']['length']['valid_frame_count']
+        self.assertEqual(self.post(legacy).status_code,200)
+        self.assertEqual(self.service.cameras()[0]['summary'],legacy['visual'])
+
+    def test_invalid_visual_frames_are_missing_not_normal_or_signal_recovery(self):
+        from apps.simulator.generator import summarize_visual_frames
+        self.batch['visual']['anomaly_counts']['suspected_lesion']=1
+        self.service.ingest(self.batch)
+        b=self.sim.advance();self.now=datetime.fromisoformat(b['timestamp'])
+        b['visual']=summarize_visual_frames([None,None])
+        self.service.ingest(b)
+        camera=self.service.cameras()[0]
+        self.assertEqual(camera['signal_status'],'no_valid_frames')
+        self.assertIsNone(camera['summary']['visible_fish_count'])
+        self.assertIsNone(camera['summary']['length']['average_length_cm'])
+        event=next(e for e in self.service.events() if e['code']=='SUSPECTED_LESION')
+        self.assertEqual(event['status'],'pending')
+
     def test_empty_device_registry_and_invalid_time_policy_fail_closed(self):
         empty=MonitoringService(self.repo,device_names={},clock=lambda:self.now)
         data=create_app(data_service=empty).test_client().get('/api/bootstrap').get_json()

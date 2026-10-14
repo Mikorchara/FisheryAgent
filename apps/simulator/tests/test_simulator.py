@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 import unittest
 
-from apps.simulator.generator import Simulator
+from apps.simulator.generator import Simulator, WaterQualityGenerator, VisualDetectionGenerator, summarize_visual_frames
 from apps.simulator.scenarios import SCENARIOS, at_time
 from apps.simulator.__main__ import run, main
 from apps.simulator.transport import HttpReporter, ReportError
@@ -135,9 +135,92 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(batch['visual']['behavior_ratios']['unknown'],1)
         length=batch['visual']['length']
         self.assertEqual(length['calibration'],'simulated')
-        self.assertEqual(length['length_sample_count'],20)
+        self.assertGreater(length['length_sample_count'],0)
+        self.assertLessEqual(length['valid_frame_count'],20)
         self.assertIsNotNone(length['average_length_cm'])
         validate_batch(batch,now=datetime.fromisoformat(batch['timestamp']),device_ids=('sim-pond-1',))
+
+    def test_exact_water_means_filter_quality_at_each_sample(self):
+        def state_at(t):
+            state=at_time(SCENARIOS['normal'],t)
+            state.update(temperature_c=10+t,ph=5+t/10,dissolved_oxygen_mg_l=1+t/2)
+            if 4 <= t <= 6:state['missing_metric']='temperature_c'
+            if 7 <= t <= 9:state['invalid_metric']='temperature_c'
+            return state
+        generator=WaterQualityGenerator(42,1)
+        with patch.object(generator.random,'uniform',return_value=0):
+            result=generator.generate(0,10,state_at(10),state_at)
+        temperature=result['metrics']['temperature_c']
+        self.assertEqual(temperature,dict(unit='°C',mean=14,min=11,max=20,latest=20,valid_samples=4,invalid_samples=3))
+        self.assertEqual(result['metrics']['ph']['mean'],5.55)
+        self.assertEqual(result['metrics']['dissolved_oxygen_mg_l']['mean'],3.75)
+        # Invalid end state cannot erase earlier valid samples.
+        state_at_end=lambda t:dict(state_at(1),invalid_metric='temperature_c' if t==10 else None)
+        with patch.object(generator.random,'uniform',return_value=0):
+            last=generator.generate(0,10,state_at_end(10),state_at_end)['metrics']['temperature_c']
+        self.assertEqual((last['valid_samples'],last['invalid_samples'],last['mean']),(9,1,11))
+
+    def test_water_missing_and_nonfinite_values_never_become_zero(self):
+        for metric_value,invalid_count in ((None,0),(float('nan'),10)):
+            state=at_time(SCENARIOS['normal'],0)
+            state['ph']=metric_value
+            result=WaterQualityGenerator(42,1).generate(0,10,state,lambda _:state)['metrics']['ph']
+            self.assertEqual(result['valid_samples'],0)
+            self.assertEqual(result['invalid_samples'],invalid_count)
+            for key in ('mean','min','max','latest'):self.assertIsNone(result[key])
+
+    def test_weighted_length_zero_fish_invalid_frames_and_independent_signals(self):
+        frames=[dict(visible_fish_count=2,lengths_cm=[10,10],anomalies=('suspected_lesion','surface_anomaly'),behavior='feeding'),
+                dict(visible_fish_count=8,lengths_cm=[20]*6,anomalies=('suspected_lesion',),behavior='feeding_anomaly'),
+                dict(visible_fish_count=0,lengths_cm=[],anomalies=(),behavior='unknown'),None]
+        result=summarize_visual_frames(frames)
+        self.assertEqual(result['length']['average_length_cm'],17.5)
+        self.assertEqual(result['length']['length_sample_count'],8)
+        self.assertEqual(result['length']['valid_frame_count'],2)
+        self.assertEqual(result['frames_processed'],4)
+        self.assertEqual(result['valid_frames'],3)
+        self.assertAlmostEqual(result['visible_fish_count'],10/3)
+        self.assertEqual(result['anomaly_counts'],dict(suspected_lesion=2,surface_anomaly=1,suspected_dead=0))
+        self.assertEqual(result['behavior_ratios']['feeding'],1/3)
+        self.assertEqual(result['behavior_ratios']['unknown'],1/3)
+        for frames in ([None,None],[dict(visible_fish_count=0,lengths_cm=[],anomalies=(),behavior='unknown')]):
+            summary=summarize_visual_frames(frames)
+            self.assertIsNone(summary['length']['average_length_cm'])
+            self.assertEqual(summary['length']['length_sample_count'],0)
+            self.assertEqual(summary['visible_fish_count'],None if frames[0] is None else 0)
+
+    def test_visual_validity_and_calibration_are_per_frame(self):
+        def state_at(t):
+            return dict(at_time(SCENARIOS['normal'],t),visual_online=t>2,calibrated=t==3)
+        generator=VisualDetectionGenerator(42,1)
+        with patch.object(generator.random,'randint',side_effect=[2,1,0]):
+            result=generator.generate(0,4,state_at(4),state_at)
+        self.assertEqual(result['valid_frames'],2)
+        self.assertEqual(result['visible_fish_count'],1)
+        self.assertEqual(result['length']['length_sample_count'],1)
+        self.assertEqual(result['length']['valid_frame_count'],1)
+
+    def test_scheduler_stall_skips_windows_without_catchup_burst(self):
+        now=[0];sent=[];waits=[]
+        class Reporter:
+            closed=False
+            def send(self,batch):
+                sent.append((now[0],batch))
+                if len(sent)==1:now[0]+=95
+                return {'status':'accepted'}
+            def close(self):self.closed=True
+        def sleep(delay):waits.append(delay);now[0]+=delay
+        sim=self.create();r=Reporter()
+        run(sim,r,windows=3,monotonic=lambda:now[0],sleep=sleep,emit=lambda _:None,
+            switch_to='water_only',switch_after=50)
+        self.assertEqual([t for t,_ in sent],[10,105,110])
+        self.assertEqual(waits,[10,5])
+        self.assertEqual([b['sequence'] for _,b in sent],[0,9,10])
+        self.assertEqual(sent[1][1]['window']['start'],(self.start+timedelta(seconds=90)).isoformat())
+        self.assertEqual(sent[1][1]['window']['end'],(self.start+timedelta(seconds=100)).isoformat())
+        self.assertIsNone(sent[1][1]['visual'])
+        self.assertEqual(sent[1][1]['water']['sample_count'],10)
+        self.assertTrue(r.closed)
 
 
 if __name__=='__main__':unittest.main()

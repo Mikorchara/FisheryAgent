@@ -17,9 +17,9 @@ export function metricText(metric) {
   return typeof metric?.value==='number' && Number.isFinite(metric.value) && metric.quality==='valid'
     ? metric.value.toFixed(1) : '—';
 }
-export function timeText(value) {
+export function timeText(value,compact=false) {
   if (!value || !Number.isFinite(Date.parse(value))) return '暂无时间';
-  return new Intl.DateTimeFormat('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value));
+  return new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',...(compact?{}:{year:'numeric',month:'2-digit',day:'2-digit'}),hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(value))+(compact?'':' 北京时间');
 }
 export function chartSeries(trend,key) {
   return trend.filter(p=>typeof p[key]==='number' && Number.isFinite(p[key]));

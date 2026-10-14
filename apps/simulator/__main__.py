@@ -14,12 +14,20 @@ def run(simulator, reporter, *, interval_s=10, windows=None, switch_to=None, swi
         monotonic=time.monotonic, sleep=time.sleep, emit=print):
     start = monotonic()
     index = 0
+    slot = 0
     try:
         while windows is None or index < windows:
             if reporter is not None:
-                delay = start+(index+1)*interval_s-monotonic()
+                delay = start+(slot+1)*interval_s-monotonic()
                 if delay > 0:
                     sleep(delay)
+                # Send only the latest complete window after a stall, never backfill.
+                latest = max(slot+1, int((monotonic()-start)/interval_s))
+                missed = latest-slot-1
+                if missed:
+                    simulator.skip_windows(missed, interval_s)
+                    emit(f"skipped {missed} missed windows / no backfill")
+                slot = latest
             if switch_to and simulator.elapsed_s >= switch_after:
                 simulator.switch_scenario(switch_to)
                 switch_to = None

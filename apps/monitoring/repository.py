@@ -90,7 +90,9 @@ class MonitoringRepository:
                     db.execute("INSERT OR REPLACE INTO current VALUES(?,?,?,?,?,?)",
                         (device, channel, batch["batch_id"], batch["timestamp"], received_at.isoformat(), encoded))
                     updated.append(channel)
-                    self._events(db, batch, channel, received_at, findings.get(channel, ()))
+                    # Failed frames do not prove an earlier visual signal has recovered.
+                    if channel != "visual" or payload.get("valid_frames") != 0:
+                        self._events(db, batch, channel, received_at, findings.get(channel, ()))
                 db.execute("DELETE FROM history WHERE device_id=? AND channel=? AND batch_id NOT IN (SELECT batch_id FROM history WHERE device_id=? AND channel=? ORDER BY observed_at DESC LIMIT ?)",
                            (device, channel, device, channel, self.history_limit))
             db.execute("INSERT INTO batches VALUES(?,?,?,?,?,?)", (batch["batch_id"], device, batch["session_id"], batch["sequence"], digest, received_at.isoformat()))

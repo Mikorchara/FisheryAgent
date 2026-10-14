@@ -60,6 +60,25 @@ test('uniform server state renders dashboard, monitoring and visual summaries wi
   assert.match(p.node('content').textContent,/疑似病灶/);assert.match(p.node('content').textContent,/未标定/);
   assert.match(p.node('content').textContent,/不代表鱼池存量/);assert.match(p.node('content').textContent,/无视频流/);
 });
+test('all page timestamps display Beijing seconds and weighted length statistics remain distinct',async()=>{
+  const d=fixture();d.cameras[0].summary.valid_frames=3;d.cameras[0].summary.frames_processed=4;
+  d.cameras[0].summary.length={average_length_cm:17.5,length_sample_count:8,valid_frame_count:2,calibration:'simulated'};
+  d.monitoring.trend=[{observed_at:'2026-10-14T00:00:00Z',dissolved_oxygen_mg_l:6.4},{observed_at:'2026-10-14T00:00:10Z',dissolved_oxygen_mg_l:6.4}];
+  const p=page(d);await p.ready();
+  for(const route of ['dashboard','monitoring','video','events']){
+    p.run(`location.hash='#${route}';render()`);
+    assert.match(p.node('content').textContent,/08:00:10 北京时间/);
+  }
+  p.run("location.hash='#video';render()");
+  assert.match(p.node('content').textContent,/17.5 cm/);
+  assert.match(p.node('content').textContent,/有效体长检测记录8/);
+  assert.match(p.node('content').textContent,/体长有效帧2/);
+  assert.match(p.node('content').textContent,/有效画面 \/ 总帧3 \/ 4/);
+  d.cameras[0].summary.valid_frames=0;d.cameras[0].summary.visible_fish_count=null;
+  d.cameras[0].summary.length={average_length_cm:null,length_sample_count:0,valid_frame_count:0,calibration:'uncalibrated'};
+  p.setData(d);await p.run('refresh()');assert.match(p.node('content').textContent,/无有效帧/);
+  assert.match(p.node('content').textContent,/画面平均可见数缺失/);
+});
 test('five second read polling updates received values and preserves draft, filters and source status',async()=>{
   const p=page();await p.ready();assert.equal(p.timers[0].ms,5000);
   p.run("state.draft='保留草稿';state.eventFilters.q='疑似';");

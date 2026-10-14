@@ -144,7 +144,8 @@ class MonitoringService:
             result.append({"id": device_id, "name": name+" · 视觉", "device_id": device_id, "location": name,
                 "status": connectivity, "source_kind": "simulator", "stream_url": None, "detections": [],
                 "detection_status": "simulated" if row else "missing", "freshness": freshness,
-                "signal_status": ("suspected_anomaly" if any(row["payload"]["data"]["anomaly_counts"].values()) else "no_obvious_anomaly") if row else "no_data",
+                "signal_status": ("no_valid_frames" if row["payload"]["data"].get("valid_frames") == 0 else
+                    "suspected_anomaly" if any(row["payload"]["data"]["anomaly_counts"].values()) else "no_obvious_anomaly") if row else "no_data",
                 "observed_at": row["observed_at"] if row else None, "received_at": row["received_at"] if row else None,
                 "last_reported_at": row.get("last_reported_at") if row else None,
                 "evaluated_at": now.isoformat(), "batch_id": row["batch_id"] if row else None,
