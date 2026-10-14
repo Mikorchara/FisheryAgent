@@ -14,9 +14,9 @@ python -m venv .venv
 
 离线示例：`.venv\Scripts\python.exe -m fishery_ai demo --scenario low_oxygen`。Web 默认只监听 `127.0.0.1:8765`。真实模型请求须在界面显式确认；自动测试保持离线。
 
-## 独立管理系统 R1
+## 独立管理系统 R2A
 
-新管理工作区在 `apps/management_web/`，项目根目录执行 `python -m apps.management_web`，访问 `http://127.0.0.1:8766`。首页及六个业务模块可导航，Demo来源明确；AI发送、真实视频和管理写操作尚未接入。原Prototype Web保留。主要架构、服务边界与开发规范见[管理平台文档](apps/docs/README.md)。
+管理工作区在 `apps/management_web/`，执行 `python -m apps.management_web`，访问 `http://127.0.0.1:8766`。统一监测服务在 `apps/monitoring/`，连续生产端在 `apps/simulator/`；受控本机 HTTP 上报、SQLite 当前状态/有界历史和模拟事件已接入四个业务页面。默认写入关闭；联调步骤见[管理启动说明](apps/docs/BUILD_RUN.md)。AI发送、真实设备/NPU/视频及生产权限未接入。原Prototype Web保留；架构见[管理平台文档](apps/docs/README.md)。
 
 ## 模型接入
 

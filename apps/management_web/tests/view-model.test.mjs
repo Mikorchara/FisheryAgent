@@ -32,6 +32,13 @@ test('chart geometry bounded flat and varied values; unavailable series empty',(
 test('bad timestamps display unavailable instead of fabricated time',()=>{
   assert.equal(timeText(null),'暂无时间');assert.equal(timeText('wrong'),'暂无时间');
 });
+
+test('missing metrics and interrupted windows never become fabricated connecting trends',()=>{
+  const time=seconds=>new Date(Date.UTC(2026,9,14,0,0,seconds)).toISOString();
+  const series=[{oxygen:6,observed_at:time(10),window_duration_s:10},{oxygen:null,observed_at:time(20),window_duration_s:10},{oxygen:2,observed_at:time(30),window_duration_s:10}];
+  assert.equal(chartGeometry(series,'oxygen').segments.length,2);
+  assert.equal(chartGeometry([series[0],{oxygen:2,observed_at:time(60),window_duration_s:10}],'oxygen').segments.length,2);
+});
 test('bootstrap schema rejects absent services and undeclared source mode',()=>{
   assert.throws(()=>validateBootstrap({schema_version:1}));
   assert.throws(()=>validateBootstrap({schema_version:1,application:'management-web-r1',data_mode:'fake-live'}));

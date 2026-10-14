@@ -91,9 +91,40 @@ class ManagementTests(unittest.TestCase):
 
     def test_startup_separate_port_local_only_no_dotenv(self):
         from apps.management_web.__main__ import main
-        with patch('sys.argv',['management_web']),patch('apps.management_web.__main__.create_app') as factory,patch('builtins.print'):
+        with patch('sys.argv',['management_web','--legacy-demo']),patch('apps.management_web.__main__.create_app') as factory,patch('builtins.print'):
             main()
         factory.return_value.run.assert_called_once_with(host='127.0.0.1',port=8766,debug=False,load_dotenv=False)
+
+    def test_normal_startup_uses_shared_store_without_reading_device_token(self):
+        import os
+        from apps.management_web.__main__ import main
+        original_get=os.environ.get
+        def guarded(key,*args):
+            if key=='FISHERY_SIM_INGEST_TOKEN':raise AssertionError('read-only startup must not read token')
+            return original_get(key,*args)
+        with patch('sys.argv',['management_web']),patch('apps.monitoring.repository.MonitoringRepository') as repository,patch('apps.monitoring.service.MonitoringService') as service,patch('apps.management_web.__main__.create_app') as factory,patch('apps.management_web.__main__.os.environ.get',side_effect=guarded),patch('builtins.print'):
+            main()
+        service.assert_called_once_with(repository.return_value)
+        self.assertIs(factory.call_args.kwargs['data_service'],service.return_value)
+        self.assertIsNone(factory.call_args.kwargs['ingestion_token'])
+        factory.return_value.run.assert_called_once_with(host='127.0.0.1',port=8766,debug=False,load_dotenv=False)
+
+    def test_ingestion_startup_requires_explicit_flag_and_valid_development_token(self):
+        import io
+        import os
+        from apps.management_web.__main__ import main
+        original_get=os.environ.get
+        for value,allowed in (('',False),('fake-token',False),('t'*64,True)):
+            def supplied(key,*args):
+                return value if key=='FISHERY_SIM_INGEST_TOKEN' else original_get(key,*args)
+            with self.subTest(allowed=allowed),patch('sys.argv',['management_web','--enable-ingestion']),patch('apps.management_web.__main__.os.environ.get',side_effect=supplied),patch('apps.management_web.__main__.create_app') as factory,patch('apps.monitoring.repository.MonitoringRepository') as repository,patch('apps.monitoring.service.MonitoringService'),patch('sys.stderr',new_callable=io.StringIO),patch('builtins.print'):
+                if allowed:
+                    main()
+                    self.assertEqual(factory.call_args.kwargs['ingestion_token'],value)
+                else:
+                    with self.assertRaises(SystemExit):main()
+                    repository.assert_not_called()
+                    factory.assert_not_called()
 
 
 if __name__=='__main__':unittest.main()

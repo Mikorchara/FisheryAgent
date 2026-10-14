@@ -1,6 +1,6 @@
 # 构建与运行
 
-## 独立管理系统 Web R1
+## 独立管理系统 Web R2A
 
 现有Prototype保留8765。新应用在项目根目录启动：
 
@@ -8,7 +8,7 @@
 python -m apps.management_web
 ```
 
-访问 `http://127.0.0.1:8766`，或使用 `--port 8767`。只监听本机，不加载.env、不调用模型；AI发送、真实视频和管理写操作尚未接入。管理平台的环境、离线测试与验收统一见[管理平台构建与运行](../apps/docs/BUILD_RUN.md)，架构入口见[apps/docs](../apps/docs/README.md)。下文继续描述原AI Prototype。
+访问 `http://127.0.0.1:8766`，或使用 `--port 8767`。默认只读统一监测存储，设备上报须显式启用本机接入；连续模拟器与开发令牌步骤见[管理平台构建与运行](../apps/docs/BUILD_RUN.md)。不加载.env、不调用模型；真实设备、视频/NPU及生产权限未接入。架构入口见[apps/docs](../apps/docs/README.md)。下文继续描述原AI Prototype。
 
 ## 环境与启动
 

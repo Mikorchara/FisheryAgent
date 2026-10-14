@@ -9,33 +9,50 @@ Fishery_AI_Prototype/                                            # 项目工作�
 ├─ AGENTS.md                                                     # AI 助手操作与安全约束
 ├─ pyproject.toml                                                # 项目安装、依赖与包资源声明
 ├─ README.md                                                     # 项目目的、启动与文档入口
-├─ apps/                                                         # 独立应用，不覆盖Prototype Runtime
-│  ├─ AGENTS.md                                                  # 管理平台工程与安全规则
-│  ├─ __init__.py                                                # 应用命名空间，无启动副作用
-│  ├─ docs/                                                      # 管理平台主要架构与开发入口
-│  │  ├─ README.md                                               # 当前状态与文档导航
-│  │  ├─ STRUCTURE.md                                            # 真实目录与模块职责
-│  │  ├─ BUILD_RUN.md                                            # 启动、测试与验收
-│  │  ├─ INTEGRATION.md                                          # 服务合同与未来接入边界
-│  │  └─ ROADMAP.md                                              # 已实现状态与开发计划
-│  └─ management_web/                                            # R1管理后台，本机独立8766端口
-│     ├─ __init__.py                                             # 独立应用包
-│     ├─ __main__.py                                             # 本机启动与端口参数
-│     ├─ README.md                                               # 快速启动与apps/docs入口
-│     ├─ app.py                                                  # 展示API、本机安全与服务装配
-│     ├─ contracts.py                                            # 监测DTO与五个服务接口
-│     ├─ services.py                                             # Demo及明确未接入的服务
-│     ├─ package.json                                            # Node原生测试，无新依赖
-│     ├─ static/                                                 # 管理平台独立前端
-│     │  ├─ index.html                                           # 布局、导航容器和详情弹窗
-│     │  ├─ styles.css                                           # 统一样式与响应式布局
-│     │  ├─ components.js                                        # 卡片、表格、图表和空状态
-│     │  ├─ view-model.js                                        # 纯展示、路由和筛选
-│     │  ├─ services.js                                          # 浏览器应用层API客户端
-│     │  └─ app.js                                               # 七业务页面和Session草稿
-│     └─ tests/                                                  # 独立子应用离线测试
-│        ├─ test_app.py                                          # API、数据质量、安全与启动
-│        └─ view-model.test.mjs                                  # 前端合同与文本安全
+├─ apps/                                                         # 独立管理应用、模拟器及共享数据基础
+│  ├─ AGENTS.md                         # 管理工程与安全规则
+│  ├─ __init__.py                       # 应用命名空间
+│  ├─ docs/
+│  │  ├─ README.md                      # 当前状态与文档入口
+│  │  ├─ STRUCTURE.md                   # 真实目录与职责
+│  │  ├─ BUILD_RUN.md                   # 启动、联调与验证
+│  │  ├─ INTEGRATION.md                 # 上报合同和替换边界
+│  │  └─ ROADMAP.md                     # 当前状态与后续工作
+│  ├─ monitoring/                      # Web 与未来 Tool 共享的数据基础
+│  │  ├─ __init__.py
+│  │  ├─ contracts.py                   # v1 批次校验与共享监测 DTO
+│  │  ├─ repository.py                  # SQLite、当前状态、有界历史和事件
+│  │  ├─ service.py                     # 统一读取、领域诊断与设备上下文
+│  │  └─ tests/
+│  │     ├─ test_pipeline.py            # 校验、时序、安全、状态与共享来源
+│  │     └─ test_local_http.py          # 真实 loopback 上报及停止/重启
+│  ├─ simulator/                       # 独立设备生产端
+│  │  ├─ __init__.py
+│  │  ├─ __main__.py                    # 实时调度、离线推进与清理
+│  │  ├─ scenarios.py                   # 手写 Phase 时间线
+│  │  ├─ generator.py                   # 确定性水质/视觉窗口生成
+│  │  ├─ transport.py                   # 受控 HTTP 上报，无重试/重定向
+│  │  └─ tests/
+│  │     └─ test_simulator.py           # Seed、采样、场景、调度与清理
+│  └─ management_web/                  # 管理页面与 Web 专属后端
+│     ├─ __init__.py
+│     ├─ __main__.py                    # 本机启动、存储装配与写入开关
+│     ├─ README.md                      # 快速入口
+│     ├─ app.py                         # HTTP、访问控制与服务装配
+│     ├─ contracts.py                   # Web Protocol、共享 DTO 导出
+│     ├─ services.py                    # R1 兼容 Demo、未接入 AI/文件服务
+│     ├─ package.json                   # Node 原生测试，无依赖
+│     ├─ static/
+│     │  ├─ index.html                  # 布局、来源标识和弹窗
+│     │  ├─ styles.css                  # 样式与响应式布局
+│     │  ├─ app.js                      # 七页面、5 秒轮询与 Session
+│     │  ├─ components.js               # 安全文本、卡片、表格、图表
+│     │  ├─ view-model.js               # 展示转换、来源和状态
+│     │  └─ services.js                 # 同源只读应用 API
+│     └─ tests/
+│        ├─ test_app.py                 # R1 兼容、API 和安全
+│        ├─ view-model.test.mjs          # 纯展示合同
+│        └─ monitoring-ui.test.mjs       # 实际页面代码的离线 DOM 行为
 ├─ .git/                                                         # Git 内部数据，不展开
 ├─ .venv/                                                        # 本地 Python 环境，不展开
 ├─ data/                                                         # 旧数据目录，当前为空目录结构
@@ -339,6 +356,8 @@ Fishery_AI_Prototype/                                            # 项目工作�
 ```
 
 **Runtime / Core：** src/fishery_ai 是运行源码，resources 是包内固定资源；源码根 .env 只标位置，不读取内容，也不参与运行时。
+
+**管理平台：** apps/management_web 是独立 Web；apps/monitoring 是统一监测服务，apps/simulator 是独立 HTTP 生产端。管理当前状态与有界历史在 Git ignored 的 outputs/management_web/monitoring.sqlite3。其测试独立运行，入口见 [apps/docs](../apps/docs/README.md)；原 Prototype 的 Snapshot/Tool 尚未接入管理数据库。
 
 **Development / Test：** src/fishery_ai/development/qualification 集中资格实现，旧顶层模块仅为兼容别名；正式 Web / Assistant / Analysis 不导入资格实现，validate-real CLI 按需加载。tests 分为正式子系统与 qualification，support / fixtures 为共享测试资料。scripts/dev 保存开发辅助，scripts/qualification 保存单次维护验证；.egg-info 为安装生成 metadata。已删除 H / P2E manifests、历史 batch / continuation、preparation generator 和六份实验测试；产品 History 与安全合同仍在正式测试中，历史见 records 与 Git。
 

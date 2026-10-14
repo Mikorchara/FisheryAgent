@@ -1,0 +1,167 @@
+"""SQLite authoritative current state and bounded history. No secrets or device I/O."""
+
+from contextlib import contextmanager
+import hashlib
+import json
+from pathlib import Path
+import sqlite3
+from threading import RLock
+import uuid
+
+from .contracts import IngestionError
+
+
+class MonitoringRepository:
+    def __init__(self, path, *, history_limit=360, batch_limit=1440, event_limit=300):
+        for limit in (history_limit, batch_limit, event_limit):
+            if type(limit) is not int or not 1 <= limit <= 10000:
+                raise ValueError("INVALID_STORAGE_LIMIT")
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.history_limit, self.batch_limit, self.event_limit = history_limit, batch_limit, event_limit
+        self.lock = RLock()
+        with self.connection() as db:
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version not in (0, 1):
+                raise ValueError("UNSUPPORTED_MONITORING_STORAGE_SCHEMA")
+            db.executescript('''
+                CREATE TABLE IF NOT EXISTS batches (
+                    batch_id TEXT PRIMARY KEY, device_id TEXT NOT NULL, session_id TEXT NOT NULL,
+                    sequence INTEGER NOT NULL, digest TEXT NOT NULL, received_at TEXT NOT NULL,
+                    UNIQUE(device_id, session_id, sequence));
+                CREATE TABLE IF NOT EXISTS history (
+                    batch_id TEXT NOT NULL, device_id TEXT NOT NULL, channel TEXT NOT NULL,
+                    observed_at TEXT NOT NULL, received_at TEXT NOT NULL, payload TEXT NOT NULL,
+                    PRIMARY KEY(batch_id, channel));
+                CREATE INDEX IF NOT EXISTS history_lookup ON history(device_id, channel, observed_at);
+                CREATE TABLE IF NOT EXISTS current (
+                    device_id TEXT NOT NULL, channel TEXT NOT NULL, batch_id TEXT NOT NULL,
+                    observed_at TEXT NOT NULL, received_at TEXT NOT NULL, payload TEXT NOT NULL,
+                    PRIMARY KEY(device_id, channel));
+                CREATE TABLE IF NOT EXISTS events (
+                    id TEXT PRIMARY KEY, device_id TEXT NOT NULL, channel TEXT NOT NULL, code TEXT NOT NULL,
+                    payload TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS alerts (
+                    device_id TEXT NOT NULL, channel TEXT NOT NULL, code TEXT NOT NULL,
+                    event_id TEXT NOT NULL, PRIMARY KEY(device_id, channel, code));
+                CREATE TABLE IF NOT EXISTS channel_contacts (
+                    device_id TEXT NOT NULL, channel TEXT NOT NULL, last_received_at TEXT NOT NULL,
+                    PRIMARY KEY(device_id, channel));
+            ''')
+            db.execute("PRAGMA user_version=1")
+
+    @contextmanager
+    def connection(self):
+        # One short-lived connection per operation, so Flask threads never share a connection.
+        with self.lock:
+            db = sqlite3.connect(self.path, timeout=5)
+            db.row_factory = sqlite3.Row
+            try:
+                with db:
+                    yield db
+            finally:
+                db.close()
+
+    def ingest(self, batch, received_at, findings):
+        text = json.dumps(batch, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        device = batch["device_id"]
+        updated = []
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            duplicate = db.execute("SELECT digest FROM batches WHERE batch_id=? OR (device_id=? AND session_id=? AND sequence=?)",
+                (batch["batch_id"], device, batch["session_id"], batch["sequence"])).fetchone()
+            if duplicate:
+                if duplicate["digest"] != digest:
+                    raise IngestionError("BATCH_ID_CONFLICT", 409)
+                self._contact(db, batch, received_at)
+                return {"status": "duplicate", "updated_channels": []}
+            for channel in ("water", "visual"):
+                payload = batch[channel]
+                if payload is None:
+                    continue
+                current = db.execute("SELECT * FROM current WHERE device_id=? AND channel=?", (device, channel)).fetchone()
+                if current and current["observed_at"] == batch["timestamp"]:
+                    raise IngestionError("OBSERVATION_CONFLICT", 409)
+                encoded = json.dumps({"window": batch["window"], "data": payload}, allow_nan=False)
+                args = (batch["batch_id"], device, channel, batch["timestamp"], received_at.isoformat(), encoded)
+                db.execute("INSERT INTO history VALUES(?,?,?,?,?,?)", args)
+                if not current or batch["timestamp"] > current["observed_at"]:
+                    db.execute("INSERT OR REPLACE INTO current VALUES(?,?,?,?,?,?)",
+                        (device, channel, batch["batch_id"], batch["timestamp"], received_at.isoformat(), encoded))
+                    updated.append(channel)
+                    self._events(db, batch, channel, received_at, findings.get(channel, ()))
+                db.execute("DELETE FROM history WHERE device_id=? AND channel=? AND batch_id NOT IN (SELECT batch_id FROM history WHERE device_id=? AND channel=? ORDER BY observed_at DESC LIMIT ?)",
+                           (device, channel, device, channel, self.history_limit))
+            db.execute("INSERT INTO batches VALUES(?,?,?,?,?,?)", (batch["batch_id"], device, batch["session_id"], batch["sequence"], digest, received_at.isoformat()))
+            self._contact(db, batch, received_at)
+            db.execute("DELETE FROM batches WHERE device_id=? AND batch_id NOT IN (SELECT batch_id FROM batches WHERE device_id=? ORDER BY received_at DESC, rowid DESC LIMIT ?)",
+                       (device, device, self.batch_limit))
+            db.execute("DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY rowid DESC LIMIT ?)", (self.event_limit,))
+            db.execute("DELETE FROM alerts WHERE event_id NOT IN (SELECT id FROM events)")
+        return {"status": "accepted" if updated else "out_of_order", "updated_channels": updated}
+
+    @staticmethod
+    def _contact(db, batch, received_at):
+        for channel in ("water", "visual"):
+            if batch[channel] is not None:
+                db.execute("INSERT INTO channel_contacts VALUES(?,?,?) ON CONFLICT(device_id,channel) DO UPDATE SET last_received_at=MAX(last_received_at,excluded.last_received_at)",
+                           (batch["device_id"], channel, received_at.isoformat()))
+
+    def _events(self, db, batch, channel, received_at, findings):
+        existing = {r["code"]: r["event_id"] for r in db.execute("SELECT code,event_id FROM alerts WHERE device_id=? AND channel=?", (batch["device_id"], channel))}
+        active = {f["code"] for f in findings}
+        for code, event_id in existing.items():
+            if code not in active:
+                row = db.execute("SELECT payload FROM events WHERE id=?", (event_id,)).fetchone()
+                if row:
+                    payload = json.loads(row["payload"])
+                    payload.update(status="closed", resolved_at=batch["timestamp"])
+                    db.execute("UPDATE events SET payload=? WHERE id=?", (json.dumps(payload), event_id))
+                db.execute("DELETE FROM alerts WHERE device_id=? AND channel=? AND code=?", (batch["device_id"], channel, code))
+        for finding in findings:
+            event_id = existing.get(finding["code"])
+            if event_id:
+                row = db.execute("SELECT payload FROM events WHERE id=?", (event_id,)).fetchone()
+                payload = json.loads(row["payload"])
+                payload.update(last_observed_at=batch["timestamp"], last_batch_id=batch["batch_id"])
+                db.execute("UPDATE events SET payload=? WHERE id=?", (json.dumps(payload), event_id))
+                continue
+            event_id = uuid.uuid4().hex
+            payload = {"id": event_id, "device": batch["device_id"], "device_id": batch["device_id"],
+                "type": "水质" if channel == "water" else "视觉信号", "channel": channel,
+                "severity": "warning", "finding_severity": finding["severity"], "status": "pending",
+                "title": finding["message"], "description": "模拟来源事件，非疾病确诊；未实现人工处理工作流。",
+                "source_kind": "simulator", "code": finding["code"], "rule_version": finding["rule_version"],
+                "occurred_at": batch["timestamp"], "received_at": received_at.isoformat(),
+                "last_observed_at": batch["timestamp"], "batch_id": batch["batch_id"],
+                "last_batch_id": batch["batch_id"], "attachments": []}
+            db.execute("INSERT INTO events VALUES(?,?,?,?,?)", (event_id, batch["device_id"], channel, finding["code"], json.dumps(payload)))
+            db.execute("INSERT OR REPLACE INTO alerts VALUES(?,?,?,?)", (batch["device_id"], channel, finding["code"], event_id))
+
+    def read(self, device_id, channel):
+        with self.connection() as db:
+            row = db.execute("SELECT c.*,h.last_received_at AS last_reported_at FROM current c LEFT JOIN channel_contacts h ON c.device_id=h.device_id AND c.channel=h.channel WHERE c.device_id=? AND c.channel=?", (device_id, channel)).fetchone()
+            return self._decode(row) if row else None
+
+    def capture(self, device_id, channel):
+        """Current and history use the same read transaction, never a mixed update."""
+        with self.connection() as db:
+            db.execute("BEGIN")
+            row = db.execute("SELECT c.*,h.last_received_at AS last_reported_at FROM current c LEFT JOIN channel_contacts h ON c.device_id=h.device_id AND c.channel=h.channel WHERE c.device_id=? AND c.channel=?", (device_id, channel)).fetchone()
+            history = [self._decode(r) for r in db.execute("SELECT * FROM history WHERE device_id=? AND channel=? ORDER BY observed_at", (device_id, channel))]
+            return self._decode(row) if row else None, history
+
+    def history(self, device_id, channel):
+        with self.connection() as db:
+            return [self._decode(r) for r in db.execute("SELECT * FROM history WHERE device_id=? AND channel=? ORDER BY observed_at", (device_id, channel))]
+
+    def events(self):
+        with self.connection() as db:
+            return [json.loads(r["payload"]) for r in db.execute("SELECT payload FROM events ORDER BY rowid DESC")]
+
+    @staticmethod
+    def _decode(row):
+        result = dict(row)
+        result["payload"] = json.loads(result["payload"])
+        return result

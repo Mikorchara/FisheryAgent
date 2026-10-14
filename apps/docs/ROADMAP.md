@@ -1,27 +1,26 @@
 # 管理平台路线
 
-本页描述管理平台；共享 AI Runtime 的现状见根 [路线图](../../docs/ROADMAP.md)。计划不表示已授权执行或已接入真实服务。
+共享 AI Runtime 现状见根 [路线图](../../docs/ROADMAP.md)。规划不表示已授权真实服务接入。
 
 ## 已实现
 
-- **R1**：独立 Flask 应用、8766 本机入口、统一布局及七页面；独立 Demo、空状态、读 API、可注入服务接口与离线测试。AI、视频/NPU、数据库、权限和管理写操作未接入。
-- **R1.1**：`apps/AGENTS.md` 与 `apps/docs/`；明确模块职责、共享监测来源与后续替换边界。未修改 R1 UI 或运行行为。
+- R1：独立管理布局、七业务页面、Demo/空状态、只读应用 API 和测试。
+- R1.1：工程规则与管理平台文档入口。
+- R2A：独立连续模拟器、v1 HTTP 上报校验、本机写入门禁、SQLite 当前状态/有界历史、服务器领域诊断、模拟事件去重、四页面统一读取与轮询、设备绑定 Reader。没有 AI 对话或真实设备/NPU。
 
-## 下一步：R2 AI 集成（未实施）
+## 下一步：AI 应用桥接（未实施）
 
-1. **最小准备**：补消费端 DTO 校验和来源/连接状态；提取 Assistant 页面独立 Session，定义薄 Runtime Adapter。
-2. **Normal 闭环**：复用已有 AssistantService，实现安全发送、最终回答、History、联网确认、Stop、epoch 与错误；先 Fake / Scripted Provider 离线验收。
-3. **系统事实接入**：明确管理网页与现有 Tool 共用的权威监测来源和设备上下文；验证 NO_DATA / PARTIAL / INVALID / STALE，不以 Demo 或旧值补事实。
-4. **逐项增强**：按精确发布 Scope 接入既有 Multi-Round、Activity 与 Streaming。预算、确认 revision、Ledger 和 Commit Gate 不变；真实验收需本轮明确授权。
+1. 提取独立 Assistant 页面 Session，建立薄 AI Adapter；不复制现有 Runtime。
+2. 先离线接通 Normal、最终正文、History、epoch、联网确认、Stop 和错误。
+3. 将 Tool 明确绑定 R2A 的同一 MonitoringService / repository 与冻结设备上下文。原 Prototype 的内存 Snapshot **尚未**切换到此数据库，不能假定已共享。
+4. 按已有精确 Scope 接入 Multi-Round / Streaming、Activity、Ledger 和 Commit Gate；真实请求需本轮单独授权。
 
-不同时重构全部页面、后端和 AI Runtime；未建立共享来源时不宣称 Tool 已读取管理水质。详细边界见 [INTEGRATION](INTEGRATION.md)。
+## 后续独立工作
 
-## 后续独立工作（尚未实施）
+- 真实 Monitoring：设备登记/认证、物理采集 Adapter、持久历史与运维策略；不由客户端自报真实来源。
+- Video/NPU：实际视频传输、校准、推理结果归一化、受控截图/片段；不迁移旧 GPU 桌面项目。
+- Events：生产告警策略、通知、人工处理和审计；当前 closed 只表示模拟信号消退。
+- Knowledge/Files：文件管理、索引与检索分别接入，RAG 改善单独设计。
+- Security：账户、服务端权限、生产设备凭据、TLS、限流、监控/备份和迁移；开发令牌不能当作生产方案。
 
-- **Monitoring**：传感器/数据库 Adapter、规范化观测、质量/新鲜度与受控历史查询。
-- **Video/NPU**：设备通信与视频传输、检测事实 DTO、受控媒体访问；网页不绑定硬件推理框架。
-- **Events**：存储、确定性告警与处理流程、附件关联；先明确事件合同再选持久化。
-- **Knowledge/Files**：文件管理、索引与检索分别接入；RAG 改善单独设计和验收，不作为 R1/R2 隐含任务。
-- **Settings/Security**：用户认证、服务端授权、管理员配置与开发调试分离；此前相关写操作保持关闭。
-
-不预先创建空模块或选择正式数据库，不承诺未验证的设备、模型能力。Agent、自动设备控制、阈值修改和复杂调度不属于当前管理平台阶段。
+不增加 Agent、自动设备写操作或通用场景编辑器，不为规划建立空模块。

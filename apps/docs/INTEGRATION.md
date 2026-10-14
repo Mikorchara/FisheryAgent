@@ -1,88 +1,127 @@
-# 服务合同与集成边界
+# 统一监测协议与集成边界
 
-本文描述 R1 当前接口和未来接入要求。真实监测、AI、视频/NPU、持久化及新 RAG **尚未接入**；本轮未改变运行行为。
-
-## 1. 当前装配与 API
-
-`management_web.app.create_app` 接收 `monitoring / ai / video / files / events`，缺省使用独立 Demo 和 UnavailableAI。接口定义在 `contracts.py`；页面只访问同源应用 API。
-
-| 服务 | 当前合同 | 当前实现 | 替换职责 |
-|---|---|---|---|
-| MonitoringData | `devices()`、`snapshot(device_id, view)` | DemoMonitoring | 规范化观测、单位、来源、质量和时间 |
-| AIService | `availability()`、`send(request)` | UnavailableAI | 桥接已有 AI 应用服务，不复制执行栈 |
-| VideoDetection | `cameras()` | DemoVideo | 设备/媒体连接与规范化检测事实 |
-| EventRecords | `events()` | DemoEvents | 事件查询与存储，工作流另行设计 |
-| KnowledgeFiles | `files()` | DemoFiles | 文件元数据；索引与检索分别接入 |
-
-`MetricObservation` 包含 id、label、value、unit、quality、source、observed_at、freshness。`MonitoringSnapshot` 包含 device_id、source/source_kind、observed_at、evaluated_at、quality/freshness、metrics、trend。值可为 None；禁止补默认正常值或把缺失当零。
-
-当前 HTTP：Bootstrap、监测、事件/文件列表及详情、AI 可用性均为 GET；`POST /api/ai/messages` 始终 503。Bootstrap `schema_version=1`。服务注入不等于完整集成：data_mode、连接列表、事件/文件 source_kind 仍固定 Demo；部分 UI 文案和统计也固定。其余 DTO 多为 dict，尚缺完整嵌套校验。
-
-R2 应为实际消费者补必要字段、枚举与安全错误合同；不把 Provider 响应或设备 raw packet 当 DTO 直接透传。新增或不兼容字段须明确版本和兼容方案。
-
-## 2. Monitoring：网页与 Tool 共享事实
-
-推荐链路（规划）：
+## 1. 当前运行链路
 
 ```text
-Demo / DB / Device Adapter
-    → canonical WaterQualityReading
-    → 一个权威当前观测来源
-        → CurrentWaterQualityReader → 管理页面 DTO
-        → CurrentWaterQualityReader → 现有只读 Tool → Diagnosis / Score
+Simulator：Scenario → 逻辑采样 → 10 秒窗口 → HTTP
+    → management_web Ingestion：本机与令牌检查
+    → monitoring.contracts：v1 严格校验
+    → MonitoringRepository：单事务保存 water / visual / 事件
+    → MonitoringService：当前状态、历史、query-time Freshness
+        → Dashboard / Monitoring / Video / Events
+        → bind(device_id).water_reader（未来 AI Tool 接入口）
 ```
 
-当前管理 Demo 与正式 Tool 的 Snapshot 完全隔离，页面选择不会写入正式 Store。接入前先决定权威来源：
+`apps/monitoring/` 不依赖 Flask 或页面。Web `create_app(data_service=...)` 将同一服务用于监测、视觉和事件；CLI 正常入口总是装配 SQLite 服务。无 data_service 的工厂保留 R1 测试/兼容 Demo；CLI 必须显式 `--legacy-demo` 才使用它，接入失败不回退 Demo。
 
-- **同进程**：composition root 装配同一个 CurrentSnapshotStore / Reader，分别注入网页服务和 Tool Runtime。
-- **跨进程**：8765 与 8766 的内存不共享。需要共同的受控读服务或数据库来源，以及一致的观测 ID、时间和版本；不能靠导入同一 Python 类获得同一 Snapshot，也不能各自生成一份 current state。
+服务复用现有 WaterQualityReading、DiagnosisService、evaluate_freshness 与 CurrentWaterQualityReader，只依赖领域读取能力，不启动模型或修改 Prototype 当前 Store。
 
-复用 `fishery_ai.telemetry.current.CurrentWaterQualityReader` 和 Domain 的 query-time freshness；查询不重新采样，不改 Store 原对象。管理 Demo 的 600 秒示例不能作为生产规则。Diagnosis / Score 由现有领域服务生成，Adapter 和前端不复制阈值。
+## 2. HTTP v1 批次 DTO
 
-未来多池/设备须显式绑定授权的 site/device 上下文。当前水质 Tool 无参数、绑定一个 Reader；不能用网页可变全局设备选择偷偷改变正在进行的 AI Turn。接入需明确请求开始时冻结的数据上下文和选择权限。
+`POST /api/ingestion/batches`，Content-Type application/json。示例是虚构窗口，不包含令牌：
 
-观测时间、查询评估时间与来源分别保留。NO_DATA 与已有 Snapshot 的 PARTIAL / INVALID / STALE 分开；不以背景知识、旧 History 或 UI Demo 代替当前事实。Tool 查询时取得的观测可能晚于页面展示或 Analysis 初始 Facts，应保留各自时间/来源，不合并成一次观测。
-
-## 3. AI：薄应用桥接
-
-管理 AI Adapter 调用现有 AssistantService / ToolCallingService / Gateway。连接、Preset、正式 Credential composition、RuntimeSnapshot、RequestHandle、Policy、发布 Scope、Ledger 和 Commit Gate 留在 `src/fishery_ai/`。管理页面不接触 SDK、Prompt、Secret 或任意 Provider 配置。
-
-建议先接 Normal 的最小对话闭环，再按已有精确资格逐项接多轮/Streaming；不因技术 PASS 或管理应用接入而扩大 Preset 发布范围。复用 epoch、execution profile revision、逐次联网确认、整 Turn deadline 和 Stop；浏览器确认与实际预算绑定，配置变化必须重新确认。
-
-前端只接最终安全正文、Activity/Steps、Usage、延迟和安全错误。临时流式预览不是成功回答，失败或取消不能写 History。History 仍只保存成功 user/final assistant 文本对，复用正式 Projection，不保存 Tool raw payload 或 reasoning。
-
-`AIService.send(dict)` 目前只是预留接口；没有 chat、cancel、状态轮询或 SSE 的管理端实现。R2 需按实际复用服务定义最小请求/结果合同，不能把“解除固定 503”视为已完成集成。若首次接入尚无共享监测来源，必须明确 Tool 读哪个来源，不能声称已读取管理 Demo。
-
-## 4. Video / NPU 与 Events
-
-```text
-设备通信 / 视频传输 → 受控媒体引用 → 网页播放
-NPU 推理 → 规范化检测事实 → 页面 / 事件服务
+```json
+{
+  "schema_version": 1,
+  "batch_id": "example-batch-1",
+  "session_id": "example-session",
+  "sequence": 0,
+  "device_id": "sim-pond-1",
+  "timestamp": "2026-10-14T00:00:10+00:00",
+  "window": {
+    "start": "2026-10-14T00:00:00+00:00",
+    "end": "2026-10-14T00:00:10+00:00",
+    "duration_s": 10
+  },
+  "water": {
+    "aggregation": "window_mean",
+    "sample_count": 10,
+    "metrics": {
+      "temperature_c": {"unit":"°C","mean":26.4,"min":26.3,"max":26.5,"latest":26.4,"valid_samples":10,"invalid_samples":0},
+      "ph": {"unit":"","mean":7.5,"min":7.4,"max":7.6,"latest":7.5,"valid_samples":10,"invalid_samples":0},
+      "dissolved_oxygen_mg_l": {"unit":"mg/L","mean":6.4,"min":6.3,"max":6.5,"latest":6.4,"valid_samples":10,"invalid_samples":0}
+    }
+  },
+  "visual": {
+    "aggregation": "window_summary",
+    "frames_processed": 20,
+    "anomaly_counts": {"suspected_lesion":0,"surface_anomaly":0,"suspected_dead":0},
+    "behavior_ratios": {"normal_activity":0.8,"reduced_activity":0.1,"feeding":0.1,"feeding_anomaly":0,"unknown":0},
+    "length": {"average_length_cm":null,"length_sample_count":0,"calibration":"uncalibrated","calibration_id":null},
+    "visible_fish_count": 8.5,
+    "model_version": "synthetic-visual-v1"
+  }
+}
 ```
 
-传输、推理与展示分别替换；不要迁移桌面 GPU 监测器或在页面绑定特定推理框架。未来检测 DTO 至少明确设备、观测时间、模型/部署版本、类别、置信度和坐标约定；模型结果不是传感器事实或诊断结论。R1 摄像头只有元数据，无 stream_url、真实检测或假识别框。
+固定结构拒绝未知/重复 JSON 字段，拒绝 NaN/Infinity、bool 代替数值、非法类型/单位/范围。ID 限制为 1–64 个 ASCII 字母数字、下划线或连字符，device_id 须在服务器 allowlist；默认只有 sim-pond-1。
 
-事件服务区分事件产生、查询、附件和处理工作流。R1 三条记录及处理状态都是样例，不会触发告警或写存储。未来确定性告警规则在业务/领域服务中实现，页面不再计算 Finding。截图/片段使用受控 ID 与授权访问，不把任意本地路径、URL 或设备控制入口暴露给模型或浏览器。
+时间必须带时区并归一化 UTC；timestamp = window.end。窗口 1–60 秒，duration 与起止一致；未来时间或超过 300 秒延迟拒绝。水质物理范围复核温度 -50–100°C、pH 0–14、DO 0–100 mg/L；这不是水质风险阈值。
 
-## 5. Knowledge / Files / RAG
+water 或 visual 可以为 null，但不能同时为空。两个通道独立更新；缺失通道不复制另一通道，也不清掉其末次记录。接收时间由服务器生成，客户端不能指定 source、quality、freshness、received_at 或真实设备标识。
 
-文件元数据和实际文件存储、索引状态与任务、检索服务是三个边界。当前两条 Demo 元数据没有真实文件、下载或索引。新增文件管理不能隐式等同于已可检索，也不能由浏览器声明索引成功。
+## 3. 窗口与业务语义
 
-未来薄 Adapter 可复用现有知识检索，替换 RAG 时保持应用侧查询/证据合同；本阶段不开发新 RAG。Knowledge Evidence 是项目背景，不能认证当前水质或现场疾病。Analysis 自动 RAG 与 Assistant 按 Policy 调用 Knowledge Tool 的边界保持不变，避免同一证据多来源混淆。
+- 窗口定义为 (start, end]，默认 10 秒。水质逻辑采样默认每 1 秒，视觉逻辑帧默认每 0.5 秒；与上报周期独立，周期须整除窗口。本模拟器在推进窗口时生成逻辑样本，不执行真实采集或视频推理。
+- water.mean 是各指标**有效样本的平均**，不是单次值。min/max/latest 同样只包含有效样本；valid_samples + invalid_samples ≤ sample_count，差值为缺失样本。有效数为零时四个值都必须 null。
+- 任一明确 invalid 样本使 canonical 水质质量为 INVALID；无有效指标也为 INVALID；仅部分指标存在为 PARTIAL；全部存在且无 invalid 为 VALID。每指标质量/样本证据另保留，不因平均得到数值就抹掉无效样本。
+- 完全未收到 water 是 NO_DATA；已有全缺失/无效窗口仍是一个存在但不可用的 Snapshot。STALE 和连接 OFFLINE 是独立时间维度，不能改成正常。
+- 视觉 anomaly_counts 是每类信号出现的帧数，类别可重叠；全零只表示本窗口没有所列信号，不证明健康。疑似病灶、体表异常、疑似死亡均为检测信号，非最终疾病诊断。
+- behavior_ratios 是互斥窗口行为帧比例，总和为 1；不同于鱼池所有个体的行为概率。
+- 默认未标定：体长 null、样本数 0。手写 Phase 可启用纯 simulated 标定，同时提供模拟 calibration_id；不宣称真实厘米精度。visible_fish_count 是画面平均可见数，不是存量。
+- model_version 保留模型来源位置，当前只有 synthetic 生产端。未来 boxes、track IDs、受控媒体引用须增加受限合同/版本，不使用任意扩展字典或本地路径；R2A 未生成截图、录像或检测框。
 
-## 6. 安全与生命周期
+## 4. SQLite 与状态生命周期
 
-当前有 loopback、Host/Origin 限制、无 CORS、CSP、textContent、8 KiB 请求上限、通用错误与禁用写 API；这些不是用户身份、权限或完整 CSRF 方案。认证、授权、文件访问及审计未实现，不可生产部署。
+`outputs/management_web/monitoring.sqlite3`，Git ignored；schema user_version=1，未知版本拒绝，不自动改未知数据。标准库 SQLite 每操作短连接、事务提交/关闭；每设备每通道 current 一份，water/visual 不混合。
 
-开放 AI 执行或任何写操作前补相应服务端检查，管理员能力与开发验证分开。沿用私有凭据和 CredentialSnapshot，禁止根 `.env`、复制 Key、浏览器存 Key、日志/错误回显私有路径与 traceback。真实请求须单独授权。
+默认每设备每通道保留 360 个窗口（10 秒周期约 1 小时），每设备 1440 个批次幂等记录，全局 300 个事件。超限按最旧记录裁剪；SQLite 可复用空闲页，不承诺文件立即缩小。重启保留数据，不删除旧库。
 
-当前 Demo 随应用重建，AI 草稿仅页面内存，刷新清空。未来应用服务按明确生命周期装配；观测、请求状态与 UI Session 分开。适配器失败需安全报告不可用，禁止自动回退 Demo、Normal 重跑或 Provider failover。
+- 同 batch_id 或 device/session/sequence 的相同有效内容返回 duplicate，不再次入库/造事件；内容冲突返回 409 BATCH_ID_CONFLICT。幂等受有界记录和观测时间限制。
+  有效 duplicate 或乱序批次只刷新独立的通道接触时间，不改原观测/接收时间；在线不代表数据新鲜。
+- 乱序有效窗口保留历史；只有比该通道 current 更新的观测才推进 current 和事件。相同观测时间的新批次拒绝 OBSERVATION_CONFLICT，防止歧义覆盖。
+- 新 session 可从 sequence=0 重启；排序依赖规范化观测时间，不依赖客户端 sequence 或收到先后。
+- 一个批次验证失败不写任何通道/事件，不更新在线状态；成功批次及事件变更处于同一事务。
+- 当前水质与其历史在同一读事务捕获。不同页面/通道读取可能有各自查询时点，保留各自批次和时间，不声称整个网页是一次原子观测。
 
-## 7. R2 前最值得做的最小调整（未实施）
+查询时复用 Domain evaluate_freshness，默认观测超过 30 秒为 STALE；通道 last_reported_at（最后有效接触）超过 90 秒为 OFFLINE，未接收为 never_received。按通道判断，另一通道持续上报不能掩盖失联。延迟/乱序窗口可在线但已过期。原 current 的 received_at 始终保留首次接收时间，查询不改原观测或创建事件。
 
-1. 为实际接入字段补 DTO 校验；使 source_kind、data_mode、连接状态和页面标识来自真实服务，移除相关固定 Demo 假设。
-2. 提取 Assistant 页面独立 state/模块，保留其他六页；增加薄 AI Adapter，不拆整个产品 Runtime。
-3. 明确共享监测来源与 site/device 绑定后，再开放当前水质 Tool；用离线测试证明 UI 与 Tool 看到同一权威来源且旧请求不被新选择污染。
-4. 接通服务端确认/发布门禁、epoch、取消及安全错误，再开放发送。先离线验证最小 Normal 路径，Streaming 和多轮分步接入。
+事件只由实际接收且推进 current 的批次产生：水质来自 DiagnosisService；视觉来自所列异常信号/摄食异常是否出现的确定性规则（sim-visual-presence-v1），非诊断。相同 device/channel/code 持续信号更新 last_observed_at / last_batch_id，保留首个事件与批次；恢复后 closed 表示信号消退，不表示人工处理。过期/断连在读状态中显示，不假装生成了设备诊断事件。事件初次批次可能因历史保留限额被裁剪，事件自身保留时间、来源与首末关联 ID。
 
-相关底层合同以根 [Analysis / Assistant 架构](../../docs/deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)、[Tool Runtime](../../docs/deep-dive/tools/READ_ONLY_TOOL_CALLING.md)、[私有凭据](../../docs/deep-dive/operations/PRIVATE_CREDENTIAL_STORAGE.md) 为准。
+## 5. 场景编写与连续运行
+
+`apps/simulator/scenarios.py` 用 frozen Phase 列表定义全局 elapsed 时间线；按 at_s 升序，从零开始。相邻数值 Phase 线性插值，加小幅有界随机游走，模拟波动和渐变；连接/缺失/标定为离散开关。
+
+主场景 normal、low_oxygen、suspected_disease、reduced_feeding、combined_anomaly、device_offline；另有 partial、invalid、visual_only、water_only 用于数据边界验收。新增场景只编辑 Phase 定义，不改 HTTP transport；无需通用编辑器。
+
+WaterQualityGenerator 与 VisualDetectionGenerator 使用独立 RNG（seed、seed+1），视觉采样周期不会改变水质随机序列。seed 默认 42；固定 start、session_id、seed、场景和周期时完整批次可复现。真实运行自动生成新的 session_id/启动时间，值的随机序列固定，ID/时间按本次实例变化。advance 可离线快速推进；switch_scenario 不重置时间/RNG/sequence，新场景按全局 elapsed 求值，人工切换处允许场景值跳变。
+
+实时 CLI 使用 monotonic 定时，默认首批在 10 秒后发送。失败即停止，无透明 retry、重定向或代理；Ctrl+C 关闭上报资源。device_offline 不发送任何批次，服务器自行变过期/中断。
+
+## 6. Web 与未来 AI 的统一读取
+
+正常启动的四页面来自 MonitoringService；浏览器每 5 秒只读 Bootstrap。历史和事件不由页面生成；读取失败显示失效，恢复后重新读取，旧异步响应不能覆盖新区域选择。页面保留草稿/筛选；没有实时视频或生产权限声明。
+
+HTTP 读取：/api/bootstrap?device、/api/monitoring?device、/api/monitoring/history?device&channel=water|visual&limit=N、原事件 API。历史上限不超过 repository.history_limit；缺省查询 60 条。
+
+未来同进程装配同一个 repository / MonitoringService，将 `bind(device_id)` 返回的 frozen DeviceReadContext 交给 Tool：其 water_reader.query() 使用原 CurrentWaterQualityReader，从**同一 SQLite current** 生成 canonical Reading，保留来源、观测/接收时间和 query-time freshness。query-time 查询不等于新采样。
+
+设备 ID 在 context 中绑定，不跟随网页全局选择改变；它不是冻结旧观测，下次 Tool 查询仍可取得该设备的新数据。如后续需要视觉 Tool，可使用同服务的视觉读取。跨进程须共同受控服务/存储，不靠导入类共享内存。
+
+本轮没有把原 Prototype Tool 绑定到此服务，也没有接 AI。后续 Adapter 才复用 AssistantService、Gateway、CredentialSnapshot、RuntimeSnapshot、Policy、Ledger、Commit Gate、History Projection、Deadline 和 Stop；不复制 Tool 循环、不混合多次观测、不把模拟来源升级为真实事实。
+
+## 7. 开发写入边界与真实替换
+
+写入默认关闭；--enable-ingestion 需要 FISHERY_SIM_INGEST_TOKEN（32–128 ASCII 字母数字）。只接受 loopback peer、允许的 Host、正确令牌、JSON 与无 Origin 的设备请求；不信任 forwarded IP、不提供 CORS，8 KiB 上限。令牌只在进程内，不发送到页面、不写文件/日志、不是现有模型 Key。
+
+此接口只认证“本机模拟生产端”；真实 source_kind 不由客户端自报，当前所有接收来源固定 simulator。真实设备/NPU 接入须新增受控生产 Adapter 和服务器设备/来源登记、独立认证/部署配置；不能只换 URL 就把 simulator 标签改成 sensor。生产 TLS、账户权限、限流、备份、迁移、设备租户隔离仍未实现。本机令牌与 IP 限制不是生产鉴权。
+
+AI 消息仍固定 503；无 device control、配置写入、文件任意访问、Shell、数据库管理 API。不要读取或复制正式 API Key，不改现有 Credential/ACL，不加载源码根 .env。
+
+## 8. 其他业务边界
+
+文件管理与索引/检索仍分开，资料页面只展示 Demo 元数据；本轮没有新增 RAG。未来 Knowledge Evidence 不能认证现场事实；Analysis 自动 RAG 与 Assistant Knowledge Tool 保持原边界。
+
+Video/NPU 将通信、推理、事实归一化和网页播放分离；不迁移桌面 GPU 项目。Events 人工处理、附件授权和通知待独立设计。管理员权限与开发设备接入开关分离。
+
+共享 Runtime 的内部合同见 [Analysis / Assistant](../../docs/deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)、[Tool Runtime](../../docs/deep-dive/tools/READ_ONLY_TOOL_CALLING.md)、[凭据](../../docs/deep-dive/operations/PRIVATE_CREDENTIAL_STORAGE.md)。启动与验收见 [BUILD_RUN](BUILD_RUN.md)。

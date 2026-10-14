@@ -1,32 +1,8 @@
-"""Small UI-facing contracts; independent of devices, storage and Provider SDKs."""
+"""Web service Protocols; shared monitoring DTOs have one canonical definition."""
 
-from dataclasses import dataclass
 from typing import Protocol
 
-
-@dataclass(frozen=True)
-class MetricObservation:
-    id: str
-    label: str
-    value: float | None
-    unit: str
-    quality: str
-    source: str
-    observed_at: str | None
-    freshness: str
-
-
-@dataclass(frozen=True)
-class MonitoringSnapshot:
-    device_id: str
-    source: str
-    source_kind: str
-    observed_at: str | None
-    evaluated_at: str
-    quality: str
-    freshness: str
-    metrics: tuple[MetricObservation, ...]
-    trend: tuple[dict, ...]
+from apps.monitoring.contracts import MetricObservation, MonitoringSnapshot
 
 
 class MonitoringData(Protocol):

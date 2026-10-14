@@ -1,4 +1,4 @@
-import {metricText,chartGeometry,timeText,qualityNames,freshnessNames} from './view-model.js';
+import {metricText,chartGeometry,timeText,qualityNames,freshnessNames,sourceName,connectionName} from './view-model.js';
 
 export function el(tag,attrs={},children=[]) {
   const node=document.createElement(tag);
@@ -36,9 +36,9 @@ export function rows(items){return el('dl',{class:'details-grid'},items.flatMap(
 export function metricCards(snapshot){return el('div',{class:'metric-grid'},(snapshot?.metrics||[]).map((metric,i)=>el('section',{class:'metric-card'},[
   el('div',{class:'metric-heading'},[el('span',{text:metric.label}),el('span',{class:`metric-icon tone-${i}`},[icon(i===0?'thermometer':i===1?'wave':'drop')])]),
   el('div',{class:'metric-value'},[metricText(metric),el('span',{text:metric.unit})]),
-  el('div',{class:'metric-footer'},[badge(qualityNames[metric.quality]||'未知',metric.quality==='valid'?'success':'warning'),el('span',{text:snapshot.source_kind==='demo'?'Demo 观测':'观测值'})])])));}
+  el('div',{class:'metric-footer'},[badge(qualityNames[metric.quality]||'未知',metric.quality==='valid'?'success':'warning'),el('span',{text:snapshot.aggregation==='window_mean'?'窗口均值':'Demo 观测'})])])));}
 export function metadata(snapshot){return el('div',{class:'observation-meta'},[
-  badge(snapshot?.source_kind==='demo'?'DEMO':'数据来源',snapshot?.source_kind==='demo'?'demo':'neutral'),el('span',{text:snapshot?.source||'无数据来源'}),
+  badge(sourceName(snapshot?.source_kind),'demo'),el('span',{text:snapshot?.source||'无数据来源'}),badge(connectionName(snapshot?.connectivity),'neutral'),
   badge(qualityNames[snapshot?.quality]||'不可用',snapshot?.quality==='valid'?'success':'warning'),
   badge(freshnessNames[snapshot?.freshness]||'未知',snapshot?.freshness==='fresh'?'success':'warning'),
   el('span',{text:`观测 ${timeText(snapshot?.observed_at)}`})]);}
@@ -51,14 +51,13 @@ export function table(columns,items,rowValues,onDetail){
 }
 export function trendChart(snapshot,key){
   const data=chartGeometry(snapshot?.trend||[],key);
-  if(!data)return empty('暂无可展示的趋势','当前演示状态没有有效趋势数据。','wave');
+  if(!data)return empty('暂无可展示的趋势','至少需要两个有效窗口，缺失值不会补成正常数据。','wave');
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svg.setAttribute('viewBox','0 0 780 258');svg.setAttribute('role','img');svg.setAttribute('aria-label','独立Demo历史趋势，非真实传感器记录');svg.classList.add('trend-chart');
+  svg.setAttribute('viewBox','0 0 780 258');svg.setAttribute('role','img');svg.setAttribute('aria-label','服务器历史窗口均值，保留来源标识');svg.classList.add('trend-chart');
   const append=(tag,attrs,text)=>{const n=document.createElementNS(svg.namespaceURI,tag);for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;svg.append(n);};
   for(let i=0;i<4;i++){const y=53+i*52;append('line',{x1:52,y1:y,x2:742,y2:y,stroke:'#e6edf0','stroke-dasharray':'4 5'});append('text',{x:9,y:y+4,fill:'#81919a','font-size':11},(data.high-i/3*(data.high-data.low)).toFixed(1));}
-  const path=data.points.map(([x,y],i)=>`${i?'L':'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
-  append('path',{d:path+' L742,208 L52,208 Z',fill:'#e7f5f2'});append('path',{d:path,fill:'none',stroke:'#168c83','stroke-width':2.8});
+  for(const segment of data.segments){const path=segment.map(([x,y],i)=>`${i?'L':'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');append('path',{d:path,fill:'none',stroke:'#168c83','stroke-width':2.8});}
   for(const[x,y]of data.points)append('circle',{cx:x,cy:y,r:3,fill:'#fff',stroke:'#168c83','stroke-width':1.8});
   [0,3,7,11].forEach(i=>append('text',{x:data.points[Math.min(i,data.points.length-1)][0],y:241,fill:'#81919a','font-size':11,'text-anchor':'middle'},timeText(data.rows[Math.min(i,data.rows.length-1)].observed_at)));
-  return el('div',{class:'chart-container'},[svg,el('p',{class:'chart-note',text:'演示序列 · 约 4 小时 / 20 分钟间隔 · 未连接历史数据库'})]);
+  return el('div',{class:'chart-container'},[svg,el('p',{class:'chart-note',text:snapshot?.source_kind==='simulator'?'模拟上报窗口 · 有界历史 · 非真实设备':'独立 R1 Demo 历史'})]);
 }

@@ -2,6 +2,8 @@
 
 本文件适用于 `apps/`，同时遵守根目录 AGENTS.md。[主要文档入口](docs/README.md)。
 
+- `apps/monitoring/` 是共享数据合同、存储与读取服务；`apps/simulator/` 是独立生产端，只经受控 HTTP 上报，不直接写服务器状态。模拟源不可由客户端声明为真实设备。
+
 - `apps/management_web/` 放管理页面与 Web 专属后端；`src/fishery_ai/` 保留 AI Runtime。依赖方向是管理服务适配器调用 Runtime，Runtime 不反向依赖管理页面。不复制 Gateway、Tool 循环、History、Credential 或取消机制。
 - 页面负责交互，组件负责展示，应用服务负责用例，Adapter 负责设备、数据库或 Runtime 接入；HTTP 路由保持薄。先使用现有结构，只有出现实际消费者时才拆文件，不建空框架或动态插件。
 - 接口用明确 DTO、版本和安全错误表达。值、单位、来源、观测时间、质量、新鲜度不可丢失；缺失不补 0、不回退 Demo。Protocol 类型声明不等于运行时校验。

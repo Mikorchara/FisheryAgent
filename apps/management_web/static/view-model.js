@@ -11,6 +11,8 @@ export const routes = [
 export function routeFor(hash) { return routes.find(r=>r.id===hash.replace(/^#/,'')) || routes[0]; }
 export const qualityNames={valid:'有效',partial:'部分缺失',invalid:'无效',missing:'不可用'};
 export const freshnessNames={fresh:'新鲜',stale:'已过期',unknown:'未知'};
+export function sourceName(kind){return ({simulator:'SIMULATOR 模拟来源',demo:'DEMO 演示',connected:'已接入',mixed:'混合来源'})[kind]||'未声明来源';}
+export function connectionName(status){return ({online:'正常上报',offline:'上报中断',never_received:'尚无上报',not_connected:'未接入',demo:'演示'})[status]||'状态未知';}
 export function metricText(metric) {
   return typeof metric?.value==='number' && Number.isFinite(metric.value) && metric.quality==='valid'
     ? metric.value.toFixed(1) : '—';
@@ -25,15 +27,18 @@ export function chartSeries(trend,key) {
 export function chartGeometry(trend,key) {
   const rows=chartSeries(trend,key); if (rows.length<2) return null;
   const values=rows.map(p=>p[key]), low=Math.min(...values), high=Math.max(...values), pad=Math.max((high-low)*.4,.1);
-  return {points:values.map((v,i)=>[52+i/(values.length-1)*690,208-(v-low+pad)/(high-low+2*pad)*155]),
-    low:low-pad, high:high+pad, rows};
+  const times=rows.map(r=>Date.parse(r.observed_at)),timed=times.every(Number.isFinite)&&times.at(-1)>times[0];
+  const points=values.map((v,i)=>[52+(timed?(times[i]-times[0])/(times.at(-1)-times[0]):i/(values.length-1))*690,208-(v-low+pad)/(high-low+2*pad)*155]);
+  const segments=[];
+  rows.forEach((row,i)=>{const gap=i>0&&(trend.indexOf(row)!==trend.indexOf(rows[i-1])+1||(timed&&row.window_duration_s&&(times[i]-times[i-1])/1000>row.window_duration_s+.01));if(i===0||gap)segments.push([]);segments.at(-1).push(points[i]);});
+  return {points,segments,low:low-pad,high:high+pad,rows};
 }
 export function filterItems(items,{q='',category='',severity='',status=''}={}) {
   return items.filter(item=>(!q || [item.name,item.title,item.device,item.category].filter(Boolean).join(' ').toLowerCase().includes(q.toLowerCase()))
     && (!category || item.category===category) && (!severity || item.severity===severity) && (!status || item.status===status));
 }
 export function validateBootstrap(data) {
-  if (data?.schema_version!==1 || data.application!=='management-web-r1' || !['demo','connected','mixed'].includes(data.data_mode)
+  if (data?.schema_version!==1 || data.application!=='management-web-r1' || !['demo','simulator','connected','mixed'].includes(data.data_mode)
     || !Array.isArray(data.devices) || !Array.isArray(data.events) || !Array.isArray(data.files)
     || !Array.isArray(data.cameras) || !Array.isArray(data.connections) || typeof data.ai?.connected!=='boolean') throw new Error('INVALID_MANAGEMENT_DATA');
   return data;
