@@ -119,3 +119,19 @@ test('seven pages remain navigable; only text renders and AI stays disabled',asy
   assert.equal(p.context.fake,undefined);
   p.run("location.hash='#assistant';render()");assert.match(p.node('content').textContent,/发送 · 尚未接入/);
 });
+
+test('event lifecycle and critical severity are distinct from data quality and human handling',async()=>{
+  const d=fixture();d.events=[
+    {...d.events[0],id:'active',title:'低氧实验规则',severity:'critical',lifecycle_state:'ACTIVE',publication_status:'PROTOTYPE'},
+    {...d.events[0],id:'unknown',title:'证据不足',lifecycle_state:'INDETERMINATE'},
+    {...d.events[0],id:'resolved',title:'有效新观测',status:'closed',lifecycle_state:'RESOLVED'}];
+  const p=page(d);await p.ready();p.run("location.hash='#events';render()");
+  assert.match(p.node('content').textContent,/严重/);assert.match(p.node('content').textContent,/异常持续/);
+  assert.match(p.node('content').textContent,/状态待确认/);assert.match(p.node('content').textContent,/已确认消退/);
+  assert.match(p.node('content').textContent,/PROTOTYPE/);
+  p.run("state.eventFilters.status='INDETERMINATE';render()");
+  assert.match(p.node('content').textContent,/证据不足/);assert.doesNotMatch(p.node('content').textContent,/低氧实验规则/);
+  p.run("location.hash='#monitoring';render()");assert.match(p.node('content').textContent,/PROTOTYPE/);
+  d.cameras[0].signal_status='indeterminate';p.setData(d);p.run("location.hash='#video'");await p.run('refresh()');
+  assert.match(p.node('content').textContent,/当前状态待确认/);
+});

@@ -13,6 +13,9 @@ export const qualityNames={valid:'有效',partial:'部分缺失',invalid:'无效
 export const freshnessNames={fresh:'新鲜',stale:'已过期',unknown:'未知'};
 export function sourceName(kind){return ({simulator:'SIMULATOR 模拟来源',demo:'DEMO 演示',connected:'已接入',mixed:'混合来源'})[kind]||'未声明来源';}
 export function connectionName(status){return ({online:'正常上报',offline:'上报中断',never_received:'尚无上报',not_connected:'未接入',demo:'演示'})[status]||'状态未知';}
+export function eventState(item){return item.lifecycle_state||(item.status==='closed'?'RESOLVED':'ACTIVE');}
+export function eventStateName(item){return ({ACTIVE:'异常持续',RESOLVED:'已确认消退',INDETERMINATE:'状态待确认'})[eventState(item)]||'状态未知';}
+export function eventSeverityName(item){return ({critical:'严重',warning:'提醒',info:'信息'})[item.severity]||'未知';}
 export function metricText(metric) {
   return typeof metric?.value==='number' && Number.isFinite(metric.value) && metric.quality==='valid'
     ? metric.value.toFixed(1) : '—';
@@ -35,7 +38,7 @@ export function chartGeometry(trend,key) {
 }
 export function filterItems(items,{q='',category='',severity='',status=''}={}) {
   return items.filter(item=>(!q || [item.name,item.title,item.device,item.category].filter(Boolean).join(' ').toLowerCase().includes(q.toLowerCase()))
-    && (!category || item.category===category) && (!severity || item.severity===severity) && (!status || item.status===status));
+    && (!category || item.category===category) && (!severity || item.severity===severity) && (!status || item.status===status || item.lifecycle_state===status));
 }
 export function validateBootstrap(data) {
   if (data?.schema_version!==1 || data.application!=='management-web-r1' || !['demo','simulator','connected','mixed'].includes(data.data_mode)

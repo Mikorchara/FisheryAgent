@@ -8,7 +8,7 @@ import sqlite3
 from threading import RLock
 import uuid
 
-from .contracts import IngestionError
+from .contracts import IngestionError, ChannelAnalysis, FindingState
 
 
 class MonitoringRepository:
@@ -62,7 +62,12 @@ class MonitoringRepository:
             finally:
                 db.close()
 
-    def ingest(self, batch, received_at, findings):
+    def ingest(self, batch, received_at, assessments):
+        if (not isinstance(assessments, dict) or any(not isinstance(a, ChannelAnalysis)
+                or a.device_id != batch["device_id"] or a.channel != channel
+                or batch[channel] is not None and (a.observation is None or a.observation.batch_id != batch["batch_id"])
+                for channel, a in assessments.items()) or set(assessments) != {"water", "visual"}):
+            raise ValueError("INVALID_EVENT_ASSESSMENT")
         text = json.dumps(batch, sort_keys=True, separators=(",", ":"), allow_nan=False)
         digest = hashlib.sha256(text.encode()).hexdigest()
         device = batch["device_id"]
@@ -90,9 +95,7 @@ class MonitoringRepository:
                     db.execute("INSERT OR REPLACE INTO current VALUES(?,?,?,?,?,?)",
                         (device, channel, batch["batch_id"], batch["timestamp"], received_at.isoformat(), encoded))
                     updated.append(channel)
-                    # Failed frames do not prove an earlier visual signal has recovered.
-                    if channel != "visual" or payload.get("valid_frames") != 0:
-                        self._events(db, batch, channel, received_at, findings.get(channel, ()))
+                    self._events(db, batch, channel, received_at, assessments[channel])
                 db.execute("DELETE FROM history WHERE device_id=? AND channel=? AND batch_id NOT IN (SELECT batch_id FROM history WHERE device_id=? AND channel=? ORDER BY observed_at DESC LIMIT ?)",
                            (device, channel, device, channel, self.history_limit))
             db.execute("INSERT INTO batches VALUES(?,?,?,?,?,?)", (batch["batch_id"], device, batch["session_id"], batch["sequence"], digest, received_at.isoformat()))
@@ -110,36 +113,71 @@ class MonitoringRepository:
                 db.execute("INSERT INTO channel_contacts VALUES(?,?,?) ON CONFLICT(device_id,channel) DO UPDATE SET last_received_at=MAX(last_received_at,excluded.last_received_at)",
                            (batch["device_id"], channel, received_at.isoformat()))
 
-    def _events(self, db, batch, channel, received_at, findings):
+    def _events(self, db, batch, channel, received_at, assessment):
         existing = {r["code"]: r["event_id"] for r in db.execute("SELECT code,event_id FROM alerts WHERE device_id=? AND channel=?", (batch["device_id"], channel))}
-        active = {f["code"] for f in findings}
-        for code, event_id in existing.items():
-            if code not in active:
-                row = db.execute("SELECT payload FROM events WHERE id=?", (event_id,)).fetchone()
-                if row:
-                    payload = json.loads(row["payload"])
-                    payload.update(status="closed", resolved_at=batch["timestamp"])
-                    db.execute("UPDATE events SET payload=? WHERE id=?", (json.dumps(payload), event_id))
-                db.execute("DELETE FROM alerts WHERE device_id=? AND channel=? AND code=?", (batch["device_id"], channel, code))
-        for finding in findings:
-            event_id = existing.get(finding["code"])
-            if event_id:
-                row = db.execute("SELECT payload FROM events WHERE id=?", (event_id,)).fetchone()
-                payload = json.loads(row["payload"])
-                payload.update(last_observed_at=batch["timestamp"], last_batch_id=batch["batch_id"])
+        decisions = {f.code: f for f in assessment.findings}
+        for code in sorted(existing.keys() | decisions.keys()):
+            finding = decisions.get(code)
+            event_id = existing.get(code)
+            stored = db.execute("SELECT payload FROM events WHERE id=?", (event_id,)).fetchone() if event_id else None
+            payload = json.loads(stored["payload"]) if stored else None
+            same_version = finding is not None and payload is not None and payload["rule_version"] == finding.rule.version
+            if same_version and payload.get("rule_identity") is not None:
+                same_version = json.dumps(payload["rule_identity"], sort_keys=True) == json.dumps(finding.to_dict()["rule"], sort_keys=True)
+            if payload and not same_version:
+                # Rule changes cannot prove recovery under the previous contract.
+                payload.update(status="pending", lifecycle_state="INDETERMINATE", state_reason="RULE_CHANGED",
+                    assessed_at=assessment.evaluated_at)
                 db.execute("UPDATE events SET payload=? WHERE id=?", (json.dumps(payload), event_id))
-                continue
-            event_id = uuid.uuid4().hex
-            payload = {"id": event_id, "device": batch["device_id"], "device_id": batch["device_id"],
-                "type": "水质" if channel == "water" else "视觉信号", "channel": channel,
-                "severity": "warning", "finding_severity": finding["severity"], "status": "pending",
-                "title": finding["message"], "description": "模拟来源事件，非疾病确诊；未实现人工处理工作流。",
-                "source_kind": "simulator", "code": finding["code"], "rule_version": finding["rule_version"],
-                "occurred_at": batch["timestamp"], "received_at": received_at.isoformat(),
-                "last_observed_at": batch["timestamp"], "batch_id": batch["batch_id"],
-                "last_batch_id": batch["batch_id"], "attachments": []}
-            db.execute("INSERT INTO events VALUES(?,?,?,?,?)", (event_id, batch["device_id"], channel, finding["code"], json.dumps(payload)))
-            db.execute("INSERT OR REPLACE INTO alerts VALUES(?,?,?,?)", (batch["device_id"], channel, finding["code"], event_id))
+                if finding is None or finding.state != FindingState.HIT:
+                    continue
+                old_event_id = event_id
+                payload = None
+            else:
+                old_event_id = None
+            if finding is not None and finding.state == FindingState.HIT:
+                if payload:
+                    payload.update(last_observed_at=batch["timestamp"], last_batch_id=batch["batch_id"],
+                        severity=finding.severity, finding_severity=finding.severity, title=finding.message,
+                        rule_identity=finding.to_dict()["rule"], publication_status="PROTOTYPE",
+                        lifecycle_state="ACTIVE", status="pending", state_reason=None,
+                        observation=finding.to_dict()["observation"], assessed_at=assessment.evaluated_at)
+                    db.execute("UPDATE events SET payload=? WHERE id=?", (json.dumps(payload), event_id))
+                    continue
+                event_id = uuid.uuid4().hex
+                payload = {"id": event_id, "device": batch["device_id"], "device_id": batch["device_id"],
+                    "type": "水质" if channel == "water" else "视觉信号", "channel": channel,
+                    "severity": finding.severity, "finding_severity": finding.severity, "status": "pending",
+                    "lifecycle_state": "ACTIVE", "state_reason": None, "publication_status": "PROTOTYPE",
+                    "rule_identity": finding.to_dict()["rule"], "observation": finding.to_dict()["observation"],
+                    "title": finding.message, "description": "PROTOTYPE 模拟来源事件，非生产规则或疾病确诊；未实现人工处理工作流。",
+                    "source_kind": "simulator", "code": code, "rule_version": finding.rule.version,
+                    "occurred_at": batch["timestamp"], "received_at": received_at.isoformat(),
+                    "last_observed_at": batch["timestamp"], "batch_id": batch["batch_id"],
+                    "last_batch_id": batch["batch_id"], "attachments": [], "assessed_at": assessment.evaluated_at}
+                db.execute("INSERT INTO events VALUES(?,?,?,?,?)", (event_id, batch["device_id"], channel, code, json.dumps(payload)))
+                db.execute("INSERT OR REPLACE INTO alerts VALUES(?,?,?,?)", (batch["device_id"], channel, code, event_id))
+                if old_event_id:
+                    old = json.loads(db.execute("SELECT payload FROM events WHERE id=?", (old_event_id,)).fetchone()["payload"])
+                    old["superseded_by"] = event_id
+                    db.execute("UPDATE events SET payload=? WHERE id=?", (json.dumps(old), old_event_id))
+            elif payload and same_version:
+                resolved = finding.state == FindingState.CLEAR
+                other_risk = finding.kind == "WATER_RISK" and any(
+                    f.kind == "WATER_RISK" and f.state == FindingState.HIT and f.facts_used == finding.facts_used
+                    for f in assessment.findings)
+                # Diagnosis uses exclusive severity codes. A new severity is not recovery.
+                resolved = resolved and not other_risk
+                payload.update(status="closed" if resolved else "pending",
+                    lifecycle_state="RESOLVED" if resolved else "INDETERMINATE",
+                    state_reason=None if resolved else "OTHER_RISK_CONDITION_ACTIVE" if other_risk else finding.reason,
+                    assessed_at=assessment.evaluated_at,
+                    state_observation=finding.to_dict()["observation"])
+                if resolved:
+                    payload.update(resolved_at=batch["timestamp"], resolution_batch_id=batch["batch_id"],
+                                   resolution_observation=finding.to_dict()["observation"])
+                    db.execute("DELETE FROM alerts WHERE device_id=? AND channel=? AND code=?", (batch["device_id"], channel, code))
+                db.execute("UPDATE events SET payload=? WHERE id=?", (json.dumps(payload), event_id))
 
     def read(self, device_id, channel):
         with self.connection() as db:
@@ -160,7 +198,14 @@ class MonitoringRepository:
 
     def events(self):
         with self.connection() as db:
-            return [json.loads(r["payload"]) for r in db.execute("SELECT payload FROM events ORDER BY rowid DESC")]
+            result = [json.loads(r["payload"]) for r in db.execute("SELECT payload FROM events ORDER BY rowid DESC")]
+        # Additive read compatibility; never rewrite legacy records on open or read.
+        for event in result:
+            if "lifecycle_state" not in event:
+                event.update(lifecycle_state="INDETERMINATE", state_reason="LEGACY_UNREVIEWED")
+            event.setdefault("publication_status", "PROTOTYPE")
+            event["severity"] = event.get("finding_severity", event["severity"])
+        return result
 
     @staticmethod
     def _decode(row):

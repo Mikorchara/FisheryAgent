@@ -1,7 +1,8 @@
 """Versioned device window protocol. Validation never trusts producer provenance."""
 
 from datetime import datetime, timezone
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+from enum import Enum
 import json
 import math
 import re
@@ -14,6 +15,154 @@ METRICS = {
 }
 ANOMALIES = ("suspected_lesion", "surface_anomaly", "suspected_dead")
 BEHAVIORS = ("normal_activity", "reduced_activity", "feeding", "feeding_anomaly", "unknown")
+
+
+class FindingState(str, Enum):
+    HIT = "HIT"
+    CLEAR = "CLEAR"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+    NOT_EVALUATED = "NOT_EVALUATED"
+
+
+class EventState(str, Enum):
+    ACTIVE = "ACTIVE"
+    RESOLVED = "RESOLVED"
+    INDETERMINATE = "INDETERMINATE"
+
+
+@dataclass(frozen=True)
+class RuleIdentity:
+    rule_id: str
+    version: str
+    scope: tuple[str, ...]
+    publication_status: str = "PROTOTYPE"
+    assessment_policy_version: str = "monitoring-assessment-v1"
+
+    def __post_init__(self):
+        if (not isinstance(self.rule_id, str) or not self.rule_id or not isinstance(self.version, str)
+                or not self.version or self.publication_status != "PROTOTYPE"
+                or not isinstance(self.assessment_policy_version, str) or not self.assessment_policy_version):
+            raise ValueError("INVALID_PROTOTYPE_RULE_IDENTITY")
+        if not isinstance(self.scope, tuple) or not self.scope or any(not isinstance(x, str) or not x for x in self.scope):
+            raise ValueError("INVALID_RULE_SCOPE")
+
+
+@dataclass(frozen=True)
+class ObservationRef:
+    device_id: str
+    channel: str
+    batch_id: str
+    observed_at: str
+    received_at: str
+    window_start: str
+    window_end: str
+    window_duration_s: float
+    aggregation: str
+    source_kind: str = "simulator"
+    statistics_version: str | None = None
+
+    def __post_init__(self):
+        if self.channel not in ("water", "visual") or self.source_kind != "simulator":
+            raise ValueError("INVALID_OBSERVATION_SCOPE")
+        for value in (self.device_id, self.batch_id):
+            identifier(value)
+        number(self.window_duration_s, 1, 60)
+        start, end = timestamp(self.window_start), timestamp(self.window_end)
+        if (timestamp(self.observed_at) != end or timestamp(self.received_at) < end
+                or abs((end-start).total_seconds()-self.window_duration_s) > .001
+                or self.aggregation != ("window_mean" if self.channel == "water" else "window_summary")):
+            raise ValueError("INVALID_OBSERVATION_TIME_OR_AGGREGATION")
+
+
+@dataclass(frozen=True)
+class DataQuality:
+    quality: str
+    freshness: str
+    connectivity: str
+    coverage: tuple[tuple[str, int, int], ...] = ()  # metric/channel, valid count, attempted count
+
+    def __post_init__(self):
+        if (self.quality not in ("valid", "partial", "invalid", "missing")
+                or self.freshness not in ("fresh", "stale", "unknown")
+                or self.connectivity not in ("online", "offline", "never_received")
+                or not isinstance(self.coverage, tuple)
+                or any(not isinstance(c, tuple) or len(c) != 3 or not isinstance(c[0], str)
+                       or type(c[1]) is not int or type(c[2]) is not int or not 0 <= c[1] <= c[2]
+                       for c in self.coverage)):
+            raise ValueError("INVALID_DATA_QUALITY")
+
+
+@dataclass(frozen=True)
+class MonitoringFinding:
+    code: str
+    kind: str
+    state: FindingState
+    severity: str | None
+    message: str
+    facts_used: tuple[str, ...]
+    rule: RuleIdentity
+    observation: ObservationRef | None
+    reason: str | None = None
+
+    def __post_init__(self):
+        if not isinstance(self.state, FindingState) or not isinstance(self.rule, RuleIdentity):
+            raise ValueError("INVALID_FINDING_CONTRACT")
+        if self.code != self.rule.rule_id or self.severity not in (None, "info", "warning", "critical"):
+            raise ValueError("INVALID_FINDING_CONTRACT")
+        if (self.state == FindingState.HIT) != (self.severity is not None):
+            raise ValueError("INVALID_FINDING_SEVERITY")
+
+    def to_dict(self):
+        result = asdict(self)
+        result["rule_version"] = self.rule.version  # Existing consumers keep this alias.
+        return result
+
+
+@dataclass(frozen=True)
+class ChannelAnalysis:
+    device_id: str
+    channel: str
+    evaluated_at: str
+    observation: ObservationRef | None
+    data_quality: DataQuality
+    findings: tuple[MonitoringFinding, ...]
+    schema_version: int = 1
+
+    def __post_init__(self):
+        timestamp(self.evaluated_at)
+        if (self.channel not in ("water", "visual") or not isinstance(self.data_quality, DataQuality)
+                or not isinstance(self.findings, tuple)
+                or any(not isinstance(f, MonitoringFinding) or f.observation != self.observation for f in self.findings)
+                or self.observation is not None and (self.observation.device_id != self.device_id or self.observation.channel != self.channel)):
+            raise ValueError("INVALID_ANALYSIS_SCOPE")
+
+    def to_dict(self):
+        result = asdict(self)
+        result["findings"] = [f.to_dict() for f in self.findings]
+        result["status"] = "NO_DATA" if self.observation is None else "AVAILABLE"
+        return result
+
+
+@dataclass(frozen=True)
+class EventAssessment:
+    event_id: str
+    lifecycle_state: EventState
+    rule: RuleIdentity | None
+    observation: ObservationRef | None
+    evaluated_at: str
+    reason: str | None = None
+
+    def __post_init__(self):
+        if not isinstance(self.lifecycle_state, EventState):
+            raise ValueError("INVALID_EVENT_STATE")
+
+
+def metric_quality(stat, sample_count):
+    if stat["invalid_samples"]:
+        return "invalid"
+    if stat["mean"] is None or stat["valid_samples"] == 0:
+        return "missing"
+    return "valid" if stat["valid_samples"] == sample_count else "partial"
 
 
 @dataclass(frozen=True)
@@ -53,6 +202,7 @@ class MonitoringSnapshot:
     findings: tuple[dict, ...] = ()
     rule_version: str | None = None
     last_reported_at: str | None = None
+    analysis: dict | None = None
 
 
 def valid_token(token):

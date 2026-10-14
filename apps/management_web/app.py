@@ -109,7 +109,7 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
             " ".join(str(item.get(key, "")) for key in ("name", "title", "device", "category")).casefold())
             and (not category or item.get("category") == category)
             and (not severity or item.get("severity") == severity)
-            and (not status or item.get("status") == status)]
+            and (not status or item.get("status") == status or item.get("lifecycle_state") == status)]
 
     @app.get("/api/events")
     def event_list():

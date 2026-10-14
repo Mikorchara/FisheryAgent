@@ -11,14 +11,18 @@ apps/
 │  ├─ STRUCTURE.md                   # 真实目录与职责
 │  ├─ BUILD_RUN.md                   # 启动、联调与验证
 │  ├─ INTEGRATION.md                 # 上报合同和替换边界
-│  └─ ROADMAP.md                     # 当前状态与后续工作
+│  ├─ ROADMAP.md                     # 当前状态与后续工作
+│  └─ deep-dive/research/
+│     └─ R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md # R2B-0 评估基线，非实现现状
 ├─ monitoring/                      # Web 与未来 Tool 共享的数据基础
 │  ├─ __init__.py
-│  ├─ contracts.py                   # v1 批次校验与共享监测 DTO
+│  ├─ contracts.py                   # v1 上报、观测/质量/Finding/Event/规则身份合同
+│  ├─ rules.py                       # 纯评估函数、证据门禁与 PROTOTYPE 规则投影
 │  ├─ repository.py                  # SQLite、当前状态、有界历史和事件
 │  ├─ service.py                     # 统一读取、领域诊断与设备上下文
 │  └─ tests/
 │     ├─ test_pipeline.py            # 校验、时序、安全、状态与共享来源
+│     ├─ test_rule_governance.py      # 规则状态、证据范围、可靠恢复与兼容
 │     └─ test_local_http.py          # 真实 loopback 上报及停止/重启
 ├─ simulator/                       # 独立设备生产端
 │  ├─ __init__.py
@@ -55,7 +59,8 @@ apps/
 Simulator scenarios → generator → HTTP reporter
     → Web Ingestion（鉴权）
     → monitoring contracts（验证）→ repository（事务存储）
-    → MonitoringService
+    → MonitoringService → rules（证据门禁 → 复用 Domain 阈值 → Findings）
+        → Repository 事务内 Event 状态转换
         → Dashboard / Monitoring / Video / Events
         → bind(device_id).water_reader（未来 Tool 接入）
 

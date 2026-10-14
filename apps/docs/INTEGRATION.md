@@ -59,13 +59,15 @@ Simulator：Scenario → 逻辑采样 → 10 秒窗口 → HTTP
 
 时间必须带时区并归一化 UTC；timestamp = window.end。窗口 1–60 秒，duration 与起止一致；未来时间或超过 300 秒延迟拒绝。水质物理范围复核温度 -50–100°C、pH 0–14、DO 0–100 mg/L；这不是水质风险阈值。
 
+已知时间边界：本机真实时间测试出现过 OBSERVATION_TIME_REJECTED，UTC 观测时间与 monotonic 调度不保证绝对同步；默认模拟器零缓冲可能触及严格未来时间门禁。本阶段不修改调度/时间容差，联调测试使用明确滞后一秒的已完成窗口，仍保留未来/超龄拒绝测试。后续应单独决定设备时钟偏差策略，不能用放宽规则证据门禁解决。
+
 water 或 visual 可以为 null，但不能同时为空。两个通道独立更新；缺失通道不复制另一通道，也不清掉其末次记录。接收时间由服务器生成，客户端不能指定 source、quality、freshness、received_at 或真实设备标识。
 
 ## 3. 窗口与业务语义
 
 - 窗口定义为 (start, end]，默认 10 秒。水质逻辑采样默认每 1 秒，视觉逻辑帧默认每 0.5 秒；与上报周期独立，周期须整除窗口。本模拟器在推进窗口时生成逻辑样本，不执行真实采集或视频推理。
 - 温度、pH、DO 的 water.mean 是各指标**窗口内有效样本的算术平均**，输出保留三位小数，不是单次值。每个样本按其采样时的通道状态、缺失/无效标记与物理范围过滤，不使用窗口结束状态代替整窗质量。min/max/latest 同样只包含有效样本；valid_samples + invalid_samples ≤ sample_count，差值为缺失样本。有效数为零时四个值都必须 null。
-- 任一明确 invalid 样本使 canonical 水质质量为 INVALID；无有效指标也为 INVALID；仅部分指标存在为 PARTIAL；全部存在且无 invalid 为 VALID。每指标质量/样本证据另保留，不因平均得到数值就抹掉无效样本。
+- R2B-1：原始窗口均值和样本证据仍完整保存。每指标质量分 valid / partial（有效覆盖不完整）/ invalid / missing。Reader 只投影完整有效指标，其他指标为 None；任一 invalid 样本或无可用指标使 canonical Reading 为 INVALID，部分可用为 PARTIAL。独立 analysis.data_quality 保留原始质量与覆盖，避免把总体 INVALID 误解为所有指标都不可判断。
 - 完全未收到 water 是 NO_DATA；已有全缺失/无效窗口仍是一个存在但不可用的 Snapshot。STALE 和连接 OFFLINE 是独立时间维度，不能改成正常。
 - 视觉 frames_processed 是窗口内尝试的帧数，valid_frames 是有效帧数，无效帧不参与统计。anomaly_counts 是每类信号出现的有效帧数，类别可重叠；全零只表示有效帧未出现所列信号，不证明健康。疑似病灶、体表异常、疑似死亡均为检测信号，非最终疾病诊断。
 - behavior_ratios 是互斥行为的有效帧比例，总和为 1；没有有效帧时均为 0，页面显示“无有效帧”，不能解释为正常活动。无有效视觉帧不使已有异常事件自动消退。
@@ -90,7 +92,26 @@ water 或 visual 可以为 null，但不能同时为空。两个通道独立更�
 
 查询时复用 Domain evaluate_freshness，默认观测超过 30 秒为 STALE；通道 last_reported_at（最后有效接触）超过 90 秒为 OFFLINE，未接收为 never_received。按通道判断，另一通道持续上报不能掩盖失联。延迟/乱序窗口可在线但已过期。原 current 的 received_at 始终保留首次接收时间，查询不改原观测或创建事件。
 
-事件只由实际接收且推进 current 的批次产生：水质来自 DiagnosisService；视觉来自所列异常信号/摄食异常是否出现的确定性规则（sim-visual-presence-v1），非诊断。相同 device/channel/code 持续信号更新 last_observed_at / last_batch_id，保留首个事件与批次；恢复后 closed 表示信号消退，不表示人工处理。过期/断连在读状态中显示，不假装生成了设备诊断事件。事件初次批次可能因历史保留限额被裁剪，事件自身保留时间、来源与首末关联 ID。
+事件只由实际接收且推进 current 的批次产生；重复/乱序仍不重建事件。R2B-1 只有显式 CLEAR 且规则 Identity 匹配，才能写入 RESOLVED（兼容 status=closed）。HIT 为 ACTIVE，数据/覆盖不足为 INDETERMINATE；后两者兼容 status=pending，均不表示已人工处理。Finding 消失不能作为恢复证明。事件保留真正的 severity 与 finding_severity、规则状态、最近命中/最近评估/恢复的观测引用。
+
+同规则持续命中保留首个 ID 与批次，并更新最近命中、标题、等级。规则版本/范围/评估策略变化不得合并或判旧异常恢复；新版本命中产生独立事件，旧事件待确认并关联 superseded_by。SQLite schema 仍为 1，无表迁移或历史回算；旧事件只在读投影补 PROTOTYPE / INDETERMINATE / LEGACY_UNREVIEWED，旧 severity 优先用 finding_severity。旧 closed 仅保留历史兼容字段，不冒充新合同下的可靠恢复；只有可靠的新评估才更新仍活动的旧事件。
+
+同一指标的异常从一个严重程度 code 切换到另一个（如低氧进一步恶化）也不等于恢复；只要该指标还有其他 WATER_RISK 命中，旧事件保持待确认，原因 OTHER_RISK_CONDITION_ACTIVE。该指标获得可靠无风险评估后，才可确认相关事件解除。
+
+过期/离线时 events() 只将当前确定性撤回为 INDETERMINATE 的只读投影，不写入新事件、不修改历史。完全缺失通道的批次不覆盖该通道 current；其已有观测随后按各自年龄失效。事件初次批次可能因保留限额被裁剪，事件自身保留时间、来源与首末引用。
+
+### R2B-1 分析合同与规则状态
+
+- Observation / Facts：现有 metrics / visual summary 是收到的事实；ObservationRef 明确 device/channel/batch、来源、窗口、聚合方式及观测/接收时间。独立通道保留各自时间，不做跨通道融合。
+- DataQuality：quality、freshness、connectivity 独立；coverage 记录每指标有效数/计划数或有效帧/总帧。NO_DATA 表示没有该通道 Snapshot，已有全缺失窗口仍是存在的观测。
+- MonitoringFinding：code、kind、state、severity、facts_used、rule、observation、reason。state 为 HIT / CLEAR / INSUFFICIENT_EVIDENCE / NOT_EVALUATED；非 HIT 的 severity 为 null，不把数据不足变成风险严重程度。DATA_QUALITY 与 WATER_RISK / VISUAL_SIGNAL / BEHAVIOR_SIGNAL 分开。
+- ChannelAnalysis：只包含本通道事实引用、DataQuality、完整 Finding 评估和 evaluated_at；不再复制原始观测 payload。snapshot.analysis / cameras[].analysis 为增量公开投影，旧 metrics/summary/findings 字段保留。旧 findings 仅显示 HIT，完整 CLEAR/无法判断状态在 analysis 中。
+- RuleIdentity：rule_id、version、scope、publication_status、assessment_policy_version。旧水质计算版本保留，所有规则强制 PROTOTYPE；名称含 production 不提供批准依据。当前范围为 simulator + water/window_mean 或 visual/window_summary，养殖适用性未确认；不能由 HTTP 上报指定规则或批准状态。
+- 水质仍调用 DiagnosisService，不复制阈值。临时保守证据门禁：每指标完整有效采样、fresh、online 才判断命中或解除；无效/覆盖不足指标不传入风险诊断，其他完整指标独立判断。完整覆盖是技术防误判条件，不是新增养殖阈值；后续放宽须人工确认。
+- 视觉有效部分中明确出现信号可形成有限 HIT（疑似检测信号，非疾病诊断）；部分覆盖无信号不能形成 CLEAR。只有完整有效且 fresh/online 的窗口可说明所列信号未出现，不证明鱼群健康。
+- rules.py 为小型纯函数边界，不依赖 Flask、SQLite、模型或网络；事件转换仍位于原事务中。DomainAnalysisService / EventService 全面提取、趋势规则、AI 桥接均留待下一阶段。
+
+历史 API 保留原 summary；当前趋势展示将无效/覆盖不足均值置为 null，并附 metric_quality，不把历史不可用均值连成可靠趋势。
 
 ## 5. 场景编写与连续运行
 

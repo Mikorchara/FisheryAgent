@@ -1,6 +1,6 @@
 """Loopback end-to-end device transport; no external sockets, AI or NPU."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import socket
 import tempfile
@@ -37,15 +37,26 @@ class LocalHttpTests(unittest.TestCase):
                 reserve.bind(('127.0.0.1',0))
                 port=reserve.getsockname()[1]
             app=create_app(data_service=service,ingestion_token=token,allowed_hosts=(f'127.0.0.1:{port}',))
+            safe_errors=[]
+            @app.after_request
+            def capture_safe_error(response):
+                if response.status_code >= 400 and response.is_json:
+                    safe_errors.append((response.get_json() or {}).get('error_code','UNKNOWN_SAFE_ERROR'))
+                return response
             server=make_server('127.0.0.1',port,app,request_handler=QuietHandler)
             thread=Thread(target=server.serve_forever,daemon=True)
             thread.start()
             url=f'http://127.0.0.1:{port}'
             try:
                 reporter=HttpReporter(url,token)
-                run(Simulator(start=datetime.now(timezone.utc)),reporter,interval_s=1,windows=3,emit=lambda _:None)
+                try:
+                    # Model a one-second producer buffer, not two perfectly synchronized
+                    # wall/monotonic clocks. Production future-time rejection stays strict.
+                    run(Simulator(start=datetime.now(timezone.utc)-timedelta(seconds=1)),reporter,interval_s=1,windows=3,emit=lambda _:None)
+                except ReportError:
+                    self.fail('Loopback ingestion failed: '+','.join(safe_errors))
                 self.assertEqual(len(repository.history('sim-pond-1','water')),3)
-                run(Simulator(start=datetime.now(timezone.utc)),HttpReporter(url,token),interval_s=1,windows=1,emit=lambda _:None)
+                run(Simulator(start=datetime.now(timezone.utc)-timedelta(seconds=1)),HttpReporter(url,token),interval_s=1,windows=1,emit=lambda _:None)
                 self.assertEqual(len(repository.history('sim-pond-1','water')),4)
                 import json
                 with urlopen(url+'/api/bootstrap',timeout=2) as response:
