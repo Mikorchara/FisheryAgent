@@ -16,7 +16,7 @@ python -m venv .venv
 
 ## 独立管理系统 R1
 
-新管理工作区在 `apps/management_web/`，项目根目录执行 `python -m apps.management_web`，访问 `http://127.0.0.1:8766`。首页及六个业务模块可导航，Demo来源明确；AI发送、真实视频和管理写操作尚未接入。原Prototype Web保留。见[子应用说明](apps/management_web/README.md)。
+新管理工作区在 `apps/management_web/`，项目根目录执行 `python -m apps.management_web`，访问 `http://127.0.0.1:8766`。首页及六个业务模块可导航，Demo来源明确；AI发送、真实视频和管理写操作尚未接入。原Prototype Web保留。主要架构、服务边界与开发规范见[管理平台文档](apps/docs/README.md)。
 
 ## 模型接入
 

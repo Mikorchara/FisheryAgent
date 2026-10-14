@@ -8,7 +8,7 @@
 python -m apps.management_web
 ```
 
-访问 `http://127.0.0.1:8766`，或使用 `--port 8767`。只监听本机，不自动加载.env、不调用模型。七模块可导航，指标/趋势/事件/资料为明确Demo；视频、AI发送和管理写操作未接入。停止独立进程不影响Prototype。详见[子应用说明](../apps/management_web/README.md)与[当前架构](deep-dive/architecture/MANAGEMENT_WEB_R1.md)。
+访问 `http://127.0.0.1:8766`，或使用 `--port 8767`。只监听本机，不加载.env、不调用模型；AI发送、真实视频和管理写操作尚未接入。管理平台的环境、离线测试与验收统一见[管理平台构建与运行](../apps/docs/BUILD_RUN.md)，架构入口见[apps/docs](../apps/docs/README.md)。下文继续描述原AI Prototype。
 
 ## 环境与启动
 
@@ -18,6 +18,7 @@ Python 3.11+；依赖由 `pyproject.toml` 声明。PowerShell 在项目根目录
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 .\.venv\Scripts\python.exe -m fishery_ai web
+python -m fishery_ai web --assistant-streaming-trial
 ```
 
 默认访问 `http://127.0.0.1:8765`。服务只监听本机。离线 Demo：

@@ -1,0 +1,14 @@
+# 管理平台开发规则
+
+本文件适用于 `apps/`，同时遵守根目录 AGENTS.md。[主要文档入口](docs/README.md)。
+
+- `apps/management_web/` 放管理页面与 Web 专属后端；`src/fishery_ai/` 保留 AI Runtime。依赖方向是管理服务适配器调用 Runtime，Runtime 不反向依赖管理页面。不复制 Gateway、Tool 循环、History、Credential 或取消机制。
+- 页面负责交互，组件负责展示，应用服务负责用例，Adapter 负责设备、数据库或 Runtime 接入；HTTP 路由保持薄。先使用现有结构，只有出现实际消费者时才拆文件，不建空框架或动态插件。
+- 接口用明确 DTO、版本和安全错误表达。值、单位、来源、观测时间、质量、新鲜度不可丢失；缺失不补 0、不回退 Demo。Protocol 类型声明不等于运行时校验。
+- 网页与 AI Tool 的当前事实必须来自同一权威监测来源；不能各自维护一份 current state。多设备选择须有明确、冻结的上下文，不能依赖可变全局选择。新鲜度与诊断复用 Domain 规则，前端不复制阈值。
+- Demo、真实观测、推理结果、实验评分和背景知识必须区分。文件管理、索引、检索分离；视频传输、NPU 推理与页面展示分离。
+- Secret 不读取、输出、记录或传入页面，不存 localStorage。接入 AI 时复用正式私有凭据 composition；禁止源码根 `.env`、fallback、load_dotenv，Flask 启动保持 `load_dotenv=False`。
+- Tool 继续按 Policy / Registry / Executor 执行；Source Ledger、Commit Gate、预算、Deadline、Stop、发布 Scope 与逐次网络确认不得绕过。预览不作为成功回答或 History。
+- 当前本机展示边界不是生产鉴权。禁用或隐藏按钮不提供权限保护；新增写 API、文件访问或 AI 执行前补服务端安全检查。管理员操作与开发调试入口分开，禁止未经授权的设备、数据库和阈值修改。
+- 行为变更补离线 Python / Node 测试和中文文档；UI 变更检查导航、空状态和响应式布局。相关 Runtime 桥接还须运行对应原型回归。真实请求须本轮明确授权，禁止测试自动调用 Provider / Ollama。
+- `apps/docs/` 描述管理平台当前状态；根 `docs/` 描述 AI 原型与共享 Runtime。以源码、测试为事实，规划明确标为未实现。保护未提交改动，不修改 `D:\Fishery_Project` 或工作区外文件。

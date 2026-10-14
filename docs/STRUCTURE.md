@@ -10,11 +10,18 @@ Fishery_AI_Prototype/                                            # 项目工作�
 ├─ pyproject.toml                                                # 项目安装、依赖与包资源声明
 ├─ README.md                                                     # 项目目的、启动与文档入口
 ├─ apps/                                                         # 独立应用，不覆盖Prototype Runtime
+│  ├─ AGENTS.md                                                  # 管理平台工程与安全规则
 │  ├─ __init__.py                                                # 应用命名空间，无启动副作用
+│  ├─ docs/                                                      # 管理平台主要架构与开发入口
+│  │  ├─ README.md                                               # 当前状态与文档导航
+│  │  ├─ STRUCTURE.md                                            # 真实目录与模块职责
+│  │  ├─ BUILD_RUN.md                                            # 启动、测试与验收
+│  │  ├─ INTEGRATION.md                                          # 服务合同与未来接入边界
+│  │  └─ ROADMAP.md                                              # 已实现状态与开发计划
 │  └─ management_web/                                            # R1管理后台，本机独立8766端口
 │     ├─ __init__.py                                             # 独立应用包
 │     ├─ __main__.py                                             # 本机启动与端口参数
-│     ├─ README.md                                               # 启动、边界与测试入口
+│     ├─ README.md                                               # 快速启动与apps/docs入口
 │     ├─ app.py                                                  # 展示API、本机安全与服务装配
 │     ├─ contracts.py                                            # 监测DTO与五个服务接口
 │     ├─ services.py                                             # Demo及明确未接入的服务
@@ -38,7 +45,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  ├─ deep-dive/                                                            # 当前专项技术文档与历史研究
 │  │  ├─ architecture/                                                      # Analysis / Assistant 等跨模块架构
 │  │  │  ├─ ASSISTANT_MODEL_V1_DESIGN.md                                    # Analysis 与 Assistant 当前架构
-│  │  │  └─ MANAGEMENT_WEB_R1.md                                          # 独立管理应用、服务边界与接入依据
+│  │  │  └─ MANAGEMENT_WEB_R1.md                                          # 管理平台文档迁移入口
 │  │  ├─ data-domain/                                                       # 情景、Telemetry 与领域数据
 │  │  │  └─ WATER_QUALITY_SCENARIO_AND_TELEMETRY_PREPARATION.md             # 水质输入与领域合同边界
 │  │  ├─ models/                                                            # 模型合同与发布方案
