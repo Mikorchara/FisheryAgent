@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>鱼境 · 智慧渔业管理</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+  <a href="#main" class="skip-link">跳到主要内容</a>
+  <aside class="sidebar" id="sidebar" aria-label="主导航">
+    <a class="brand" href="#dashboard"><span class="brand-mark">≈</span><span>鱼境<small>FISHERY MANAGEMENT</small></span></a>
+    <div class="nav-caption">工作空间</div><nav id="navigation"></nav>
+    <div class="sidebar-bottom"><span class="status-dot"></span><div>本地开发环境<small>R1 · 独立管理应用</small></div><span class="version">01</span></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar">
+      <button class="icon-button menu-toggle" id="menu-toggle" aria-label="展开导航" aria-expanded="false">☰</button>
+      <div class="breadcrumbs"><span>智慧渔业管理</span><span class="crumb-divider">/</span><strong id="breadcrumb">综合总览</strong></div>
+      <div class="topbar-right"><span class="environment">DEMO 环境</span><span class="topbar-divider"></span><span class="avatar">访</span><div class="user-label">本地访客<small>尚未启用认证</small></div></div>
+    </header>
+    <main id="main" tabindex="-1">
+      <div class="page-heading"><div><p class="eyebrow" id="page-eyebrow">OVERVIEW</p><h1 id="page-title">综合总览</h1><p id="page-description">从数据到决策，了解养殖环境的每一个环节。</p></div><div class="page-meta"><span class="status-dot"></span><span>R1 基础工作区</span></div></div>
+      <div class="demo-notice"><span class="demo-label">DEMO</span><span>当前展示独立演示数据。传感器、监测数据库、视频 / NPU 和 AI 服务尚未接入。</span></div>
+      <div id="content" aria-live="polite"><div class="loading">正在加载管理工作区…</div></div>
+      <footer>鱼境 · Fishery Management <span>R1 / 仅本地演示，无生产操作</span></footer>
+    </main>
+  </div>
+  <dialog id="details-dialog" aria-labelledby="dialog-title"><div class="dialog-header"><h2 id="dialog-title">详情</h2><button id="dialog-close" class="icon-button" aria-label="关闭详情">×</button></div><div id="dialog-body"></div></dialog>
+</body>
+</html>

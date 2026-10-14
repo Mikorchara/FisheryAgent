@@ -358,7 +358,7 @@ class StreamingWebTests(fixture.AssistantWebFixture):
         self.assertEqual(len(self.bodies),0)
 
     def test_three_local_trials_exact_budget_direct_single_double_paths(self):
-        presets = ((PRESET,256), ("deepseek-flash-r1",512), ("ollama-qwen35-4b-r1",512))
+        presets = ((PRESET,512), ("deepseek-flash-r1",512), ("ollama-qwen35-4b-r1",512))
         for preset, tokens in presets:
             for count in (0,1,2):
                 with self.subTest(preset=preset, tools=count):

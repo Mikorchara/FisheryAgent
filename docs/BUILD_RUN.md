@@ -1,5 +1,15 @@
 # 构建与运行
 
+## 独立管理系统 Web R1
+
+现有Prototype保留8765。新应用在项目根目录启动：
+
+```powershell
+python -m apps.management_web
+```
+
+访问 `http://127.0.0.1:8766`，或使用 `--port 8767`。只监听本机，不自动加载.env、不调用模型。七模块可导航，指标/趋势/事件/资料为明确Demo；视频、AI发送和管理写操作未接入。停止独立进程不影响Prototype。详见[子应用说明](../apps/management_web/README.md)与[当前架构](deep-dive/architecture/MANAGEMENT_WEB_R1.md)。
+
 ## 环境与启动
 
 Python 3.11+；依赖由 `pyproject.toml` 声明。PowerShell 在项目根目录运行：
@@ -34,7 +44,7 @@ python -m fishery_ai web --assistant-streaming-trial
 
 打开 `http://127.0.0.1:8765`，切换到 Assistant，在 Tool 的 Assistant 标签中只授权 `get_current_water_quality` + `search_fishery_knowledge` 两项，然后选择 Preset 和 Normal / Streaming，逐次勾选请求确认后 Send。切换 Transport 保留成功 History，仅影响下一条消息；执行中禁用切换，Stop 后可重新选择。失败、断线或截断不会以 Normal 重跑，临时正文不进入 History。
 
-固定配置：[assistant_streaming.json](../src/fishery_ai/resources/profiles/assistant_streaming.json)，默认 `enabled=false`；启动参数只开启其精确已登记范围。三个模型均为 `local_experimental`，不填正式资格编号/日期。Qwen / DeepSeek / Ollama 每请求输出上限分别为256 / 512 / 512，整 Turn deadline分别为120 / 120 / 180秒，retry=0，仍最多2 Tool Calls / 2 rounds / 3 Requests。这是内部传输成本上限，不改变 Preset Capability。
+固定配置：[assistant_streaming.json](../src/fishery_ai/resources/profiles/assistant_streaming.json)，默认 `enabled=false`；启动参数只开启其精确已登记范围。三个模型均为 `local_experimental`，不填正式资格编号/日期。Qwen / DeepSeek / Ollama 每请求输出上限分别为512 / 512 / 512，整 Turn deadline分别为120 / 120 / 180秒，retry=0，仍最多2 Tool Calls / 2 rounds / 3 Requests。这是内部传输成本上限，不改变 Preset Capability。
 
 三工具组合（额外评分）为 candidate，尚未开放 Streaming；单工具和其他组合也未开放。评分 Handler 的 Streaming 离线适配通过，不代表真实模型的三工具选择已验证。页面会提示调整精确授权组合，不修改用户 Policy。
 

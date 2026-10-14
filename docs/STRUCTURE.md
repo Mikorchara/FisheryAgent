@@ -9,6 +9,26 @@ Fishery_AI_Prototype/                                            # 项目工作�
 ├─ AGENTS.md                                                     # AI 助手操作与安全约束
 ├─ pyproject.toml                                                # 项目安装、依赖与包资源声明
 ├─ README.md                                                     # 项目目的、启动与文档入口
+├─ apps/                                                         # 独立应用，不覆盖Prototype Runtime
+│  ├─ __init__.py                                                # 应用命名空间，无启动副作用
+│  └─ management_web/                                            # R1管理后台，本机独立8766端口
+│     ├─ __init__.py                                             # 独立应用包
+│     ├─ __main__.py                                             # 本机启动与端口参数
+│     ├─ README.md                                               # 启动、边界与测试入口
+│     ├─ app.py                                                  # 展示API、本机安全与服务装配
+│     ├─ contracts.py                                            # 监测DTO与五个服务接口
+│     ├─ services.py                                             # Demo及明确未接入的服务
+│     ├─ package.json                                            # Node原生测试，无新依赖
+│     ├─ static/                                                 # 管理平台独立前端
+│     │  ├─ index.html                                           # 布局、导航容器和详情弹窗
+│     │  ├─ styles.css                                           # 统一样式与响应式布局
+│     │  ├─ components.js                                        # 卡片、表格、图表和空状态
+│     │  ├─ view-model.js                                        # 纯展示、路由和筛选
+│     │  ├─ services.js                                          # 浏览器应用层API客户端
+│     │  └─ app.js                                               # 七业务页面和Session草稿
+│     └─ tests/                                                  # 独立子应用离线测试
+│        ├─ test_app.py                                          # API、数据质量、安全与启动
+│        └─ view-model.test.mjs                                  # 前端合同与文本安全
 ├─ .git/                                                         # Git 内部数据，不展开
 ├─ .venv/                                                        # 本地 Python 环境，不展开
 ├─ data/                                                         # 旧数据目录，当前为空目录结构
@@ -17,7 +37,8 @@ Fishery_AI_Prototype/                                            # 项目工作�
 ├─ docs/                                                                    # 当前说明、专项技术合同与历史记录
 │  ├─ deep-dive/                                                            # 当前专项技术文档与历史研究
 │  │  ├─ architecture/                                                      # Analysis / Assistant 等跨模块架构
-│  │  │  └─ ASSISTANT_MODEL_V1_DESIGN.md                                    # Analysis 与 Assistant 当前架构
+│  │  │  ├─ ASSISTANT_MODEL_V1_DESIGN.md                                    # Analysis 与 Assistant 当前架构
+│  │  │  └─ MANAGEMENT_WEB_R1.md                                          # 独立管理应用、服务边界与接入依据
 │  │  ├─ data-domain/                                                       # 情景、Telemetry 与领域数据
 │  │  │  └─ WATER_QUALITY_SCENARIO_AND_TELEMETRY_PREPARATION.md             # 水质输入与领域合同边界
 │  │  ├─ models/                                                            # 模型合同与发布方案

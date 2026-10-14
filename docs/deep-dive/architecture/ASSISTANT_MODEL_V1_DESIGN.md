@@ -98,7 +98,7 @@ AssistantService 默认仍拒绝多轮协调器。协调器与 AssistantService 
 
 内部整 Turn deadline 从 `send` 开始，覆盖上下文、模型请求、Tool、门禁与 Trace。上限为冻结 Runtime 的 `total_timeout_s`，内部 `turn_timeout_s` 只能收紧；同一 RequestHandle 不续期。Adapter 使用剩余时间真正取消本机异步 SDK I/O，`TOTAL_TIMEOUT` 与 `USER_CANCELLED`、Provider 错误分开；清理 I/O 不制造用户 Stop。同步本地 Handler/文件写入无法强制抢占，返回后仍检查超时，不能提交成功；SDK 清理有有限宽限，不证明远端已停止计算。
 
-若同步 Assistant Trace 写入跨越 deadline，追加同 request/trace id 的失败终态修正；最后一条 `assistant_turn` 是提交结果，先前执行 Trace 只记录执行阶段。当前三个 Preset 在精确查询+Knowledge 范围开放本地多轮，Qwen 为 released，DeepSeek / Ollama 为 local_experimental；三个模型的查询+评分+Knowledge 范围均为独立 local_experimental，不继承两 Tool 资格。授权三项不代表执行三项，仍最多两次 Tool 执行。Flag 和范围在 app epoch 内固定，关闭 Flag 并重启会生成新 epoch；不在进行中的 Turn 切换或失败后回退重试。Streaming 通过独立默认关闭配置和 `--assistant-streaming-trial` 开放三个 Preset 查询+Knowledge两工具的本地实验；三工具仍为 candidate。Transport切换保留成功History，每Turn冻结；预览不进入History。Qwen/DeepSeek/Ollama输出上限256/512/512，Deadline120/120/180秒，所有预算与配置绑定revision。
+若同步 Assistant Trace 写入跨越 deadline，追加同 request/trace id 的失败终态修正；最后一条 `assistant_turn` 是提交结果，先前执行 Trace 只记录执行阶段。当前三个 Preset 在精确查询+Knowledge 范围开放本地多轮，Qwen 为 released，DeepSeek / Ollama 为 local_experimental；三个模型的查询+评分+Knowledge 范围均为独立 local_experimental，不继承两 Tool 资格。授权三项不代表执行三项，仍最多两次 Tool 执行。Flag 和范围在 app epoch 内固定，关闭 Flag 并重启会生成新 epoch；不在进行中的 Turn 切换或失败后回退重试。Streaming 通过独立默认关闭配置和 `--assistant-streaming-trial` 开放三个 Preset 查询+Knowledge两工具的本地实验；三工具仍为 candidate。Transport切换保留成功History，每Turn冻结；预览不进入History。Qwen/DeepSeek/Ollama输出上限512/512/512，Deadline120/120/180秒，所有预算与配置绑定revision。
 
 ## 主要代码
 

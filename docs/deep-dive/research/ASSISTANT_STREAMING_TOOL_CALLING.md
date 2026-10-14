@@ -269,3 +269,7 @@ UI：清晰Response Mode控件；下一条选择与本次实际Transport分别�
 离线结果：Web SSE 27项（新增7项，含三Provider各3条路径子案例）、相关targeted151项、FAST149项、FULL PRODUCT1047项通过（42.103秒）；Browser219项通过；FULL QUALIFICATION167项完成（166通过、1项既有symlink环境跳过）。Python AST155文件、JS syntax、297条Markdown本地链接、diff check及改动/新增文本Secret字面量扫描通过，outputs/credential无Git跟踪。
 
 首次targeted与完整回归暴露旧断线测试只等待SDK关闭就清理临时目录，后台取消Trace尚未写完，Windows报目录非空；测试改为等待真实CANCELLED终态与USER_CANCELLED后再清理。没有忽略清理错误、放宽提交门禁或更改运行时取消语义。修正后targeted和完整产品回归通过。普通启动仍关闭试用；CLI启动/关闭配置传递与Flask load_dotenv=False另有离线断言。
+
+### 2026-10-14：Qwen 两工具 Web 试用预算调整
+
+用户批准将当前已开放的Qwen查询+Knowledge Streaming local_experimental范围从256提高到512 output tokens/请求。只修改该配置记录；未开放的三工具candidate保持原预算，Thinking/Prompt/Policy/2/2/3/120秒Deadline/retry=0不变。配置在epoch内冻结，需停止旧Web后重新使用试用启动参数，刷新页面并重新确认。此前length/STREAM_TRUNCATED报告保留；512仍可能截断，不能保证完整回答，也不自动重试。本次没有Provider请求，不修改DeepSeek执行逻辑。

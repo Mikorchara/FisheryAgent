@@ -39,7 +39,7 @@
       "status": "local_experimental",
       "qualification_id": null,
       "validated_at": null,
-      "max_output_tokens": 256
+      "max_output_tokens": 512
     },
     {
       "scope": {

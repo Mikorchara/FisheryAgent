@@ -14,6 +14,10 @@ python -m venv .venv
 
 离线示例：`.venv\Scripts\python.exe -m fishery_ai demo --scenario low_oxygen`。Web 默认只监听 `127.0.0.1:8765`。真实模型请求须在界面显式确认；自动测试保持离线。
 
+## 独立管理系统 R1
+
+新管理工作区在 `apps/management_web/`，项目根目录执行 `python -m apps.management_web`，访问 `http://127.0.0.1:8766`。首页及六个业务模块可导航，Demo来源明确；AI发送、真实视频和管理写操作尚未接入。原Prototype Web保留。见[子应用说明](apps/management_web/README.md)。
+
 ## 模型接入
 
 - **Preset**：项目维护并发布的固定模型方案。
@@ -22,7 +26,7 @@ python -m venv .venv
 
 当前 Preset：Qwen 3.8 Flash（默认）、DeepSeek Flash、Ollama Qwen3.5 4B。用户可用组合与合同版本见[Preset 发布合同](docs/deep-dive/models/PRESET_PUBLICATION.md)。
 
-Assistant Model v1 与 Analysis 分离；固定 Analysis 保留 Snapshot → Diagnosis → RAG。当前注册三个只读 Tool：水质查询、实验评分与项目知识检索；Knowledge 默认关闭，真实模型选择稳定性尚未验收。评分不是专业养殖标准，背景知识不代表当前事实。系统不是 Agent，不支持 Streaming Tool Calling，也不允许 Tool 直接操作设备、写数据库或修改诊断阈值。
+Assistant Model v1 与 Analysis 分离；固定 Analysis 保留 Snapshot → Diagnosis → RAG。当前注册三个只读 Tool：水质查询、实验评分与项目知识检索；Knowledge 默认关闭，模型选择仍有可靠性限制。评分不是专业养殖标准，背景知识不代表当前事实。Normal多轮及Streaming Tool Calling按精确范围开放本地试用，技术资格与回答质量分开审核；系统不是Agent，不允许Tool直接操作设备、写数据库或修改诊断阈值。
 
 ## 文档
 
