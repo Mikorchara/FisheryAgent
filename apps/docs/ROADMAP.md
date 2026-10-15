@@ -13,9 +13,9 @@
 
 ## R2B-3：Normal Assistant 已接入，等待人工验收
 
-薄 ManagementAssistant 复用 AssistantService、Gateway、ToolCallingService、Ledger、Commit Gate、History Projection 与取消机制。Qwen 为默认、保留 Ollama，固定 OFF / Normal / 1 Call / 1 Round / 2 Requests；当前水质 Tool 读取同一 SQLite 与治理后的规则结果，设备按 Turn 冻结。正常启动默认关闭 AI；--enable-assistant 后仍需每次 Send 明确网络确认。规则保持 PROTOTYPE，本轮仅完成离线验证，未调用 Provider。参见 [当前集成边界](INTEGRATION.md#r2b-3-normal-assistant-桥接)。
+薄 ManagementAssistant 复用 AssistantService、Gateway、ToolCallingService、Ledger、Commit Gate、History Projection 与取消机制。Qwen 为默认、保留 Ollama，默认 OFF / Normal / 1 Call / 1 Round / 2 Requests；当前水质 Tool 读取同一 SQLite 与治理后的规则结果，设备按 Turn 冻结。正常启动默认关闭 AI；--enable-assistant 后仍需每次 Send 明确网络确认。规则保持 PROTOTYPE，本轮仅完成离线验证，未调用 Provider。参见 [当前集成边界](INTEGRATION.md#r2b-3-normal-assistant-桥接)。
 
-### 后续接入顺序（未实施）
+### 已完成的接入整理
 
 R2B-3.1 已补安全参数拒因；R2B-3.2 已提供 current-only WaterCapture 与独立 Web / Tool 投影，保留全部质量、规则和来源语义，去除 Tool 的趋势读取及重复 analysis。仅离线验证，不表示真实模型回答质量获新资格。
 
@@ -23,9 +23,11 @@ R2B-3.3 已装配现有 Knowledge Tool，复用原 KnowledgeService / Handler / 
 
 R2B-3.4 已提取独立 apps/ai_service：业务协调、Runtime 装配、Monitoring/Knowledge 绑定与冻结 Turn 合同；Web 保留 HTTP/浏览器访问控制和同一 RequestHandle 的创建/状态/Stop。无新能力或模式，未来多轮/Streaming/新 Tool 的业务装配从该包扩展，不在 Web 重建执行逻辑。
 
+### 下一步（未实施）
+
 1. 人工验收当前 Normal、设备/数据来源、质量、取消和 History；真实模型测试需单独授权。
 2. 人工验收项目知识调用、NO_MATCH、来源可信度与当前事实区分；评分/视觉查询另行设计，不直接复用旧 Snapshot Handler。Knowledge 相关性改善留待独立 RAG 研究。
-3. 管理端 2/2/3 前置条件：冻结正式协议、Prompt/History、Tool Definition 与 Monitoring/Knowledge 绑定版本，验证精确 Preset + 两 Tool 组合的管理链路，接入默认关闭的维护者 Scope/Flag、动态预算确认和安全 Steps。单独授权真实资格/人工质量审核，不复制第二套循环。Streaming 另立门禁，均不继承原 Prototype 实验发布范围。
+3. R2B-4 已接入管理独立的默认关闭 Flag、精确 Scope、动态预算确认和安全 Steps；Qwen/Ollama 各自为 local_experimental。显式启用且授权水质 + Knowledge 后复用正式 2/2/3 Runtime，默认仍 1/1/2。下一步是单独授权管理链路真实多轮资格与人工质量审核；Streaming 另立门禁，不继承原 Prototype 发布记录。
 
 ## 后续独立工作
 

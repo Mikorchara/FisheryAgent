@@ -20,7 +20,7 @@ Python 3.11+，使用根项目已有 Flask 依赖；SQLite、生成器和 HTTP t
 
 需同时接收模拟数据时使用 --enable-assistant --enable-ingestion，并按下文先设置开发令牌。AI 关闭方式：停止自己启动的服务器，去掉 --enable-assistant 重启；已有 SQLite 不删除，原 Prototype 不受影响。
 
-启动、刷新和切换页面不发模型请求。网页进入“AI 智能助手”，选择 Qwen 或 Ollama、监测设备，输入问题并勾选本次请求确认后发送。云端显示 REAL NETWORK REQUEST / 可能费用；Ollama 显示 LOCAL MODEL REQUEST，不是 Mock。一次确认覆盖最多两次模型请求；结束后取消勾选。按 Ctrl+Enter 可发送，普通 Enter 换行。
+启动、刷新和切换页面不发模型请求。网页进入“AI 智能助手”，选择 Qwen 或 Ollama、监测设备，输入问题并勾选本次请求确认后发送。云端显示 REAL NETWORK REQUEST / 可能费用；Ollama 显示 LOCAL MODEL REQUEST，不是 Mock。默认单轮一次确认覆盖最多两次模型请求；多轮试用显示最多三次；结束后取消勾选。按 Ctrl+Enter 可发送，普通 Enter 换行。
 
 Qwen 使用现有正式用户私有凭据，不需要复制 Key、创建项目 .env 或调整 ACL；缺失/权限错误只显示安全错误码。Ollama 须由用户正常启动既有本地服务与模型，本轮自动测试没有启动或请求它。
 
@@ -39,9 +39,33 @@ Qwen 使用现有正式用户私有凭据，不需要复制 Key、创建项目 .
 
 管理端执行 `python -m apps.management_web --enable-assistant`，打开 `http://127.0.0.1:8766` → AI 智能助手，刷新后核对“可用 Tool”含 `search_fishery_knowledge`。选择 Qwen/Ollama，逐次确认模型请求，再问“请检索项目资料，说明鳗鲡低氧表现”；观察项目背景 Knowledge 卡片、命中数/NO_MATCH。当前水质问题仍用 Monitoring Tool，不得把知识命中解释为当前 DO 或疾病确诊。真实模型请求须有用户授权；启动与授权配置本身不联网。
 
-本轮继续 1/1/2；不要用“先查询水质再检索知识”作为双 Tool 验收要求。若模型同轮请求两项，TOOL_CALL_LIMIT 是安全拒绝；第二轮继续请求为 TOOL_ROUND_LIMIT。两工具顺序调用需下一阶段精确多轮门禁，不扩大当前预算。
+默认仍为 1/1/2。若模型同轮请求两项，TOOL_CALL_LIMIT 是安全拒绝；单轮配置第二次请求继续调用 Tool 为 TOOL_ROUND_LIMIT。双 Tool 顺序试用须按下一节显式开启。
 
 离线专项：`python -m unittest apps.management_web.tests.test_assistant` 与 `node --test apps/management_web/tests/assistant-ui.test.mjs`。前者在临时 SQLite 上通过正式 Assistant/Registry/Executor/Source Gate/Trace 执行 Fake Provider HTTP 闭环，阻断所有外部 socket；后者运行实际前端模块的离线 DOM 行为。不是模型真实资格或回答质量证明。
+
+## R2B-4：Normal Multi-Round 本地试用
+
+```powershell
+.\.venv\Scripts\python.exe -m apps.management_web --enable-assistant --assistant-multi-round-trial
+```
+
+访问 `http://127.0.0.1:8766` → AI 智能助手。同时接入模拟器时，在设置下文开发令牌后追加 `--enable-ingestion`。启动本身不调用模型；每次发送仍须明确确认。
+
+- 先在原 Tool Manager → Assistant 授权水质查询与项目知识检索，并保持 LLM Tool Calling 开启。管理端实际执行集合必须恰好为这两个 Tool；不会改写用户 Policy，也不装配评分 Tool。刷新管理页面后核对 **Multi-Round · 本地实验（未真实验证）**、最多三次模型请求。
+- Qwen 优先；Ollama 有独立精确实验 Scope，均未取得管理系统真实多轮资格，不继承旧 Prototype 的发布记录。固定 OFF / Normal，每轮最多一个 Tool，整 Turn 最多 2 Calls / 2 Rounds / 3 Requests、retry=0。
+- 开关启用但 Scope/Policy 不匹配时禁用发送；服务端联网前拒绝 `ASSISTANT_MULTI_ROUND_SCOPE_MISMATCH`。Policy/定义/配置/设备/epoch 改变时旧 revision 失效，刷新并重新确认；不自动重发、降级或切换 Provider。
+- 配置来自 [管理专用 Scope](../ai_service/resources/assistant_execution.json)，在应用启动时冻结。文件的 `multi_round_enabled` 默认为 false，上述命令仅在本进程启用；浏览器不能指定模式、预算、Prompt 或配置路径。
+
+人工验收（本轮未执行真实请求）：
+
+1. normal 水质问“当前溶氧是多少？”：预期一次水质查询后 Final，也允许模型提前结束；记录实际路径。
+2. low_oxygen 问“先查询当前水质，如果异常再检索项目资料解释低氧风险”：观察水质 → Request #2 → Knowledge → Request #3 → 唯一 Final。Tool B 必须由模型看到 Result A 后选择，不保证每次模型都按预期选择。
+3. “什么是溶氧？”允许 Direct Final；NO_DATA/STALE/INVALID 如实解释，不补造正常值。Knowledge 卡片是背景来源，不替代当前观测。
+4. 核对两个独立 Tool 卡片、完整有序 Steps、聚合 Usage；中途 Stop/Timeout/错误不得进入成功 History，清空/模型/设备切换及 epoch 语义不变。
+
+回滚：停止自己启动的管理服务器，确认管理配置 `multi_round_enabled=false`，去掉 `--assistant-multi-round-trial`，用 `--enable-assistant` 重启。新 epoch 清理旧会话/确认，恢复 1/1/2；无需修改 Policy、SQLite、凭据或 Prototype 配置。执行失败不会自动按单轮重跑。
+
+离线专项：`python -m unittest apps.ai_service.tests.test_execution apps.management_web.tests.test_multi_round`。使用正式 Assistant 多轮 Prompt、History、Registry、Executor、Ledger 与提交门禁，Fake Provider 根据真实临时 Monitoring Result 决定下一 Tool；不是实际模型质量或资格证据。
 
 ## 连续模拟器本机联调
 

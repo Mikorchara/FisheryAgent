@@ -18,8 +18,8 @@ class ManagementAssistant:
         self.requests = RequestRegistry()
 
     @classmethod
-    def local(cls, monitoring, project_root):
-        return cls(ManagementAssistantService.local(monitoring, Path(project_root)))
+    def local(cls, monitoring, project_root, *, multi_round_trial=False):
+        return cls(ManagementAssistantService.local(monitoring, Path(project_root),multi_round_trial=multi_round_trial))
 
     @property
     def monitoring(self):

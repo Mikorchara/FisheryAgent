@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "multi_round_enabled": false,
+  "releases": [
+    {
+      "release_id": "management-dashscope-qwen38-flash-r1-water-knowledge-normal-v1",
+      "status": "local_experimental",
+      "scope": {
+        "runtime": {
+          "preset_id": "dashscope-qwen38-flash-r1",
+          "preset_variant": "off",
+          "contract_version": "1.0.2",
+          "identity": [
+            "dashscope",
+            "openai_chat",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "qwen3.8-flash"
+          ],
+          "protocol_spec": {
+            "spec_id": "dashscope_chat",
+            "version": "1",
+            "max_output_tokens_field": "max_tokens",
+            "thinking_encoding": "enable_thinking",
+            "effort_field": "reasoning_effort",
+            "stream_field": "stream",
+            "usage_options_field": "stream_options"
+          },
+          "thinking": "off",
+          "response_mode": "normal",
+          "prompt_id": "ASSISTANT_BOUNDED_MULTI_ROUND@1",
+          "prompt_sha256": "51906f193e00749e4a6cf6c1f067e65798252b49c9a352ddf1b44139cd54b066",
+          "history_projection": "UNTRUSTED_TRANSCRIPT_V1",
+          "history_version": "1",
+          "tools": [
+            "get_current_water_quality",
+            "search_fishery_knowledge"
+          ],
+          "tool_definitions_sha256": "5cd73fefcd80a73f1024f40f6eb60da9d302fe8bd2deb5bc578e0095ea91e854"
+        },
+        "data_bindings": {
+          "water": "management-current-water@1",
+          "knowledge": "management-project-knowledge@1",
+          "knowledge_source": "legacy:eel_knowledge.json",
+          "knowledge_version": "1.0",
+          "retrieval_backend": "portable"
+        }
+      },
+      "qualification_id": null,
+      "validated_at": null
+    },
+    {
+      "release_id": "management-ollama-qwen35-4b-r1-water-knowledge-normal-v1",
+      "status": "local_experimental",
+      "scope": {
+        "runtime": {
+          "preset_id": "ollama-qwen35-4b-r1",
+          "preset_variant": "off",
+          "contract_version": "1.0.2",
+          "identity": [
+            "ollama",
+            "generic_openai_chat",
+            "http://127.0.0.1:11434/v1",
+            "qwen3.5:4b"
+          ],
+          "protocol_spec": {
+            "spec_id": "ollama_openai_chat",
+            "version": "1",
+            "max_output_tokens_field": "max_tokens",
+            "thinking_encoding": "effort_high_none",
+            "effort_field": null,
+            "stream_field": "stream",
+            "usage_options_field": "stream_options"
+          },
+          "thinking": "off",
+          "response_mode": "normal",
+          "prompt_id": "ASSISTANT_BOUNDED_MULTI_ROUND@1",
+          "prompt_sha256": "51906f193e00749e4a6cf6c1f067e65798252b49c9a352ddf1b44139cd54b066",
+          "history_projection": "UNTRUSTED_TRANSCRIPT_V1",
+          "history_version": "1",
+          "tools": [
+            "get_current_water_quality",
+            "search_fishery_knowledge"
+          ],
+          "tool_definitions_sha256": "5cd73fefcd80a73f1024f40f6eb60da9d302fe8bd2deb5bc578e0095ea91e854"
+        },
+        "data_bindings": {
+          "water": "management-current-water@1",
+          "knowledge": "management-project-knowledge@1",
+          "knowledge_source": "legacy:eel_knowledge.json",
+          "knowledge_version": "1.0",
+          "retrieval_backend": "portable"
+        }
+      },
+      "qualification_id": null,
+      "validated_at": null
+    }
+  ]
+}

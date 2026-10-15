@@ -45,6 +45,10 @@ export function createAssistantWorkspace(api,options={}){
   }
   function render(){
     const model=preset();
+    const execution=model?.execution;
+    const maxRequests=execution?.max_model_requests??s.config?.max_model_requests??2;
+    const blocked=execution?.can_send===false;
+    const multi=execution?.mode==='BOUNDED_MULTI_ROUND';
     const selectField=(label,choices,value,change)=>el('label',{class:'field'},[el('span',{text:label}),
       el('select',{...(s.pending?{disabled:'disabled'}:{}),onchange:e=>change(e.target.value)},choices.map(([id,name])=>
         el('option',{value:id,...(id===value?{selected:'selected'}:{})},[name])))]);
@@ -59,7 +63,7 @@ export function createAssistantWorkspace(api,options={}){
         if(e.ctrlKey&&e.key==='Enter'){e.preventDefault();void send();}}});
     const network=el('input',{type:'checkbox',...(s.confirmed?{checked:'checked'}:{}),...(s.pending?{disabled:'disabled'}:{}),
       onchange:e=>{s.confirmed=e.target.checked;}});
-    sendButton=el('button',{class:'button primary',text:'发送',...(!s.config||s.pending?{disabled:'disabled'}:{}),onclick:()=>void send()});
+    sendButton=el('button',{class:'button primary',text:'发送',...(!s.config||s.pending||blocked?{disabled:'disabled'}:{}),onclick:()=>void send()});
     stopButton=el('button',{class:'button secondary',text:'Stop',...(!s.pending?{disabled:'disabled'}:{}),onclick:()=>void stop()});
     statusNode=el('p',{class:'muted',role:'status',text:s.status});activityNode=el('div');
     root.replaceChildren(el('div',{class:'assistant-layout'},[
@@ -67,15 +71,18 @@ export function createAssistantWorkspace(api,options={}){
         el('div',{class:'chat-top assistant-controls'},[
           selectField('模型',(s.config?.presets||[]).map(p=>[p.preset_id,p.display_name]),s.preset,changePreset),
           selectField('监测设备',s.devices.map(d=>[d.id,d.name]),s.device,changeDevice),badge('Thinking OFF · Normal','neutral'),
+          badge(blocked?'多轮 Scope / Policy 不匹配':multi?'Multi-Round · 本地实验（未真实验证）':'Single-Round · 1/1/2','neutral'),
           el('button',{class:'button text',text:'清空对话',...(s.pending?{disabled:'disabled'}:{}),onclick:clear})]),messages,
         el('div',{class:'chat-composer'},[composer,
           el('label',{class:'assistant-confirm'},[network,el('span',{text:model?.runtime_type==='local'?
-            'LOCAL MODEL REQUEST · 本次最多 2 次本地模型请求':'REAL NETWORK REQUEST · 本次最多 2 次模型请求，Cloud 可能产生费用'})]),
+            `LOCAL MODEL REQUEST · 本次最多 ${maxRequests} 次本地模型请求`:`REAL NETWORK REQUEST · 本次最多 ${maxRequests} 次模型请求，Cloud 可能产生费用`})]),
           el('div',{class:'composer-foot'},[el('span',{text:'仅完整成功回答进入会话；刷新页面清空。'}),sendButton,stopButton]),statusNode,
           ...(s.trimmed?[el('p',{class:'muted',text:'较早对话未发送给模型。页面记录不代表模型记住全部历史。'})]:[])])]),
-      el('div',{class:'side-stack'},[card('本次运行','冻结设备上下文 · 1 Tool / 1 Round / 2 Requests',[activityNode]),
+      el('div',{class:'side-stack'},[card('本次运行',`冻结设备上下文 · ${multi?2:1} Tool / ${multi?2:1} Round / ${maxRequests} Requests`,[activityNode]),
         card('来源与权限','共用 Monitoring SQLite 与领域规则。',[rows([['本轮设备',s.device],['可用 Tool',s.config?.tools.join('、')||'无（受 Tool Policy 限制）'],
-          ['监测来源','Simulator · 非真实传感器'],['规则状态','PROTOTYPE']]),el('p',{class:'muted',text:'缺失、无效、过期或离线数据不表示环境正常。项目知识是背景资料，不是当前观测或疾病确诊依据。每轮最多使用一个已授权 Tool；评分、Multi-Round 和 Streaming 未接入。'})])]) ]));
+          ['监测来源','Simulator · 非真实传感器'],['规则状态','PROTOTYPE']]),el('p',{class:'muted',text:
+            blocked?'试用开关已开启，但精确 Scope 未匹配。请在原 Tool Manager 恰好授权水质查询与项目知识，然后刷新；仍不匹配时须维护者检查配置。不会联网或自动降级重跑。':
+            '缺失、无效、过期或离线不表示环境正常。项目知识不是当前观测或疾病确诊。每个 Tool round 最多一个已授权 Tool；多轮仅限独立本地实验 Scope，评分和 Streaming 未接入。'})])]) ]));
     updateProgress();
   }
   async function load(){
@@ -105,6 +112,7 @@ export function createAssistantWorkspace(api,options={}){
   async function send(){
     const question=s.draft.trim();
     if(s.pending||!question||!s.config)return;
+    if(preset()?.execution?.can_send===false){s.status='ASSISTANT_MULTI_ROUND_SCOPE_MISMATCH';updateProgress();return;}
     if(!s.confirmed){s.status='请先确认本次模型请求。';updateProgress();return;}
     const config=s.config,model=preset(),history=historyForRequest(s.turns);
     const captured={device_id:s.device,preset_id:s.preset,revision:model.revision,epoch:config.epoch,question,history};

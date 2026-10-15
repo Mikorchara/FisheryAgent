@@ -11,6 +11,7 @@ def main():
     parser.add_argument("--enable-ingestion", action="store_true", help="Local simulator writes, token required")
     parser.add_argument("--legacy-demo", action="store_true", help="Isolated R1 static Demo; no ingestion")
     parser.add_argument("--enable-assistant", action="store_true", help="Enable Normal Assistant; each Send requires network confirmation")
+    parser.add_argument("--assistant-multi-round-trial", action="store_true", help="Management-only Normal local trial; exact Scope/Policy required")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error("port must be between 1 and 65535")
@@ -18,6 +19,8 @@ def main():
         parser.error("LEGACY_DEMO_CANNOT_INGEST")
     if args.legacy_demo and args.enable_assistant:
         parser.error("ASSISTANT_REQUIRES_MONITORING_SERVICE")
+    if args.assistant_multi_round_trial and not args.enable_assistant:
+        parser.error("MULTI_ROUND_TRIAL_REQUIRES_ASSISTANT")
     data_service, token = None, None
     if not args.legacy_demo:
         from apps.monitoring.repository import MonitoringRepository
@@ -35,9 +38,11 @@ def main():
         from fishery_ai.credential_paths import CredentialLocationError
         from fishery_ai.credentials import CredentialFileError
         from fishery_ai.tools.policy import ToolPolicyError
+        from fishery_ai.model_gateway import GatewayError
         try:
-            ai_options["ai"] = ManagementAssistant.local(data_service, Path(__file__).resolve().parents[2])
-        except (CredentialLocationError, CredentialFileError, ToolPolicyError):
+            ai_options["ai"] = ManagementAssistant.local(data_service, Path(__file__).resolve().parents[2],
+                **({'multi_round_trial':True} if args.assistant_multi_round_trial else {}))
+        except (CredentialLocationError, CredentialFileError, ToolPolicyError, GatewayError):
             parser.error("AI_CONFIGURATION_UNAVAILABLE")
     app = create_app(allowed_hosts=(f"127.0.0.1:{args.port}", f"localhost:{args.port}"),
                      data_service=data_service, ingestion_token=token, **ai_options)

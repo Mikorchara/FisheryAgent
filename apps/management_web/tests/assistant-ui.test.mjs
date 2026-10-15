@@ -12,10 +12,11 @@ const activity=(status='OK',quality='valid',freshness='fresh')=>({counts:{tools_
   {kind:'model',request_index:2,state:'COMPLETED',outcome:'final_answer'}],aggregate_usage:{total_tokens:42}});
 const success=(text='离线回答',details=activity())=>({result:{successful_turn:true,final_text:text,
   completed_at:'2026-10-15T00:01:00Z',activity:details,history_trimmed:false}});
-function fixture(){
+function fixture(configure=()=>{}){
   const config={epoch:'epoch',browser_token:'fictional-control-token',tools:['get_current_water_quality'],
     default_preset_id:'qwen',presets:[{preset_id:'qwen',display_name:'Qwen 3.8 Flash',runtime_type:'cloud',revision:'q'},
       {preset_id:'ollama',display_name:'Ollama Qwen3.5 4B',runtime_type:'local',revision:'o'}]};
+  configure(config);
   const sent=[],cancelled=[],timers=[];
   const api={bootstrap:async()=>structuredClone(config),prepare:async()=>({request_id:'request',control_token:'control'}),
     send:async value=>{sent.push(structuredClone(value));return success();},state:async()=>({state:'RUNNING',phase:'REQUEST_1'}),
@@ -167,4 +168,33 @@ test('Knowledge activity distinguishes project evidence and NO_MATCH from curren
   }
   assert.equal(p.workspace.state.turns.length,2);
   assert.equal(p.workspace.state.confirmed,false);
+});
+
+test('management multi-round budgets follow selected preset and two Tool steps commit one answer',async()=>{
+  const p=fixture(config=>{
+    config.tools.push('search_fishery_knowledge');
+    config.presets[0].execution={mode:'BOUNDED_MULTI_ROUND',can_send:true,max_model_requests:3,release_status:'local_experimental'};
+    config.presets[1].execution={mode:'SINGLE_ROUND',can_send:true,max_model_requests:2};
+  });
+  await p.ready();
+  assert.match(p.root.textContent,/最多 3 次模型请求/);assert.match(p.root.textContent,/本地实验（未真实验证）/);
+  const details=activity();details.counts={model_requests_started:3,tools_executed:2};
+  details.steps.push({kind:'tool',tool_name:'search_fishery_knowledge',state:'COMPLETED',handler_started:true,
+    result_status:'NO_MATCH',evidence_count:0,duration_ms:1},{kind:'model',request_index:3,state:'COMPLETED',outcome:'final_answer'});
+  p.api.send=async()=>success('single final after two tools',details);
+  p.workspace.state.draft='当前水质，异常时检索知识';p.workspace.state.confirmed=true;await p.workspace.send();
+  assert.equal(p.workspace.state.turns.length,1);
+  assert.equal(p.workspace.state.entries.filter(e=>e.kind==='assistant').length,1);
+  assert.match(p.root.textContent,/使用了 2 个 Tool/);assert.match(p.root.textContent,/Request #3/);
+  assert.match(p.root.textContent,/search_fishery_knowledge/);
+  p.workspace.changePreset('ollama');
+  assert.equal(p.workspace.state.confirmed,false);assert.match(p.root.textContent,/最多 2 次本地模型请求/);
+});
+
+test('unmatched multi-round scope blocks sending before any HTTP model attempt',async()=>{
+  const p=fixture(config=>{config.presets[0].execution={mode:'SINGLE_ROUND',can_send:false,max_model_requests:2};});
+  await p.ready();p.workspace.state.draft='current question';p.workspace.state.confirmed=true;
+  await p.workspace.send();assert.equal(p.sent.length,0);
+  assert.match(p.root.textContent,/Scope.*未匹配|Scope.*不匹配/);
+  assert.equal(p.workspace.state.turns.length,0);
 });

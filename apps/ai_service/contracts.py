@@ -10,6 +10,7 @@ from fishery_ai.tools.policy import ToolPolicy
 from apps.monitoring.service import MonitoringService
 
 from .bindings import ManagementToolRegistry
+from .execution import ExecutionDecision
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class PreparedAssistantTurn:
     profile: ModelProfile = field(repr=False)
     policy: ToolPolicy = field(repr=False)
     registry: ManagementToolRegistry = field(repr=False)
+    execution: ExecutionDecision = field(repr=False)
 
 
 class AssistantBackend(Protocol):

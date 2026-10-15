@@ -20,9 +20,13 @@ apps/
 │  ├─ contracts.py                   # AssistantBackend 与服务器内 PreparedAssistantTurn
 │  ├─ service.py                     # 业务校验、冻结配置、凭据/Runtime 装配及正式 Assistant 调用
 │  ├─ bindings.py                    # Monitoring 水质 DTO、原 Knowledge Handler 与静态绑定
+│  ├─ execution.py                   # 管理专用精确 Scope、冻结开关与确认 revision
+│  ├─ resources/
+│  │  └─ assistant_execution.json    # Qwen/Ollama 独立本地实验 Scope，默认关闭
 │  └─ tests/
 │     ├─ __init__.py
-│     └─ test_service.py             # 无 Web 的执行、冻结、取消、路径及依赖边界
+│     ├─ test_service.py             # 无 Web 的执行、冻结、取消、路径及依赖边界
+│     └─ test_execution.py           # 管理配置校验、独立 Scope 与默认关闭
 ├─ monitoring/                      # Web 与未来 Tool 共享的数据基础
 │  ├─ __init__.py
 │  ├─ contracts.py                   # 上报、WaterMetricFact/WaterCapture、质量/Finding/Event 合同
@@ -66,6 +70,7 @@ apps/
       ├─ test_app.py                 # R1 兼容、API 和安全
       ├─ test_ai_boundary.py         # Web 访问控制、令牌隔离、同一 Handle 与显式装配门禁
       ├─ test_assistant.py           # Fake Provider HTTP 闭环、同源数据、Ledger 与取消
+      ├─ test_multi_round.py         # HTTP 双 Tool、Scope/revision、预算、取消与回滚
       ├─ test_knowledge.py           # Knowledge HTTP 闭环、授权/来源隔离、拒绝与确认指纹
       ├─ assistant-ui.test.mjs       # Normal 聊天、History、epoch 与 Stop 行为
       ├─ dom-fixture.mjs            # 无网络 DOM 测试辅助
@@ -102,6 +107,6 @@ DomainAnalysisService 与 EventService 不导入 Repository/Flask。Repository �
 
 管理 Registry 只装配水质与项目 Knowledge，两者经原 Assistant Policy 求交。Knowledge 是项目背景 Evidence，不认证当前现场；未装配的评分不可执行。既有默认仍只授权水质，管理 API 不新增授权写入口。
 
-后续 Multi-Round 的 Scope/Flag、Prompt/History/预算装配归 ai_service.service；复用核心 ToolCallingService。Streaming 的业务模式也在 ai_service 装配，HTTP SSE/断线/重连归 management_web，Provider delta 归原 Runtime Adapter。新视觉/历史 Tool 的管理数据绑定归 ai_service.bindings、事实/判断归 Monitoring；新 RAG 的服务装配入口归 ai_service，检索实现不写进 Web 或本业务协调器。出现实际需求再拆领域文件，不提前建空框架。
+Normal Multi-Round 的管理专用 Scope/Flag/revision 归 ai_service.execution，service 冻结 ExecutionDecision 并装配正式 Prompt/History/预算；复用核心 ToolCallingService。默认 1/1/2，显式本地试用且匹配精确 Scope 后才为 2/2/3。Streaming 的业务模式也在 ai_service 装配，HTTP SSE/断线/重连归 management_web，Provider delta 归原 Runtime Adapter。新视觉/历史 Tool 的管理数据绑定归 ai_service.bindings、事实/判断归 Monitoring；新 RAG 的服务装配入口归 ai_service，检索实现不写进 Web 或本业务协调器。出现实际需求再拆领域文件，不提前建空框架。
 
 Runtime/Core 为共享领域与 AI 包；Development 为模拟器和测试；Generated 为 Git ignored 的 outputs/management_web/（SQLite、脱敏 Assistant Trace）；User-private 为已有凭据目录，管理前端不可接触。可显式启用 Qwen/Ollama Normal 对话；真实设备、NPU、文件索引、Streaming 和固定 Analysis 接入未实现。

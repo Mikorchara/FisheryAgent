@@ -1,6 +1,6 @@
 # 智慧渔业管理平台文档
 
-`apps/docs/` 是管理平台主要入口。当前已完成 R1 网页、R2A/R2A.1 统一监测、R2B-1/2 Domain Analysis / Event Service 与 R2B-3 Normal Assistant 桥接，并补齐安全拒因、共享事实捕获/精简 DTO、R2B-3.3 现有 Knowledge Tool 绑定（Policy opt-in，仍为 1/1/2）。AI Runtime 保留在 `src/fishery_ai/`，原 Prototype Web 独立保留。监测风险规则全部为 PROTOTYPE，未获得生产批准。
+`apps/docs/` 是管理平台主要入口。当前已完成 R1 网页、R2A/R2A.1 统一监测、R2B-1/2 Domain Analysis / Event Service 与 R2B-3 Normal Assistant 桥接，并补齐安全拒因、共享事实捕获/精简 DTO、R2B-3.3 现有 Knowledge Tool 绑定（Policy opt-in，默认 1/1/2；R2B-4 可显式开启管理独立 2/2/3 本地试用）。AI Runtime 保留在 `src/fishery_ai/`，原 Prototype Web 独立保留。监测风险规则全部为 PROTOTYPE，未获得生产批准。
 
 ## 阅读入口
 
@@ -43,3 +43,7 @@ R2B-1：新增 18 项规则治理测试及 1 项前端状态测试；监测 44�
 R2B-2：新增 7 项业务服务和 3 项调度测试；监测 51、模拟器 20、管理 API 11 项 Python，前端 17 项 Node 通过。默认周期本机隔离联调两批（零人为缓冲），窗口均为 10 秒，接收间隔 10.003 秒，最小接收后于观测 0.054164 秒；这是本轮样本，不代表长期时钟稳定性。旧一秒缓冲已从联调测试移除，提前 UTC 发送问题通过有界完成检查修正。未运行 Provider/NPU 或原 AI Runtime 无关全量回归。
 
 R2B-3：新增管理 Assistant 17 项 Python 与 8 项前端行为测试；管理测试合计 28 Python / 25 Node、Monitoring 51、Simulator 20 通过。原 Runtime Assistant 140、Tool 296、FAST 149、原 Web Browser 219 通过；仅离线 Fake Provider 与临时本机浏览器联调，不调用真实模型/NPU，不将结果视为真实回答质量验收。
+
+R2B-4：Normal 多轮已完成离线集成。Qwen/Ollama 独立 local_experimental Scope、默认关闭；不复制 Runtime 循环，不继承真实资格。参见 [启用与回滚](BUILD_RUN.md#r2b-4normal-multi-round-本地试用) 和 [执行边界](INTEGRATION.md#r2b-4管理独立-normal-多轮执行范围)。
+
+R2B-4 离线验证：AI Service 11、管理 Web Python 64、Monitoring 相关 37、原 Runtime Assistant 140、Tool 相关 95、原 Web Assistant 52、Analysis/普通 Streaming 39、管理前端 Node 29 全部通过；Python/JS/JSON 语法、本地 Markdown 链接和 diff 检查通过，改动文件敏感模式扫描未发现命中。未请求真实 Provider/Ollama，未修改核心 Runtime 或用户 Policy。

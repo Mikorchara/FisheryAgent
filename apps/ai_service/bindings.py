@@ -8,6 +8,7 @@ from fishery_ai.tools.registry import ToolRegistry, CURRENT_WATER_QUALITY, SEARC
 
 
 WATER_TOOL_PROJECTION = "management-current-water@1"
+KNOWLEDGE_BINDING_VERSION = "management-project-knowledge@1"
 
 
 class ManagementToolRegistry:
