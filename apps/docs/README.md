@@ -10,6 +10,7 @@
 - [路线](ROADMAP.md)
 - [开发规则](../AGENTS.md)
 - [R2B 架构评估基线](deep-dive/research/R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md)（R2B-0 研究；当前实现以 INTEGRATION 为准）
+- [管理 Streaming 设计与后端状态](deep-dive/research/R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md)（默认关闭、candidate，尚无前端/真实试用）
 - [R2B-3 架构与 Tool 故障审查](deep-dive/research/R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md)（只读证据、修复建议与后续顺序）
 
 根 [docs](../../docs/STRUCTURE.md) 维护 AI 原型和共享 Runtime；这里不重复其 Prompt、Provider、Tool、Credential 合同。事实优先级：源码 → 测试 → 当前文档 → 历史记录。
@@ -47,3 +48,6 @@ R2B-3：新增管理 Assistant 17 项 Python 与 8 项前端行为测试；管�
 R2B-4：Normal 多轮已完成离线集成。Qwen/Ollama 独立 local_experimental Scope、默认关闭；不复制 Runtime 循环，不继承真实资格。参见 [启用与回滚](BUILD_RUN.md#r2b-4normal-multi-round-本地试用) 和 [执行边界](INTEGRATION.md#r2b-4管理独立-normal-多轮执行范围)。
 
 R2B-4 离线验证：AI Service 11、管理 Web Python 64、Monitoring 相关 37、原 Runtime Assistant 140、Tool 相关 95、原 Web Assistant 52、Analysis/普通 Streaming 39、管理前端 Node 29 全部通过；Python/JS/JSON 语法、本地 Markdown 链接和 diff 检查通过，改动文件敏感模式扫描未发现命中。未请求真实 Provider/Ollama，未修改核心 Runtime 或用户 Policy。
+
+
+R2B-5B 后端离线结果：新增 Streaming/配置专项 25 项通过（23 项管理 HTTP/SSE、2 项配置）；既有管理 Python 64 项、AI Service 13 项（含上述配置测试）、核心 Assembler/Streaming 多轮/Prototype SSE 96 项及管理 Node 36 项相关回归通过。Python/JSON 语法、98 条 Markdown 本地文件链接、diff/空白检查与敏感模式扫描通过。未改前端、核心 Runtime 或真实资格；未执行 Provider/NPU。后端已完成而 Final 投递失败时不重写完成 Trace，也不替客户端恢复 History。

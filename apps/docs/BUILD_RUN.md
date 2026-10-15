@@ -136,3 +136,14 @@ R2B-3.4 边界测试：`python -m unittest apps.ai_service.tests.test_service ap
 核对：最近会话的 10 秒点展开；全部历史保留停机间距并在会话切换处断线；五个时间刻度不挤在首段，纵轴相邻标签可区分；窄卡片仅图表内部允许横向滚动。History 表与 API 仍保存全部有界历史，范围切换与 5 秒刷新只读、不采样。
 
 专项离线验证：`node --test apps/management_web/tests/chart-ui.test.mjs apps/management_web/tests/monitoring-ui.test.mjs apps/management_web/tests/view-model.test.mjs`；`python -m unittest apps.monitoring.tests.test_history_projection apps.monitoring.tests.test_pipeline apps.monitoring.tests.test_water_capture`。固定测试数据不依赖用户真实 SQLite。
+
+
+## R2B-5B：Streaming 后端离线验证
+
+启动命令保持原样：`python -m apps.management_web --enable-assistant`；原 Normal 多轮试用参数也不变。当前无 Streaming 网页开关或试用启动参数，默认配置关闭且只有 Qwen 两工具 candidate；不要为验收后端而自行改成已发布状态或请求真实模型。
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest apps.ai_service.tests.test_streaming_config apps.management_web.tests.test_streaming
+```
+
+该测试从受控管理 HTTP POST SSE 路由进入，运行正式 Assistant Prompt/History、Gateway/Assembler、临时 SQLite Monitoring、Knowledge、Ledger、Trace 与提交门禁；SDK 为纯离线 Fake，网络被阻断，只容许 Windows asyncio 自身唤醒套接字。临时 local_experimental 配置只在测试实例内注入，不修改磁盘候选或用户 Policy。实际 max_tokens=512、2/2/3、120 秒、资源关闭和结果传递均有断言。没有实现前端 Streaming，不能把这些测试当作网页或真实模型验收。

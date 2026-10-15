@@ -38,3 +38,10 @@ R2B-3.4 已提取独立 apps/ai_service：业务协调、Runtime 装配、Monito
 - Security：账户、服务端权限、生产设备凭据、TLS、限流、监控/备份和迁移；开发令牌不能当作生产方案。
 
 不增加 Agent、自动设备写操作或通用场景编辑器，不为规划建立空模块。
+
+
+## R2B-5：Streaming 分阶段接入
+
+- R2B-5B 后端已离线实现：管理独立 candidate/关闭开关、精确 revision、唯一 claim、POST SSE 与原 Streaming Runtime；Qwen 两工具，512 上限 / 2/2/3 / 120 秒。用户已报告 Qwen 管理 Normal 多轮初步验收通过，但未因此发布 Streaming。
+- 下一步 R2B-5C：模式选择、临时正文、严格事件消费、Stop/断线及成功 History；继续离线验证，Normal 默认。
+- 之后单独授权 Qwen 管理 Streaming 真实技术与人工回答质量验收，再决定本地实验试用。Ollama、评分/三工具、其他 Provider 单独评估，不继承资格。

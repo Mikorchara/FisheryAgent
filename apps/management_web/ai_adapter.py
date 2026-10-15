@@ -5,6 +5,7 @@ import secrets
 
 from fishery_ai.execution import RequestRegistry
 from fishery_ai.model_gateway import GatewayError
+from fishery_ai.tool_conversation import ToolModelTransport
 from apps.ai_service.contracts import AssistantBackend
 from apps.ai_service.service import ManagementAssistantService
 
@@ -43,11 +44,21 @@ class ManagementAssistant:
         return self.requests.get(value.get("request_id"), value.get("control_token"))
 
     def send(self, value):
+        prepared, handle = self._prepare(value)
+        return self.backend.execute_turn(prepared,handle)
+
+    def claim_stream(self,value):
+        prepared, handle = self._prepare(value,transport=ToolModelTransport.STREAMING)
+        return prepared,handle,self.backend.claim_turn(prepared,handle)
+
+    def _prepare(self,value,*,transport=ToolModelTransport.NORMAL):
         allowed = {"preset_id", "question", "history", "conversation_id", "epoch", "device_id",
                    "revision", "confirm_network", "request_id", "control_token"}
         if not isinstance(value, dict) or set(value) - allowed:
             raise GatewayError("INVALID_ASSISTANT_REQUEST")
         # Preserve preflight-before-handle-claim order and freeze just one plan.
-        prepared = self.backend.prepare_turn({k:v for k,v in value.items()
-            if k not in {"request_id", "control_token"}})
-        return self.backend.execute_turn(prepared, self.handle(value))
+        body={k:v for k,v in value.items() if k not in {"request_id", "control_token"}}
+        # Keep the Normal service call contract unchanged.
+        prepared = (self.backend.prepare_turn(body) if transport == ToolModelTransport.NORMAL else
+                    self.backend.prepare_turn(body,transport=transport))
+        return prepared,self.handle(value)

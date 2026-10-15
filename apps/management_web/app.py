@@ -161,6 +161,20 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
             return jsonify(error_code="AI_SERVICE_UNAVAILABLE"), 503
         return jsonify(result=result), (200 if result["successful_turn"] else 409 if result["error_code"] == "USER_CANCELLED" else 502)
 
+    @app.post("/api/ai/messages/stream")
+    def ai_messages_stream():
+        failure=ai_gate()
+        if failure is not None:
+            return failure
+        try:
+            prepared,handle,execute=assistant.claim_stream(request.get_json(silent=True))
+            from .streaming import stream_response
+            return stream_response(prepared,handle,execute,assistant.epoch)
+        except (AssistantError,GatewayError,ToolPolicyError,CredentialFileError,ValueError):
+            raise
+        except Exception:
+            return jsonify(error_code="AI_SERVICE_UNAVAILABLE"),503
+
     def ai_gate(*, write=True):
         if assistant is None:
             return jsonify(error_code="AI_SERVICE_NOT_CONNECTED"), 503

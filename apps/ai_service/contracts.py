@@ -1,11 +1,12 @@
 """In-process AI service boundary. Neither contract accepts Flask/browser objects."""
 
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Callable, Protocol
 
 from fishery_ai.assistant import AssistantRequest
 from fishery_ai.execution import RequestHandle
 from fishery_ai.model_gateway import ModelProfile
+from fishery_ai.tool_conversation import ToolModelTransport
 from fishery_ai.tools.policy import ToolPolicy
 from apps.monitoring.service import MonitoringService
 
@@ -36,5 +37,6 @@ class AssistantBackend(Protocol):
 
     def availability(self) -> dict: ...
     def bootstrap(self, device_id: str) -> dict: ...
-    def prepare_turn(self, value: dict) -> PreparedAssistantTurn: ...
+    def prepare_turn(self, value: dict, *, transport=ToolModelTransport.NORMAL) -> PreparedAssistantTurn: ...
     def execute_turn(self, prepared: PreparedAssistantTurn, handle: RequestHandle) -> dict: ...
+    def claim_turn(self, prepared: PreparedAssistantTurn, handle: RequestHandle) -> Callable[[],dict]: ...

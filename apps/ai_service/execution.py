@@ -9,7 +9,7 @@ from fishery_ai.assistant_execution import (AssistantExecutionConfig, AssistantE
     AssistantMultiRoundRelease, release_scope, resolve_execution_profile)
 from fishery_ai.history_projection import DEFAULT_HISTORY_PROJECTION
 from fishery_ai.model_gateway import GatewayError
-from fishery_ai.tool_conversation import ToolExecutionMode
+from fishery_ai.tool_conversation import ToolExecutionMode, ToolModelTransport
 
 from . import bindings
 
@@ -106,10 +106,13 @@ def load_execution_config(*, enable_trial=False):
 class ExecutionDecision:
     profile: AssistantExecutionProfile
     can_send: bool
+    model_transport: ToolModelTransport = ToolModelTransport.NORMAL
+    max_output_tokens: int | None = None
 
     def public(self):
         multi = self.profile.mode == ToolExecutionMode.BOUNDED_MULTI_ROUND
         return {**self.profile.public(), 'can_send':self.can_send,
+                'transport':self.model_transport.value.lower(),'max_output_tokens':self.max_output_tokens,
                 'max_tool_calls':2 if multi else 1,'max_tool_rounds':2 if multi else 1}
 
 

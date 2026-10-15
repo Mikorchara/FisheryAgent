@@ -14,6 +14,7 @@ apps/
 │  ├─ ROADMAP.md                     # 当前状态与后续工作
 │  └─ deep-dive/research/
 │     ├─ R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md # R2B-0 评估基线，非实现现状
+│     ├─ R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md # Streaming 设计与后端实施边界
 │     └─ R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md # 当前架构、参数故障证据与路线建议
 ├─ ai_service/                      # 独立 AI 业务包（同进程，无新端口）
 │  ├─ __init__.py                    # 包标识，不自动创建业务实例
@@ -21,11 +22,14 @@ apps/
 │  ├─ service.py                     # 业务校验、冻结配置、凭据/Runtime 装配及正式 Assistant 调用
 │  ├─ bindings.py                    # Monitoring 水质 DTO、原 Knowledge Handler 与静态绑定
 │  ├─ execution.py                   # 管理专用精确 Scope、冻结开关与确认 revision
+│  ├─ streaming.py                   # 管理独立 Streaming 配置、精确 Scope 与确认
 │  ├─ resources/
+│  │  ├─ assistant_streaming.json     # Qwen 两工具 candidate，默认关闭
 │  │  └─ assistant_execution.json    # Qwen/Ollama 独立本地实验 Scope，默认关闭
 │  └─ tests/
 │     ├─ __init__.py
 │     ├─ test_service.py             # 无 Web 的执行、冻结、取消、路径及依赖边界
+│     ├─ test_streaming_config.py    # Streaming 候选、类型/预算与独立范围
 │     └─ test_execution.py           # 管理配置校验、独立 Scope 与默认关闭
 ├─ monitoring/                      # Web 与未来 Tool 共享的数据基础
 │  ├─ __init__.py
@@ -55,6 +59,7 @@ apps/
    ├─ __main__.py                    # 本机启动、存储装配与写入开关
    ├─ README.md                      # 快速入口
    ├─ app.py                         # HTTP、访问控制与服务装配
+   ├─ streaming.py                   # 请求内 SSE 投递、worker 生命周期与断线清理
    ├─ ai_adapter.py                  # Web 薄门面：浏览器令牌、RequestRegistry 与业务合同委托
    ├─ contracts.py                   # Web Protocol、共享 DTO 导出
    ├─ services.py                    # R1 兼容 Demo、未接入 AI/文件服务
@@ -71,6 +76,7 @@ apps/
       ├─ test_app.py                 # R1 兼容、API 和安全
       ├─ test_ai_boundary.py         # Web 访问控制、令牌隔离、同一 Handle 与显式装配门禁
       ├─ test_assistant.py           # Fake Provider HTTP 闭环、同源数据、Ledger 与取消
+      ├─ test_streaming.py           # Fake SDK 的管理 HTTP/SSE、预算、取消、门禁与提交
       ├─ test_multi_round.py         # HTTP 双 Tool、Scope/revision、预算、取消与回滚
       ├─ test_knowledge.py           # Knowledge HTTP 闭环、授权/来源隔离、拒绝与确认指纹
       ├─ assistant-ui.test.mjs       # Normal 聊天、History、epoch 与 Stop 行为

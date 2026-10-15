@@ -270,3 +270,20 @@ Ollama 只读证据：`outputs/management_web/assistant-traces.jsonl` 中同一�
 这证明归一化后的首轮存在多个已通过结构校验的调用，且 ID 不重复（重复 ID 会更早被归为 malformed）。现有安全 Trace 不保存该拒绝分支的完整调用集合，**无法确定准确个数、重复逻辑调用还是不同 Tool，也没有独立 raw/normalized 对照证据**。不能根据短输出长度猜测。当前 Adapter 逐项解析 provider tool_calls，未配置 parallel_tool_calls=false；本轮不改变 Adapter、Prompt、Schema、Runtime 或预算。
 
 建议保留单轮一个 Tool 合同。若后续获批改善，可先增加仅含有界 call_count、allowlist Tool 名称和重复标记的安全诊断，再单独评估 Ollama 协议是否支持并遵守 parallel_tool_calls=false；即使设置该提示，Runtime 仍须整批拒绝多调用，不自动择一、补跑或扩大预算。当前仅一个失败样本，不能据此判定所有 Ollama 请求不兼容。
+
+
+## R2B-5B：管理 Streaming 后端
+
+**仅后端离线实现，真实 Web 试用尚未开放。** `ai_service.streaming` 读取管理自己的固定 resources/assistant_streaming.json，一次加载、随 epoch 冻结；默认 enabled=false，唯一 Qwen OFF / Streaming / 水质 + Knowledge 两工具 candidate，qualification_id/validated_at 为空。即使只把开关改为 true，candidate 仍被拒绝；不继承 Normal 或 Prototype 发布资格。没有新增试用 CLI 或前端控件。
+
+复用核心 streaming_scope / resolve_streaming_profile，管理外层绑定 Monitoring/Knowledge 版本、source/version/backend；revision 同时绑定实际 definitions、完整 Policy、设备、epoch、配置、预算与 Runtime 设置。Bootstrap 每 Preset 增加 streaming 安全摘要（can_send / mode / transport / revision / release_status / mode_reason / 请求及 Tool 上限 / max_output_tokens），原 execution 和 revision 保留 Normal 语义。Ollama 不在 Streaming 范围。浏览器不能传入 mode、Transport、预算、Prompt、Deadline 或来源要求。
+
+`POST /api/ai/messages/stream` 使用与 Normal 相同的 JSON envelope，服务端由路由选择内部 Transport。先执行原 loopback/Host/Origin/X-Management-AI、32KiB、epoch、confirm、Streaming revision/Scope 校验，再取得同一 Handle。Service.claim_turn 在任何 worker/凭据/模型 I/O 前唯一 start，返回一次性闭包；Normal 也复用它。worker 显式建立 request_scope、沿用从 claim 开始的整 Turn deadline，解析一次 CredentialSnapshot/RuntimeSnapshot，再执行原 AssistantService / ToolCallingService。
+
+Streaming 使用 BOUNDED_MULTI_ROUND + ToolModelTransport.STREAMING，仍为 2 Calls / 2 Rounds / 3 Requests、每轮最多一个 Tool、retry=0、120 秒。Runtime.default_response_mode 仍是 normal，传输上限通过 transport_output_token_limit=512 编码；当前 Qwen 原生成上限为 None，Fake SDK 每次实际收到 stream=true、max_tokens=512。若未来生成默认更低，Adapter 仍取 min，512 不是强制消费量或完整回答保证。
+
+Web 的 streaming.py 只投递现有 AssistantEventChannel，不另写 Tool 或事件队列循环：schema v1 / request_id / epoch / 连续 seq，start、activity、preview_reset、preview、final/error/cancelled，注释心跳不占号。Activity 使用既有安全投影，快速步骤保留；预览是有界累计 content，仅临时，不保存 Trace/History。参数、Prompt、Raw Result、reasoning 和凭据不作为事件数据。Final 来自安全 AssistantResult.to_dict，保留 Trace/Source Gate/Commit Gate，失败结果没有 final_text/completed_at 或成功资格。
+
+响应 text/event-stream / no-store / X-Accel-Buffering:no；原 cancel/state API 不变，响应关闭（包括首次消费前）及迭代器断开均取消原 Handle。worker finally 清事件引用，线程启动失败安全结束，无自动重试、重连、Normal 降级或 failover。已完成但投递中断时，后端保留完成记录；客户端未收到 Final 就不能提交成功 History。控制令牌不进 URL 或事件；这仍是本机开发边界，不是生产用户权限或多进程任务服务。
+
+R2B-5C 前置条件：基于现有安全 profile 实现模式选择与逐次确认；POST fetch 读流严格校验 seq/epoch/request_id，撤销失败/取消/断线预览，仅完整可验证 Final 写成功 pair；保留设备/模型切换、Clear、History 和 Normal 回归。后续真实测试/试用须另获明确授权，本阶段不能直接开启。
