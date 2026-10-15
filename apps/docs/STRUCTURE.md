@@ -14,7 +14,7 @@ apps/
 │  ├─ ROADMAP.md                     # 当前状态与后续工作
 │  └─ deep-dive/research/
 │     ├─ R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md # R2B-0 评估基线，非实现现状
-│     ├─ R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md # Streaming 设计与后端实施边界
+│     ├─ R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md # Streaming 设计与前后端离线实施状态
 │     └─ R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md # 当前架构、参数故障证据与路线建议
 ├─ ai_service/                      # 独立 AI 业务包（同进程，无新端口）
 │  ├─ __init__.py                    # 包标识，不自动创建业务实例
@@ -68,7 +68,8 @@ apps/
    │  ├─ index.html                  # 布局、来源标识和弹窗
    │  ├─ styles.css                  # 样式与响应式布局
    │  ├─ app.js                      # 七页面路由与监测 5 秒轮询
-   │  ├─ assistant.js                # 独立聊天 Session、确认、History、Stop 与安全 Activity
+   │  ├─ assistant.js                # 双模式聊天、临时预览、History、Stop、滚动和问题导航
+   │  ├─ assistant-events.js         # 有界 POST SSE、序号/身份/终态校验与流清理
    │  ├─ components.js               # 安全文本、卡片、表格、图表
    │  ├─ view-model.js               # 展示转换、来源和状态
    │  └─ services.js                 # 同源监测与受控 Assistant API
@@ -76,10 +77,16 @@ apps/
       ├─ test_app.py                 # R1 兼容、API 和安全
       ├─ test_ai_boundary.py         # Web 访问控制、令牌隔离、同一 Handle 与显式装配门禁
       ├─ test_assistant.py           # Fake Provider HTTP 闭环、同源数据、Ledger 与取消
-      ├─ test_streaming.py           # Fake SDK 的管理 HTTP/SSE、预算、取消、门禁与提交
+      ├─ test_streaming.py           # Fake SDK HTTP/SSE、安全门禁及真实事件到前端的桥接
       ├─ test_multi_round.py         # HTTP 双 Tool、Scope/revision、预算、取消与回滚
       ├─ test_knowledge.py           # Knowledge HTTP 闭环、授权/来源隔离、拒绝与确认指纹
       ├─ assistant-ui.test.mjs       # Normal 聊天、History、epoch 与 Stop 行为
+      ├─ assistant-events.test.mjs   # SSE 分片、重复/乱序、身份、终态与有界拒绝
+      ├─ assistant-stream-ui.test.mjs # Streaming 会话、撤销、History 与滚动/导航
+      ├─ assistant-transport.test.mjs # 正式 fetch 路由、确认、AbortSignal 与取消
+      ├─ assistant-fixture.mjs       # 共用离线聊天 DOM/API 夹具
+      ├─ assistant-stream-fixture.mjs # 安全事件与碎片化读流夹具
+      ├─ stream-browser-bridge.mjs   # 实际管理 SSE 到前端解析/提交的 Node 桥
       ├─ chart-fixture.mjs            # 固定多次重启、20 小时时间跨度数据
       ├─ chart-ui.test.mjs            # 时间坐标、重复/缺口、精度和 SVG
       ├─ dom-fixture.mjs            # 无网络 DOM 测试辅助
@@ -118,4 +125,4 @@ DomainAnalysisService 与 EventService 不导入 Repository/Flask。Repository �
 
 Normal Multi-Round 的管理专用 Scope/Flag/revision 归 ai_service.execution，service 冻结 ExecutionDecision 并装配正式 Prompt/History/预算；复用核心 ToolCallingService。默认 1/1/2，显式本地试用且匹配精确 Scope 后才为 2/2/3。Streaming 的业务模式也在 ai_service 装配，HTTP SSE/断线/重连归 management_web，Provider delta 归原 Runtime Adapter。新视觉/历史 Tool 的管理数据绑定归 ai_service.bindings、事实/判断归 Monitoring；新 RAG 的服务装配入口归 ai_service，检索实现不写进 Web 或本业务协调器。出现实际需求再拆领域文件，不提前建空框架。
 
-Runtime/Core 为共享领域与 AI 包；Development 为模拟器和测试；Generated 为 Git ignored 的 outputs/management_web/（SQLite、脱敏 Assistant Trace）；User-private 为已有凭据目录，管理前端不可接触。可显式启用 Qwen/Ollama Normal 对话；真实设备、NPU、文件索引、Streaming 和固定 Analysis 接入未实现。
+Runtime/Core 为共享领域与 AI 包；Development 为模拟器和测试；Generated 为 Git ignored 的 outputs/management_web/（SQLite、脱敏 Assistant Trace）；User-private 为已有凭据目录，管理前端不可接触。可显式启用 Qwen/Ollama Normal；Streaming 前后端已离线接通，但仅 Qwen 精确两工具 candidate、默认关闭。真实 Streaming 试用、设备、NPU、文件索引和固定 Analysis 尚未开放。

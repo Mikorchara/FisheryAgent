@@ -2,7 +2,7 @@
 
 R2B-5A 研究基线：当时为 **DESIGN ONLY**，仅新增本文，没有运行 Provider/NPU 或资格实验。
 
-当前实施状态：**R2B-5B BACKEND OFFLINE IMPLEMENTED / WEB TRIAL NOT OPEN**。后端入口已实现；独立开关默认关闭、Qwen 两工具仅 candidate。前端、真实资格和试用授权仍未完成。
+当前实施状态：**R2B-5C FRONTEND + BACKEND OFFLINE IMPLEMENTED / WEB TRIAL NOT OPEN**。双模式、POST SSE 与聊天交互已离线接通；独立开关默认关闭、Qwen 两工具仅 candidate。真实资格和试用授权仍未完成。
 
 用户已确认 R2B-4 的 Qwen Normal 2/2/3 初步网页验收通过，Monitoring 与 Knowledge 来源区分正常。这是管理端 Normal 的人工证据，不能替代 Streaming 精确范围资格或回答质量验收。
 
@@ -176,5 +176,13 @@ Activity + Preview + 唯一终态]
 - Service 共用 claim_turn 返回服务器内的一次性执行闭包；Normal execute_turn 直接使用，POST SSE 在 worker 前 claim，再在 worker 建立同一 Handle 的 ContextVar / deadline。凭据一次解析、Runtime 一次冻结；Tool 循环不复制。
 - POST /api/ai/messages/stream 复用原门禁/控制 API，事件来自同一 AssistantEventChannel；包含累计安全 Activity、临时 Preview/Reset、唯一 Final/Error/Cancelled。关闭响应取消原 Handle；已完成状态不被迟到取消或投递故障改写。
 - Fake SDK 的三路径确认真实 Monitoring Result 进入后续请求，两个 Ledger Receipt 独立；所有实际 Streaming 请求编码 stream=true、max_tokens=512，Runtime 默认响应仍为 normal。候选/关闭/Scope/Policy/revision 错配全部在模型 I/O 前拒绝。
-- 当前页面没有 Streaming 控件或事件消费者；R2B-5C 仍须落实本报告的临时预览撤销、严格事件 parser、模式切换、确认更新和唯一 History 提交。后端技术测试不代表真实模型资格或回答质量。
+- R2B-5B 当时未实现前端；现已由下节 R2B-5C 接通。后端技术测试不代表真实模型资格或回答质量。
 - 当前边界与离线验证入口见 [INTEGRATION](../../INTEGRATION.md#r2b-5b管理-streaming-后端) 和 [BUILD_RUN](../../BUILD_RUN.md#r2b-5bstreaming-后端离线验证)。
+
+## R2B-5C 实施补记
+
+- 小型独立 SSE parser + 原 Workspace；Normal 仍用原 POST/状态轮询，Streaming 通过 POST 读流，无新执行循环或自动重连。候选默认关闭，原 Scope/Prompt/512 上限/2/2/3/120 秒不变。
+- 严格序号与身份、start 确认、Activity 和 Final 检查；只忽略重复 seq 和较旧 Request 的 reset。失败/断流/非法事件撤销预览，无成功 pair；Stop 复用原控制句柄，Abort 清理原通道，已完成与投递丢失保持既有区别。
+- 同一 DOM 回复在 Final 后转正。内部聊天滚动、稳定输入区、手动上滚暂停跟随、回到最新与键盘问题导航，不改变后端 History 或 Source/Ledger。
+- 51 Node、88 管理 Web Python、13 AI Service、154 相关核心回归通过。新增 HTTP/Fake SDK→真实前端 parser/Workspace 三路径桥接；隔离浏览器完成双 Tool，1280/390px 无横向溢出。不是实际 LLM 或语言质量证据。
+- 下一阶段：单独批准管理专属 Qwen 两工具案例、核对真实协议/清理/Stop/来源与人工回答质量，再决定实验发布；不自动开启 Streaming，不扩大到 Ollama/评分/三工具。

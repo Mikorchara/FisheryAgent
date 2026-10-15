@@ -20,3 +20,16 @@ main{max-width:1640px;margin:0 auto;padding:31px 36px 20px}.page-heading{display
 /* Readable time ticks at narrow card widths; never compress long gaps into fake time. */
 .chart-viewport{overflow-x:auto;max-width:100%}.chart-viewport .trend-chart{min-width:520px}.chart-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 @media(max-width:600px){.card-heading:has(.chart-controls){flex-wrap:wrap}.chart-controls{width:100%;justify-content:flex-start}}
+
+/* One scrollable conversation, stable composer, independent keyboard question navigation. */
+.management-assistant .chat-shell{display:flex;flex-direction:column;height:clamp(650px,calc(100dvh - 170px),1000px);min-width:0}
+.management-assistant .chat-top,.management-assistant .chat-composer{flex:none}
+.chat-lane{display:grid;grid-template-columns:minmax(0,1fr) 42px;flex:1;min-height:160px;overflow:hidden}
+.management-assistant .management-messages{min-height:0;max-height:none;overscroll-behavior:contain;overflow-anchor:none}
+.management-message{flex:none}.management-message.pending{border-style:dashed;background:#f4faf9}
+.question-navigation{display:flex;flex-direction:column;gap:8px;overflow-y:auto;padding:18px 5px;border-left:1px solid var(--line)}
+.question-marker{flex:none;min-height:30px;border:1px solid var(--line);border-radius:8px;background:white;color:var(--muted);font-size:11px;cursor:pointer}
+.question-marker:hover,.question-marker:focus-visible{background:#eaf4f3;color:var(--teal);outline:2px solid var(--teal);outline-offset:1px}
+.latest-message{margin-right:auto}.latest-message[hidden]{display:none}
+.management-assistant .side-stack{min-width:0}.management-assistant .data-details{overflow-wrap:anywhere}
+@media(max-width:760px){.management-assistant .chat-shell{height:calc(100dvh - 120px);min-height:660px}.chat-lane{grid-template-columns:minmax(0,1fr) 36px}.assistant-controls .field{min-width:130px}}

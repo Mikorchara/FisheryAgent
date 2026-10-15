@@ -10,7 +10,7 @@
 - [路线](ROADMAP.md)
 - [开发规则](../AGENTS.md)
 - [R2B 架构评估基线](deep-dive/research/R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md)（R2B-0 研究；当前实现以 INTEGRATION 为准）
-- [管理 Streaming 设计与后端状态](deep-dive/research/R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md)（默认关闭、candidate，尚无前端/真实试用）
+- [管理 Streaming 设计与实施状态](deep-dive/research/R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md)（前后端离线就绪，默认关闭、candidate，真实试用未开放）
 - [R2B-3 架构与 Tool 故障审查](deep-dive/research/R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md)（只读证据、修复建议与后续顺序）
 
 根 [docs](../../docs/STRUCTURE.md) 维护 AI 原型和共享 Runtime；这里不重复其 Prompt、Provider、Tool、Credential 合同。事实优先级：源码 → 测试 → 当前文档 → 历史记录。
@@ -25,7 +25,7 @@ R2B-3.4：AI 业务已独立为 `apps/ai_service/`，Web 经明确的 AssistantB
 | 水质监测 | 窗口事实、样本覆盖、历史、PROTOTYPE 规则及明确无法判断状态 | 真实传感器、批准生产规则 |
 | 视频监控 | 视觉窗口汇总、行为比例、疑似异常、标定状态 | 视频流、真实 NPU、截图/片段 |
 | 事件记录 | 模拟异常事件、去重、可靠恢复/待确认、真实严重程度及规则身份 | 人工处置/通知工作流 |
-| AI 助手 | 显式启用 Qwen/Ollama Normal、统一水质 Tool、History、Stop、安全 Activity | 管理端 Streaming/Multi-Round、评分/视觉/知识 Tool、真实质量验收 |
+| AI 助手 | Qwen/Ollama Normal、统一水质/Knowledge、可选本地多轮；Streaming 前后端离线接通、History/Stop/安全 Activity/问题导航 | 管理 Streaming 真实资格与试用、评分/视觉 Tool、真实质量验收 |
 | 资料与知识库 | Demo 元数据与分类/详情 | 文件上传下载、索引、检索桥接 |
 | 设置 | 分类、禁用操作、独立开发入口 | 账户权限、生产配置 |
 
@@ -51,3 +51,5 @@ R2B-4 离线验证：AI Service 11、管理 Web Python 64、Monitoring 相关 37
 
 
 R2B-5B 后端离线结果：新增 Streaming/配置专项 25 项通过（23 项管理 HTTP/SSE、2 项配置）；既有管理 Python 64 项、AI Service 13 项（含上述配置测试）、核心 Assembler/Streaming 多轮/Prototype SSE 96 项及管理 Node 36 项相关回归通过。Python/JSON 语法、98 条 Markdown 本地文件链接、diff/空白检查与敏感模式扫描通过。未改前端、核心 Runtime 或真实资格；未执行 Provider/NPU。后端已完成而 Final 投递失败时不重写完成 Trace，也不替客户端恢复 History。
+
+R2B-5C：已增加默认 Normal 的双模式选择、安全 SSE parser、原消息内预览转 Final、失败撤销、滚动跟随/暂停与问题导航。管理 Node 51、管理 Web Python 88、AI Service 13、相关核心 Streaming/来源回归 154 项通过；真实管理 HTTP 的三条 Fake SDK 路径进入正式前端 parser/会话，均只提交一条最终回答。隔离本机浏览器双 Tool 完成，1280/390px 无横向溢出。没有调用真实 Provider/NPU、改核心 Runtime 或打开 candidate；[运行与验收](BUILD_RUN.md#r2b-5c聊天前端离线验收)。

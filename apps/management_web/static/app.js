@@ -63,7 +63,7 @@ function assistant(){if(state.data.ai?.connected)return [assistantWorkspace.moun
       el('div',{class:'suggestions'},['当前水质有哪些需要关注的指标？','如何理解溶解氧？','查找相关养殖资料'].map(text=>button(text,()=>{state.draft=text;$('assistant-draft').value=text;})))])]),
     el('div',{class:'chat-composer'},[el('label',{for:'assistant-draft',text:'消息草稿',class:'sr-only'}),el('textarea',{id:'assistant-draft',rows:3,placeholder:'可以编辑草稿；AI 服务接入后再发送。',text:state.draft,oninput:e=>{state.draft=e.target.value;}}),
       el('div',{class:'composer-foot'},[el('span',{text:'尚未连接 AI · 不会产生模型请求'}),el('button',{class:'button primary',disabled:'disabled',text:'发送 · 尚未接入'})])])]),
-  el('div',{class:'side-stack'},[card('模型与响应','应用服务提供模型清单与执行状态。',[rows([['模型','尚未加载'],['响应模式','待接入 Normal / Streaming'],['运行状态','未连接']])]),
+  el('div',{class:'side-stack'},[card('模型与响应','应用服务提供模型清单与执行状态。',[rows([['模型','尚未加载'],['响应模式','Normal 默认 · Streaming 受发布门禁控制'],['运行状态','未连接']])]),
     card('工具执行','未来仅展示安全 Activity。',[empty('暂无执行记录','Tool 调用、步骤和来源证明将在服务接入后展示。','settings')]),
     card('开发验证','与管理平台的正式工作区分开。',[el('p',{class:'muted',text:'现有 AI Prototype Web 保留在独立端口，模型和凭据由原 Runtime 管理。'}),el('a',{class:'text-link',href:'http://127.0.0.1:8765',target:'_blank',rel:'noopener noreferrer',text:'打开现有 AI 原型 ↗'})])])])];}
 
@@ -153,5 +153,5 @@ bootstrap();
 let poll;
 function startPolling(){if(!poll)poll=setInterval(()=>{if(!document.hidden)refresh();},5000);}
 startPolling();
-window.addEventListener('pagehide',()=>{clearInterval(poll);poll=null;void assistantWorkspace.stop();});
+window.addEventListener('pagehide',()=>{clearInterval(poll);poll=null;assistantWorkspace.suspend();});
 window.addEventListener('pageshow',()=>{startPolling();});

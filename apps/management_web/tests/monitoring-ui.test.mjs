@@ -29,7 +29,7 @@ function page(data=fixture()){
     window:{addEventListener:(type,fn)=>events[type]=fn,scrollTo:()=>{}},
     setInterval:(fn,ms)=>{timers.push({fn,ms});return timers.length;},clearInterval:()=>{},
     fetch:async url=>{requests.push(url);if(current instanceof Error)throw current;return {ok:true,json:async()=>structuredClone(current)};}});
-  for(const file of ['view-model.js','components.js','services.js','assistant.js','app.js']){
+  for(const file of ['view-model.js','components.js','assistant-events.js','services.js','assistant.js','app.js']){
     let source=fs.readFileSync(new URL('../static/'+file,import.meta.url),'utf8');
     source=source.replace(/^import .*;\s*$/gm,'').replace(/\bexport /g,'');
     vm.runInContext(source,context,{filename:file});

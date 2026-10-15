@@ -274,7 +274,7 @@ Ollama 只读证据：`outputs/management_web/assistant-traces.jsonl` 中同一�
 
 ## R2B-5B：管理 Streaming 后端
 
-**仅后端离线实现，真实 Web 试用尚未开放。** `ai_service.streaming` 读取管理自己的固定 resources/assistant_streaming.json，一次加载、随 epoch 冻结；默认 enabled=false，唯一 Qwen OFF / Streaming / 水质 + Knowledge 两工具 candidate，qualification_id/validated_at 为空。即使只把开关改为 true，candidate 仍被拒绝；不继承 Normal 或 Prototype 发布资格。没有新增试用 CLI 或前端控件。
+**前后端已离线实现，真实 Web 试用尚未开放。** `ai_service.streaming` 读取管理自己的固定 resources/assistant_streaming.json，一次加载、随 epoch 冻结；默认 enabled=false，唯一 Qwen OFF / Streaming / 水质 + Knowledge 两工具 candidate，qualification_id/validated_at 为空。即使只把开关改为 true，candidate 仍被拒绝；不继承 Normal 或 Prototype 发布资格。前端有模式选择，没有新增试用 CLI。
 
 复用核心 streaming_scope / resolve_streaming_profile，管理外层绑定 Monitoring/Knowledge 版本、source/version/backend；revision 同时绑定实际 definitions、完整 Policy、设备、epoch、配置、预算与 Runtime 设置。Bootstrap 每 Preset 增加 streaming 安全摘要（can_send / mode / transport / revision / release_status / mode_reason / 请求及 Tool 上限 / max_output_tokens），原 execution 和 revision 保留 Normal 语义。Ollama 不在 Streaming 范围。浏览器不能传入 mode、Transport、预算、Prompt、Deadline 或来源要求。
 
@@ -286,4 +286,10 @@ Web 的 streaming.py 只投递现有 AssistantEventChannel，不另写 Tool 或�
 
 响应 text/event-stream / no-store / X-Accel-Buffering:no；原 cancel/state API 不变，响应关闭（包括首次消费前）及迭代器断开均取消原 Handle。worker finally 清事件引用，线程启动失败安全结束，无自动重试、重连、Normal 降级或 failover。已完成但投递中断时，后端保留完成记录；客户端未收到 Final 就不能提交成功 History。控制令牌不进 URL 或事件；这仍是本机开发边界，不是生产用户权限或多进程任务服务。
 
-R2B-5C 前置条件：基于现有安全 profile 实现模式选择与逐次确认；POST fetch 读流严格校验 seq/epoch/request_id，撤销失败/取消/断线预览，仅完整可验证 Final 写成功 pair；保留设备/模型切换、Clear、History 和 Normal 回归。后续真实测试/试用须另获明确授权，本阶段不能直接开启。
+### R2B-5C：前端事件与 Session
+
+`services.ai.stream` 仅负责同源认证 POST fetch；独立 `assistant-events.js` 消费 schema v1，校验 id/连续 seq/request_id/epoch、start 的设备/revision/预算/状态、Activity v2 与唯一终态。重复旧 seq 不重复应用，跳号/非法身份/未知事件安全失败；注释心跳不占号。通道在新 Request reset 后可能补发旧 Request reset，前端仅忽略这个旧清除动作，不能撤销较新预览。UTF-8 严格解码；单缓冲 512 KiB、总量 8 MiB、预览 16 KiB、事件最多 513（含终态）。读流最终 cancel/releaseLock，无 EventSource 自动重连。
+
+模式默认 Normal；Streaming 选择的 profile/revision 决定确认与路由，浏览器不提交 mode/预算。正在执行的 Turn 冻结配置；History 只存同一成功文本 pair，模式切换不清 History。仅合法 Final（完整非空正文、stop、trace_recorded、completed Activity、匹配请求/设备/revision）交给 Workspace 成功提交；预览/失败/取消不会成为 History。Stop 立即隐藏预览，复用原 cancel API；接受取消后 Abort 原读流，迟到事件不改状态。服务端先完成时允许收到的合法 Final，页面离开后即使迟到也不提交。
+
+消息节点及内部滚动容器持续存在，Preview→Final 不另建一条回复；每 Tool 独立卡片和有序 Steps/Usage 沿用安全投影，不渲染 Raw Result/参数/reasoning。滚动跟随与问题导航仅为显示状态，不改变模型 History/Source 合同。后续真实测试/试用须另获明确授权，本阶段不能直接开启。

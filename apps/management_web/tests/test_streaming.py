@@ -2,6 +2,8 @@
 import asyncio
 from dataclasses import replace
 import json
+from pathlib import Path
+import subprocess
 import threading
 import time
 from types import SimpleNamespace as NS
@@ -143,6 +145,26 @@ class ManagementStreamingTests(unittest.TestCase):
         self.assertEqual(self.bodies[0]['messages'][0]['content'],MULTI_ROUND_SYSTEM_INSTRUCTION)
         self.assertFalse(any(m['role']=='tool' for m in self.bodies[0]['messages']))
         self.assertEqual(rows[0]['max_output_tokens'],512)
+
+    def test_real_http_fake_sdk_events_reach_browser_parser_and_commit_one_turn(self):
+        """Actual formal Runtime -> SSE bytes -> actual frontend parser / workspace."""
+        for count in (0,1,2):
+            with self.subTest(tools=count):
+                self.clients.clear();self.bodies.clear();self.runtimes.clear();self.service_handles.clear()
+                self.batch(oxygen=2.2)
+                frames=([tool_chunks()] if count else [])+(
+                    [tool_chunks(KNOWLEDGE,'knowledge','{"query":"x"}')] if count==2 else [])+[final_chunks()]
+                self.setup_stream(frames)
+                response=self.send_stream()
+                rows=self.rows(response);self.assert_final(rows,count+1,count)
+                config={**self.config,'browser_token':'offline-browser-token'}
+                payload={'config':config,'frames':response.get_data(as_text=True),
+                    'request_id':self.sent['request_id'],'tools':count,'requests':count+1}
+                bridge=Path(__file__).with_name('stream-browser-bridge.mjs')
+                result=subprocess.run(['node',str(bridge)],input=json.dumps(payload),capture_output=True,
+                    text=True,encoding='utf-8',timeout=15)
+                self.assertEqual(result.returncode,0,result.stderr)
+                self.assertTrue(json.loads(result.stdout)['completed'])
 
     def test_water_result_same_batch_and_device_enters_followup_after_cleanup(self):
         batch=self.batch(oxygen=2.2);self.batch('pond-b',oxygen=6.4)

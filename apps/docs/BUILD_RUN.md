@@ -140,10 +140,23 @@ R2B-3.4 边界测试：`python -m unittest apps.ai_service.tests.test_service ap
 
 ## R2B-5B：Streaming 后端离线验证
 
-启动命令保持原样：`python -m apps.management_web --enable-assistant`；原 Normal 多轮试用参数也不变。当前无 Streaming 网页开关或试用启动参数，默认配置关闭且只有 Qwen 两工具 candidate；不要为验收后端而自行改成已发布状态或请求真实模型。
+启动命令保持原样：`python -m apps.management_web --enable-assistant`；原 Normal 多轮试用参数也不变。网页可选择 Normal / Streaming，默认 Normal。Streaming 默认配置关闭且只有 Qwen 两工具 candidate，选择后显示未开放并禁止发送；没有真实试用启动参数，不要为验收而自行修改发布状态或请求真实模型。
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest apps.ai_service.tests.test_streaming_config apps.management_web.tests.test_streaming
 ```
 
-该测试从受控管理 HTTP POST SSE 路由进入，运行正式 Assistant Prompt/History、Gateway/Assembler、临时 SQLite Monitoring、Knowledge、Ledger、Trace 与提交门禁；SDK 为纯离线 Fake，网络被阻断，只容许 Windows asyncio 自身唤醒套接字。临时 local_experimental 配置只在测试实例内注入，不修改磁盘候选或用户 Policy。实际 max_tokens=512、2/2/3、120 秒、资源关闭和结果传递均有断言。没有实现前端 Streaming，不能把这些测试当作网页或真实模型验收。
+该测试从受控管理 HTTP POST SSE 路由进入，运行正式 Assistant Prompt/History、Gateway/Assembler、临时 SQLite Monitoring、Knowledge、Ledger、Trace 与提交门禁；SDK 为纯离线 Fake，网络被阻断，只容许 Windows asyncio 自身唤醒套接字。临时 local_experimental 配置只在测试实例内注入，不修改磁盘候选或用户 Policy。实际 max_tokens=512、2/2/3、120 秒、资源关闭和结果传递均有断言。新增桥接测试把三条实际 HTTP/SSE 路径的事件逐字节送入正式前端 parser / Workspace，验证各自只有一个成功 pair；不代表真实模型资格或回答质量。
+
+## R2B-5C：聊天前端离线验收
+
+```powershell
+node --test apps/management_web/tests/*.test.mjs
+.\.venv\Scripts\python.exe -m unittest apps.management_web.tests.test_streaming
+```
+
+页面操作：模式切换仅影响下一条消息，成功 History 共用，每次切换清除联网确认；执行中模式/模型/设备/Clear 冻结。聊天内部滚动，输入区保持位置；发送自动跟随新问题，向上阅读暂停跟随，“回到最新”恢复。右侧编号对应每个问题，悬浮查看摘要、点击跳转，Tab/Enter 和方向键/Home/End 可操作。
+
+Streaming 临时正文在同一消息卡片内转为最终回答；Tool 请求、失败、截断、超时、Stop 或断线撤销预览，保留草稿且不写成功 History。不自动重连、重发或转 Normal。离开/刷新页面尽力取消原 Handle；后端已经完成但 Final 未到达时，浏览器仍不提交，远端计算/计费停止状态为 UNKNOWN。
+
+当前可人工检查默认 Normal、candidate 拒绝、导航和滚动；完整 Streaming 仅能通过上述 Fake SDK 离线入口验收。下一阶段须另获逐案例真实请求授权，审查管理专属 Scope 的技术及人工回答质量，再决定是否发布 local_experimental；不可继承原 Prototype 资格。
