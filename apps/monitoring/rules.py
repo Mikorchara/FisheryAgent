@@ -10,7 +10,7 @@ from fishery_ai.contracts import WaterQualityReading, Quality, Freshness
 from fishery_ai.domain import DiagnosisService
 
 from .contracts import (METRICS, ObservationRef, DataQuality, RuleIdentity,
-                        MonitoringFinding, FindingState, ChannelAnalysis, metric_quality)
+                        MonitoringFinding, FindingState, ChannelAnalysis, water_metric_facts)
 
 
 WATER_RULES = {
@@ -44,7 +44,8 @@ def observation_ref(row, channel):
         statistics_version=data.get("model_version") if channel == "visual" else "window_mean-v1")
 
 
-def assess_channel(device_id, channel, row, *, evaluated_at, freshness, connectivity, diagnosis):
+def assess_channel(device_id, channel, row, *, evaluated_at, freshness, connectivity, diagnosis,
+                   water_metrics=None):
     """Per-channel assessment retaining its own time/window. No cross-channel inference."""
     if channel not in ("water", "visual"):
         raise ValueError("INVALID_ANALYSIS_CHANNEL")
@@ -54,10 +55,11 @@ def assess_channel(device_id, channel, row, *, evaluated_at, freshness, connecti
     if data is None:
         quality = "missing"
     elif channel == "water":
-        qualities = [metric_quality(s, data["sample_count"]) for s in data["metrics"].values()]
+        water_metrics = water_metric_facts(data) if water_metrics is None else water_metrics
+        qualities = [m.quality for m in water_metrics]
         quality = ("invalid" if "invalid" in qualities else "missing" if all(q == "missing" for q in qualities)
                    else "valid" if all(q == "valid" for q in qualities) else "partial")
-        coverage = tuple((k, s["valid_samples"], data["sample_count"]) for k, s in data["metrics"].items())
+        coverage = tuple((m.id, m.valid_samples, m.sample_count) for m in water_metrics)
     else:
         valid, total = data.get("valid_frames", data["frames_processed"]), data["frames_processed"]
         quality = "invalid" if valid == 0 else "valid" if valid == total else "partial"
@@ -83,9 +85,8 @@ def assess_channel(device_id, channel, row, *, evaluated_at, freshness, connecti
 
     current = data is not None and freshness == "fresh" and connectivity == "online"
     if channel == "water":
-        usable = {k: current and metric_quality(data["metrics"][k], data["sample_count"]) == "valid"
-                  for k in METRICS} if data else dict.fromkeys(METRICS, False)
-        values = [data["metrics"][k]["mean"] if usable[k] else None for k in METRICS]
+        usable = {m.id: current and m.quality == "valid" for m in water_metrics} if data else dict.fromkeys(METRICS, False)
+        values = [m.mean if usable[m.id] else None for m in water_metrics] if data else [None] * len(METRICS)
         present = sum(v is not None for v in values)
         hits = {}
         if present:

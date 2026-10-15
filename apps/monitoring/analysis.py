@@ -6,22 +6,21 @@ import math
 from fishery_ai.contracts import WaterQualityReading, Quality, Freshness, evaluate_freshness
 from fishery_ai.domain import DiagnosisService
 
-from .contracts import METRICS, metric_quality
+from .contracts import WaterCapture, water_metric_facts
 from .rules import assess_channel
 
 
-def reading_from_row(row):
+def reading_from_row(row, *, metrics=None, freshness=Freshness.FRESH):
     """Canonical projection of validated facts, not a second risk rule implementation."""
     if row is None:
         return None
-    data = row["payload"]["data"]
-    values = [data["metrics"][key]["mean"] if metric_quality(data["metrics"][key], data["sample_count"]) == "valid"
-              else None for key in METRICS]
+    metrics = water_metric_facts(row["payload"]["data"]) if metrics is None else metrics
+    values = [m.mean if m.quality == "valid" else None for m in metrics]
     present = sum(v is not None for v in values)
-    invalid = any(s["invalid_samples"] > 0 for s in data["metrics"].values())
+    invalid = any(m.invalid_samples > 0 for m in metrics)
     quality = Quality.INVALID if invalid or not present else Quality.VALID if present == 3 else Quality.PARTIAL
     return WaterQualityReading(*values, datetime.fromisoformat(row["observed_at"]),
-        datetime.fromisoformat(row["received_at"]), "simulator:"+row["device_id"]+":window_mean", quality, Freshness.FRESH)
+        datetime.fromisoformat(row["received_at"]), "simulator:"+row["device_id"]+":window_mean", quality, freshness)
 
 
 class DomainAnalysisService:
@@ -35,6 +34,17 @@ class DomainAnalysisService:
         self.stale_after_s, self.offline_after_s = stale_after_s, offline_after_s
 
     def evaluate(self, device_id, channel, row, *, evaluated_at):
+        return self._evaluate(device_id, channel, row, evaluated_at=evaluated_at)
+
+    def capture_water(self, device_id, row, *, evaluated_at):
+        metrics = water_metric_facts(row["payload"]["data"] if row else None)
+        analysis = self._evaluate(device_id, "water", row, evaluated_at=evaluated_at, water_metrics=metrics)
+        reading = reading_from_row(row, metrics=metrics,
+            freshness=Freshness(analysis.data_quality.freshness)) if row else None
+        return WaterCapture(analysis, metrics, reading, self.diagnosis.RULE_VERSION,
+                            row.get("last_reported_at") if row else None)
+
+    def _evaluate(self, device_id, channel, row, *, evaluated_at, water_metrics=None):
         if not isinstance(evaluated_at, datetime) or evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
             raise ValueError("INVALID_ANALYSIS_TIME")
         if row is not None and row["device_id"] != device_id:
@@ -47,4 +57,4 @@ class DomainAnalysisService:
             last_contact = datetime.fromisoformat(row.get("last_reported_at") or row["received_at"])
             connectivity = "offline" if (evaluated_at-last_contact).total_seconds() > self.offline_after_s else "online"
         return assess_channel(device_id, channel, row, evaluated_at=evaluated_at, freshness=freshness,
-                              connectivity=connectivity, diagnosis=self.diagnosis)
+                              connectivity=connectivity, diagnosis=self.diagnosis, water_metrics=water_metrics)

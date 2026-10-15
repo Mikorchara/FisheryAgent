@@ -17,16 +17,17 @@ apps/
 │     └─ R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md # 当前架构、参数故障证据与路线建议
 ├─ monitoring/                      # Web 与未来 Tool 共享的数据基础
 │  ├─ __init__.py
-│  ├─ contracts.py                   # v1 上报、观测/质量/Finding/Event/规则身份合同
-│  ├─ analysis.py                    # 纯 DomainAnalysisService、时间/设备检查、Reading 投影
+│  ├─ contracts.py                   # 上报、WaterMetricFact/WaterCapture、质量/Finding/Event 合同
+│  ├─ analysis.py                    # 纯领域求值、单次水质捕获与 canonical Reading 投影
 │  ├─ rules.py                       # 纯评估函数、证据门禁与 PROTOTYPE 规则投影
 │  ├─ events.py                      # 纯 EventService、事件变更及只读状态投影
 │  ├─ repository.py                  # SQLite、事务、历史与事件变更持久化
-│  ├─ service.py                     # 业务协调、统一查询/Web 投影、绑定设备上下文
+│  ├─ service.py                     # current-only 捕获、Web snapshot 投影与设备绑定
 │  └─ tests/
 │     ├─ test_pipeline.py            # 校验、时序、安全、状态与共享来源
 │     ├─ test_rule_governance.py      # 规则状态、证据范围、可靠恢复与兼容
 │     ├─ test_business_services.py    # 纯服务一致性、设备/时间边界与故障回滚
+│     ├─ test_water_capture.py        # 单次读取/诊断、双投影一致性、质量语义和 DTO 大小
 │     └─ test_local_http.py          # 真实 loopback 上报及停止/重启
 ├─ simulator/                       # 独立设备生产端
 │  ├─ __init__.py
@@ -41,7 +42,7 @@ apps/
    ├─ __main__.py                    # 本机启动、存储装配与写入开关
    ├─ README.md                      # 快速入口
    ├─ app.py                         # HTTP、访问控制与服务装配
-   ├─ ai_adapter.py                  # Normal Assistant 装配、设备绑定与 SQLite 水质 Tool
+   ├─ ai_adapter.py                  # Normal Assistant 装配、设备绑定与精简水质 Tool 投影
    ├─ contracts.py                   # Web Protocol、共享 DTO 导出
    ├─ services.py                    # R1 兼容 Demo、未接入 AI/文件服务
    ├─ package.json                   # Node 原生测试，无依赖
@@ -79,7 +80,7 @@ ManagementAssistant → AssistantService / ToolCallingService / Gateway / Creden
 
 模拟器不导入服务器存储或网页变量。共享 monitoring 不依赖 Flask 或网页组件；水质 DTO 只有一个定义，Web 兼容导出。SQLite 连接按操作关闭，生成器与 HTTP 生命周期分离，页面轮询不触发采样或写入。
 
-DomainAnalysisService 与 EventService 不导入 Repository/Flask。Repository 只应用 EventChanges，规则/生命周期判断不再埋入 SQL；MonitoringService 只负责捕获、协调与 DTO 投影。Assistant 水质 Tool 经 snapshot() 捕获同一批次事实及 analysis，后者与 analysis() 共用 DomainAnalysisService；不二次诊断、不跨通道融合。
+DomainAnalysisService 与 EventService 不导入 Repository/Flask。Repository 只应用 EventChanges，规则/生命周期判断不再埋入 SQL。MonitoringService.capture_water() 只读一次 current，得到 frozen WaterCapture（指标/canonical Reading/同批次分析）；Assistant 投影不再借用 Web snapshot 或查询趋势。Web snapshot() 保留 current+history 事务和原 DTO，与 Tool 共用纯捕获实现，不二次诊断、不跨通道融合。
 
 页面负责交互与展示；API 负责输入/访问控制；服务负责用例和状态；Adapter 负责生产端/设备差异。七页路由在 static/app.js，独立 Assistant Session 在 static/assistant.js；薄 ai_adapter.py 绑定设备与正式 Runtime，不复制执行循环、Prompt 或 History Projection。
 

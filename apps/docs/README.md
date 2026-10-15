@@ -1,6 +1,6 @@
 # 智慧渔业管理平台文档
 
-`apps/docs/` 是管理平台主要入口。当前已完成 R1 网页、R2A/R2A.1 统一监测、R2B-1/2 Domain Analysis / Event Service 与 R2B-3 Normal Assistant 桥接。AI Runtime 保留在 `src/fishery_ai/`，原 Prototype Web 独立保留。监测风险规则全部为 PROTOTYPE，未获得生产批准。
+`apps/docs/` 是管理平台主要入口。当前已完成 R1 网页、R2A/R2A.1 统一监测、R2B-1/2 Domain Analysis / Event Service 与 R2B-3 Normal Assistant 桥接，并补齐 R2B-3.1 安全拒因、R2B-3.2 共享事实捕获与精简 Tool DTO。AI Runtime 保留在 `src/fishery_ai/`，原 Prototype Web 独立保留。监测风险规则全部为 PROTOTYPE，未获得生产批准。
 
 ## 阅读入口
 

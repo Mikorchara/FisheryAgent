@@ -1,11 +1,17 @@
 """Versioned device window protocol. Validation never trusts producer provenance."""
 
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from dataclasses import dataclass, asdict
 from enum import Enum
 import json
 import math
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fishery_ai.contracts import WaterQualityReading
 
 SCHEMA_VERSION = 1
 METRICS = {
@@ -163,6 +169,41 @@ def metric_quality(stat, sample_count):
     if stat["mean"] is None or stat["valid_samples"] == 0:
         return "missing"
     return "valid" if stat["valid_samples"] == sample_count else "partial"
+
+
+@dataclass(frozen=True)
+class WaterMetricFact:
+    """Received window statistics, without page labels or risk interpretation."""
+    id: str
+    unit: str
+    mean: float | None
+    quality: str
+    valid_samples: int
+    sample_count: int
+    invalid_samples: int
+    minimum: float | None
+    maximum: float | None
+    latest: float | None
+
+
+def water_metric_facts(data):
+    """Classify each received metric once for rules and read projections."""
+    if data is None:
+        return ()
+    return tuple(WaterMetricFact(key, unit, stat["mean"], metric_quality(stat, data["sample_count"]),
+        stat["valid_samples"], data["sample_count"], stat["invalid_samples"],
+        stat["min"], stat["max"], stat["latest"])
+        for key, (_label, unit, _low, _high) in METRICS.items() for stat in (data["metrics"][key],))
+
+
+@dataclass(frozen=True)
+class WaterCapture:
+    """One detached current row assessed once; no history or presentation payload."""
+    analysis: ChannelAnalysis
+    metrics: tuple[WaterMetricFact, ...]
+    reading: WaterQualityReading | None
+    rule_version: str
+    last_reported_at: str | None
 
 
 @dataclass(frozen=True)

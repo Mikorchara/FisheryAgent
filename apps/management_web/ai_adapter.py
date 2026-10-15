@@ -3,7 +3,7 @@
 No provider protocol, intent routing, history projection or execution loop lives here.
 """
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 import hashlib
 from importlib.resources import files
 from pathlib import Path
@@ -25,6 +25,7 @@ from fishery_ai.tool_conversation import ToolCallingService
 
 
 PRESETS = ("dashscope-qwen38-flash-r1", "ollama-qwen35-4b-r1")
+WATER_TOOL_PROJECTION = "management-current-water@1"
 
 
 class ManagementWaterRegistry:
@@ -44,28 +45,37 @@ class ManagementWaterRegistry:
 
 
 def water_payload(monitoring, device_id):
-    # snapshot captures one SQLite row + its governed analysis in a read transaction.
-    # It uses exactly the DomainAnalysisService used by MonitoringService.analysis().
-    # No second reader/query or second Diagnosis pass can mix batches or rules.
-    snapshot = monitoring.snapshot(device_id)
-    analysis = snapshot.analysis
-    if snapshot.observed_at is None:
-        return {"status": "NO_DATA", "water_quality": None, "findings": [],
-                "device_id": device_id, "evaluated_at": snapshot.evaluated_at,
-                "analysis": analysis}
-    values = {m.id: m.value if m.quality == "valid" else None for m in snapshot.metrics}
-    present = sum(v is not None for v in values.values())
-    # Canonical Reading quality matches Monitoring's existing reading projection.
-    invalid = any((m.invalid_samples or 0) > 0 for m in snapshot.metrics)
-    quality = "invalid" if invalid or not present else "valid" if present == 3 else "partial"
-    return {"status": "OK", "water_quality": {**values, "quality": quality,
-        "freshness": snapshot.freshness, "observed_at": snapshot.observed_at,
-        "retrieved_at": snapshot.received_at, "source": "simulator:" + device_id + ":window_mean"},
-        "evaluated_at": snapshot.evaluated_at, "findings": list(snapshot.findings),
-        "rule_version": snapshot.rule_version, "device_id": device_id,
-        "source_kind": snapshot.source_kind, "batch_id": snapshot.batch_id,
-        "window": snapshot.window, "aggregation": snapshot.aggregation,
-        "connectivity": snapshot.connectivity, "analysis": analysis}
+    return project_water_tool(monitoring.capture_water(device_id))
+
+
+def project_water_tool(capture):
+    """Detached Tool DTO from one capture; no Web history, fetch or diagnosis."""
+    analysis, reading = capture.analysis, capture.reading
+    ref, quality = analysis.observation, analysis.data_quality
+    result = {"projection_version": WATER_TOOL_PROJECTION,
+        "status": "OK" if ref else "NO_DATA", "water_quality": None,
+        "device_id": analysis.device_id, "channel": analysis.channel, "batch_id": ref.batch_id if ref else None,
+        "source_kind": ref.source_kind if ref else "simulator",
+        "evaluated_at": analysis.evaluated_at, "last_reported_at": capture.last_reported_at,
+        "connectivity": quality.connectivity, "data_quality": asdict(quality),
+        "rule_version": capture.rule_version, "findings": []}
+    if ref is None:
+        return result
+    result.update({"water_quality": {
+        **{m.id: getattr(reading, m.id) for m in capture.metrics},
+        "quality": reading.quality.value, "freshness": reading.freshness.value,
+        "observed_at": reading.observed_at.isoformat(), "retrieved_at": reading.retrieved_at.isoformat(),
+        "source": reading.source},
+        "window": {"start": ref.window_start, "end": ref.window_end, "duration_s": ref.window_duration_s},
+        "aggregation": ref.aggregation, "statistics_version": ref.statistics_version,
+        "metrics": {m.id: {"unit": m.unit, "quality": m.quality,
+            "invalid_samples": m.invalid_samples} for m in capture.metrics},
+        # All outcomes matter, especially insufficient evidence / not evaluated.
+        # Observation identity is shared above, not repeated for every finding.
+        "findings": [{"code": f.code, "kind": f.kind, "state": f.state.value,
+            "severity": f.severity, "message": f.message, "facts_used": list(f.facts_used),
+            "reason": f.reason, "rule": asdict(f.rule)} for f in analysis.findings]})
+    return result
 
 
 class ManagementAssistant:
@@ -112,7 +122,8 @@ class ManagementAssistant:
             tuple(name for name in selected.exposed_tools if name == CURRENT_WATER_QUALITY))
         profile = assistant_profile(preset_id)
         # Fingerprint all maintainer profile fields + full effective selection + epoch/device.
-        digest = hashlib.sha256((repr(profile) + repr(selected) + device_id + self.epoch).encode()).hexdigest()
+        digest = hashlib.sha256((repr(profile) + repr(selected) + device_id + self.epoch
+                                 + WATER_TOOL_PROJECTION).encode()).hexdigest()
         return profile, policy, digest
 
     def bootstrap(self, device_id):

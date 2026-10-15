@@ -49,7 +49,7 @@ class RecordingGateway(MockGateway):
 class ManagementAssistantTests(unittest.TestCase):
     def test_parameter_rejection_reports_safe_reason_without_monitoring_read_or_followup(self):
         self.gateway = RecordingGateway(call(arguments='{"device_id":"fictional-private-argument"}'), final())
-        with patch.object(self.monitoring, 'snapshot') as snapshot:
+        with patch.object(self.monitoring, 'capture_water') as snapshot:
             result = self.send().get_json()['result']
         snapshot.assert_not_called()
         self.assertFalse(result['successful_turn'])
@@ -123,8 +123,14 @@ class ManagementAssistantTests(unittest.TestCase):
         payload = self.tool_payload()
         self.assertEqual(payload['device_id'], 'pond-a')
         self.assertEqual(payload['water_quality']['dissolved_oxygen_mg_l'], 2.2)
-        self.assertEqual(payload['analysis'], expected)
-        self.assertEqual(payload['findings'], web['findings'])
+        self.assertNotIn('analysis', payload)
+        self.assertEqual(payload['data_quality'], expected['data_quality'])
+        self.assertEqual(payload['evaluated_at'], expected['evaluated_at'])
+        expected_findings = [{k:v for k,v in f.items() if k not in ('observation', 'rule_version')}
+                             for f in expected['findings']]
+        self.assertEqual(payload['findings'], expected_findings)
+        self.assertEqual([f['code'] for f in payload['findings'] if f['state']=='HIT'],
+                         [f['code'] for f in web['findings']])
         self.assertEqual(payload['batch_id'], web['batch_id'])
         self.assertEqual(payload['water_quality']['observed_at'], web['observed_at'])
         self.assertEqual(payload['window'], web['window'])
@@ -174,7 +180,7 @@ class ManagementAssistantTests(unittest.TestCase):
     def test_concept_history_and_no_eager_water_read(self):
         self.gateway = RecordingGateway(final())
         history = [{'user': '先前问题', 'assistant': '先前回答', 'completed_at': self.now.isoformat()}]
-        with patch.object(self.monitoring, 'snapshot', side_effect=AssertionError('no eager read')):
+        with patch.object(self.monitoring, 'capture_water', side_effect=AssertionError('no eager read')):
             result = self.send(question='什么是溶氧？', history=history).get_json()['result']
         self.assertTrue(result['successful_turn'])
         self.assertEqual(result['history_turns_received'], 1)
@@ -194,6 +200,12 @@ class ManagementAssistantTests(unittest.TestCase):
         self.send()
         self.assertEqual(self.gateway.requests[0].tools, ())
         self.assertEqual(before, self.ai.policy_store.path.read_bytes())
+
+    def test_tool_projection_version_change_invalidates_old_confirmation_before_provider(self):
+        with patch('apps.management_web.ai_adapter.WATER_TOOL_PROJECTION', 'management-current-water@2'):
+            response = self.send()
+        self.assertEqual(response.get_json()['error_code'], 'ASSISTANT_EXECUTION_PROFILE_CHANGED')
+        self.assertEqual(self.gateway.requests, [])
 
     def test_models_normal_budget_and_web_cannot_override_contract(self):
         self.assertEqual([p['preset_id'] for p in self.config['presets']], list(PRESETS))
@@ -226,10 +238,10 @@ class ManagementAssistantTests(unittest.TestCase):
                 self.assertEqual(response.get_json()['error_code'], 'USER_CANCELLED')
                 self.assertEqual(len(self.gateway.requests), 0)
             else:
-                original = self.monitoring.snapshot
+                original = self.monitoring.capture_water
                 def cancel_after_read(*args, **kwargs):
                     data = original(*args, **kwargs); current_handle().cancel(); return data
-                with patch.object(self.monitoring, 'snapshot', side_effect=cancel_after_read):
+                with patch.object(self.monitoring, 'capture_water', side_effect=cancel_after_read):
                     result = self.client.post('/api/ai/messages', headers=self.headers, json=value).get_json()['result']
                 self.assertFalse(result['successful_turn'])
                 self.assertEqual(result['error_code'], 'USER_CANCELLED')
@@ -256,7 +268,7 @@ class ManagementAssistantTests(unittest.TestCase):
             result = self.send().get_json()['result']
             self.assertFalse(result['successful_turn']); self.assertEqual(result['error_code'], expected)
         self.gateway = RecordingGateway(call(), final())
-        with patch.object(self.monitoring, 'snapshot', side_effect=RuntimeError('private/path/never-echo')):
+        with patch.object(self.monitoring, 'capture_water', side_effect=RuntimeError('private/path/never-echo')):
             result = self.send().get_json()['result']
         self.assertEqual(result['error_code'], 'TOOL_EXECUTION_ERROR')
         self.assertNotIn('private/path', json.dumps(result))
@@ -324,6 +336,34 @@ class ManagementAssistantTests(unittest.TestCase):
         self.assertFalse(captured[0].source_receipt.has_observation)
         self.assertTrue(captured[1].source_receipt.has_observation)
         self.assertEqual(captured[1].source_receipt.quality.value, 'valid')
+
+    def test_compact_payload_retains_receipt_semantics_for_partial_invalid_stale_offline(self):
+        from fishery_ai.assistant import AssistantService
+        original = AssistantService.send
+        captured = []
+        def collect(service, request, runtime):
+            result = original(service, request, runtime)
+            captured.append(result)
+            return result
+        for state in ('partial', 'invalid', 'stale', 'offline'):
+            b = self.generators['pond-a'].advance()
+            self.now = max(self.now, datetime.fromisoformat(b['timestamp']))
+            if state in ('partial', 'invalid'):
+                b['water']['metrics']['dissolved_oxygen_mg_l'].update(mean=None,min=None,max=None,latest=None,
+                    valid_samples=0,invalid_samples=1 if state=='invalid' else 0)
+            self.monitoring.ingest(b)
+            if state in ('stale', 'offline'): self.now += timedelta(seconds=31 if state=='stale' else 91)
+            self.gateway = RecordingGateway(call(), final())
+            with patch.object(AssistantService, 'send', new=collect):
+                result = self.send().get_json()['result']
+            self.assertTrue(result['successful_turn'])
+            payload = self.tool_payload()
+            self.assertNotIn('analysis', payload)
+            receipt = captured[-1].source_receipt
+            self.assertTrue(receipt.observation_query_completed)
+            self.assertEqual(receipt.quality.value, payload['water_quality']['quality'])
+            self.assertEqual(receipt.freshness.value, payload['water_quality']['freshness'])
+            self.assertFalse(receipt.has_score); self.assertFalse(receipt.has_project_evidence)
 
     def test_runtime_capability_gate_and_unexpected_error_do_not_leak(self):
         from dataclasses import replace

@@ -8,7 +8,7 @@ from typing import Callable
 from fishery_ai.telemetry.current import CurrentWaterQualityReader
 
 from .contracts import (METRICS, validate_batch, MetricObservation, MonitoringSnapshot, identifier,
-                        metric_quality, FindingState, ChannelAnalysis)
+                        water_metric_facts, FindingState, ChannelAnalysis, WaterCapture)
 from .analysis import DomainAnalysisService, reading_from_row
 
 
@@ -22,11 +22,44 @@ class DeviceReadContext:
     device_id: str
     water_reader: CurrentWaterQualityReader
     _analysis_query: Callable[[str], ChannelAnalysis] | None = field(default=None, repr=False, compare=False)
+    _water_capture_query: Callable[[], WaterCapture] | None = field(default=None, repr=False, compare=False)
 
     def analysis(self, channel="water"):
         if self._analysis_query is None:
             raise ValueError("ANALYSIS_SERVICE_UNAVAILABLE")
         return self._analysis_query(channel)
+
+    def capture_water(self):
+        if self._water_capture_query is None:
+            raise ValueError("WATER_CAPTURE_UNAVAILABLE")
+        return self._water_capture_query()
+
+
+def project_water_snapshot(capture, history=()):
+    """Web-only projection of a captured analysis; never fetch or diagnose here."""
+    analysis = capture.analysis
+    ref, dq = analysis.observation, analysis.data_quality
+    observed_at = ref.observed_at if ref else None
+    facts = {m.id: m for m in capture.metrics}
+    metrics = []
+    for key, (label, unit, _low, _high) in METRICS.items():
+        stat = facts.get(key)
+        metrics.append(MetricObservation(key, label, stat.mean if stat else None, unit,
+            stat.quality if stat else "missing", "连续模拟器", observed_at, dq.freshness,
+            stat.valid_samples if stat else None, stat.sample_count if stat else None,
+            stat.minimum if stat else None, stat.maximum if stat else None, stat.latest if stat else None,
+            stat.invalid_samples if stat else None))
+    trend = tuple({"observed_at": item["observed_at"], "received_at": item["received_at"], "batch_id": item["batch_id"], "window_duration_s": item["payload"]["window"]["duration_s"],
+        "metric_quality": {m.id: m.quality for m in stats},
+        **{m.id: m.mean if m.quality == "valid" else None for m in stats}}
+        for item in history for stats in (water_metric_facts(item["payload"]["data"]),))
+    findings = tuple(f.to_dict() for f in analysis.findings if f.state == FindingState.HIT)
+    return MonitoringSnapshot(analysis.device_id, "连续模拟器 · 非真实传感器", "simulator", observed_at,
+        analysis.evaluated_at, dq.quality, dq.freshness, tuple(metrics), trend,
+        ref.received_at if ref else None, dq.connectivity, ref.aggregation if ref else None,
+        {"start": ref.window_start, "end": ref.window_end, "duration_s": ref.window_duration_s} if ref else None,
+        ref.batch_id if ref else None, findings, capture.rule_version,
+        capture.last_reported_at, analysis.to_dict())
 
 
 class _DeviceSnapshotSource:
@@ -73,7 +106,15 @@ class MonitoringService:
         self._device(device_id)
         if channel not in ("water", "visual"):
             raise ValueError("INVALID_ANALYSIS_CHANNEL")
+        if channel == "water":
+            return self.capture_water(device_id).analysis
         return self._assess(device_id, channel, self.repository.read(device_id, channel), self.clock())
+
+    def capture_water(self, device_id):
+        """One current-only read and one evaluation; no history, cache or sampling."""
+        self._device(device_id)
+        row = self.repository.read(device_id, "water")
+        return self.domain_analysis.capture_water(device_id, row, evaluated_at=self.clock())
 
     def devices(self):
         return [{"id": key, "name": name, "source_kind": "simulator"} for key, name in self.device_names.items()]
@@ -86,7 +127,7 @@ class MonitoringService:
         self._device(device_id)
         return DeviceReadContext(device_id, CurrentWaterQualityReader(
             _DeviceSnapshotSource(self.repository, device_id), stale_after_s=self.stale_after_s, clock=self.clock),
-            partial(self.analysis, device_id))
+            partial(self.analysis, device_id), partial(self.capture_water, device_id))
 
     def ingest(self, value):
         now = self.clock()
@@ -104,30 +145,8 @@ class MonitoringService:
         if view != "available":
             raise ValueError("LIVE_VIEW_CANNOT_OVERRIDE_DATA")
         row, history = self.repository.capture(device_id, "water")
-        now = self.clock()
-        analysis = self._assess(device_id, "water", row, now)
-        freshness, connectivity = analysis.data_quality.freshness, analysis.data_quality.connectivity
-        data = row["payload"]["data"] if row else None
-        observed_at = row["observed_at"] if row else None
-        metrics = []
-        for key, (label, unit, _low, _high) in METRICS.items():
-            stat = data["metrics"][key] if data else None
-            value = stat["mean"] if stat else None
-            quality = metric_quality(stat, data["sample_count"]) if stat else "missing"
-            metrics.append(MetricObservation(key, label, value, unit, quality, "连续模拟器", observed_at, freshness,
-                stat["valid_samples"] if stat else None, data["sample_count"] if data else None,
-                stat["min"] if stat else None, stat["max"] if stat else None, stat["latest"] if stat else None,
-                stat["invalid_samples"] if stat else None))
-        trend = tuple({"observed_at": item["observed_at"], "received_at": item["received_at"], "batch_id": item["batch_id"], "window_duration_s": item["payload"]["window"]["duration_s"],
-            "metric_quality": {key: metric_quality(item["payload"]["data"]["metrics"][key], item["payload"]["data"]["sample_count"]) for key in METRICS},
-            **{key: (item["payload"]["data"]["metrics"][key]["mean"] if metric_quality(item["payload"]["data"]["metrics"][key], item["payload"]["data"]["sample_count"]) == "valid" else None) for key in METRICS}}
-            for item in history)
-        findings = tuple(f.to_dict() for f in analysis.findings if f.state == FindingState.HIT)
-        return MonitoringSnapshot(device_id, "连续模拟器 · 非真实传感器", "simulator", observed_at,
-            now.isoformat(), analysis.data_quality.quality, freshness, tuple(metrics), trend,
-            row["received_at"] if row else None, connectivity, "window_mean" if row else None,
-            row["payload"]["window"] if row else None, row["batch_id"] if row else None, findings, self.diagnosis.RULE_VERSION,
-            row.get("last_reported_at") if row else None, analysis.to_dict())
+        capture = self.domain_analysis.capture_water(device_id, row, evaluated_at=self.clock())
+        return project_water_snapshot(capture, history)
 
     def cameras(self):
         result = []

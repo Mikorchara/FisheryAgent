@@ -120,7 +120,7 @@ water 或 visual 可以为 null，但不能同时为空。两个通道独立更�
 - `analysis.py / DomainAnalysisService.evaluate(device_id, channel, row, evaluated_at=...)` 是纯计算入口：输入已验证的服务端事实，统一 freshness/connectivity，再委托 rules。设备不匹配或评估时间早于接收时间拒绝；没有规则副本或隐式采样。canonical Reading 投影也放在这里，`service.reading_from_row` 保留 import 兼容。
 - `events.py / EventService.transition(existing, assessment)` 返回 EventChanges（updates / inserts / active_links / resolved_codes），不执行 SQL。`project(event, assessment)` 只撤回当前确定性，不确认恢复；版本匹配及严重程度切换策略共用同一处 helper。输入不修改，旧记录兼容投影也由此统一。
 - Repository 在原 `BEGIN IMMEDIATE` + 锁中读取活动事件、计算变更并应用 SQL；current、历史、事件、alerts 和接触时间仍整体提交/回滚。重复与乱序不执行事件变更。未更换 SQLite、表结构或保留策略。
-- MonitoringService 协调设备范围、读写与展示；`analysis(device_id, channel)` 和绑定后的 `DeviceReadContext.analysis(channel)` 为页面/未来 Tool 提供同一 ChannelAnalysis。现有 water_reader 保留，未来 AI 桥接应消费共同分析合同，不能再次独立判断风险。
+- MonitoringService 协调设备范围、读写与展示；`capture_water(device_id)` 和绑定后的 `DeviceReadContext.capture_water()` 返回一次事实捕获及分析。`analysis(device_id, "water")` 从同一入口取得 ChannelAnalysis；visual 仍独立求值。现有 water_reader 保留兼容，管理 AI 不使用它再次诊断风险。
 - snapshot/cameras 不再重复计算时间状态；当前事实先捕获，再选 evaluated_at。同一 events 查询对每 device/channel 只求值一次；不同查询仍按各自时点更新，不建会过期的全局分析缓存。
 - 每通道仍独立，窗口和设备引用明确。本阶段没有增加跨通道关联规则；以后要关联必须校验设备/池映射和时间重叠，不能仅因同一页面或批次到达就认为同步。
 
@@ -142,7 +142,9 @@ WaterQualityGenerator 与 VisualDetectionGenerator 使用独立 RNG（seed、see
 
 HTTP 读取：/api/bootstrap?device、/api/monitoring?device、/api/monitoring/history?device&channel=water|visual&limit=N、原事件 API。历史上限不超过 repository.history_limit；缺省查询 60 条。
 
-同进程装配同一个 repository / MonitoringService。bind(device_id) 的 frozen DeviceReadContext 提供同一 SQLite 的 Reader 与 analysis() 查询能力；R2B-3 实际水质 Tool 使用 snapshot(device_id)，在同一读事务捕获事实与批次，再通过与 analysis() 相同的 DomainAnalysisService 计算质量/新鲜度/连接状态与 Findings。避免先查 Reader、再查 analysis 时混入两个批次，也避免旧 Handler 对无效/过期数据重复诊断。query-time 查询不等于新采样。
+同进程装配同一个 repository / MonitoringService。R2B-3.2 的 `capture_water(device_id)` 只读一次 current（包括同一 SELECT 的通道接触时间），读取后取得 evaluated_at；`DomainAnalysisService.capture_water()` 产生 frozen `WaterCapture`：指标统计、canonical Reading、ChannelAnalysis、规则版本及 last_reported_at。每指标质量计算一次；规则、Reading 和展示复用同一分类，风险仍由唯一 DiagnosisService 判断，没有全局缓存或第二次数据库查询。
+
+Web 的 `snapshot()` 继续在同一读事务捕获 current + history，再使用同一个纯捕获入口与 `project_water_snapshot()`，保留原 Web DTO 和趋势。AI 的 `water_payload()` 改用 current-only capture，再由纯 `project_water_tool()` 生成 Tool DTO，不读取历史、不构造页面趋势、不重新诊断。已有 capture 可供两种投影直接复用而不再读库。不同请求/页面依然可能捕获不同批次和评估时间，不能声称它们始终原子同步；query-time 查询不等于新采样。
 
 设备 ID 在 context 中绑定，不跟随网页全局选择改变；它不是冻结旧观测，下次 Tool 查询仍可取得该设备的新数据。如后续需要视觉 Tool，可使用同服务的视觉读取。跨进程须共同受控服务/存储，不靠导入类共享内存。
 
@@ -164,15 +166,15 @@ HTTP 读取：/api/bootstrap?device、/api/monitoring?device、/api/monitoring/h
  → ManagementAssistant：冻结 device_id、Preset、Policy，取得正式 RuntimeSnapshot
  → 原 AssistantService：Prompt v2 / History v2 / 现有裁剪
  → 原 ToolCallingService / Gateway / Registry / Executor
-      → 仅 get_current_water_quality：同一 MonitoringService.snapshot(device_id)
-      → DomainAnalysisService（与 analysis() 共用），无二次诊断
+      → 仅 get_current_water_quality：同一 MonitoringService.capture_water(device_id)
+      → DomainAnalysisService.capture_water → project_water_tool，无历史/二次诊断
  → Source Ledger / Commit Gate / 安全 Trace → 唯一 Final
 ```
 
 - 启用开关 --enable-assistant；默认关闭，与 --legacy-demo 互斥。不读取或继承旧 Web 的多轮/Streaming 开关。只提供 Qwen 3.8 Flash（默认）与 Ollama Qwen3.5 4B，正式 Preset Identity、协议、Capability、OFF/Normal 均由原 Runtime 固定；DeepSeek 不列入首版。页面“已启用/已装配”仅表示本地 Adapter 可用，不表示 Provider 已联网或凭据已验证；启动不发健康 Probe。
 - 固定 1 Tool Call / 1 Round / 最多 2 Model Requests，retry=0；同一个 RequestHandle 的整 Turn Deadline 包含两次模型请求与 Tool，复用 Stop/Trace 提交门禁，无失败重跑。没有 Streaming、新 RAG、评分、视觉 Tool 或固定 Analysis。
 - Registry 复用正式水质 Definition/validator，替换的只是应用数据 Handler。Tool Policy 从已有 outputs/tool-policies/tool_policies.json 读取；不存在时复用内置默认。实际授权 = 现有 Assistant Policy ∩ 本应用可执行工具（水质查询）；不修改用户 Policy 文件。原 Knowledge/评分 Handler 不会绑定到管理 Runtime，不回退旧 Snapshot。
-- Tool Result 兼容原水质合同，附 device_id、batch_id、窗口/聚合、simulator 来源、连接状态和完整 governed analysis；这些数据只送入后续模型请求，不原样发给浏览器。存在窗口时 status=OK 表示读取完成，不表示有效或正常；NO_DATA 是未收到窗口。canonical quality 保守投影，analysis.data_quality/coverage 保留真实覆盖；Findings 和 PROTOTYPE Rule Identity 与同批次网页一致，STALE/OFFLINE 不得证明恢复。
+- Tool Result 保留 canonical 水质与来源合同，使用精简 `management-current-water@1` 投影（下节）。这些数据只送入后续模型请求，不原样发给浏览器。存在窗口时 status=OK 表示读取完成，不表示有效或正常；NO_DATA 是未收到窗口。canonical quality 保守投影，独立 data_quality/coverage 保留实际覆盖；Findings 和 PROTOTYPE Rule Identity 与同批次网页一致，STALE/OFFLINE 不得证明恢复。
 - 设备按本次请求的服务器登记 ID 冻结，不跟随其他页面的选择变化。冻结的是设备而非旧读数；Tool 执行时读取该设备最新已接收数据，并保留时间/批次。因此不同时间的页面读取可能有不同批次，不能声称始终是同一时刻。
 - 凭据使用原 private_project_location(仓库根) + CredentialStore；发送前一次 resolve 得到冻结 CredentialSnapshot。云端凭据缺失/私有文件权限错误安全失败，不复制、不迁移、不创建项目 .env。Ollama 按既有 Auth NONE；没有第二套凭据 UI。
 - API：GET /api/ai/bootstrap?device；POST /api/ai/requests 创建有界 RequestHandle；POST /api/ai/messages 发送；POST /api/ai/request-state 与 /api/ai/cancel 用控制令牌读取安全状态/停止。Bootstrap 只返回安全模型列表、工具名、预算、epoch、revision、进程内浏览器访问令牌，不解析/回显 Secret。
@@ -182,6 +184,19 @@ HTTP 读取：/api/bootstrap?device、/api/monitoring?device、/api/monitoring/h
 - 安全 Trace 位于 Git ignored 的 outputs/management_web/assistant-traces.jsonl，复用 JsonlTraceSink，只存 allowlist 元数据，不保存对话正文。SQLite 和事件生命周期不因聊天清空/切换而改变。
 
 这是本机开发集成，不是生产账户/租户权限或设备鉴权。离线 Fake Provider 验证不代表真实回答质量已验收；真实 Provider 调用需要用户另行授权。
+
+### R2B-3.2：精简水质 Tool DTO
+
+`management_web.ai_adapter.project_water_tool(capture)` 只投影、不读取或分析；`projection_version=management-current-water@1` 纳入管理端确认 revision，不改变模型 Tool Schema 或原 Preset 资格范围。
+
+- `water_quality`：原 canonical 三指标、quality、freshness、observed_at、retrieved_at、source，供现有 Receipt / Ledger 使用。只投影完整有效指标；部分覆盖或无效指标仍为 null，不补正常值。STALE/OFFLINE 保留历史观测值并显式注明失效，不能认证当前正常。
+- 共同上下文：device_id、channel、batch_id、window、aggregation、statistics_version、source_kind、evaluated_at、last_reported_at、connectivity、rule_version。
+- `data_quality`：原领域 quality / freshness / connectivity / coverage；coverage 为各指标有效数与总数。`metrics` 只补充单位、指标质量及无效样本数，不携带 Web label、min/max/latest 或趋势。
+- `findings`：保留全部 HIT / CLEAR / INSUFFICIENT_EVIDENCE / NOT_EVALUATED，含 code、kind、state、severity、message、facts_used、reason 和完整 rule 身份（版本/范围/PROTOTYPE/评估策略）。共享观测引用位于顶层，不在每个 Finding 重复，不再附第二份完整 analysis 或 HIT 列表。
+- NO_DATA：water_quality=null、findings=[]、batch_id=null、data_quality=missing/unknown/never_received；不伪造观测或正常结论。收到全缺失窗口时依然为 OK，领域 quality=missing、canonical quality=invalid，保持既有保守合同，并非 NO_DATA。PARTIAL / INVALID 是质量维度，STALE 是新鲜度，OFFLINE 是连接维度，不能混成风险严重度。
+- Source Gate / Receipt / Ledger / Commit Gate、设备绑定、空参数 `{}`、Policy、1/1/2、History 与取消均不变。没有来源即不能用 DTO 或模型文字补造来源；Tool ERROR 不继续第二次模型请求。
+
+离线固定低氧/正常窗口的紧凑 UTF-8 JSON：旧投影 15665 / 14799 bytes，新投影 7686 / 7680 bytes（约减小 51% / 48%）；这是固定 fixture 的字节数，不是 token 或真实模型成本保证。测试约束这些样本小于 10 KiB；Executor 原有 32768 bytes 硬上限仍有效，未引入截断或放宽。
 
 ### R2B-3.1：参数拒绝的安全诊断
 

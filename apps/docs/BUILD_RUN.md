@@ -79,6 +79,8 @@ node --test apps/management_web/tests/*.test.mjs
 
 R2B-2 日常 targeted：`python -m unittest discover -s apps/monitoring/tests -p "test_business_services.py"`，规则变更追加 `test_rule_governance.py`，调度变更运行 simulator/tests。真实 loopback 测试现在使用零人为时间缓冲；发送端先确认 UTC 窗口结束。SIMULATOR_CLOCK_OUT_OF_SYNC 时停止并检查时钟，不放宽服务器时间校验或自动补发。
 
+R2B-3.2 读取/投影改动优先运行：`python -m unittest apps.monitoring.tests.test_water_capture apps.monitoring.tests.test_business_services apps.monitoring.tests.test_rule_governance apps.management_web.tests.test_assistant`。覆盖一次读取/诊断、并发新批次隔离、Web/Tool 同源、质量/来源/时间、DTO 大小、Ledger、Normal、取消及安全拒绝；无需调用 Provider。原 Web 交互继续用上面的 Node 测试验证。
+
 界面验收：七页导航；窗口均值、有效样本和历史；视觉有效帧、加权体长检测记录与无标定缺失；零鱼帧计入数量均值；PROTOTYPE 规则和事件 ACTIVE / RESOLVED / INDETERMINATE；缺失、过期、离线不能确认恢复，只有可靠同版本新观测可消退；所有时间按北京时间显示到秒；停止后 >30 秒过期、>90 秒中断；恢复上报后更新；桌面与窄屏无溢出。读取失败清除当前展示并提示失效，不将缓存当实时。阻塞后的错过窗口跳过不补发，日志显示 skipped，历史保留时间缺口。
 
 服务/合同变更运行相关 Python 和 Node；UI 变更增加浏览器行为与布局检查。涉及共享 Runtime 桥接追加其相关回归。文档变更检查链接与 diff。不要把测试启动器的旧授权当作真实模型执行许可。
