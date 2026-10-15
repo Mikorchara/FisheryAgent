@@ -2,7 +2,7 @@
 export const routes = [
   {id:'dashboard',title:'综合总览',label:'首页 / 综合总览',eyebrow:'OVERVIEW',icon:'grid',description:'从数据到决策，了解养殖环境的每一个环节。'},
   {id:'monitoring',title:'水质监测',label:'水质监测',eyebrow:'WATER QUALITY',icon:'drop',description:'查看指标、观测来源与数据质量。查询不等于重新采样。'},
-  {id:'assistant',title:'AI 智能助手',label:'AI 智能助手',eyebrow:'AI ASSISTANT',icon:'spark',description:'独立的对话工作区，为模型与只读工具服务预留清晰边界。'},
+  {id:'assistant',title:'AI 智能助手',label:'AI 智能助手',eyebrow:'AI ASSISTANT',icon:'spark',description:'Normal 对话与只读水质查询；系统事实来自统一监测服务。'},
   {id:'video',title:'视频监控',label:'视频监控',eyebrow:'VIDEO MONITORING',icon:'camera',description:'统一查看监控设备、视频接入及检测服务状态。'},
   {id:'events',title:'事件记录',label:'事件记录',eyebrow:'EVENT RECORDS',icon:'bell',description:'按时间、来源与等级查看事件；演示记录不代表真实告警。'},
   {id:'knowledge',title:'资料与知识库',label:'资料与知识库',eyebrow:'KNOWLEDGE & FILES',icon:'book',description:'管理资料元数据与索引状态，文件管理与 AI 检索保持分离。'},
@@ -12,7 +12,7 @@ export function routeFor(hash) { return routes.find(r=>r.id===hash.replace(/^#/,
 export const qualityNames={valid:'有效',partial:'部分缺失',invalid:'无效',missing:'不可用'};
 export const freshnessNames={fresh:'新鲜',stale:'已过期',unknown:'未知'};
 export function sourceName(kind){return ({simulator:'SIMULATOR 模拟来源',demo:'DEMO 演示',connected:'已接入',mixed:'混合来源'})[kind]||'未声明来源';}
-export function connectionName(status){return ({online:'正常上报',offline:'上报中断',never_received:'尚无上报',not_connected:'未接入',demo:'演示'})[status]||'状态未知';}
+export function connectionName(status){return ({online:'正常上报',offline:'上报中断',never_received:'尚无上报',not_connected:'未接入',connected:'已装配',demo:'演示'})[status]||'状态未知';}
 export function eventState(item){return item.lifecycle_state||(item.status==='closed'?'RESOLVED':'ACTIVE');}
 export function eventStateName(item){return ({ACTIVE:'异常持续',RESOLVED:'已确认消退',INDETERMINATE:'状态待确认'})[eventState(item)]||'状态未知';}
 export function eventSeverityName(item){return ({critical:'严重',warning:'提醒',info:'信息'})[item.severity]||'未知';}

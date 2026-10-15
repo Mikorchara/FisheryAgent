@@ -13,7 +13,8 @@ apps/
 │  ├─ INTEGRATION.md                 # 上报合同和替换边界
 │  ├─ ROADMAP.md                     # 当前状态与后续工作
 │  └─ deep-dive/research/
-│     └─ R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md # R2B-0 评估基线，非实现现状
+│     ├─ R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md # R2B-0 评估基线，非实现现状
+│     └─ R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md # 当前架构、参数故障证据与路线建议
 ├─ monitoring/                      # Web 与未来 Tool 共享的数据基础
 │  ├─ __init__.py
 │  ├─ contracts.py                   # v1 上报、观测/质量/Finding/Event/规则身份合同
@@ -40,18 +41,23 @@ apps/
    ├─ __main__.py                    # 本机启动、存储装配与写入开关
    ├─ README.md                      # 快速入口
    ├─ app.py                         # HTTP、访问控制与服务装配
+   ├─ ai_adapter.py                  # Normal Assistant 装配、设备绑定与 SQLite 水质 Tool
    ├─ contracts.py                   # Web Protocol、共享 DTO 导出
    ├─ services.py                    # R1 兼容 Demo、未接入 AI/文件服务
    ├─ package.json                   # Node 原生测试，无依赖
    ├─ static/
    │  ├─ index.html                  # 布局、来源标识和弹窗
    │  ├─ styles.css                  # 样式与响应式布局
-   │  ├─ app.js                      # 七页面、5 秒轮询与 Session
+   │  ├─ app.js                      # 七页面路由与监测 5 秒轮询
+   │  ├─ assistant.js                # 独立聊天 Session、确认、History、Stop 与安全 Activity
    │  ├─ components.js               # 安全文本、卡片、表格、图表
    │  ├─ view-model.js               # 展示转换、来源和状态
-   │  └─ services.js                 # 同源只读应用 API
+   │  └─ services.js                 # 同源监测与受控 Assistant API
    └─ tests/
       ├─ test_app.py                 # R1 兼容、API 和安全
+      ├─ test_assistant.py           # Fake Provider HTTP 闭环、同源数据、Ledger 与取消
+      ├─ assistant-ui.test.mjs       # Normal 聊天、History、epoch 与 Stop 行为
+      ├─ dom-fixture.mjs            # 无网络 DOM 测试辅助
       ├─ view-model.test.mjs          # 纯展示合同
       └─ monitoring-ui.test.mjs       # 实际页面代码的离线 DOM 行为
 ```
@@ -65,16 +71,16 @@ Simulator scenarios → generator → HTTP reporter
     → MonitoringService → DomainAnalysisService → rules → 复用 Domain 阈值 → Findings
         → Repository 事务：读取旧阶段 → EventService → 持久化变更
         → Dashboard / Monitoring / Video / Events
-        → bind(device_id).water_reader（未来 Tool 接入）
+        → ManagementWaterRegistry → ToolExecutor → AssistantService
 
 MonitoringService → 已有 Domain / Diagnosis / CurrentWaterQualityReader
-未来 AI Adapter → 已有 AssistantService / AI Runtime
+ManagementAssistant → AssistantService / ToolCallingService / Gateway / CredentialSnapshot
 ```
 
 模拟器不导入服务器存储或网页变量。共享 monitoring 不依赖 Flask 或网页组件；水质 DTO 只有一个定义，Web 兼容导出。SQLite 连接按操作关闭，生成器与 HTTP 生命周期分离，页面轮询不触发采样或写入。
 
-DomainAnalysisService 与 EventService 不导入 Repository/Flask。Repository 只应用 EventChanges，规则/生命周期判断不再埋入 SQL；MonitoringService 只负责捕获、协调与 DTO 投影。统一分析入口和设备绑定查询已准备，未接 AI 或跨通道融合。
+DomainAnalysisService 与 EventService 不导入 Repository/Flask。Repository 只应用 EventChanges，规则/生命周期判断不再埋入 SQL；MonitoringService 只负责捕获、协调与 DTO 投影。Assistant 水质 Tool 经 snapshot() 捕获同一批次事实及 analysis，后者与 analysis() 共用 DomainAnalysisService；不二次诊断、不跨通道融合。
 
-页面负责交互与展示；API 负责输入/访问控制；服务负责用例和状态；Adapter 负责生产端/设备差异。当前七页仍在 `static/app.js`；将来 AI 接入时优先提取独立 `pages/assistant.js` 与薄 `ai_adapter.py`，不为规划创建空目录。
+页面负责交互与展示；API 负责输入/访问控制；服务负责用例和状态；Adapter 负责生产端/设备差异。七页路由在 static/app.js，独立 Assistant Session 在 static/assistant.js；薄 ai_adapter.py 绑定设备与正式 Runtime，不复制执行循环、Prompt 或 History Projection。
 
-Runtime/Core 为共享领域与 AI 包；Development 为模拟器和测试；Generated 为 Git ignored 的 `outputs/management_web/`；User-private 为已有凭据目录，管理前端不可接触。真实设备、NPU、文件索引和 AI 执行仍未实现。
+Runtime/Core 为共享领域与 AI 包；Development 为模拟器和测试；Generated 为 Git ignored 的 outputs/management_web/（SQLite、脱敏 Assistant Trace）；User-private 为已有凭据目录，管理前端不可接触。可显式启用 Qwen/Ollama Normal 对话；真实设备、NPU、文件索引、Streaming 和固定 Analysis 接入未实现。

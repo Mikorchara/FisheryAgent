@@ -1,10 +1,12 @@
 import {el,icon,card,badge,empty,button,link,rows,metricCards,metadata,table,trendChart} from './components.js';
 import {routes,routeFor,timeText,filterItems,validateBootstrap,qualityNames,freshnessNames,sourceName,connectionName,eventState,eventStateName,eventSeverityName} from './view-model.js';
 import {services} from './services.js';
+import {createAssistantWorkspace} from './assistant.js';
 
 const $=id=>document.getElementById(id);
 const state={data:null,device:'demo-a',view:'available',metric:'dissolved_oxygen_mg_l',camera:'demo-camera-a',
   eventFilters:{q:'',severity:'',status:''},fileFilters:{q:'',category:''},settings:'devices',draft:'',revision:0};
+const assistantWorkspace=createAssistantWorkspace(services.ai,{onDevice:id=>{state.device=id;void changeMonitoring();}});
 const severity=item=>badge(eventSeverityName(item),item.severity==='critical'?'critical':item.severity==='warning'?'warning':'neutral');
 const status=item=>badge(item.source_kind==='simulator'?eventStateName(item):(item.status==='pending'?'待处理（演示）':'已处理（演示）'),eventState(item)==='RESOLVED'?'neutral':'warning');
 
@@ -30,11 +32,11 @@ function dashboard(){
     el('div',{},[el('span',{class:'strip-icon'},[icon('link')]),el('div',{},[el('strong',{text:'数据连接概况'}),el('small',{text:d.data_mode==='simulator'?'统一监测存储 · 模拟器来源':'独立 Demo adapter 已就绪'})])]),
     el('div',{class:'strip-number'},[el('strong',{text:String(d.devices.length)}),el('span',{text:'监测区域'})]),
     el('div',{class:'strip-number'},[el('strong',{text:'0'}),el('span',{text:'真实设备接入'})]),
-    el('div',{class:'strip-number'},[el('strong',{text:'0'}),el('span',{text:'已连接 AI 服务'})]),badge(sourceName(d.data_mode),'demo')]),
+    el('div',{class:'strip-number'},[el('strong',{text:d.ai?.connected?'1':'0'}),el('span',{text:'已启用 AI 服务'})]),badge(sourceName(d.data_mode),'demo')]),
     el('div',{class:'section-caption'},[el('h2',{text:'水质指标概览'}),link('查看水质监测','monitoring')]),metadata(snapshot),metricCards(snapshot),
     el('div',{class:'dashboard-grid'},[trend(),card('视觉监测概况','只有模拟窗口统计，真实视频 / NPU 未接入。',[rows([['设备',d.cameras[0]?.name||'无设备'],['上报状态',connectionName(d.cameras[0]?.status)],['视觉新鲜度',freshnessNames[d.cameras[0]?.freshness]||'未知'],['窗口帧数',d.cameras[0]?.summary?.frames_processed??'暂无上报']]),videoPlaceholder(true),el('div',{class:'card-foot'},[el('span',{text:'无实际视频流'}),link('视觉窗口详情','video')])])]),
     el('div',{class:'dashboard-grid bottom-grid'},[card('最近事件','关联实际接收批次；模拟事件不是疾病确诊。',[eventsTable(d.events.slice(0,5))],link('全部记录','events')),
-      el('div',{class:'side-stack'},[card('AI 智能助手','从环境事实到可解释的辅助建议。',[el('div',{class:'assistant-entry'},[el('span',{class:'assistant-emblem'},[icon('spark')]),el('p',{text:'新工作区已就绪。AI 服务接入后，复用现有 Assistant 与 Tool Runtime。'}),el('a',{href:'#assistant',class:'button primary'},['打开助手工作区',icon('arrow')])])]),
+      el('div',{class:'side-stack'},[card('AI 智能助手','从环境事实到可解释的辅助建议。',[el('div',{class:'assistant-entry'},[el('span',{class:'assistant-emblem'},[icon('spark')]),el('p',{text:d.ai?.connected?'Normal 助手已启用；当前水质查询与网页共用监测存储。':'启用 Assistant 后，复用现有模型与只读 Tool Runtime。'}),el('a',{href:'#assistant',class:'button primary'},['打开助手工作区',icon('arrow')])])]),
         card('连接状态','未连接不代表设备离线。',[el('div',{class:'connection-list'},d.connections.map(c=>el('div',{class:'connection-row'},[
           el('span',{text:c.name}),badge(connectionName(c.status),c.status==='online'?'success':c.status==='offline'?'warning':'neutral')])))] )])])];
 }
@@ -53,7 +55,7 @@ function monitoring(){const snapshot=state.data.monitoring;return [el('div',{cla
     el('details',{class:'data-details'},[el('summary',{text:'样本与统计详情'}),table(['指标','有效 / 总数','无效样本','最小','最大','最新'],snapshot?.metrics||[],m=>[m.label,m.valid_samples===null?'—':`${m.valid_samples} / ${m.sample_count}`,m.invalid_samples??'—',m.minimum??'—',m.maximum??'—',m.latest??'—'])]),
     el('details',{class:'data-details'},[el('summary',{text:'已存储历史表'}),table(['观测时间','水温 °C','pH','溶解氧 mg/L'],snapshot?.trend||[],p=>[timeText(p.observed_at),p.temperature_c??'—',p.ph??'—',p.dissolved_oxygen_mg_l??'—'])])])];}
 
-function assistant(){return [el('div',{class:'assistant-layout'},[
+function assistant(){if(state.data.ai?.connected)return [assistantWorkspace.mount(state.data.devices,state.device)];return [el('div',{class:'assistant-layout'},[
   el('section',{class:'card chat-shell'},[el('div',{class:'chat-top'},[el('div',{},[icon('spark'),el('strong',{text:'渔业助手'})]),badge('服务未接入','neutral')]),
     el('div',{class:'chat-messages'},[el('div',{class:'chat-welcome'},[el('span',{class:'assistant-emblem'},[icon('spark')]),el('h2',{text:'让问题有依据，让建议可追溯。'}),el('p',{text:'R1 先建立对话容器。接入后，消息与只读工具通过应用层服务执行，不在页面内运行模型。'}),
       el('div',{class:'suggestions'},['当前水质有哪些需要关注的指标？','如何理解溶解氧？','查找相关养殖资料'].map(text=>button(text,()=>{state.draft=text;$('assistant-draft').value=text;})))])]),
@@ -121,7 +123,7 @@ async function refresh(force=false){
     if(!data.devices.some(d=>d.id===state.device))state.device=data.devices[0]?.id||'';
     if(!data.cameras.some(c=>c.id===state.camera))state.camera=data.cameras[0]?.id||'';
     $('source-label').textContent=sourceName(data.data_mode);
-    $('source-notice').textContent=data.data_mode==='simulator'?'水质与视觉来自模拟器 HTTP 上报，非真实设备或疾病诊断。页面每 5 秒读取统一存储；AI 尚未接入。':'独立 R1 Demo；不是传感器、NPU 或正式 AI 数据。';
+    $('source-notice').textContent=data.data_mode==='simulator'?'水质与视觉来自模拟器 HTTP 上报，非真实设备或疾病诊断。页面与已启用的水质 Tool 共用统一存储。':'独立 R1 Demo；不是传感器、NPU 或正式 AI 数据。';
     document.querySelector('.environment').textContent=data.data_mode==='simulator'?'本机模拟接入':'DEMO 环境';
     $('refresh-status').textContent='服务器状态已更新';
     const active=document.activeElement;
@@ -149,5 +151,5 @@ bootstrap();
 let poll;
 function startPolling(){if(!poll)poll=setInterval(()=>{if(!document.hidden)refresh();},5000);}
 startPolling();
-window.addEventListener('pagehide',()=>{clearInterval(poll);poll=null;});
+window.addEventListener('pagehide',()=>{clearInterval(poll);poll=null;void assistantWorkspace.stop();});
 window.addEventListener('pageshow',()=>{startPolling();});

@@ -134,7 +134,7 @@ WaterQualityGenerator 与 VisualDetectionGenerator 使用独立 RNG（seed、see
 
 实时 CLI 使用 monotonic 定时，默认首批在 10 秒后发送，维持 10 秒时间网格。阻塞/唤醒迟到时只生成并发送最近一个完整窗口，跳过更早错过的窗口（elapsed 与 sequence 同步推进，历史保留缺口），不生成/补发追赶批次；下次等待下一网格边界。固定 seed 在相同推进/跳过条件下可复现，不承诺阻塞运行与未阻塞运行数值相同。失败即停止，无透明 retry、重定向或代理；Ctrl+C 关闭上报资源。device_offline 不发送任何批次，服务器自行变过期/中断。
 
-## 6. Web 与未来 AI 的统一读取
+## 6. Web 与 AI 的统一读取
 
 正常启动的四页面来自 MonitoringService；浏览器每 5 秒只读 Bootstrap。历史和事件不由页面生成；读取失败显示失效，恢复后重新读取，旧异步响应不能覆盖新区域选择。页面保留草稿/筛选；没有实时视频或生产权限声明。
 
@@ -142,11 +142,11 @@ WaterQualityGenerator 与 VisualDetectionGenerator 使用独立 RNG（seed、see
 
 HTTP 读取：/api/bootstrap?device、/api/monitoring?device、/api/monitoring/history?device&channel=water|visual&limit=N、原事件 API。历史上限不超过 repository.history_limit；缺省查询 60 条。
 
-未来同进程装配同一个 repository / MonitoringService，将 `bind(device_id)` 返回的 frozen DeviceReadContext 交给 Tool：其 water_reader.query() 使用原 CurrentWaterQualityReader，从**同一 SQLite current** 生成 canonical Reading，保留来源、观测/接收时间和 query-time freshness。query-time 查询不等于新采样。
+同进程装配同一个 repository / MonitoringService。bind(device_id) 的 frozen DeviceReadContext 提供同一 SQLite 的 Reader 与 analysis() 查询能力；R2B-3 实际水质 Tool 使用 snapshot(device_id)，在同一读事务捕获事实与批次，再通过与 analysis() 相同的 DomainAnalysisService 计算质量/新鲜度/连接状态与 Findings。避免先查 Reader、再查 analysis 时混入两个批次，也避免旧 Handler 对无效/过期数据重复诊断。query-time 查询不等于新采样。
 
 设备 ID 在 context 中绑定，不跟随网页全局选择改变；它不是冻结旧观测，下次 Tool 查询仍可取得该设备的新数据。如后续需要视觉 Tool，可使用同服务的视觉读取。跨进程须共同受控服务/存储，不靠导入类共享内存。
 
-本轮没有把原 Prototype Tool 绑定到此服务，也没有接 AI。后续 Adapter 才复用 AssistantService、Gateway、CredentialSnapshot、RuntimeSnapshot、Policy、Ledger、Commit Gate、History Projection、Deadline 和 Stop；不复制 Tool 循环、不混合多次观测、不把模拟来源升级为真实事实。
+管理 Assistant 经薄 Adapter 绑定到此服务；原 Prototype Web 的内存 Snapshot 保持独立，不受新页面影响。复用 AssistantService、Gateway、CredentialSnapshot、RuntimeSnapshot、Policy、Ledger、Commit Gate、History Projection、Deadline 和 Stop；不复制 Tool 循环、不混合多次观测、不把模拟来源升级为真实事实。
 
 ## 7. 开发写入边界与真实替换
 
@@ -154,7 +154,34 @@ HTTP 读取：/api/bootstrap?device、/api/monitoring?device、/api/monitoring/h
 
 此接口只认证“本机模拟生产端”；真实 source_kind 不由客户端自报，当前所有接收来源固定 simulator。真实设备/NPU 接入须新增受控生产 Adapter 和服务器设备/来源登记、独立认证/部署配置；不能只换 URL 就把 simulator 标签改成 sensor。生产 TLS、账户权限、限流、备份、迁移、设备租户隔离仍未实现。本机令牌与 IP 限制不是生产鉴权。
 
-AI 消息仍固定 503；无 device control、配置写入、文件任意访问、Shell、数据库管理 API。不要读取或复制正式 API Key，不改现有 Credential/ACL，不加载源码根 .env。
+未显式启用 Assistant 时 AI 消息返回 503；启用后的独立访问控制见下文。无 device control、配置写入、文件任意访问、Shell、数据库管理 API。不读取或复制正式 API Key，不改现有 Credential/ACL，不加载源码根 .env。
+
+## R2B-3 Normal Assistant 桥接
+
+```text
+独立聊天 Session（成功 user / assistant 完整 pair）
+ → 同源 AI HTTP：访问令牌 / epoch / 确认 revision / 设备登记校验
+ → ManagementAssistant：冻结 device_id、Preset、Policy，取得正式 RuntimeSnapshot
+ → 原 AssistantService：Prompt v2 / History v2 / 现有裁剪
+ → 原 ToolCallingService / Gateway / Registry / Executor
+      → 仅 get_current_water_quality：同一 MonitoringService.snapshot(device_id)
+      → DomainAnalysisService（与 analysis() 共用），无二次诊断
+ → Source Ledger / Commit Gate / 安全 Trace → 唯一 Final
+```
+
+- 启用开关 --enable-assistant；默认关闭，与 --legacy-demo 互斥。不读取或继承旧 Web 的多轮/Streaming 开关。只提供 Qwen 3.8 Flash（默认）与 Ollama Qwen3.5 4B，正式 Preset Identity、协议、Capability、OFF/Normal 均由原 Runtime 固定；DeepSeek 不列入首版。页面“已启用/已装配”仅表示本地 Adapter 可用，不表示 Provider 已联网或凭据已验证；启动不发健康 Probe。
+- 固定 1 Tool Call / 1 Round / 最多 2 Model Requests，retry=0；同一个 RequestHandle 的整 Turn Deadline 包含两次模型请求与 Tool，复用 Stop/Trace 提交门禁，无失败重跑。没有 Streaming、新 RAG、评分、视觉 Tool 或固定 Analysis。
+- Registry 复用正式水质 Definition/validator，替换的只是应用数据 Handler。Tool Policy 从已有 outputs/tool-policies/tool_policies.json 读取；不存在时复用内置默认。实际授权 = 现有 Assistant Policy ∩ 本应用可执行工具（水质查询）；不修改用户 Policy 文件。原 Knowledge/评分 Handler 不会绑定到管理 Runtime，不回退旧 Snapshot。
+- Tool Result 兼容原水质合同，附 device_id、batch_id、窗口/聚合、simulator 来源、连接状态和完整 governed analysis；这些数据只送入后续模型请求，不原样发给浏览器。存在窗口时 status=OK 表示读取完成，不表示有效或正常；NO_DATA 是未收到窗口。canonical quality 保守投影，analysis.data_quality/coverage 保留真实覆盖；Findings 和 PROTOTYPE Rule Identity 与同批次网页一致，STALE/OFFLINE 不得证明恢复。
+- 设备按本次请求的服务器登记 ID 冻结，不跟随其他页面的选择变化。冻结的是设备而非旧读数；Tool 执行时读取该设备最新已接收数据，并保留时间/批次。因此不同时间的页面读取可能有不同批次，不能声称始终是同一时刻。
+- 凭据使用原 private_project_location(仓库根) + CredentialStore；发送前一次 resolve 得到冻结 CredentialSnapshot。云端凭据缺失/私有文件权限错误安全失败，不复制、不迁移、不创建项目 .env。Ollama 按既有 Auth NONE；没有第二套凭据 UI。
+- API：GET /api/ai/bootstrap?device；POST /api/ai/requests 创建有界 RequestHandle；POST /api/ai/messages 发送；POST /api/ai/request-state 与 /api/ai/cancel 用控制令牌读取安全状态/停止。Bootstrap 只返回安全模型列表、工具名、预算、epoch、revision、进程内浏览器访问令牌，不解析/回显 Secret。
+- AI 写 API 要求 loopback peer、固定 Host、同源 Origin（存在时）、JSON 与 X-Management-AI；无 CORS。仅在 AI API 使用 32 KiB 有界消息，Ingestion 仍限 8 KiB。浏览器不能提交 mode、预算、Prompt、SourceRequirement、Provider 或自定义连接。revision 绑定 Preset 合同、设备、完整有效 Policy 与应用 epoch；变化时联网前拒绝，要求重新确认。RequestHandle 不允许重复执行。
+- History 只在页面 Session 内保存成功文本 pair，复用后端 6 轮/6 KiB 完整 pair 裁剪和 UNTRUSTED_TRANSCRIPT_V1。失败、取消、截断、pending、Tool 协议/Result/Trace 不进入成功 History。浏览器只限制提交 envelope 大小，不重写后端 Projection；模型/设备切换确认并清本会话，刷新清空；epoch 失效保留草稿、清旧历史、重新 Bootstrap，不自动重发。
+- UI textContent 渲染；独立 Tool 卡片、安全有序 Steps、Usage/状态详情，500ms 状态轮询不丢最终步骤。无 Prompt、参数、Raw Tool Result、Reasoning、凭据或 traceback。最终 POST 是提交依据，Stop 后迟到响应不作为成功回答；远端计算/费用是否停止仍为 UNKNOWN。
+- 安全 Trace 位于 Git ignored 的 outputs/management_web/assistant-traces.jsonl，复用 JsonlTraceSink，只存 allowlist 元数据，不保存对话正文。SQLite 和事件生命周期不因聊天清空/切换而改变。
+
+这是本机开发集成，不是生产账户/租户权限或设备鉴权。离线 Fake Provider 验证不代表真实回答质量已验收；真实 Provider 调用需要用户另行授权。
 
 ## 8. 其他业务边界
 

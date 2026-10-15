@@ -12,6 +12,29 @@ Python 3.11+，使用根项目已有 Flask 依赖；SQLite、生成器和 HTTP t
 
 访问 `http://127.0.0.1:8766`。读取已保存的监测数据或明确 NO_DATA；默认拒绝设备写入。可使用 `--port 8767`。原 Prototype 8765 独立保留；Flask debug/dotenv 关闭。
 
+## Normal Assistant（R2B-3）
+
+```powershell
+.\.venv\Scripts\python.exe -m apps.management_web --enable-assistant
+```
+
+需同时接收模拟数据时使用 --enable-assistant --enable-ingestion，并按下文先设置开发令牌。AI 关闭方式：停止自己启动的服务器，去掉 --enable-assistant 重启；已有 SQLite 不删除，原 Prototype 不受影响。
+
+启动、刷新和切换页面不发模型请求。网页进入“AI 智能助手”，选择 Qwen 或 Ollama、监测设备，输入问题并勾选本次请求确认后发送。云端显示 REAL NETWORK REQUEST / 可能费用；Ollama 显示 LOCAL MODEL REQUEST，不是 Mock。一次确认覆盖最多两次模型请求；结束后取消勾选。按 Ctrl+Enter 可发送，普通 Enter 换行。
+
+Qwen 使用现有正式用户私有凭据，不需要复制 Key、创建项目 .env 或调整 ACL；缺失/权限错误只显示安全错误码。Ollama 须由用户正常启动既有本地服务与模型，本轮自动测试没有启动或请求它。
+
+人工验收（真实模型调用须另行明确授权）：
+
+1. 未收到上报时问“现在水质怎么样？”，观察 NO_DATA，不得出现 Demo 正常值。
+2. 启动模拟器 normal/low_oxygen；比较网页与 Tool 的同设备观测时间、来源、数据质量和 PROTOTYPE 规则。持续上报期间批次可更新，不声称不同查询原子同步。
+3. 停止模拟器，超过 30 秒观察 stale、超过 90 秒 offline；缺失/无效/部分窗口按实际状态解释。
+4. 问“什么是溶氧？”，允许直接回答、未调用 Tool；再次询问当前值时应查询当前设备，不将历史当本轮来源。
+5. 验证 History、模型/设备切换确认、清空、切出页面再返回、Stop 与错误重发；取消/截断不提交成功回答，Stop 不保证远端计费停止。
+6. 只暴露水质查询；如用户 Policy 未授权该工具，页面明确“无”，不得越权。Policy 变化使旧确认失效，需要重新确认。
+
+离线专项：`python -m unittest apps.management_web.tests.test_assistant` 与 `node --test apps/management_web/tests/assistant-ui.test.mjs`。前者在临时 SQLite 上通过正式 Assistant/Registry/Executor/Source Gate/Trace 执行 Fake Provider HTTP 闭环，阻断所有外部 socket；后者运行实际前端模块的离线 DOM 行为。不是模型真实资格或回答质量证明。
+
 ## 连续模拟器本机联调
 
 同一 PowerShell 中创建仅本次开发会话使用的访问令牌，让服务器子进程继承；不显示、不落盘、不使用真实 API Key：
@@ -64,4 +87,4 @@ R2B-2 日常 targeted：`python -m unittest discover -s apps/monitoring/tests -p
 
 存储为 `outputs/management_web/monitoring.sqlite3`，Git ignored；重启保留记录。不要删除已有数据库来“重置演示”，需要隔离测试时使用临时库和服务注入。
 
-这是本机模拟接入，不是生产设备鉴权；AI 固定 503，真实视频、文件写入、用户权限与设备控制未开放。安全与 DTO 详见 [INTEGRATION](INTEGRATION.md)。
+这是本机模拟接入，不是生产设备鉴权；AI 默认 503，显式启用后使用 Normal 安全门禁。真实视频、文件写入、用户权限与设备控制未开放。安全与 DTO 详见 [INTEGRATION](INTEGRATION.md)。

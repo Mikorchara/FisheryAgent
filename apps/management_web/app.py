@@ -25,6 +25,12 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
     files = files if files is not None else DemoFiles()
     events = events if events is not None else DemoEvents()
     hosts = frozenset(allowed_hosts)
+    # Only the explicit secured adapter enables model I/O; R1 injected AI stubs stay disabled.
+    from .ai_adapter import ManagementAssistant
+    assistant = ai if isinstance(ai, ManagementAssistant) else None
+    if assistant is not None and assistant.monitoring is not data_service:
+        raise ValueError("AI_MONITORING_SOURCE_MISMATCH")
+    app.config["MAX_CONTENT_LENGTH"] = (32 if assistant else 8) * 1024
 
     @app.before_request
     def local_boundary():
@@ -33,7 +39,12 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
         origin = request.headers.get("Origin")
         if origin and origin != f"{request.scheme}://{request.host}":
             return jsonify(error_code="ORIGIN_REJECTED"), 403
-        if request.content_length is not None and request.content_length > app.config["MAX_CONTENT_LENGTH"]:
+        limit = 32 * 1024 if assistant is not None and request.path.startswith("/api/ai/") else 8 * 1024
+        if request.content_length is not None and request.content_length > limit:
+            return jsonify(error_code="REQUEST_TOO_LARGE"), 413
+        # Preserve the 8 KiB ingestion boundary even for chunked/unknown-length bodies.
+        # Avoid Flask 3.1-only per-request setters; the project also supports Flask 3.0.
+        if request.method == "POST" and request.content_length is None and len(request.get_data(cache=True)) > limit:
             return jsonify(error_code="REQUEST_TOO_LARGE"), 413
 
     @app.after_request
@@ -61,7 +72,8 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
             connections=[{"name": "监测数据", "status": connection, "description": "模拟器 HTTP 上报" if mode == "simulator" else "独立演示适配器"},
                 {"name": "传感器 / 数据库", "status": "not_connected", "description": "尚未接入"},
                 {"name": "视频 / NPU", "status": "not_connected", "description": "尚未接入"},
-                {"name": "AI Runtime", "status": "not_connected", "description": "保留现有 Runtime，待桥接"}])
+                {"name": "AI Runtime", "status": "connected" if assistant else "not_connected",
+                 "description": "Assistant · Normal" if assistant else "未启用 Assistant"}])
 
     @app.post("/api/ingestion/batches")
     def ingest_batch():
@@ -136,9 +148,78 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
         return jsonify(ai.availability())
 
     @app.post("/api/ai/messages")
-    def disabled_ai():
-        # Intentionally never invokes injected services before a secured integration stage.
-        return jsonify(error_code="AI_SERVICE_NOT_CONNECTED"), 503
+    def ai_messages():
+        failure = ai_gate()
+        if failure is not None:
+            return failure
+        value = request.get_json(silent=True)
+        try:
+            result = assistant.send(value)
+        except (AssistantError, GatewayError, ToolPolicyError, CredentialFileError, ValueError):
+            raise
+        except Exception:
+            return jsonify(error_code="AI_SERVICE_UNAVAILABLE"), 503
+        return jsonify(result=result), (200 if result["successful_turn"] else 409 if result["error_code"] == "USER_CANCELLED" else 502)
+
+    def ai_gate(*, write=True):
+        if assistant is None:
+            return jsonify(error_code="AI_SERVICE_NOT_CONNECTED"), 503
+        try:
+            local = ip_address(request.remote_addr or "").is_loopback
+        except ValueError:
+            local = False
+        if not local:
+            return jsonify(error_code="AI_LOCAL_ONLY"), 403
+        if write:
+            token = request.headers.get("X-Management-AI", "")
+            if not token.isascii() or not compare_digest(token, assistant.browser_token):
+                return jsonify(error_code="AI_ACCESS_DENIED"), 403
+            if request.mimetype != "application/json":
+                return jsonify(error_code="INVALID_ASSISTANT_REQUEST"), 400
+
+    @app.get("/api/ai/bootstrap")
+    def ai_bootstrap():
+        failure = ai_gate(write=False)
+        if failure is not None:
+            return failure
+        return jsonify(assistant.bootstrap(request.args.get("device")))
+
+    @app.post("/api/ai/requests")
+    def ai_prepare():
+        failure = ai_gate()
+        if failure is not None:
+            return failure
+        value = request.get_json(silent=True)
+        if not isinstance(value, dict) or set(value) != {"epoch"} or value["epoch"] != assistant.epoch:
+            return jsonify(error_code="ASSISTANT_SESSION_EXPIRED"), 409
+        return jsonify(assistant.prepare())
+
+    @app.post("/api/ai/request-state")
+    @app.post("/api/ai/cancel")
+    def ai_control():
+        failure = ai_gate()
+        if failure is not None:
+            return failure
+        value = request.get_json(silent=True)
+        if not isinstance(value, dict) or set(value) != {"request_id", "control_token"}:
+            return jsonify(error_code="INVALID_ASSISTANT_REQUEST"), 400
+        handle = assistant.handle(value)
+        if request.path.endswith("/cancel"):
+            handle.cancel()
+        return jsonify(handle.public_info())
+
+    from fishery_ai.assistant import AssistantError
+    from fishery_ai.credentials import CredentialFileError
+    from fishery_ai.model_gateway import GatewayError
+    from fishery_ai.tools.policy import ToolPolicyError
+
+    @app.errorhandler(AssistantError)
+    @app.errorhandler(GatewayError)
+    @app.errorhandler(ToolPolicyError)
+    @app.errorhandler(CredentialFileError)
+    def ai_error(error):
+        from fishery_ai.assistant_activity import safe_code
+        return jsonify(error_code=safe_code(error.code) or "AI_SERVICE_UNAVAILABLE"), 409
 
     @app.errorhandler(ValueError)
     def invalid_input(_error):

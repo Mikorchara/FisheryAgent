@@ -5,5 +5,19 @@ export const services={
   monitoring:(device,view)=>read(`/api/monitoring?${new URLSearchParams({device,view})}`),
   events:filters=>read(`/api/events?${new URLSearchParams(filters)}`),
   files:filters=>read(`/api/files?${new URLSearchParams(filters)}`),
-  ai:{availability:()=>read('/api/ai/status')},
+  ai:{availability:()=>read('/api/ai/status'),
+    bootstrap:device=>read('/api/ai/bootstrap?'+new URLSearchParams({device})),
+    prepare:config=>aiWrite('/api/ai/requests',{epoch:config.epoch},config),
+    send:(value,config)=>aiWrite('/api/ai/messages',value,config),
+    state:(value,config)=>aiWrite('/api/ai/request-state',value,config),
+    cancel:(value,config)=>aiWrite('/api/ai/cancel',value,config)},
 };
+
+async function aiWrite(path,value,config){
+  const response=await fetch(path,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',
+    'X-Management-AI':config.browser_token},body:JSON.stringify(value),keepalive:path==='/api/ai/cancel'});
+  const data=await response.json();
+  if(data.result)return data; // Preserve safe failed/cancelled Activity; never commit it as a success.
+  if(!response.ok)throw new Error(data.error_code||'AI_SERVICE_UNAVAILABLE');
+  return data;
+}

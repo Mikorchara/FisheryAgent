@@ -11,16 +11,15 @@
 - R2B-1：统一通道分析合同、PROTOTYPE 规则身份、每指标证据门禁、ACTIVE/RESOLVED/INDETERMINATE、事件等级/版本/旧库兼容；没有 AI 接入。
 - R2B-2：纯 DomainAnalysisService / EventService、事务内事件变更应用、统一设备绑定分析查询；模拟器发送前有界检查 UTC 窗口完成，保持严格服务端时间门禁。
 
-## 下一步：R2B-3 AI 应用桥接（未实施）
+## R2B-3：Normal Assistant 已接入，等待人工验收
 
-共享业务服务已具备离线接入条件，接下来设计冻结设备上下文的薄 AI Adapter。先接 Normal，复用现有 Runtime；Tool 消费同一分析服务，不能复制规则或恢复状态。规则仍为 PROTOTYPE，真实模型测试须单独授权。参见 [R2B-0 评估](deep-dive/research/R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md)与[当前业务边界](INTEGRATION.md#r2b-2-业务服务边界)。
+薄 ManagementAssistant 复用 AssistantService、Gateway、ToolCallingService、Ledger、Commit Gate、History Projection 与取消机制。Qwen 为默认、保留 Ollama，固定 OFF / Normal / 1 Call / 1 Round / 2 Requests；当前水质 Tool 读取同一 SQLite 与治理后的规则结果，设备按 Turn 冻结。正常启动默认关闭 AI；--enable-assistant 后仍需每次 Send 明确网络确认。规则保持 PROTOTYPE，本轮仅完成离线验证，未调用 Provider。参见 [当前集成边界](INTEGRATION.md#r2b-3-normal-assistant-桥接)。
 
-### 推荐接入顺序
+### 后续接入顺序（未实施）
 
-1. 提取独立 Assistant 页面 Session，建立薄 AI Adapter；不复制现有 Runtime。
-2. 先离线接通 Normal、最终正文、History、epoch、联网确认、Stop 和错误。
-3. 将 Tool 明确绑定 R2A 的同一 MonitoringService / repository 与冻结设备上下文。原 Prototype 的内存 Snapshot **尚未**切换到此数据库，不能假定已共享。
-4. 按已有精确 Scope 接入 Multi-Round / Streaming、Activity、Ledger 和 Commit Gate；真实请求需本轮单独授权。
+1. 人工验收当前 Normal、设备/数据来源、质量、取消和 History；真实模型测试需单独授权。
+2. 设计管理数据专用评分/知识/视觉 Tool 的业务与来源合同，不直接复用旧 Snapshot Handler。
+3. 按精确资格 Scope 单独评估 Multi-Round / Streaming。管理应用本轮不继承原 Prototype 的实验开关或发布范围；原 Prototype Snapshot 仍独立，未切换数据库。
 
 ## 后续独立工作
 

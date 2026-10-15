@@ -11,3 +11,8 @@ main{max-width:1640px;margin:0 auto;padding:31px 36px 20px}.page-heading{display
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 
 .badge.critical{background:#fff0f0;border-color:#f5d4d4;color:#b44747}
+.management-assistant{min-width:0}.assistant-controls{flex-wrap:wrap;gap:14px}.assistant-controls .field{min-width:150px;flex:1}.assistant-controls select{width:100%;min-width:0}
+.management-messages{min-height:320px;max-height:55vh;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:18px}.management-message{max-width:95%;min-width:0;padding:16px 18px;border:1px solid var(--line);border-radius:10px;background:#f5f9fa}
+.management-message.user{align-self:flex-end;background:#eaf4f3}.management-message.assistant{align-self:flex-start;background:white}.management-message.status{color:#8f5426;background:#fff8ed}.management-message>strong{font-size:11px;color:var(--muted)}.management-message>p{font-size:13px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:8px}
+.assistant-confirm{display:flex;align-items:flex-start;gap:9px;font-size:11px;color:var(--muted);line-height:1.7;margin-top:14px}.assistant-confirm input{margin-top:3px}.management-assistant .composer-foot{flex-wrap:wrap}.management-assistant .composer-foot>span{margin-right:auto}.management-assistant button:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:760px){.management-messages{padding:16px}.management-assistant .assistant-controls{padding:16px}.management-message{max-width:100%}}

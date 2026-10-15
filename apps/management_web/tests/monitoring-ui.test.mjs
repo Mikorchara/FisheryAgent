@@ -4,22 +4,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-class Element {
-  constructor(tag='div'){this.tagName=tag;this.children=[];this.attributes={};this.events={};this._text='';this.classes=new Set();
-    this.classList={add:(c)=>this.classes.add(c),remove:(c)=>this.classes.delete(c),contains:(c)=>this.classes.has(c),toggle:(c,on)=>{const v=on??!this.classes.has(c);v?this.classes.add(c):this.classes.delete(c);return v;}};}
-  set textContent(value){this._text=String(value??'');this.children=[];}
-  get textContent(){return this._text+this.children.map(c=>c.textContent).join('');}
-  append(...nodes){this.children.push(...nodes);}
-  replaceChildren(...nodes){this._text='';this.children=[];this.append(...nodes);}
-  setAttribute(k,v){this.attributes[k]=v;if(k==='href'){this.hash=v.startsWith('#')?v:'';}if(k==='value')this.value=v;}
-  removeAttribute(k){delete this.attributes[k];}
-  addEventListener(k,fn){this.events[k]=fn;}
-  contains(node){return this===node||this.children.some(c=>c.contains(node));}
-  matches(selector){return selector.split(',').includes(this.tagName);}
-  focus(){}
-  close(){}
-  showModal(){}
-}
+import {Element} from './dom-fixture.mjs';
+
 function fixture(oxygen=6.4){
   const time='2026-10-14T00:00:10+00:00';
   const window={start:'2026-10-14T00:00:00+00:00',end:time,duration_s:10};
@@ -42,7 +28,7 @@ function page(data=fixture()){
     window:{addEventListener:(type,fn)=>events[type]=fn,scrollTo:()=>{}},
     setInterval:(fn,ms)=>{timers.push({fn,ms});return timers.length;},clearInterval:()=>{},
     fetch:async url=>{requests.push(url);if(current instanceof Error)throw current;return {ok:true,json:async()=>structuredClone(current)};}});
-  for(const file of ['view-model.js','components.js','services.js','app.js']){
+  for(const file of ['view-model.js','components.js','services.js','assistant.js','app.js']){
     let source=fs.readFileSync(new URL('../static/'+file,import.meta.url),'utf8');
     source=source.replace(/^import .*;\s*$/gm,'').replace(/\bexport /g,'');
     vm.runInContext(source,context,{filename:file});
