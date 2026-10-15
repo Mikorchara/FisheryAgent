@@ -23,6 +23,7 @@
 ## Tool Runtime · 正式 Runtime
 
 - [tool_conversation.py](tool_conversation.py)：默认 1/1/2 与显式 2/2/3 的共享协调；Normal / 组装后的 Streaming 复用同一循环，保留 steps、Usage / 安全 Trace；Web Streaming 由独立实验范围授权。
+- [tool_argument_diagnostics.py](tool_argument_diagnostics.py)：参数拒因与有界计数合同，仅供安全 Activity / Trace，不保存参数或改变执行权限。
 - [tools/__init__.py](tools/__init__.py)：Tool 执行层公共接口导出。
 - [tools/contracts.py](tools/contracts.py)：Tool 定义、执行结果、业务状态与安全错误合同。
 - [tools/registry.py](tools/registry.py)：静态 allowlist、正式模型 Tool Definition 及固定 Handler 绑定。

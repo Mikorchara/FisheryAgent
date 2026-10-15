@@ -44,6 +44,18 @@ def reply(content=None, calls=None):
 
 
 class GatewayToolTests(unittest.TestCase):
+    def test_normal_parameter_diagnostic_preserves_public_error_and_cleanup(self):
+        for arguments, reason in [('{', 'MALFORMED_JSON'), ('[]', 'NOT_OBJECT')]:
+            with self.subTest(reason=reason):
+                gateway, bodies, clients = self.sync_gateway([reply(calls=[sdk_call(arguments=arguments)])])
+                with self.assertRaises(GatewayError) as caught:
+                    gateway.complete(self.request, self.runtime)
+                self.assertEqual(caught.exception.code, 'INVALID_TOOL_CALL')
+                self.assertEqual(caught.exception.argument_diagnostic.reason.value, reason)
+                self.assertEqual(caught.exception.argument_diagnostic.stage.value, 'model_contract')
+                self.assertEqual(len(bodies), 1)
+                self.assertTrue(all(client.closed for client in clients))
+
     def setUp(self):
         # Existing offline guard allows only asyncio's internal Windows wakeup
         # socketpair, never a provider / DNS / application network connection.

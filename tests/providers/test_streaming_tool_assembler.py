@@ -46,6 +46,24 @@ def good_chunks():
 
 
 class AssemblerTests(unittest.TestCase):
+    def test_parameter_diagnostics_keep_existing_stream_rejection_codes(self):
+        cases = [('{', 'INVALID_TOOL_ARGUMENTS', 'MALFORMED_JSON'),
+            ('[]', 'INVALID_TOOL_ARGUMENTS', 'NOT_OBJECT'),
+            ('{"x":1,"x":2}', 'INVALID_TOOL_ARGUMENTS', 'INVALID_JSON_VALUE'),
+            ('{"x":NaN}', 'INVALID_TOOL_ARGUMENTS', 'INVALID_JSON_VALUE'),
+            ('{"x":"\\ud800"}', 'INVALID_TOOL_ARGUMENTS', 'INVALID_ENCODING'),
+            ('{"x":' + '[' * 20 + '0' + ']' * 20 + '}', 'INVALID_TOOL_ARGUMENTS', 'ARGUMENTS_TOO_COMPLEX'),
+            (' ' * 4097, 'STREAM_BUFFER_LIMIT', 'ARGUMENTS_TOO_LARGE'),
+            ('\ud800', 'INVALID_STREAM_EVENT', 'INVALID_ENCODING')]
+        for text, code, reason in cases:
+            with self.subTest(reason=reason), self.assertRaises(GatewayError) as caught:
+                self.assemble([first(text), chunk(finish='tool_calls')])
+            self.assertEqual(caught.exception.code, code)
+            diagnostic = caught.exception.argument_diagnostic
+            self.assertEqual(diagnostic.reason.value, reason)
+            self.assertEqual(diagnostic.stage.value, 'stream_assembler')
+            if reason == 'ARGUMENTS_TOO_LARGE': self.assertEqual(diagnostic.argument_bytes, 4097)
+
     def assembler(self):
         return _ToolCallStreamAssembler((definition(), definition(OTHER)))
 
@@ -200,6 +218,15 @@ class AssemblerTests(unittest.TestCase):
 
 
 class AssemblerTransportTests(unittest.TestCase):
+    def test_parameter_diagnostic_survives_stream_cleanup(self):
+        adapter, bodies, closed, stream_closed, _ = self.transport([first('{'), chunk(finish='tool_calls')])
+        with self.assertRaises(GatewayError) as caught:
+            adapter._complete_tool_stream(self.request, self.runtime)
+        self.assertEqual(caught.exception.code, 'INVALID_TOOL_ARGUMENTS')
+        self.assertEqual(caught.exception.argument_diagnostic.reason.value, 'MALFORMED_JSON')
+        self.assertTrue(closed.is_set() and stream_closed.is_set())
+        self.assertEqual(len(bodies), 1)
+
     def setUp(self):
         # Network guard permits only asyncio's internal Windows wakeup socketpair.
         execution_tests.ExecutionTests.setUp(self)

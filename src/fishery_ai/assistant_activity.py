@@ -6,6 +6,7 @@ import re
 
 from .tools.catalog import CATALOG, catalog_display
 from .tools.registry import ToolRegistry
+from .tool_argument_diagnostics import public_argument_diagnostic
 
 
 STATES = {"RUNNING", "CANCEL_REQUESTED", "COMPLETED", "CANCELLED", "FAILED"}
@@ -52,6 +53,9 @@ def tool_summary(step):
     summary.update(catalog_display(name))
     summary["experimental"] = any(entry.name == name and entry.experimental for entry in CATALOG)
     if result is not None:
+        diagnostic = public_argument_diagnostic(result.argument_diagnostic)
+        if diagnostic is not None:
+            summary["argument_diagnostic"] = diagnostic
         payload = result.payload
         water = payload.get("water_quality")
         water = water if isinstance(water, dict) else {}
@@ -99,6 +103,9 @@ def project_activity(steps, *, request_id, budget, state="RUNNING", error_code=N
                 "state": step_state, "outcome": outcome, "safe_error_code": safe_code(step.result.error_code),
                 "finish_reason": step.result.finish_reason if step.result.finish_reason in FINISH_REASONS else None,
                 "usage": safe_usage(step.result.usage)})
+            diagnostic = public_argument_diagnostic(step.result.argument_diagnostic)
+            if diagnostic is not None:
+                rows[-1]["argument_diagnostic"] = diagnostic
             if outcome not in ("not_started", "blocked"):
                 usages.append(step.result.usage)
         else:

@@ -26,6 +26,8 @@ from .model_options import (GenerationOptions, OptionValidationError, ReasoningM
 from .providers import AuthSpec
 from .execution import current_handle, RequestHandle
 from .manual import ManualRequest, ManualResponse
+from .tool_argument_diagnostics import (ArgumentStage, ArgumentRejection, ToolArgumentError,
+    ToolArgumentDiagnostic, rejection)
 
 
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
@@ -70,9 +72,9 @@ class _ToolCallStreamAssembler:
     def __repr__(self):
         return f"_ToolCallStreamAssembler(chunks={self._chunks}, finished={self._finished})"
 
-    def _reject(self, code="INVALID_STREAM_EVENT"):
+    def _reject(self, code="INVALID_STREAM_EVENT", *, argument_diagnostic=None):
         self._failed = True
-        raise GatewayError(code) from None
+        raise GatewayError(code, argument_diagnostic=argument_diagnostic) from None
 
     def _text(self, value, *, limit=None):
         if not isinstance(value, str):
@@ -180,9 +182,19 @@ class _ToolCallStreamAssembler:
                 arguments = getattr(function, "arguments", None)
                 if arguments is not None:
                     self._arguments_seen = True
-                    self._argument_bytes += self._text(arguments)
+                    try:
+                        size = self._text(arguments)
+                    except GatewayError as error:
+                        reason = (ArgumentRejection.ARGUMENTS_TOO_LARGE if error.code == "STREAM_BUFFER_LIMIT"
+                                  else ArgumentRejection.INVALID_ENCODING if isinstance(arguments, str)
+                                  else ArgumentRejection.MALFORMED_JSON)
+                        raise GatewayError(error.code, argument_diagnostic=rejection(
+                            ArgumentStage.STREAM_ASSEMBLER, reason, arguments)) from None
+                    self._argument_bytes += size
                     if self._argument_bytes > self.MAX_ARGUMENT_BYTES:
-                        self._reject("STREAM_BUFFER_LIMIT")
+                        self._reject("STREAM_BUFFER_LIMIT", argument_diagnostic=ToolArgumentDiagnostic(
+                            ArgumentStage.STREAM_ASSEMBLER, ArgumentRejection.ARGUMENTS_TOO_LARGE,
+                            argument_bytes=min(self._argument_bytes, 65536)))
                     self._arguments.append(arguments)
         reason = getattr(choice, "finish_reason", None)
         if reason is not None:
@@ -195,6 +207,9 @@ class _ToolCallStreamAssembler:
             self._finish_reason = reason
 
     def _validate_arguments(self, text):
+        def reject(reason, arguments=None):
+            self._reject("INVALID_TOOL_ARGUMENTS", argument_diagnostic=rejection(
+                ArgumentStage.STREAM_ASSEMBLER, reason, text, arguments))
         # Bound nesting before json.loads, ignoring braces inside JSON strings.
         depth = 0; quoted = escaped = False
         for char in text:
@@ -210,7 +225,7 @@ class _ToolCallStreamAssembler:
             elif char in "[{":
                 depth += 1
                 if depth > self.MAX_JSON_DEPTH:
-                    self._reject("INVALID_TOOL_ARGUMENTS")
+                    reject(ArgumentRejection.ARGUMENTS_TOO_COMPLEX)
             elif char in "]}":
                 depth -= 1
         def object_pairs(pairs):
@@ -223,14 +238,19 @@ class _ToolCallStreamAssembler:
         def invalid_constant(_):
             raise ValueError("invalid constant")
         try:
-            value = json.loads(text, object_pairs_hook=object_pairs, parse_constant=invalid_constant)
+            try:
+                value = json.loads(text, object_pairs_hook=object_pairs, parse_constant=invalid_constant)
+            except json.JSONDecodeError:
+                reject(ArgumentRejection.MALFORMED_JSON)
+            except (ValueError, OverflowError):
+                reject(ArgumentRejection.INVALID_JSON_VALUE)
             if not isinstance(value, dict):
-                raise ValueError("object required")
+                reject(ArgumentRejection.NOT_OBJECT)
             pending, nodes = [value], 0
             while pending:
                 item = pending.pop(); nodes += 1
                 if nodes > self.MAX_JSON_NODES:
-                    raise ValueError("too many nodes")
+                    reject(ArgumentRejection.ARGUMENTS_TOO_COMPLEX, value)
                 if isinstance(item, dict):
                     pending.extend(item.keys()); pending.extend(item.values())
                 elif isinstance(item, list):
@@ -239,8 +259,12 @@ class _ToolCallStreamAssembler:
                     item.encode("utf-8")
                 elif isinstance(item, float) and not math.isfinite(item):
                     raise ValueError("non-finite number")
-        except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError):
-            self._reject("INVALID_TOOL_ARGUMENTS")
+        except UnicodeError:
+            reject(ArgumentRejection.INVALID_ENCODING)
+        except RecursionError:
+            reject(ArgumentRejection.ARGUMENTS_TOO_COMPLEX)
+        except (ValueError, TypeError, OverflowError):
+            reject(ArgumentRejection.INVALID_JSON_VALUE)
 
     def finish(self):
         if self._finished or self._failed:
@@ -256,6 +280,8 @@ class _ToolCallStreamAssembler:
             self._validate_arguments(arguments)
             try:
                 calls = (ModelToolCall(self._id, self._name, arguments, type=self._type),)
+            except ToolArgumentError as error:
+                self._reject("INVALID_TOOL_CALL", argument_diagnostic=error.argument_diagnostic)
             except (ValueError, TypeError, RecursionError):
                 self._reject("INVALID_TOOL_CALL")
         elif self._finish_reason != "stop":
@@ -315,6 +341,8 @@ class OpenAICompatibleAdapter:
                         for call in raw_calls)
                     if len({call.id for call in calls}) != len(calls):
                         raise ValueError("duplicate call ID")
+                except ToolArgumentError as error:
+                    raise GatewayError("INVALID_TOOL_CALL", argument_diagnostic=error.argument_diagnostic) from None
                 except (AttributeError, TypeError, ValueError, RecursionError):
                     raise GatewayError("INVALID_TOOL_CALL") from None
             reasoning = getattr(message, "reasoning_content", None)
@@ -375,7 +403,8 @@ class OpenAICompatibleAdapter:
                 return error
             return StreamingModelError(error.code,
                 usage=stream_assembler.observed_usage if stream_assembler is not None else Usage(),
-                finish_reason=stream_assembler.observed_finish_reason if stream_assembler is not None else None)
+                finish_reason=stream_assembler.observed_finish_reason if stream_assembler is not None else None,
+                argument_diagnostic=error.argument_diagnostic)
 
         async def put(item):
             while not stopped.is_set():
@@ -569,7 +598,8 @@ class OpenAICompatibleAdapter:
             return response
         except GatewayError as exc:
             if not isinstance(exc, StreamingModelError) and isinstance(response, ModelResponse):
-                raise StreamingModelError(exc.code, usage=response.usage, finish_reason=response.finish_reason) from None
+                raise StreamingModelError(exc.code, usage=response.usage, finish_reason=response.finish_reason,
+                    argument_diagnostic=exc.argument_diagnostic) from None
             raise
         finally:
             events.close()

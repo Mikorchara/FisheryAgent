@@ -183,6 +183,17 @@ HTTP 读取：/api/bootstrap?device、/api/monitoring?device、/api/monitoring/h
 
 这是本机开发集成，不是生产账户/租户权限或设备鉴权。离线 Fake Provider 验证不代表真实回答质量已验收；真实 Provider 调用需要用户另行授权。
 
+### R2B-3.1：参数拒绝的安全诊断
+
+水质 Tool 仍只接受 `{}`，设备由服务器绑定；Schema、Policy、预算和执行权限不变。拒绝仍保留原错误码；新增可选 `argument_diagnostic` 元数据进入有序 Activity 与安全 Trace，管理页面在“本次运行详情”显示。该元数据不进入 Tool Result JSON、模型消息、Receipt 或 History。
+
+- `schema_version=1`；`stage` 仅为 `model_contract`、`stream_assembler`、`executor` 或 `definition`。
+- `reason` 是有限枚举：`MALFORMED_JSON`、`NOT_OBJECT`、`UNEXPECTED_ARGUMENTS`、`ARGUMENTS_TOO_LARGE`、`INVALID_ENCODING`、`VALIDATOR_REJECTED`、`ARGUMENTS_TOO_COMPLEX`、`INVALID_JSON_VALUE`。
+- `argument_bytes` 为 UTF-8 字节数，饱和上限 65536；不可编码时为空。`object_member_count` 只在已知 object 时记录，饱和上限 1024。计数不参与授权，不表示放宽 4096 bytes 原限制；未到达/无法确定的计数为空。
+- 不记录字段名、参数值、validator 异常文字、Prompt、原始 Result 或凭据。未知异常仍是 `TOOL_EXECUTION_ERROR`，取消仍是 `USER_CANCELLED`，不能伪装成参数拒绝。
+- Normal 的非法 JSON / 非 object 通常在 ModelToolCall 构造处被拒绝，对外仍为 `INVALID_TOOL_CALL`（Assistant 归一为 `MODEL_TOOL_CALL_MALFORMED`）；Executor 的参数拒绝仍为 `INVALID_TOOL_ARGUMENTS`。Streaming 原有错误码保持不变。
+- 拒绝不执行对应 Handler，不继续模型请求，不授予任何执行来源，不提交成功 History。先前 Qwen 失败记录没有这些字段，无法追溯具体参数原因；未来新的失败只需检查安全拒因，无需保存原始参数。此次实现没有联网取证。
+
 ## 8. 其他业务边界
 
 文件管理与索引/检索仍分开，资料页面只展示 Demo 元数据；本轮没有新增 RAG。未来 Knowledge Evidence 不能认证现场事实；Analysis 自动 RAG 与 Assistant Knowledge Tool 保持原边界。

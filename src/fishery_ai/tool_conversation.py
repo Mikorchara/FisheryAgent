@@ -19,6 +19,7 @@ from .observability import JsonlTraceSink
 from .tools import ToolExecutionResult, ToolExecutor, ToolRegistry, ToolStatus
 from .tools.policy import ToolPolicy, ToolPolicyError, load_tool_policies
 from .tools.registry import CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE
+from .tool_argument_diagnostics import ToolArgumentDiagnostic, ToolArgumentError
 
 
 SYSTEM_INSTRUCTION = (
@@ -148,6 +149,7 @@ class ModelStepOutcome:
     usage: Usage = field(default_factory=Usage)
     finish_reason: str | None = None
     error_code: str | None = None
+    argument_diagnostic: ToolArgumentDiagnostic | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -311,6 +313,8 @@ def _validate_response(response: ModelResponse) -> tuple[ModelToolCall, ...]:
                       for item in response.tool_calls)
         if len({item.id for item in calls}) != len(calls):
             raise ValueError
+    except ToolArgumentError as error:
+        raise GatewayError("MODEL_TOOL_CALL_MALFORMED", argument_diagnostic=error.argument_diagnostic) from None
     except (ValueError, TypeError, AttributeError, RecursionError):
         raise GatewayError("MODEL_TOOL_CALL_MALFORMED") from None
     if (response.text is not None and not isinstance(response.text, str)) or (response.text is None and not calls):
@@ -451,7 +455,8 @@ class ToolCallingService:
                 usage_items.append(reported)
                 set_outcome(ModelStepOutcome("cancelled" if exc.code == "USER_CANCELLED" else "failed",
                                                 usage=reported, finish_reason=_finish_reason(getattr(exc, "finish_reason", None)),
-                                                error_code=_safe_code(exc.code)))
+                                                error_code=_safe_code(exc.code),
+                                                argument_diagnostic=exc.argument_diagnostic))
                 raise
             except Exception:
                 usage_items.append(Usage())
@@ -468,7 +473,8 @@ class ToolCallingService:
             try:
                 calls = _validate_response(response)
             except GatewayError as exc:
-                set_outcome(replace(steps[position].result, outcome="failed", error_code=exc.code))
+                set_outcome(replace(steps[position].result, outcome="failed", error_code=exc.code,
+                    argument_diagnostic=exc.argument_diagnostic))
                 raise
             set_outcome(replace(steps[position].result, outcome="tool_calls" if calls else "final_answer"))
             check_cancelled()

@@ -26,8 +26,12 @@ export function createAssistantWorkspace(api,options={}){
         ['质量',tool.quality||'—'],['新鲜度',tool.freshness||'—'],['观测时间',timeText(tool.observed_at)],
         ['评估时间',timeText(tool.evaluated_at)]])])):[el('p',{class:'muted',text:s.pending?'尚未执行 Tool':'未调用 Tool'})]));
     target.append(el('details',{class:'data-details'},[el('summary',{text:'本次运行详情'}),
-      ...steps.map(step=>el('p',{class:'muted',text:step.kind==='model'?`Request #${step.request_index} · ${step.state} · ${step.outcome||''}`:
-        `${step.tool_name||'Tool'} · ${step.state}`})),
+      ...steps.map(step=>el('div',{},[
+        el('p',{class:'muted',text:step.kind==='model'?`Request #${step.request_index} · ${step.state} · ${step.outcome||''}`:
+          `${step.tool_name||'Tool'} · ${step.state}`}),
+        ...(step.argument_diagnostic?[rows([['参数拒绝原因',step.argument_diagnostic.reason],
+          ['校验阶段',step.argument_diagnostic.stage],['参数字节数（有界）',step.argument_diagnostic.argument_bytes??'—'],
+          ['成员数（有界）',step.argument_diagnostic.object_member_count??'—']])]:[])])),
       rows([['请求数',activity?.counts?.model_requests_started??0],['实际 Tool',activity?.counts?.tools_executed??0],
         ['Tokens',activity?.aggregate_usage?.total_tokens??'—'],['总耗时',activity?.total_latency_ms===null||activity?.total_latency_ms===undefined?'—':`${activity.total_latency_ms} ms`]])]));
   }
@@ -127,7 +131,8 @@ export function createAssistantWorkspace(api,options={}){
     }catch(e){
       if(s.control&&!s.stopRequested&&!s.cancellation)try{await api.cancel(s.control,config);}catch(_){/* Bounded registry TTL handles an unreachable control API. */}
       const code=safeError(e);s.status=code;
-      s.entries.push({kind:'status',text:code==='USER_CANCELLED'?'USER_CANCELLED · 未提交半成品。远端计算/计费是否停止：UNKNOWN':code});
+      s.entries.push({kind:'status',text:code==='USER_CANCELLED'?'USER_CANCELLED · 未提交半成品。远端计算/计费是否停止：UNKNOWN':
+        code==='INVALID_TOOL_ARGUMENTS'?'INVALID_TOOL_ARGUMENTS · 工具参数未通过校验，被拒绝的 Tool 未执行；可展开本次运行详情查看原因。':code});
       if(['ASSISTANT_SESSION_EXPIRED','AI_ACCESS_DENIED'].includes(code)){
         reset();await load();s.status=code==='ASSISTANT_SESSION_EXPIRED'?
           'Assistant 后端已重启，请重新发送当前问题。':'Assistant 会话已失效，请重新发送当前问题。';

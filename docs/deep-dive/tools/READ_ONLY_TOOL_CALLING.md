@@ -27,6 +27,12 @@ T1 模型合同表达 tool definition、assistant tool call、tool_call_id、rol
 - `handlers/water_quality_score.py` 经同一个 Reader 调用 `WaterQualityScoringService`。评分是 Experimental，不是专业养殖标准。
 - `handlers/knowledge_search.py` 使用 Web 组合层注入的同一个 KnowledgeService；先绑定 Registry，再创建 UserToolPolicyStore。Analysis 自动 RAG 与 Tool 检索共享服务，不另建索引。
 
+## 安全参数拒因
+
+`tool_argument_diagnostics.py` 定义共享的有限拒因合同。ModelToolCall / Adapter 与 Executor / Definition 在各自原校验边界附带可选 `argument_diagnostic`：版本、阶段、拒因、饱和的参数字节数和 object 成员数。公开错误码及接受/拒绝规则不变；详情见[管理集成参数诊断](../../../apps/docs/INTEGRATION.md#r2b-31参数拒绝的安全诊断)。
+
+安全 Activity / JsonlTraceSink 只按 allowlist 投影该元数据；Tool Result JSON 和后续模型协议不包含它。非法 JSON、非 object、额外参数、超限、编码/复杂度或 validator 拒绝可区分，但不输出参数字段名/值或异常文字。未执行 Handler 的失败不能获得来源或成功提交；旧记录缺少元数据时不推断具体拒因。
+
 ## Knowledge 参数与结果
 
 `search_fishery_knowledge({"query": "..."})` 只接受 query 字符串；strip 后非空、最多 512 字符，拒绝归一化后仍存在的控制字符和 lone surrogate。Schema 声明 required query 与 additionalProperties=false；Executor 在 Handler 前执行显式 validator，另限制 JSON object / 4096 UTF-8 bytes。

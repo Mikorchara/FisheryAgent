@@ -7,6 +7,7 @@ from ..execution import check_cancelled
 from ..model_gateway import GatewayError, ModelToolCall
 from .contracts import ToolError, ToolErrorCode, ToolExecutionResult
 from .registry import ToolRegistry
+from ..tool_argument_diagnostics import (ArgumentStage, ArgumentRejection, ToolArgumentError, rejection)
 
 
 class ToolExecutor:
@@ -49,10 +50,19 @@ class ToolExecutor:
                 raise ToolError(ToolErrorCode.TOOL_NOT_ALLOWED)
             try:
                 if len(call.arguments_json.encode("utf-8")) > 4096:
-                    raise ValueError
-                arguments = json.loads(call.arguments_json)
+                    raise ToolArgumentError(rejection(ArgumentStage.EXECUTOR,
+                        ArgumentRejection.ARGUMENTS_TOO_LARGE, call.arguments_json))
+                try:
+                    arguments = json.loads(call.arguments_json)
+                except (ValueError, TypeError):
+                    raise ToolArgumentError(rejection(ArgumentStage.EXECUTOR,
+                        ArgumentRejection.MALFORMED_JSON, call.arguments_json)) from None
+                except RecursionError:
+                    raise ToolArgumentError(rejection(ArgumentStage.EXECUTOR,
+                        ArgumentRejection.ARGUMENTS_TOO_COMPLEX, call.arguments_json)) from None
                 if not isinstance(arguments, dict):
-                    raise ValueError
+                    raise ToolArgumentError(rejection(ArgumentStage.EXECUTOR,
+                        ArgumentRejection.NOT_OBJECT, call.arguments_json))
                 # The definition owns its parameter contract; the Executor only
                 # enforces size, JSON shape and the safe error mapping.
                 if self._reject_duplicate_requests:
@@ -61,8 +71,15 @@ class ToolExecutor:
                         ensure_ascii=True, allow_nan=False, separators=(",", ":")))
                 else:
                     invoke = definition.bind(arguments)
-            except (ValueError, TypeError, RecursionError, UnicodeError, AttributeError):
-                raise ToolError(ToolErrorCode.INVALID_TOOL_ARGUMENTS) from None
+            except ToolArgumentError as error:
+                raise ToolError(ToolErrorCode.INVALID_TOOL_ARGUMENTS,
+                    argument_diagnostic=error.argument_diagnostic.with_context(call.arguments_json)) from None
+            except UnicodeError:
+                raise ToolError(ToolErrorCode.INVALID_TOOL_ARGUMENTS, argument_diagnostic=rejection(
+                    ArgumentStage.EXECUTOR, ArgumentRejection.INVALID_ENCODING, call.arguments_json)) from None
+            except (ValueError, TypeError, RecursionError, AttributeError):
+                raise ToolError(ToolErrorCode.INVALID_TOOL_ARGUMENTS, argument_diagnostic=rejection(
+                    ArgumentStage.EXECUTOR, ArgumentRejection.VALIDATOR_REJECTED, call.arguments_json)) from None
             if self._reject_duplicate_requests:
                 with self._lock:
                     if signature in self._seen_requests:
@@ -80,7 +97,7 @@ class ToolExecutor:
             return result
         except ToolError as error:
             check_cancelled()
-            return self._error(call, error.code)
+            return self._error(call, error.code, argument_diagnostic=error.argument_diagnostic)
         except GatewayError as error:
             if error.code == "USER_CANCELLED":
                 raise
@@ -91,6 +108,6 @@ class ToolExecutor:
             return self._error(call, ToolErrorCode.TOOL_EXECUTION_ERROR)
 
     @staticmethod
-    def _error(call: ModelToolCall, code: ToolErrorCode) -> ToolExecutionResult:
+    def _error(call: ModelToolCall, code: ToolErrorCode, *, argument_diagnostic=None) -> ToolExecutionResult:
         return ToolExecutionResult.from_payload(call.id, call.function_name,
-                                                {"status": "ERROR", "error_code": code.value})
+            {"status": "ERROR", "error_code": code.value}, argument_diagnostic=argument_diagnostic)

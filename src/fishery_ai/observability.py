@@ -10,6 +10,17 @@ import re
 import threading
 
 from .contracts import AnalysisResult, Mode
+from .tool_argument_diagnostics import public_argument_diagnostic
+
+
+def _model_outcome(outcome):
+    # Explicit projection: the diagnostic is not arbitrary exception metadata.
+    result = {"outcome": outcome.outcome, "usage": asdict(outcome.usage),
+              "finish_reason": outcome.finish_reason, "error_code": outcome.error_code}
+    diagnostic = public_argument_diagnostic(outcome.argument_diagnostic)
+    if diagnostic is not None:
+        result["argument_diagnostic"] = diagnostic
+    return result
 
 
 class JsonlTraceSink:
@@ -73,7 +84,7 @@ class JsonlTraceSink:
             if isinstance(step, ModelExecutionStep):
                 steps.append({"seq": step.seq, "kind": "model", "request_index": step.request_index,
                               "request_started": step.request_started,
-                              **asdict(step.result)})
+                              **_model_outcome(step.result)})
             else:
                 steps.append({"seq": step.seq, "kind": "tool", "model_request_index": step.model_request_index,
                     "tool_round": step.tool_round,
@@ -82,6 +93,9 @@ class JsonlTraceSink:
                     "result_status": step.result.status.value if step.result else None,
                     "handler_started": step.handler_started,
                     "duration_ms": round(step.duration_ms, 3) if step.duration_ms is not None else None})
+                diagnostic = public_argument_diagnostic(step.result.argument_diagnostic) if step.result else None
+                if diagnostic is not None:
+                    steps[-1]["argument_diagnostic"] = diagnostic
         entry = {
             "kind": "read_only_tool_conversation",
             "application_mode": result.application_mode,
@@ -90,8 +104,8 @@ class JsonlTraceSink:
             "status": result.status.value, "error_code": result.error_code,
             "steps": steps,
             "legacy_projection_available": legacy,
-            "model_request_1": asdict(result.request_1) if legacy else None,
-            "model_request_2": asdict(result.request_2) if legacy else None,
+            "model_request_1": _model_outcome(result.request_1) if legacy else None,
+            "model_request_2": _model_outcome(result.request_2) if legacy else None,
             "tool_call_id": call_id if call_id and re.fullmatch(
                 r"[A-Za-z0-9_-]{1,128}", call_id) else None,
             "tool_name": name if name in ToolRegistry.registered_names()

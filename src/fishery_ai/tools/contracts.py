@@ -7,6 +7,8 @@ import json
 from typing import Callable
 
 from ..model_gateway import ModelToolDefinition
+from ..tool_argument_diagnostics import (ArgumentStage, ArgumentRejection, ToolArgumentError,
+    ToolArgumentDiagnostic, public_argument_diagnostic, rejection)
 
 
 class ToolStatus(str, Enum):
@@ -43,8 +45,9 @@ class ToolErrorCode(str, Enum):
 
 
 class ToolError(Exception):
-    def __init__(self, code: ToolErrorCode):
+    def __init__(self, code: ToolErrorCode, *, argument_diagnostic=None):
         self.code = ToolErrorCode(code)
+        self.argument_diagnostic = argument_diagnostic if public_argument_diagnostic(argument_diagnostic) else None
         super().__init__(self.code.value)
 
 
@@ -77,11 +80,17 @@ class ToolDefinition:
         """Validate once; expose canonical arguments only to the local executor."""
         if self.validate_arguments is None:
             if arguments:
-                raise ValueError("this tool accepts no parameters")
+                raise ToolArgumentError(rejection(ArgumentStage.DEFINITION,
+                    ArgumentRejection.UNEXPECTED_ARGUMENTS, arguments=arguments))
             return {}, self.handler
-        validated = self.validate_arguments(arguments)
+        try:
+            validated = self.validate_arguments(arguments)
+        except (ValueError, TypeError, RecursionError, UnicodeError, AttributeError):
+            raise ToolArgumentError(rejection(ArgumentStage.DEFINITION,
+                ArgumentRejection.VALIDATOR_REJECTED, arguments=arguments)) from None
         if not isinstance(validated, dict):
-            raise ValueError("validated arguments must be a JSON object")
+            raise ToolArgumentError(rejection(ArgumentStage.DEFINITION,
+                ArgumentRejection.VALIDATOR_REJECTED, arguments=arguments))
         return validated, partial(self.handler, validated)
 
 
@@ -92,14 +101,17 @@ class ToolExecutionResult:
     status: ToolStatus
     _content_json: str = field(repr=False)
     error_code: ToolErrorCode | None = None
+    argument_diagnostic: ToolArgumentDiagnostic | None = field(default=None, repr=False, compare=False)
 
     @classmethod
-    def from_payload(cls, call_id: str, name: str, payload: dict):
+    def from_payload(cls, call_id: str, name: str, payload: dict, *, argument_diagnostic=None):
         content = json.dumps(payload, ensure_ascii=False, allow_nan=False,
                              separators=(",", ":"))
         status = ToolStatus(payload["status"])
         code = ToolErrorCode(payload["error_code"]) if status == ToolStatus.ERROR else None
-        return cls(call_id, name, status, content, code)
+        diagnostic = (argument_diagnostic if code == ToolErrorCode.INVALID_TOOL_ARGUMENTS
+                      and public_argument_diagnostic(argument_diagnostic) else None)
+        return cls(call_id, name, status, content, code, diagnostic)
 
     @property
     def payload(self) -> dict:

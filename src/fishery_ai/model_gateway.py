@@ -13,6 +13,8 @@ from urllib.parse import urlsplit
 from .contracts import Mode, RuntimeInfo, Usage
 from .credentials import CredentialSnapshot, CredentialStore
 from .providers import AuthSpec
+from .tool_argument_diagnostics import (ArgumentStage, ArgumentRejection, ToolArgumentError,
+    public_argument_diagnostic, rejection)
 from .model_options import (CapabilitySource, GenerationOptions, ModelCapabilities,
                             OptionValidationError, ProfileStatus, ReasoningMode, ReasoningOptions,
                             normalize_base_url, validate_options, Support)
@@ -407,8 +409,14 @@ class ModelToolCall:
                 or not isinstance(self.function_name, str)
                 or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", self.function_name)):
             raise ValueError("invalid function call")
-        if not isinstance(_json_content(self.arguments_json), dict):
-            raise ValueError("function arguments must be a JSON object")
+        try:
+            arguments = _json_content(self.arguments_json)
+        except (ValueError, RecursionError):
+            raise ToolArgumentError(rejection(ArgumentStage.MODEL_CONTRACT,
+                ArgumentRejection.MALFORMED_JSON, self.arguments_json)) from None
+        if not isinstance(arguments, dict):
+            raise ToolArgumentError(rejection(ArgumentStage.MODEL_CONTRACT,
+                ArgumentRejection.NOT_OBJECT, self.arguments_json))
 
 
 def _tool_calls_tuple(calls) -> tuple[ModelToolCall, ...]:
@@ -549,10 +557,11 @@ class ModelGateway(Protocol):
 
 
 class GatewayError(Exception):
-    def __init__(self, code: str, *, option: str | None = None):
+    def __init__(self, code: str, *, option: str | None = None, argument_diagnostic=None):
         super().__init__(code)
         self.code = code
         self.option = option
+        self.argument_diagnostic = argument_diagnostic if public_argument_diagnostic(argument_diagnostic) else None
 
 
 class RetryableGatewayError(GatewayError):
@@ -562,8 +571,8 @@ class RetryableGatewayError(GatewayError):
 class StreamingModelError(GatewayError):
     """Safe statistics of an unsuccessful stream; never partial text or calls."""
 
-    def __init__(self, code: str, *, usage: Usage, finish_reason: str | None = None):
-        super().__init__(code)
+    def __init__(self, code: str, *, usage: Usage, finish_reason: str | None = None, argument_diagnostic=None):
+        super().__init__(code, argument_diagnostic=argument_diagnostic)
         self.usage = usage if isinstance(usage, Usage) else Usage()
         self.finish_reason = finish_reason if finish_reason in (
             "stop", "length", "tool_calls", "function_call", "content_filter") else None

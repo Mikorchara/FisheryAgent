@@ -183,6 +183,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ repositories.py                                         # 水质与 Detection Mock 资源读取
 │  │  ├─ secure_files.py                                         # 安全文件操作与 Windows ACL 检查
 │  │  ├─ tool_capability_probe.py                                # Managed Tool Calling 显式 Probe
+│  │  ├─ tool_argument_diagnostics.py                            # 安全参数拒因、阶段与有界计数合同
 │  │  ├─ tool_conversation.py                                    # 有界共享协调、内部 Normal/Streaming 传输
 │  │  ├─ water_quality_scoring.py                                # 水质实验评分与等级规则
 │  │  ├─ web.py                                                  # Web API、共享服务与页面入口
@@ -329,6 +330,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    │  ├─ test_mock_tool_gateway.py                                          # 离线 Mock 按工具名分派、方向性降级与安全兜底测试
    │  ├─ test_read_only_tools.py                                            # Registry、Executor 与只读 Handler 测试
    │  ├─ test_tool_argument_contract.py                                     # Tool 受控参数合同与旧工具兼容测试
+   │  ├─ test_tool_argument_diagnostics.py                                  # 拒因脱敏、执行阻断、来源及提交门禁
    │  ├─ test_bounded_multi_round.py                                        # 内部两轮预算、模型决策、去重与取消测试
    │  ├─ test_streaming_multi_round.py                                     # 流式组装到真实 Tool 的离线多轮与提交测试
    │  ├─ test_tool_conversation.py                                          # steps、固定预算、单轮与兼容投影测试

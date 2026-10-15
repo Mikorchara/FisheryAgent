@@ -47,6 +47,24 @@ class RecordingGateway(MockGateway):
 
 
 class ManagementAssistantTests(unittest.TestCase):
+    def test_parameter_rejection_reports_safe_reason_without_monitoring_read_or_followup(self):
+        self.gateway = RecordingGateway(call(arguments='{"device_id":"fictional-private-argument"}'), final())
+        with patch.object(self.monitoring, 'snapshot') as snapshot:
+            result = self.send().get_json()['result']
+        snapshot.assert_not_called()
+        self.assertFalse(result['successful_turn'])
+        self.assertEqual(result['final_text'], '')
+        self.assertEqual(result['error_code'], 'INVALID_TOOL_ARGUMENTS')
+        self.assertEqual(len(self.gateway.requests), 1)
+        activity = result['activity']
+        self.assertEqual(activity['counts']['tools_executed'], 0)
+        self.assertEqual(activity['steps'][-1]['argument_diagnostic'], {
+            'schema_version': 1, 'stage': 'definition', 'reason': 'UNEXPECTED_ARGUMENTS',
+            'argument_bytes': 42, 'object_member_count': 1})
+        public = json.dumps(activity) + self.traces.read_text(encoding='utf-8')
+        self.assertNotIn('fictional-private-argument', public)
+        self.assertNotIn('device_id', public)
+
     def setUp(self):
         for name in ('socket.socket.connect', 'socket.socket.connect_ex', 'socket.socket.sendto', 'socket.getaddrinfo'):
             guard = patch(name, side_effect=AssertionError('No Provider requests in integration tests'))

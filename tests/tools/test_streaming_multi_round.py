@@ -56,6 +56,22 @@ class FixtureKnowledge:
 
 
 class StreamingMultiRoundTests(unittest.TestCase):
+    def test_extra_arguments_never_execute_or_followup_and_keep_safe_diagnostic(self):
+        gateway = self.gateway([tool_chunks(arguments='{"device_id":"fictional-private-argument"}')])
+        with patch.object(self.reader, 'query') as handler:
+            result, handle = self.send(gateway)
+        self.assert_failed(result, 'INVALID_TOOL_ARGUMENTS')
+        handler.assert_not_called()
+        self.assertEqual(len(self.bodies), 1)
+        self.assert_closed()
+        activity = result.to_dict()['activity']
+        self.assertEqual(activity['steps'][-1]['argument_diagnostic']['reason'], 'UNEXPECTED_ARGUMENTS')
+        self.assertEqual(activity['counts']['tools_executed'], 0)
+        self.assertFalse(result.source_receipt.sources)
+        public = json.dumps(activity) + self.trace_path.read_text(encoding='utf-8')
+        self.assertNotIn('fictional-private-argument', public)
+        self.assertNotIn('device_id', public)
+
     def setUp(self):
         execution_fixture.ExecutionTests.setUp(self)  # Offline guard + asyncio wakeup exception only.
         temporary = TemporaryDirectory(); self.addCleanup(temporary.cleanup)

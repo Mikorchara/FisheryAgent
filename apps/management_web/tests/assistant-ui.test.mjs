@@ -131,3 +131,20 @@ test('Stop after backend finalization cannot contradict the completed Commit Gat
   await p.workspace.stop();finish(success('已完成的回答'));await turn;
   assert.equal(p.workspace.state.turns.length,1);assert.match(p.root.textContent,/已在 Stop 前完成/);
 });
+
+test('parameter rejection shows bounded diagnostics and never commits history or renders raw metadata',async()=>{
+  const p=fixture();await p.ready();
+  const rejected=activity();rejected.counts={tools_executed:0,model_requests_started:1};
+  rejected.steps=rejected.steps.slice(0,2);Object.assign(rejected.steps[1],{
+    state:'REJECTED',result_status:'ERROR',handler_started:false,
+    argument_diagnostic:{schema_version:1,stage:'definition',reason:'UNEXPECTED_ARGUMENTS',
+      argument_bytes:42,object_member_count:1,raw:'fictional-private-argument'}});
+  p.api.send=async()=>({result:{successful_turn:false,error_code:'INVALID_TOOL_ARGUMENTS',activity:rejected}});
+  p.workspace.state.draft='水质';p.workspace.state.confirmed=true;await p.workspace.send();
+  assert.equal(p.workspace.state.turns.length,0);
+  assert.equal(p.workspace.state.pending,false);
+  assert.match(p.root.textContent,/被拒绝的 Tool 未执行/);
+  assert.match(p.root.textContent,/UNEXPECTED_ARGUMENTS/);
+  assert.match(p.root.textContent,/definition/);
+  assert.doesNotMatch(p.root.textContent,/fictional-private-argument/);
+});
