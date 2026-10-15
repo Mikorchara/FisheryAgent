@@ -12,6 +12,10 @@ class MonitoringData(Protocol):
 
 
 class AIService(Protocol):
+    """Page/legacy facade only; executable business API is ai_service.AssistantBackend.
+
+    Structural conformance does not authorize model I/O through the Web routes.
+    """
     def availability(self) -> dict: ...
 
     def send(self, request: dict) -> dict: ...

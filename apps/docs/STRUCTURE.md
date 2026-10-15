@@ -15,6 +15,14 @@ apps/
 │  └─ deep-dive/research/
 │     ├─ R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md # R2B-0 评估基线，非实现现状
 │     └─ R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md # 当前架构、参数故障证据与路线建议
+├─ ai_service/                      # 独立 AI 业务包（同进程，无新端口）
+│  ├─ __init__.py                    # 包标识，不自动创建业务实例
+│  ├─ contracts.py                   # AssistantBackend 与服务器内 PreparedAssistantTurn
+│  ├─ service.py                     # 业务校验、冻结配置、凭据/Runtime 装配及正式 Assistant 调用
+│  ├─ bindings.py                    # Monitoring 水质 DTO、原 Knowledge Handler 与静态绑定
+│  └─ tests/
+│     ├─ __init__.py
+│     └─ test_service.py             # 无 Web 的执行、冻结、取消、路径及依赖边界
 ├─ monitoring/                      # Web 与未来 Tool 共享的数据基础
 │  ├─ __init__.py
 │  ├─ contracts.py                   # 上报、WaterMetricFact/WaterCapture、质量/Finding/Event 合同
@@ -42,7 +50,7 @@ apps/
    ├─ __main__.py                    # 本机启动、存储装配与写入开关
    ├─ README.md                      # 快速入口
    ├─ app.py                         # HTTP、访问控制与服务装配
-   ├─ ai_adapter.py                  # Normal 装配、Monitoring 水质投影与原 Knowledge Tool 绑定
+   ├─ ai_adapter.py                  # Web 薄门面：浏览器令牌、RequestRegistry 与业务合同委托
    ├─ contracts.py                   # Web Protocol、共享 DTO 导出
    ├─ services.py                    # R1 兼容 Demo、未接入 AI/文件服务
    ├─ package.json                   # Node 原生测试，无依赖
@@ -56,6 +64,7 @@ apps/
    │  └─ services.js                 # 同源监测与受控 Assistant API
    └─ tests/
       ├─ test_app.py                 # R1 兼容、API 和安全
+      ├─ test_ai_boundary.py         # Web 访问控制、令牌隔离、同一 Handle 与显式装配门禁
       ├─ test_assistant.py           # Fake Provider HTTP 闭环、同源数据、Ledger 与取消
       ├─ test_knowledge.py           # Knowledge HTTP 闭环、授权/来源隔离、拒绝与确认指纹
       ├─ assistant-ui.test.mjs       # Normal 聊天、History、epoch 与 Stop 行为
@@ -79,15 +88,20 @@ Simulator scenarios → generator → HTTP reporter
         → 同一个 ToolExecutor / AssistantService（每 Turn 择一 Tool）
 
 MonitoringService → 已有 Domain / Diagnosis / CurrentWaterQualityReader
-ManagementAssistant → AssistantService / ToolCallingService / Gateway / CredentialSnapshot
+management_web API / ManagementAssistant（HTTP/令牌/请求控制）
+    → ai_service.AssistantBackend 合同
+    → ManagementAssistantService（校验/冻结/Runtime 装配）
+    → src/fishery_ai AssistantService / ToolCallingService / Gateway / CredentialSnapshot
 ```
 
 模拟器不导入服务器存储或网页变量。共享 monitoring 不依赖 Flask 或网页组件；水质 DTO 只有一个定义，Web 兼容导出。SQLite 连接按操作关闭，生成器与 HTTP 生命周期分离，页面轮询不触发采样或写入。
 
 DomainAnalysisService 与 EventService 不导入 Repository/Flask。Repository 只应用 EventChanges，规则/生命周期判断不再埋入 SQL。MonitoringService.capture_water() 只读一次 current，得到 frozen WaterCapture（指标/canonical Reading/同批次分析）；Assistant 投影不再借用 Web snapshot 或查询趋势。Web snapshot() 保留 current+history 事务和原 DTO，与 Tool 共用纯捕获实现，不二次诊断、不跨通道融合。
 
-页面负责交互与展示；API 负责输入/访问控制；服务负责用例和状态；Adapter 负责生产端/设备差异。七页路由在 static/app.js，独立 Assistant Session 在 static/assistant.js；薄 ai_adapter.py 绑定设备与正式 Runtime，不复制执行循环、Prompt 或 History Projection。
+页面负责交互与展示；API 负责输入/访问控制；服务负责用例和状态；Adapter 负责接入差异。七页路由在 static/app.js，独立 Assistant Session 在 static/assistant.js。ai_adapter.py 只把业务字段交给 ai_service 的 prepare_turn，再把冻结结果与 Web 管理的同一个 RequestHandle 交给 execute_turn；业务包不持有浏览器/控制令牌、不创建 RequestRegistry，不复制执行循环、Prompt 或 History Projection。
 
 管理 Registry 只装配水质与项目 Knowledge，两者经原 Assistant Policy 求交。Knowledge 是项目背景 Evidence，不认证当前现场；未装配的评分不可执行。既有默认仍只授权水质，管理 API 不新增授权写入口。
+
+后续 Multi-Round 的 Scope/Flag、Prompt/History/预算装配归 ai_service.service；复用核心 ToolCallingService。Streaming 的业务模式也在 ai_service 装配，HTTP SSE/断线/重连归 management_web，Provider delta 归原 Runtime Adapter。新视觉/历史 Tool 的管理数据绑定归 ai_service.bindings、事实/判断归 Monitoring；新 RAG 的服务装配入口归 ai_service，检索实现不写进 Web 或本业务协调器。出现实际需求再拆领域文件，不提前建空框架。
 
 Runtime/Core 为共享领域与 AI 包；Development 为模拟器和测试；Generated 为 Git ignored 的 outputs/management_web/（SQLite、脱敏 Assistant Trace）；User-private 为已有凭据目录，管理前端不可接触。可显式启用 Qwen/Ollama Normal 对话；真实设备、NPU、文件索引、Streaming 和固定 Analysis 接入未实现。

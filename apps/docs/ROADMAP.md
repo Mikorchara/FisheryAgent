@@ -21,6 +21,8 @@ R2B-3.1 已补安全参数拒因；R2B-3.2 已提供 current-only WaterCapture �
 
 R2B-3.3 已装配现有 Knowledge Tool，复用原 KnowledgeService / Handler / 参数校验与来源合同；通过已有 Policy 显式 opt-in。UI 区分背景检索与当前观测；NO_MATCH 不冒充命中。仍为 OFF / Normal / 1/1/2，未授权新资格或开放多轮。
 
+R2B-3.4 已提取独立 apps/ai_service：业务协调、Runtime 装配、Monitoring/Knowledge 绑定与冻结 Turn 合同；Web 保留 HTTP/浏览器访问控制和同一 RequestHandle 的创建/状态/Stop。无新能力或模式，未来多轮/Streaming/新 Tool 的业务装配从该包扩展，不在 Web 重建执行逻辑。
+
 1. 人工验收当前 Normal、设备/数据来源、质量、取消和 History；真实模型测试需单独授权。
 2. 人工验收项目知识调用、NO_MATCH、来源可信度与当前事实区分；评分/视觉查询另行设计，不直接复用旧 Snapshot Handler。Knowledge 相关性改善留待独立 RAG 研究。
 3. 管理端 2/2/3 前置条件：冻结正式协议、Prompt/History、Tool Definition 与 Monitoring/Knowledge 绑定版本，验证精确 Preset + 两 Tool 组合的管理链路，接入默认关闭的维护者 Scope/Flag、动态预算确认和安全 Steps。单独授权真实资格/人工质量审核，不复制第二套循环。Streaming 另立门禁，均不继承原 Prototype 实验发布范围。

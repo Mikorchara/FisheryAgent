@@ -14,7 +14,9 @@ from fishery_ai.credentials import CredentialStore
 from fishery_ai.execution import current_handle
 from fishery_ai.model_gateway import GatewayError, MockGateway, ModelResponse, ModelToolCall
 from fishery_ai.observability import JsonlTraceSink
-from apps.management_web.ai_adapter import ManagementAssistant, PRESETS, water_payload
+from apps.management_web.ai_adapter import ManagementAssistant
+from apps.ai_service.service import ManagementAssistantService, PRESETS
+from apps.ai_service.bindings import water_payload
 from apps.management_web.app import create_app
 from apps.monitoring.analysis import reading_from_row
 from apps.monitoring.repository import MonitoringRepository
@@ -80,10 +82,11 @@ class ManagementAssistantTests(unittest.TestCase):
         self.gateway = RecordingGateway(call(), final())
         self.traces = self.root/'assistant.jsonl'
         ref = assistant_profile(PRESETS[0]).credential_ref
-        self.ai = ManagementAssistant(self.monitoring,
+        self.backend = ManagementAssistantService(self.monitoring,
             credentials=CredentialStore(process_env={ref: 'fictional-management-test-value'}),
             traces=JsonlTraceSink(self.traces), policy_directory=self.root/'policies',
             gateway_factory=lambda: self.gateway)
+        self.ai = ManagementAssistant(self.backend)
         self.app = create_app(data_service=self.monitoring, ai=self.ai)
         self.client = self.app.test_client()
         self.config = self.client.get('/api/ai/bootstrap?device=pond-a').get_json()
@@ -188,10 +191,10 @@ class ManagementAssistantTests(unittest.TestCase):
         self.assertTrue(any('先前回答' in (m.content or '') for m in self.gateway.requests[0].messages))
 
     def test_policy_restriction_and_reconfirmation_never_changes_user_file(self):
-        value = self.ai.policy_store.default_selections()
+        value = self.backend.policy_store.default_selections()
         value['modes']['assistant']['selected_tools'] = []
-        self.ai.policy_store.save(value)
-        before = self.ai.policy_store.path.read_bytes()
+        self.backend.policy_store.save(value)
+        before = self.backend.policy_store.path.read_bytes()
         response = self.send()
         self.assertEqual(response.get_json()['error_code'], 'ASSISTANT_EXECUTION_PROFILE_CHANGED')
         self.assertEqual(len(self.gateway.requests), 0)
@@ -199,10 +202,10 @@ class ManagementAssistantTests(unittest.TestCase):
         self.gateway = RecordingGateway(final())
         self.send()
         self.assertEqual(self.gateway.requests[0].tools, ())
-        self.assertEqual(before, self.ai.policy_store.path.read_bytes())
+        self.assertEqual(before, self.backend.policy_store.path.read_bytes())
 
     def test_tool_projection_version_change_invalidates_old_confirmation_before_provider(self):
-        with patch('apps.management_web.ai_adapter.WATER_TOOL_PROJECTION', 'management-current-water@2'):
+        with patch('apps.ai_service.bindings.WATER_TOOL_PROJECTION', 'management-current-water@2'):
             response = self.send()
         self.assertEqual(response.get_json()['error_code'], 'ASSISTANT_EXECUTION_PROFILE_CHANGED')
         self.assertEqual(self.gateway.requests, [])
@@ -274,16 +277,16 @@ class ManagementAssistantTests(unittest.TestCase):
         self.assertNotIn('private/path', json.dumps(result))
 
     def test_missing_credential_trace_failure_and_epoch_reset(self):
-        self.ai.credentials = CredentialStore(process_env={})
+        self.backend.credentials = CredentialStore(process_env={})
         response = self.send()
         self.assertEqual(response.get_json()['error_code'], 'SECRET_MISSING')
         self.assertEqual(len(self.gateway.requests), 0)
         self.gateway = RecordingGateway(final())
-        with patch.object(self.ai.traces, '_append', side_effect=OSError('private path')):
+        with patch.object(self.backend.traces, '_append', side_effect=OSError('private path')):
             result = self.send(preset_id=PRESETS[1], revision=self.config['presets'][1]['revision']).get_json()['result']
         self.assertFalse(result['successful_turn']); self.assertEqual(result['final_text'], '')
         value = self.envelope()
-        self.ai.epoch = 'restarted'
+        self.backend.epoch = 'restarted'
         self.assertEqual(self.client.post('/api/ai/messages', headers=self.headers, json=value).get_json()['error_code'], 'ASSISTANT_SESSION_EXPIRED')
 
     def test_stop_during_second_model_request_and_safe_status_polling(self):
@@ -369,14 +372,14 @@ class ManagementAssistantTests(unittest.TestCase):
         from dataclasses import replace
         from fishery_ai.model_options import Support
         p = assistant_profile(PRESETS[0])
-        with patch('apps.management_web.ai_adapter.assistant_profile', return_value=replace(p,
+        with patch('apps.ai_service.service.assistant_profile', return_value=replace(p,
             capabilities=replace(p.capabilities, tool_calling=Support.UNKNOWN))):
             self.config = self.ai.bootstrap('pond-a')
             response = self.send()
         self.assertEqual(response.get_json()['error_code'], 'ASSISTANT_PRESET_NOT_ALLOWED')
         self.assertEqual(len(self.gateway.requests), 0)
         self.config = self.ai.bootstrap('pond-a')
-        with patch.object(self.ai, 'gateway_factory', side_effect=RuntimeError('private-path-and-secret')):
+        with patch.object(self.backend, 'gateway_factory', side_effect=RuntimeError('private-path-and-secret')):
             value = self.envelope()
             response = self.client.post('/api/ai/messages', headers=self.headers, json=value)
         self.assertEqual(response.get_json(), {'error_code': 'AI_SERVICE_UNAVAILABLE'})

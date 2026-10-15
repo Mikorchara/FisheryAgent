@@ -14,6 +14,8 @@ Normal Assistant：`python -m apps.management_web --enable-assistant`；配合�
 
 支持统一 Monitoring 水质查询，以及原 KnowledgeService 的项目资料检索。Knowledge 默认不授权；使用原 Prototype Tool Manager 的 Assistant 标签开启，刷新管理页面后重新确认。仍为 OFF / Normal / 1 Tool / 1 Round / 2 Requests，项目知识不表示当前观测或疾病确诊。具体步骤见下方 BUILD_RUN；未接入多轮或 Streaming。
 
+AI 业务位于 `apps/ai_service/`；本目录的 ai_adapter.py 仅保留浏览器令牌、请求控制和业务合同委托，不包含 Tool/模型执行循环。它是同进程模块划分，无需增加启动服务或端口。
+
 管理平台主要说明已集中在 `apps/docs/`：
 
 - [文档与当前状态](../docs/README.md)

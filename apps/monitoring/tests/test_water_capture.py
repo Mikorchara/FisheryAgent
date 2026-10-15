@@ -6,7 +6,7 @@ import json
 from unittest.mock import patch
 import unittest
 
-from apps.management_web.ai_adapter import project_water_tool, water_payload
+from apps.ai_service.bindings import project_water_tool, water_payload
 from apps.monitoring.contracts import metric_quality
 from apps.monitoring.service import project_water_snapshot
 import apps.monitoring.tests.test_business_services as fixture

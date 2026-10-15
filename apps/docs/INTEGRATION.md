@@ -163,7 +163,8 @@ Web 的 `snapshot()` 继续在同一读事务捕获 current + history，再使�
 ```text
 独立聊天 Session（成功 user / assistant 完整 pair）
  → 同源 AI HTTP：访问令牌 / epoch / 确认 revision / 设备登记校验
- → ManagementAssistant：冻结 device_id、Preset、Policy，取得正式 RuntimeSnapshot
+ → Web ManagementAssistant：浏览器令牌 / RequestRegistry / 同一个 RequestHandle
+ → ai_service.ManagementAssistantService：冻结 device_id、Preset、Policy，取得正式 RuntimeSnapshot
  → 原 AssistantService：Prompt v2 / History v2 / 现有裁剪
  → 原 ToolCallingService / Gateway / Registry / Executor
       → get_current_water_quality：MonitoringService.capture_water(device_id)
@@ -187,9 +188,20 @@ Web 的 `snapshot()` 继续在同一读事务捕获 current + history，再使�
 
 这是本机开发集成，不是生产账户/租户权限或设备鉴权。离线 Fake Provider 验证不代表真实回答质量已验收；真实 Provider 调用需要用户另行授权。
 
+### R2B-3.4：独立 AI 业务边界
+
+`apps/ai_service/` 是可无 Web 使用的同进程 Python 业务包，不是新微服务，没有新端口。`service.py` 迁移原业务代码，`bindings.py` 原样迁移管理 Tool 绑定与水质投影；`management_web/ai_adapter.py` 保留薄 Web 门面，HTTP 路由、UI、请求/响应 JSON 和启动命令不变。内部业务符号的导入改用新位置，不增加旧路径转发层。
+
+- `AssistantBackend` 明确 availability、bootstrap、prepare_turn、execute_turn 及 monitoring/epoch。Protocol 是开发合同，不是权限；Web 仍只通过显式装配的 ManagementAssistant 启用执行，并校验其 Monitoring 与页面服务是同一实例。
+- `prepare_turn(value)` 只接受业务字段，复用 AssistantRequest 校验及原 Policy/Definition/revision 确认；返回 frozen `PreparedAssistantTurn`，含既有 Request、设备、epoch、Profile、Policy 与 Registry。它只在服务器内短暂使用，不序列化、不进 History/数据库、不含已解析凭据，其 repr 不暴露问题/历史。预检不读观测、不解析凭据、不发请求。
+- Web 保留浏览器令牌、RequestRegistry、控制令牌校验、状态/Stop API；移除 request_id/control_token 后调用业务预检。预检成功后才取出原 Handle，交给 `execute_turn(prepared, handle)`。后者检查 epoch，再沿用 handle.start 防重放/取消、原整 Turn deadline、一次 CredentialSnapshot/RuntimeSnapshot 和 AssistantService。未建立第二套取消、循环或 Trace。
+- 同一 Turn 冻结 Registry/Policy/设备；另一个页面选择不改变它。本次 Tool 执行仍查询该设备当时的统一 Monitoring 数据，不冻结旧读数；Knowledge 仍独立。业务包不导入 Flask/management_web，Monitoring 生产代码不反向导入 AI service；没有全局 Demo fallback。
+- `local()` 的私有凭据工厂、outputs/tool-policies 与 outputs/management_web/assistant-traces.jsonl 保持原位置；本次整理未读取/迁移/复制私有文件，真实执行仍由原 CredentialStore 获取 Snapshot。UI epoch/revision、每次网络确认、Qwen/Ollama、OFF/Normal/1/1/2 和所有提交安全语义不变。
+- 后续 Multi-Round：在本业务层接入原 Runtime 的显式模式和精确发布门禁；Streaming：本层装配模式，Web 负责 SSE/断线，核心 Adapter 负责分片归一；新 Tool：本层绑定现有 Registry/Executor 与管理数据服务；新 RAG：替换 Knowledge 依赖和检索实现，保持背景 Evidence 合同，不将其放入 UI、HTTP 或水质规则中。本轮均未开放。
+
 ### R2B-3.3：Knowledge Tool 装配与来源隔离
 
-- 每个 ManagementAssistant 只创建一个原 `KnowledgeService`，数据固定为包内 `src/fishery_ai/resources/knowledge/eel_knowledge.json`，使用原 portable 检索实现；不是资料页面 Demo 文件，不接入新上传/索引/RAG。
+- 每个 ManagementAssistantService 只创建一个原 `KnowledgeService`，数据固定为包内 `src/fishery_ai/resources/knowledge/eel_knowledge.json`，使用原 portable 检索实现；不是资料页面 Demo 文件，不接入新上传/索引/RAG。
 - 原 ToolRegistry 创建唯一 `search_fishery_knowledge` Definition、validator 和 Handler；ManagementToolRegistry 直接保留该 ToolDefinition 对象。实际执行仍走同一 ToolCallingService / ToolExecutor，不复制检索逻辑、Schema 或执行循环。全局 Policy 校验 Registry 可识别评分等原 Tool，不表示管理应用可以执行它们。
 - Knowledge 只接受现有 `{"query":"..."}` 合同，固定 top_k=3、每条正文最多 800 字符加省略号；参数、结果大小限制和异常映射均由原合同执行。非法参数不会检索，未授权返回 TOOL_NOT_ALLOWED；检索异常是 TOOL_EXECUTION_ERROR，不能伪装成 NO_MATCH，不继续模型请求。
 - OK 的合法 Evidence 只能授予 RETRIEVED_PROJECT_EVIDENCE；NO_MATCH 只表示本轮检索完成，不授予命中或当前观测来源。二者都不能满足 CURRENT_OBSERVATION_QUERY / CURRENT_SCORE_EVALUATION。History、模型正文和来源声明不生成 Receipt。
@@ -201,7 +213,7 @@ Web 的 `snapshot()` 继续在同一读事务捕获 current + history，再使�
 
 ### R2B-3.2：精简水质 Tool DTO
 
-`management_web.ai_adapter.project_water_tool(capture)` 只投影、不读取或分析；`projection_version=management-current-water@1` 纳入管理端确认 revision，不改变模型 Tool Schema 或原 Preset 资格范围。
+`ai_service.bindings.project_water_tool(capture)` 只投影、不读取或分析；`projection_version=management-current-water@1` 纳入管理端确认 revision，不改变模型 Tool Schema 或原 Preset 资格范围。
 
 - `water_quality`：原 canonical 三指标、quality、freshness、observed_at、retrieved_at、source，供现有 Receipt / Ledger 使用。只投影完整有效指标；部分覆盖或无效指标仍为 null，不补正常值。STALE/OFFLINE 保留历史观测值并显式注明失效，不能认证当前正常。
 - 共同上下文：device_id、channel、batch_id、window、aggregation、statistics_version、source_kind、evaluated_at、last_reported_at、connectivity、rule_version。

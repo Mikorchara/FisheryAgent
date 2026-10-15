@@ -80,6 +80,7 @@ dry-run 快速推进逻辑时间，不联网、不读取访问令牌。上报失
 .\.venv\Scripts\python.exe -m unittest discover -s apps/monitoring/tests -p "test_*.py"
 .\.venv\Scripts\python.exe -m unittest discover -s apps/simulator/tests -p "test_*.py"
 .\.venv\Scripts\python.exe -m unittest discover -s apps/management_web/tests -p "test_*.py"
+.\.venv\Scripts\python.exe -m unittest discover -s apps/ai_service/tests -p "test_*.py"
 node --test apps/management_web/tests/*.test.mjs
 ```
 
@@ -90,6 +91,8 @@ R2B-2 日常 targeted：`python -m unittest discover -s apps/monitoring/tests -p
 R2B-3.2 读取/投影改动优先运行：`python -m unittest apps.monitoring.tests.test_water_capture apps.monitoring.tests.test_business_services apps.monitoring.tests.test_rule_governance apps.management_web.tests.test_assistant`。覆盖一次读取/诊断、并发新批次隔离、Web/Tool 同源、质量/来源/时间、DTO 大小、Ledger、Normal、取消及安全拒绝；无需调用 Provider。原 Web 交互继续用上面的 Node 测试验证。
 
 R2B-3.3：`python -m unittest apps.management_web.tests.test_knowledge apps.management_web.tests.test_assistant`，配合上述 Node 测试。HTTP 测试复用正式 Registry/Handler/Executor/Source Gate，含本地 KnowledgeService + Fake Provider；所有模型网络被阻断，使用临时 Policy/SQLite。覆盖 NO_MATCH、参数/授权/检索错误、来源隔离、取消、单轮预算、定义/Policy revision 和 History；不是实际 LLM 选择或回答质量资格证据。
+
+R2B-3.4 边界测试：`python -m unittest apps.ai_service.tests.test_service apps.management_web.tests.test_ai_boundary`。前者直接创建业务 Service + 临时 Monitoring/Fake Provider，复用调用方 RequestHandle，无需启动 Flask；后者验证 Web 令牌不传入业务、HTTP 门禁优先执行及 source identity。原 Assistant/Knowledge HTTP 测试全部保留，内部 patch/import 更新为 `apps.ai_service.service` / `bindings`。启动与端口不变，不新增 AI 服务进程。
 
 界面验收：七页导航；窗口均值、有效样本和历史；视觉有效帧、加权体长检测记录与无标定缺失；零鱼帧计入数量均值；PROTOTYPE 规则和事件 ACTIVE / RESOLVED / INDETERMINATE；缺失、过期、离线不能确认恢复，只有可靠同版本新观测可消退；所有时间按北京时间显示到秒；停止后 >30 秒过期、>90 秒中断；恢复上报后更新；桌面与窄屏无溢出。读取失败清除当前展示并提示失效，不将缓存当实时。阻塞后的错过窗口跳过不补发，日志显示 skipped，历史保留时间缺口。
 
