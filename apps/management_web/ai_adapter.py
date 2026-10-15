@@ -1,13 +1,15 @@
-"""Management-only composition: existing Assistant runtime, SQLite-backed water tool.
+"""Management-only composition: existing runtime, Monitoring and project Knowledge.
 
 No provider protocol, intent routing, history projection or execution loop lives here.
 """
 
 from dataclasses import asdict, replace
 import hashlib
+import json
 from importlib.resources import files
 from pathlib import Path
 import secrets
+from types import MappingProxyType
 
 from fishery_ai.assistant import AssistantRequest, AssistantService, assistant_profile
 from fishery_ai.assistant_activity import safe_code
@@ -20,7 +22,7 @@ from fishery_ai.openai_compatible_adapter import OpenAICompatibleAdapter
 from fishery_ai.providers import AuthSpec
 from fishery_ai.tools.contracts import ToolError, ToolErrorCode
 from fishery_ai.tools.policy import ToolPolicy, UserToolPolicyStore
-from fishery_ai.tools.registry import ToolRegistry, CURRENT_WATER_QUALITY
+from fishery_ai.tools.registry import ToolRegistry, CURRENT_WATER_QUALITY, SEARCH_FISHERY_KNOWLEDGE
 from fishery_ai.tool_conversation import ToolCallingService
 
 
@@ -28,20 +30,23 @@ PRESETS = ("dashscope-qwen38-flash-r1", "ollama-qwen35-4b-r1")
 WATER_TOOL_PROJECTION = "management-current-water@1"
 
 
-class ManagementWaterRegistry:
-    """Reuse the formal schema/validator; bind just one allowlisted app data source."""
+class ManagementToolRegistry:
+    """Keep formal contracts/Knowledge handler; replace only the water data binding."""
     registered_names = staticmethod(ToolRegistry.registered_names)
 
-    def __init__(self, definition, monitoring, device_id):
-        self._definition = replace(definition, handler=lambda: water_payload(monitoring, device_id))
+    def __init__(self, formal, monitoring, device_id):
+        self._entries = MappingProxyType({
+            CURRENT_WATER_QUALITY: replace(formal.lookup(CURRENT_WATER_QUALITY),
+                handler=lambda: water_payload(monitoring, device_id)),
+            SEARCH_FISHERY_KNOWLEDGE: formal.lookup(SEARCH_FISHERY_KNOWLEDGE)})
 
     def lookup(self, name):
-        if name != CURRENT_WATER_QUALITY:
+        if name not in self._entries:
             raise ToolError(ToolErrorCode.UNKNOWN_TOOL)
-        return self._definition
+        return self._entries[name]
 
     def model_definitions(self):
-        return (self._definition.model_definition,)
+        return tuple(entry.model_definition for entry in self._entries.values())
 
 
 def water_payload(monitoring, device_id):
@@ -90,12 +95,12 @@ class ManagementAssistant:
         if not devices:
             raise ValueError("NO_MONITORING_DEVICE")
         reader = monitoring.bind(devices[0]["id"]).water_reader
-        # Only formal metadata/Policy validation use the full Registry. No original
-        # handler is executed by the management adapter, including score/knowledge.
-        formal = ToolRegistry(reader, monitoring.diagnosis,
-            knowledge=KnowledgeService(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json")))
-        self.definition = formal.lookup(CURRENT_WATER_QUALITY)
-        self.policy_store = UserToolPolicyStore(policy_directory, formal)
+        # One KnowledgeService per application; use the original Registry binding.
+        # The full Registry still validates existing Analysis/Assistant selections;
+        # only the two management bindings below are eligible for execution.
+        self.knowledge = KnowledgeService(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json"))
+        self.formal_registry = ToolRegistry(reader, monitoring.diagnosis, knowledge=self.knowledge)
+        self.policy_store = UserToolPolicyStore(policy_directory, self.formal_registry)
         self.requests = RequestRegistry()
 
     @classmethod
@@ -109,7 +114,7 @@ class ManagementAssistant:
 
     def availability(self):
         return {"connected": True, "mode": "normal", "thinking": "off",
-                "description": "Assistant Runtime · Normal · 只读水质查询"}
+                "description": "Assistant Runtime · Normal · 水质查询 / 项目知识（按 Policy 授权）"}
 
     def _configuration(self, preset_id, device_id):
         if preset_id not in PRESETS:
@@ -117,19 +122,24 @@ class ManagementAssistant:
         if not isinstance(device_id, str):
             raise GatewayError("INVALID_ASSISTANT_REQUEST")
         self.monitoring.bind(device_id)  # Validate registered device, never page-global state.
+        registry = ManagementToolRegistry(self.formal_registry, self.monitoring, device_id)
         selected = self.policy_store.effective()["assistant"]
+        bound = {definition.name for definition in registry.model_definitions()}
         policy = ToolPolicy("assistant", selected.llm_tool_calling,
-            tuple(name for name in selected.exposed_tools if name == CURRENT_WATER_QUALITY))
+            tuple(name for name in selected.exposed_tools if name in bound))
         profile = assistant_profile(preset_id)
-        # Fingerprint all maintainer profile fields + full effective selection + epoch/device.
+        # Freeze and fingerprint these same bindings for confirmation AND execution.
+        definitions = json.dumps([{"name": d.name, "type": d.type, "description": d.description,
+            "parameters": d.parameters_dict()} for d in registry.model_definitions()],
+            sort_keys=True, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
         digest = hashlib.sha256((repr(profile) + repr(selected) + device_id + self.epoch
-                                 + WATER_TOOL_PROJECTION).encode()).hexdigest()
-        return profile, policy, digest
+                                 + WATER_TOOL_PROJECTION + repr(policy) + definitions).encode()).hexdigest()
+        return profile, policy, digest, registry
 
     def bootstrap(self, device_id):
         presets = []
         for identifier in PRESETS:
-            p, policy, revision = self._configuration(identifier, device_id)
+            p, policy, revision, _registry = self._configuration(identifier, device_id)
             presets.append({"preset_id": identifier, "display_name": p.display_name.rsplit(" · ", 1)[0],
                 "runtime_type": p.provider_kind, "revision": revision})
         return {**self.availability(), "epoch": self.epoch, "browser_token": self.browser_token,
@@ -154,7 +164,7 @@ class ManagementAssistant:
         turn = AssistantRequest.from_dict({k: v for k, v in value.items()
             if k in {"preset_id", "question", "history", "conversation_id"}})
         device_id = value.get("device_id")
-        profile, policy, revision = self._configuration(turn.preset_id, device_id)
+        profile, policy, revision, registry = self._configuration(turn.preset_id, device_id)
         if value.get("confirm_network") is not True:
             raise GatewayError("NETWORK_CONFIRMATION_REQUIRED")
         if value.get("revision") != revision:
@@ -167,7 +177,6 @@ class ManagementAssistant:
             if (runtime.auth_spec == AuthSpec.REQUIRED_BEARER
                     and runtime.credential.status.availability != "PRESENT"):
                 raise GatewayError("SECRET_MISSING")
-            registry = ManagementWaterRegistry(self.definition, self.monitoring, device_id)
             coordinator = ToolCallingService(self.gateway_factory(), registry, self.traces, policy=policy)
             with request_scope(handle), turn_deadline_scope(runtime.total_timeout_s):
                 result = AssistantService(coordinator).send(turn, runtime)

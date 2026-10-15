@@ -42,7 +42,7 @@ apps/
    ├─ __main__.py                    # 本机启动、存储装配与写入开关
    ├─ README.md                      # 快速入口
    ├─ app.py                         # HTTP、访问控制与服务装配
-   ├─ ai_adapter.py                  # Normal Assistant 装配、设备绑定与精简水质 Tool 投影
+   ├─ ai_adapter.py                  # Normal 装配、Monitoring 水质投影与原 Knowledge Tool 绑定
    ├─ contracts.py                   # Web Protocol、共享 DTO 导出
    ├─ services.py                    # R1 兼容 Demo、未接入 AI/文件服务
    ├─ package.json                   # Node 原生测试，无依赖
@@ -57,6 +57,7 @@ apps/
    └─ tests/
       ├─ test_app.py                 # R1 兼容、API 和安全
       ├─ test_assistant.py           # Fake Provider HTTP 闭环、同源数据、Ledger 与取消
+      ├─ test_knowledge.py           # Knowledge HTTP 闭环、授权/来源隔离、拒绝与确认指纹
       ├─ assistant-ui.test.mjs       # Normal 聊天、History、epoch 与 Stop 行为
       ├─ dom-fixture.mjs            # 无网络 DOM 测试辅助
       ├─ view-model.test.mjs          # 纯展示合同
@@ -72,7 +73,10 @@ Simulator scenarios → generator → HTTP reporter
     → MonitoringService → DomainAnalysisService → rules → 复用 Domain 阈值 → Findings
         → Repository 事务：读取旧阶段 → EventService → 持久化变更
         → Dashboard / Monitoring / Video / Events
-        → ManagementWaterRegistry → ToolExecutor → AssistantService
+        → ManagementToolRegistry（水质绑定）→ ToolExecutor → AssistantService
+
+原 KnowledgeService → 原 Registry/Handler → ManagementToolRegistry（Knowledge 绑定）
+        → 同一个 ToolExecutor / AssistantService（每 Turn 择一 Tool）
 
 MonitoringService → 已有 Domain / Diagnosis / CurrentWaterQualityReader
 ManagementAssistant → AssistantService / ToolCallingService / Gateway / CredentialSnapshot
@@ -83,5 +87,7 @@ ManagementAssistant → AssistantService / ToolCallingService / Gateway / Creden
 DomainAnalysisService 与 EventService 不导入 Repository/Flask。Repository 只应用 EventChanges，规则/生命周期判断不再埋入 SQL。MonitoringService.capture_water() 只读一次 current，得到 frozen WaterCapture（指标/canonical Reading/同批次分析）；Assistant 投影不再借用 Web snapshot 或查询趋势。Web snapshot() 保留 current+history 事务和原 DTO，与 Tool 共用纯捕获实现，不二次诊断、不跨通道融合。
 
 页面负责交互与展示；API 负责输入/访问控制；服务负责用例和状态；Adapter 负责生产端/设备差异。七页路由在 static/app.js，独立 Assistant Session 在 static/assistant.js；薄 ai_adapter.py 绑定设备与正式 Runtime，不复制执行循环、Prompt 或 History Projection。
+
+管理 Registry 只装配水质与项目 Knowledge，两者经原 Assistant Policy 求交。Knowledge 是项目背景 Evidence，不认证当前现场；未装配的评分不可执行。既有默认仍只授权水质，管理 API 不新增授权写入口。
 
 Runtime/Core 为共享领域与 AI 包；Development 为模拟器和测试；Generated 为 Git ignored 的 outputs/management_web/（SQLite、脱敏 Assistant Trace）；User-private 为已有凭据目录，管理前端不可接触。可显式启用 Qwen/Ollama Normal 对话；真实设备、NPU、文件索引、Streaming 和固定 Analysis 接入未实现。

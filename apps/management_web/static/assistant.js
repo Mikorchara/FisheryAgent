@@ -23,8 +23,12 @@ export function createAssistantWorkspace(api,options={}){
     target.replaceChildren(...(tools.length?tools.map(tool=>el('details',{class:'data-details'},[
       el('summary',{text:`${tool.display_name||tool.tool_name||'Tool'} · ${tool.state} · ${tool.result_status||'—'}`}),
       rows([['实际执行',tool.handler_started?'是':'否'],['耗时',tool.duration_ms===null?'—':`${tool.duration_ms} ms`],
-        ['质量',tool.quality||'—'],['新鲜度',tool.freshness||'—'],['观测时间',timeText(tool.observed_at)],
-        ['评估时间',timeText(tool.evaluated_at)]])])):[el('p',{class:'muted',text:s.pending?'尚未执行 Tool':'未调用 Tool'})]));
+        ...(tool.tool_name==='search_fishery_knowledge'?
+          [['来源类型','项目背景知识 · 不代表当前观测或疾病确诊'],['命中条数',tool.evidence_count??'—'],
+            ['检索状态',tool.result_status==='NO_MATCH'?'检索完成 · 无合格命中':tool.result_status==='OK'?'检索完成':'未完成检索']]:
+          tool.tool_name==='get_current_water_quality'?
+          [['质量',tool.quality||'—'],['新鲜度',tool.freshness||'—'],['观测时间',timeText(tool.observed_at)],
+            ['评估时间',timeText(tool.evaluated_at)]]:[])])])):[el('p',{class:'muted',text:s.pending?'尚未执行 Tool':'未调用 Tool'})]));
     target.append(el('details',{class:'data-details'},[el('summary',{text:'本次运行详情'}),
       ...steps.map(step=>el('div',{},[
         el('p',{class:'muted',text:step.kind==='model'?`Request #${step.request_index} · ${step.state} · ${step.outcome||''}`:
@@ -47,7 +51,7 @@ export function createAssistantWorkspace(api,options={}){
     const messages=el('div',{class:'management-messages','aria-live':'polite'},s.entries.map(entry=>el('article',
       {class:`management-message ${entry.kind}`},[el('strong',{text:entry.kind==='user'?'你':entry.kind==='assistant'?'渔业助手':'运行状态'}),
         el('p',{text:entry.text}),...(entry.activity?[el('details',{class:'data-details'},[
-          el('summary',{text:entry.activity.counts.tools_executed?'已使用水质查询 Tool':'未调用 Tool'}),
+          el('summary',{text:entry.activity.counts.tools_executed?`使用了 ${entry.activity.counts.tools_executed} 个 Tool`:'未调用 Tool'}),
           (()=>{const node=el('div');showActivity(node,entry.activity);return node;})()])]:[])])));
     if(!s.entries.length)messages.append(empty('让问题有依据，让建议可追溯。','可询问当前水质，也可直接讨论溶氧概念。当前观测来自模拟器；查询不等于采样。','spark'));
     composer=el('textarea',{rows:3,'aria-label':'消息',placeholder:'输入问题，Ctrl + Enter 发送',text:s.draft,
@@ -71,7 +75,7 @@ export function createAssistantWorkspace(api,options={}){
           ...(s.trimmed?[el('p',{class:'muted',text:'较早对话未发送给模型。页面记录不代表模型记住全部历史。'})]:[])])]),
       el('div',{class:'side-stack'},[card('本次运行','冻结设备上下文 · 1 Tool / 1 Round / 2 Requests',[activityNode]),
         card('来源与权限','共用 Monitoring SQLite 与领域规则。',[rows([['本轮设备',s.device],['可用 Tool',s.config?.tools.join('、')||'无（受 Tool Policy 限制）'],
-          ['数据来源','Simulator · 非真实传感器'],['规则状态','PROTOTYPE']]),el('p',{class:'muted',text:'缺失、无效、过期或离线数据不表示环境正常。评分、知识检索和 Streaming 本阶段未接入。'})])]) ]));
+          ['监测来源','Simulator · 非真实传感器'],['规则状态','PROTOTYPE']]),el('p',{class:'muted',text:'缺失、无效、过期或离线数据不表示环境正常。项目知识是背景资料，不是当前观测或疾病确诊依据。每轮最多使用一个已授权 Tool；评分、Multi-Round 和 Streaming 未接入。'})])]) ]));
     updateProgress();
   }
   async function load(){

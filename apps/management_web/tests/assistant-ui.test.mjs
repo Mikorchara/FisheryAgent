@@ -148,3 +148,23 @@ test('parameter rejection shows bounded diagnostics and never commits history or
   assert.match(p.root.textContent,/definition/);
   assert.doesNotMatch(p.root.textContent,/fictional-private-argument/);
 });
+
+test('Knowledge activity distinguishes project evidence and NO_MATCH from current water',async()=>{
+  const p=fixture();p.config.tools.push('search_fishery_knowledge');await p.ready();
+  for(const [status,count] of [['OK',1],['NO_MATCH',0]]){
+    const details=activity();details.steps[1]={kind:'tool',tool_name:'search_fishery_knowledge',
+      display_name:'项目养殖知识检索',state:'COMPLETED',handler_started:true,result_status:status,
+      evidence_count:count,duration_ms:2,
+      query:'fictional-query-do-not-log',evidence:'fictional-evidence-body-do-not-log'};
+    p.api.send=async()=>success('背景知识解释',details);
+    p.workspace.state.draft='请检索项目资料';p.workspace.state.confirmed=true;await p.workspace.send();
+    assert.match(p.root.textContent,/项目养殖知识检索/);
+    assert.match(p.root.textContent,/项目背景知识 · 不代表当前观测或疾病确诊/);
+    assert.match(p.root.textContent,/命中条数/);
+    assert.match(p.root.textContent,/使用了 1 个 Tool/);
+    assert.doesNotMatch(p.root.textContent,/已使用水质查询 Tool|fictional-query-do-not-log|fictional-evidence-body-do-not-log/);
+    if(status==='NO_MATCH')assert.match(p.root.textContent,/检索完成 · 无合格命中/);
+  }
+  assert.equal(p.workspace.state.turns.length,2);
+  assert.equal(p.workspace.state.confirmed,false);
+});

@@ -31,7 +31,15 @@ Qwen 使用现有正式用户私有凭据，不需要复制 Key、创建项目 .
 3. 停止模拟器，超过 30 秒观察 stale、超过 90 秒 offline；缺失/无效/部分窗口按实际状态解释。
 4. 问“什么是溶氧？”，允许直接回答、未调用 Tool；再次询问当前值时应查询当前设备，不将历史当本轮来源。
 5. 验证 History、模型/设备切换确认、清空、切出页面再返回、Stop 与错误重发；取消/截断不提交成功回答，Stop 不保证远端计费停止。
-6. 只暴露水质查询；如用户 Policy 未授权该工具，页面明确“无”，不得越权。Policy 变化使旧确认失效，需要重新确认。
+6. 仅暴露实际授权的水质/项目知识；无授权时显示“无”，不得越权。Policy、装配 Tool 集合或定义变化使旧确认失效，需要重新确认。
+
+### 项目 Knowledge Tool 使用
+
+默认仍只授权水质。需要 Knowledge 时，在仓库根目录运行 `python -m fishery_ai web`，打开原 Prototype `http://127.0.0.1:8765` 的 Tool Manager → Assistant 标签，勾选项目知识检索并保存。该操作使用已有共享 Policy，不需发送模型请求；不要手工复制 Tool Schema 或修改默认配置。两网页共用授权，调整会影响原 Prototype 的下一次请求。
+
+管理端执行 `python -m apps.management_web --enable-assistant`，打开 `http://127.0.0.1:8766` → AI 智能助手，刷新后核对“可用 Tool”含 `search_fishery_knowledge`。选择 Qwen/Ollama，逐次确认模型请求，再问“请检索项目资料，说明鳗鲡低氧表现”；观察项目背景 Knowledge 卡片、命中数/NO_MATCH。当前水质问题仍用 Monitoring Tool，不得把知识命中解释为当前 DO 或疾病确诊。真实模型请求须有用户授权；启动与授权配置本身不联网。
+
+本轮继续 1/1/2；不要用“先查询水质再检索知识”作为双 Tool 验收要求。若模型同轮请求两项，TOOL_CALL_LIMIT 是安全拒绝；第二轮继续请求为 TOOL_ROUND_LIMIT。两工具顺序调用需下一阶段精确多轮门禁，不扩大当前预算。
 
 离线专项：`python -m unittest apps.management_web.tests.test_assistant` 与 `node --test apps/management_web/tests/assistant-ui.test.mjs`。前者在临时 SQLite 上通过正式 Assistant/Registry/Executor/Source Gate/Trace 执行 Fake Provider HTTP 闭环，阻断所有外部 socket；后者运行实际前端模块的离线 DOM 行为。不是模型真实资格或回答质量证明。
 
@@ -80,6 +88,8 @@ node --test apps/management_web/tests/*.test.mjs
 R2B-2 日常 targeted：`python -m unittest discover -s apps/monitoring/tests -p "test_business_services.py"`，规则变更追加 `test_rule_governance.py`，调度变更运行 simulator/tests。真实 loopback 测试现在使用零人为时间缓冲；发送端先确认 UTC 窗口结束。SIMULATOR_CLOCK_OUT_OF_SYNC 时停止并检查时钟，不放宽服务器时间校验或自动补发。
 
 R2B-3.2 读取/投影改动优先运行：`python -m unittest apps.monitoring.tests.test_water_capture apps.monitoring.tests.test_business_services apps.monitoring.tests.test_rule_governance apps.management_web.tests.test_assistant`。覆盖一次读取/诊断、并发新批次隔离、Web/Tool 同源、质量/来源/时间、DTO 大小、Ledger、Normal、取消及安全拒绝；无需调用 Provider。原 Web 交互继续用上面的 Node 测试验证。
+
+R2B-3.3：`python -m unittest apps.management_web.tests.test_knowledge apps.management_web.tests.test_assistant`，配合上述 Node 测试。HTTP 测试复用正式 Registry/Handler/Executor/Source Gate，含本地 KnowledgeService + Fake Provider；所有模型网络被阻断，使用临时 Policy/SQLite。覆盖 NO_MATCH、参数/授权/检索错误、来源隔离、取消、单轮预算、定义/Policy revision 和 History；不是实际 LLM 选择或回答质量资格证据。
 
 界面验收：七页导航；窗口均值、有效样本和历史；视觉有效帧、加权体长检测记录与无标定缺失；零鱼帧计入数量均值；PROTOTYPE 规则和事件 ACTIVE / RESOLVED / INDETERMINATE；缺失、过期、离线不能确认恢复，只有可靠同版本新观测可消退；所有时间按北京时间显示到秒；停止后 >30 秒过期、>90 秒中断；恢复上报后更新；桌面与窄屏无溢出。读取失败清除当前展示并提示失效，不将缓存当实时。阻塞后的错过窗口跳过不补发，日志显示 skipped，历史保留时间缺口。
 

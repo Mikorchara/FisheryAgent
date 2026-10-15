@@ -111,7 +111,7 @@ water 或 visual 可以为 null，但不能同时为空。两个通道独立更�
 - RuleIdentity：rule_id、version、scope、publication_status、assessment_policy_version。旧水质计算版本保留，所有规则强制 PROTOTYPE；名称含 production 不提供批准依据。当前范围为 simulator + water/window_mean 或 visual/window_summary，养殖适用性未确认；不能由 HTTP 上报指定规则或批准状态。
 - 水质仍调用 DiagnosisService，不复制阈值。临时保守证据门禁：每指标完整有效采样、fresh、online 才判断命中或解除；无效/覆盖不足指标不传入风险诊断，其他完整指标独立判断。完整覆盖是技术防误判条件，不是新增养殖阈值；后续放宽须人工确认。
 - 视觉有效部分中明确出现信号可形成有限 HIT（疑似检测信号，非疾病诊断）；部分覆盖无信号不能形成 CLEAR。只有完整有效且 fresh/online 的窗口可说明所列信号未出现，不证明鱼群健康。
-- rules.py 只负责确定性条件与证据门禁，水质调用原 DiagnosisService。R2B-2 的 DomainAnalysisService 统一通道求值与时间/设备检查，EventService 统一状态转换与只读投影；两者都不依赖 Flask、SQLite、模型或网络。趋势规则和 AI 桥接尚未实施。
+- rules.py 只负责确定性条件与证据门禁，水质调用原 DiagnosisService。R2B-2 的 DomainAnalysisService 统一通道求值与时间/设备检查，EventService 统一状态转换与只读投影；两者都不依赖 Flask、SQLite、模型或网络。趋势规则尚未实施；现有管理 Assistant 桥接见下文 R2B-3。
 
 历史 API 保留原 summary；当前趋势展示将无效/覆盖不足均值置为 null，并附 metric_quality，不把历史不可用均值连成可靠趋势。
 
@@ -166,24 +166,38 @@ Web 的 `snapshot()` 继续在同一读事务捕获 current + history，再使�
  → ManagementAssistant：冻结 device_id、Preset、Policy，取得正式 RuntimeSnapshot
  → 原 AssistantService：Prompt v2 / History v2 / 现有裁剪
  → 原 ToolCallingService / Gateway / Registry / Executor
-      → 仅 get_current_water_quality：同一 MonitoringService.capture_water(device_id)
-      → DomainAnalysisService.capture_water → project_water_tool，无历史/二次诊断
+      → get_current_water_quality：MonitoringService.capture_water(device_id)
+          → DomainAnalysisService.capture_water → project_water_tool，无历史/二次诊断
+      或 search_fishery_knowledge：原 KnowledgeService / 原 Handler
+          → 项目背景 Evidence 或 NO_MATCH，不读取 Monitoring
  → Source Ledger / Commit Gate / 安全 Trace → 唯一 Final
 ```
 
 - 启用开关 --enable-assistant；默认关闭，与 --legacy-demo 互斥。不读取或继承旧 Web 的多轮/Streaming 开关。只提供 Qwen 3.8 Flash（默认）与 Ollama Qwen3.5 4B，正式 Preset Identity、协议、Capability、OFF/Normal 均由原 Runtime 固定；DeepSeek 不列入首版。页面“已启用/已装配”仅表示本地 Adapter 可用，不表示 Provider 已联网或凭据已验证；启动不发健康 Probe。
 - 固定 1 Tool Call / 1 Round / 最多 2 Model Requests，retry=0；同一个 RequestHandle 的整 Turn Deadline 包含两次模型请求与 Tool，复用 Stop/Trace 提交门禁，无失败重跑。没有 Streaming、新 RAG、评分、视觉 Tool 或固定 Analysis。
-- Registry 复用正式水质 Definition/validator，替换的只是应用数据 Handler。Tool Policy 从已有 outputs/tool-policies/tool_policies.json 读取；不存在时复用内置默认。实际授权 = 现有 Assistant Policy ∩ 本应用可执行工具（水质查询）；不修改用户 Policy 文件。原 Knowledge/评分 Handler 不会绑定到管理 Runtime，不回退旧 Snapshot。
+- ManagementToolRegistry 复用正式 Definition / validator；水质只替换为 Monitoring 数据 Handler，Knowledge 直接使用原绑定。Tool Policy 从已有 outputs/tool-policies/tool_policies.json 读取；不存在时复用内置默认（只授权水质）。实际授权 = 现有 Assistant Policy ∩ 本应用装配集合（水质查询、项目知识检索）；不自动修改用户 Policy。评分只参与全局 Policy 兼容校验，不进入管理执行 Registry，不回退旧 Snapshot。
 - Tool Result 保留 canonical 水质与来源合同，使用精简 `management-current-water@1` 投影（下节）。这些数据只送入后续模型请求，不原样发给浏览器。存在窗口时 status=OK 表示读取完成，不表示有效或正常；NO_DATA 是未收到窗口。canonical quality 保守投影，独立 data_quality/coverage 保留实际覆盖；Findings 和 PROTOTYPE Rule Identity 与同批次网页一致，STALE/OFFLINE 不得证明恢复。
 - 设备按本次请求的服务器登记 ID 冻结，不跟随其他页面的选择变化。冻结的是设备而非旧读数；Tool 执行时读取该设备最新已接收数据，并保留时间/批次。因此不同时间的页面读取可能有不同批次，不能声称始终是同一时刻。
 - 凭据使用原 private_project_location(仓库根) + CredentialStore；发送前一次 resolve 得到冻结 CredentialSnapshot。云端凭据缺失/私有文件权限错误安全失败，不复制、不迁移、不创建项目 .env。Ollama 按既有 Auth NONE；没有第二套凭据 UI。
 - API：GET /api/ai/bootstrap?device；POST /api/ai/requests 创建有界 RequestHandle；POST /api/ai/messages 发送；POST /api/ai/request-state 与 /api/ai/cancel 用控制令牌读取安全状态/停止。Bootstrap 只返回安全模型列表、工具名、预算、epoch、revision、进程内浏览器访问令牌，不解析/回显 Secret。
-- AI 写 API 要求 loopback peer、固定 Host、同源 Origin（存在时）、JSON 与 X-Management-AI；无 CORS。仅在 AI API 使用 32 KiB 有界消息，Ingestion 仍限 8 KiB。浏览器不能提交 mode、预算、Prompt、SourceRequirement、Provider 或自定义连接。revision 绑定 Preset 合同、设备、完整有效 Policy 与应用 epoch；变化时联网前拒绝，要求重新确认。RequestHandle 不允许重复执行。
+- AI 写 API 要求 loopback peer、固定 Host、同源 Origin（存在时）、JSON 与 X-Management-AI；无 CORS。仅在 AI API 使用 32 KiB 有界消息，Ingestion 仍限 8 KiB。浏览器不能提交 mode、预算、Prompt、SourceRequirement、Provider 或自定义连接。revision 绑定既有 Preset 配置、设备、完整有效 Policy、实际授权集合、实际装配的 Tool 名称/type/description/parameters、水质投影版本和 epoch；变化时联网前拒绝，要求重新确认。本轮校验并冻结的同一个 Registry/Policy 用于实际执行，不在凭据读取后重建另一套绑定。RequestHandle 不允许重复执行。
 - History 只在页面 Session 内保存成功文本 pair，复用后端 6 轮/6 KiB 完整 pair 裁剪和 UNTRUSTED_TRANSCRIPT_V1。失败、取消、截断、pending、Tool 协议/Result/Trace 不进入成功 History。浏览器只限制提交 envelope 大小，不重写后端 Projection；模型/设备切换确认并清本会话，刷新清空；epoch 失效保留草稿、清旧历史、重新 Bootstrap，不自动重发。
 - UI textContent 渲染；独立 Tool 卡片、安全有序 Steps、Usage/状态详情，500ms 状态轮询不丢最终步骤。无 Prompt、参数、Raw Tool Result、Reasoning、凭据或 traceback。最终 POST 是提交依据，Stop 后迟到响应不作为成功回答；远端计算/费用是否停止仍为 UNKNOWN。
 - 安全 Trace 位于 Git ignored 的 outputs/management_web/assistant-traces.jsonl，复用 JsonlTraceSink，只存 allowlist 元数据，不保存对话正文。SQLite 和事件生命周期不因聊天清空/切换而改变。
 
 这是本机开发集成，不是生产账户/租户权限或设备鉴权。离线 Fake Provider 验证不代表真实回答质量已验收；真实 Provider 调用需要用户另行授权。
+
+### R2B-3.3：Knowledge Tool 装配与来源隔离
+
+- 每个 ManagementAssistant 只创建一个原 `KnowledgeService`，数据固定为包内 `src/fishery_ai/resources/knowledge/eel_knowledge.json`，使用原 portable 检索实现；不是资料页面 Demo 文件，不接入新上传/索引/RAG。
+- 原 ToolRegistry 创建唯一 `search_fishery_knowledge` Definition、validator 和 Handler；ManagementToolRegistry 直接保留该 ToolDefinition 对象。实际执行仍走同一 ToolCallingService / ToolExecutor，不复制检索逻辑、Schema 或执行循环。全局 Policy 校验 Registry 可识别评分等原 Tool，不表示管理应用可以执行它们。
+- Knowledge 只接受现有 `{"query":"..."}` 合同，固定 top_k=3、每条正文最多 800 字符加省略号；参数、结果大小限制和异常映射均由原合同执行。非法参数不会检索，未授权返回 TOOL_NOT_ALLOWED；检索异常是 TOOL_EXECUTION_ERROR，不能伪装成 NO_MATCH，不继续模型请求。
+- OK 的合法 Evidence 只能授予 RETRIEVED_PROJECT_EVIDENCE；NO_MATCH 只表示本轮检索完成，不授予命中或当前观测来源。二者都不能满足 CURRENT_OBSERVATION_QUERY / CURRENT_SCORE_EVALUATION。History、模型正文和来源声明不生成 Receipt。
+- Web 仍是 OFF / Normal / 1 Call / 1 Round / 最多 2 Requests。两项授权表示模型择一，不表示同轮双 Tool；多个调用整批拒绝，Request #2 的 tool_choice=none，继续调用为 TOOL_ROUND_LIMIT，失败不重试、不提交成功 History。Knowledge 成功但后续模型失败时仍可保留执行审计，不提交成功回答。
+- UI 按实际 Tool 显示独立卡片；Knowledge 只显示背景来源标识、执行状态、命中数量和耗时，NO_MATCH 显示“检索完成 · 无合格命中”，不显示 query、Raw Result、Evidence 正文。Knowledge 不是当前水质或现场疾病确诊依据。模型自由正文的来源可信度仍需人工验收，不由 Fake Provider 测试证明。
+- 默认授权不变，不伪造 qualification_id、不修改 Preset / Capability / Normal 或 Streaming 发布配置。管理端没有继承 Prototype 的 2/2/3 或 Streaming Scope；以后开放多轮须单独冻结并验证精确 Preset identity、协议、Prompt/History、Tool 定义/数据绑定、预算和确认 revision，再接入发布门禁。
+
+使用原 Prototype 的 Tool Manager → Assistant 标签显式授权项目知识，刷新管理 Assistant 后按新的 revision 重新确认。两 Web 共用既有 Policy 文件，用户调整也会影响原 Prototype 的下一次请求；管理程序不替用户修改文件或建立第二套权限界面。操作和离线测试见 [BUILD_RUN](BUILD_RUN.md)。
 
 ### R2B-3.2：精简水质 Tool DTO
 
