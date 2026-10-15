@@ -6,8 +6,10 @@
 Simulator：Scenario → 逻辑采样 → 10 秒窗口 → HTTP
     → management_web Ingestion：本机与令牌检查
     → monitoring.contracts：v1 严格校验
-    → MonitoringRepository：单事务保存 water / visual / 事件
-    → MonitoringService：当前状态、历史、query-time Freshness
+    → DomainAnalysisService：时间/上下文 → rules → Findings
+    → MonitoringRepository：单事务保存 water / visual
+        → EventService：计算事件变更 → 同事务持久化
+    → MonitoringService：统一查询、历史、Web 投影
         → Dashboard / Monitoring / Video / Events
         → bind(device_id).water_reader（未来 AI Tool 接入口）
 ```
@@ -59,7 +61,7 @@ Simulator：Scenario → 逻辑采样 → 10 秒窗口 → HTTP
 
 时间必须带时区并归一化 UTC；timestamp = window.end。窗口 1–60 秒，duration 与起止一致；未来时间或超过 300 秒延迟拒绝。水质物理范围复核温度 -50–100°C、pH 0–14、DO 0–100 mg/L；这不是水质风险阈值。
 
-已知时间边界：本机真实时间测试出现过 OBSERVATION_TIME_REJECTED，UTC 观测时间与 monotonic 调度不保证绝对同步；默认模拟器零缓冲可能触及严格未来时间门禁。本阶段不修改调度/时间容差，联调测试使用明确滞后一秒的已完成窗口，仍保留未来/超龄拒绝测试。后续应单独决定设备时钟偏差策略，不能用放宽规则证据门禁解决。
+R2B-2 时间修正：monotonic 到点不保证 UTC 窗口已经结束，旧发送逻辑可在提前唤醒/两种时钟偏差时发送未来窗口。生产端现在发送前确认 UTC 已到 window.end；最多 1 秒等待预算 / 3 次检查，仍未完成或明显时钟偏差则 SIMULATOR_CLOCK_OUT_OF_SYNC 并关闭 Reporter。窗口时间不重写，服务端未来/超过 300 秒拒绝保持不变。联调已去掉一秒人为缓冲；确定性测试复现默认 10 秒周期的 UTC 提前 5ms 情况，并验证修复。两个进程/真实设备的时钟同步、系统大幅跳时仍属部署限制，不无限容忍未来数据。
 
 water 或 visual 可以为 null，但不能同时为空。两个通道独立更新；缺失通道不复制另一通道，也不清掉其末次记录。接收时间由服务器生成，客户端不能指定 source、quality、freshness、received_at 或真实设备标识。
 
@@ -109,9 +111,18 @@ water 或 visual 可以为 null，但不能同时为空。两个通道独立更�
 - RuleIdentity：rule_id、version、scope、publication_status、assessment_policy_version。旧水质计算版本保留，所有规则强制 PROTOTYPE；名称含 production 不提供批准依据。当前范围为 simulator + water/window_mean 或 visual/window_summary，养殖适用性未确认；不能由 HTTP 上报指定规则或批准状态。
 - 水质仍调用 DiagnosisService，不复制阈值。临时保守证据门禁：每指标完整有效采样、fresh、online 才判断命中或解除；无效/覆盖不足指标不传入风险诊断，其他完整指标独立判断。完整覆盖是技术防误判条件，不是新增养殖阈值；后续放宽须人工确认。
 - 视觉有效部分中明确出现信号可形成有限 HIT（疑似检测信号，非疾病诊断）；部分覆盖无信号不能形成 CLEAR。只有完整有效且 fresh/online 的窗口可说明所列信号未出现，不证明鱼群健康。
-- rules.py 为小型纯函数边界，不依赖 Flask、SQLite、模型或网络；事件转换仍位于原事务中。DomainAnalysisService / EventService 全面提取、趋势规则、AI 桥接均留待下一阶段。
+- rules.py 只负责确定性条件与证据门禁，水质调用原 DiagnosisService。R2B-2 的 DomainAnalysisService 统一通道求值与时间/设备检查，EventService 统一状态转换与只读投影；两者都不依赖 Flask、SQLite、模型或网络。趋势规则和 AI 桥接尚未实施。
 
 历史 API 保留原 summary；当前趋势展示将无效/覆盖不足均值置为 null，并附 metric_quality，不把历史不可用均值连成可靠趋势。
+
+### R2B-2 业务服务边界
+
+- `analysis.py / DomainAnalysisService.evaluate(device_id, channel, row, evaluated_at=...)` 是纯计算入口：输入已验证的服务端事实，统一 freshness/connectivity，再委托 rules。设备不匹配或评估时间早于接收时间拒绝；没有规则副本或隐式采样。canonical Reading 投影也放在这里，`service.reading_from_row` 保留 import 兼容。
+- `events.py / EventService.transition(existing, assessment)` 返回 EventChanges（updates / inserts / active_links / resolved_codes），不执行 SQL。`project(event, assessment)` 只撤回当前确定性，不确认恢复；版本匹配及严重程度切换策略共用同一处 helper。输入不修改，旧记录兼容投影也由此统一。
+- Repository 在原 `BEGIN IMMEDIATE` + 锁中读取活动事件、计算变更并应用 SQL；current、历史、事件、alerts 和接触时间仍整体提交/回滚。重复与乱序不执行事件变更。未更换 SQLite、表结构或保留策略。
+- MonitoringService 协调设备范围、读写与展示；`analysis(device_id, channel)` 和绑定后的 `DeviceReadContext.analysis(channel)` 为页面/未来 Tool 提供同一 ChannelAnalysis。现有 water_reader 保留，未来 AI 桥接应消费共同分析合同，不能再次独立判断风险。
+- snapshot/cameras 不再重复计算时间状态；当前事实先捕获，再选 evaluated_at。同一 events 查询对每 device/channel 只求值一次；不同查询仍按各自时点更新，不建会过期的全局分析缓存。
+- 每通道仍独立，窗口和设备引用明确。本阶段没有增加跨通道关联规则；以后要关联必须校验设备/池映射和时间重叠，不能仅因同一页面或批次到达就认为同步。
 
 ## 5. 场景编写与连续运行
 

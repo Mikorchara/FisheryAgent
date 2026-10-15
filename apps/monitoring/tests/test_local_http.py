@@ -1,6 +1,6 @@
 """Loopback end-to-end device transport; no external sockets, AI or NPU."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 import socket
 import tempfile
@@ -50,13 +50,11 @@ class LocalHttpTests(unittest.TestCase):
             try:
                 reporter=HttpReporter(url,token)
                 try:
-                    # Model a one-second producer buffer, not two perfectly synchronized
-                    # wall/monotonic clocks. Production future-time rejection stays strict.
-                    run(Simulator(start=datetime.now(timezone.utc)-timedelta(seconds=1)),reporter,interval_s=1,windows=3,emit=lambda _:None)
+                    run(Simulator(start=datetime.now(timezone.utc)),reporter,interval_s=1,windows=3,emit=lambda _:None)
                 except ReportError:
                     self.fail('Loopback ingestion failed: '+','.join(safe_errors))
                 self.assertEqual(len(repository.history('sim-pond-1','water')),3)
-                run(Simulator(start=datetime.now(timezone.utc)-timedelta(seconds=1)),HttpReporter(url,token),interval_s=1,windows=1,emit=lambda _:None)
+                run(Simulator(start=datetime.now(timezone.utc)),HttpReporter(url,token),interval_s=1,windows=1,emit=lambda _:None)
                 self.assertEqual(len(repository.history('sim-pond-1','water')),4)
                 import json
                 with urlopen(url+'/api/bootstrap',timeout=2) as response:

@@ -1,6 +1,6 @@
 """Small pure assessment functions; no database, Web, model or threshold copy.
 
-R2B-1 foundation, not a new DomainAnalysisService or event execution framework.
+DomainAnalysisService owns time/context evaluation and calls these rules.
 Inputs are validated server facts. CLEAR is explicit evidence, never absence.
 """
 

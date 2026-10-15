@@ -1,7 +1,7 @@
 """Continuous producer CLI; dry-run advances time without any network request."""
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import time
 
@@ -10,8 +10,35 @@ from .scenarios import SCENARIOS
 from .transport import HttpReporter, ReportError
 
 
+def utcnow():
+    return datetime.now(timezone.utc)
+
+
+def wait_for_completed_window(simulator, interval_s, *, wall_clock, monotonic, sleep):
+    """QPC scheduling can precede UTC completion. Wait at most 1s / 3 checks.
+
+    Never retimestamp or send an unfinished window; larger clock shifts fail closed.
+    This is producer-side completion checking, not a server acceptance tolerance.
+    """
+    end = simulator.start+timedelta(seconds=simulator.elapsed_s+interval_s)
+    deadline = monotonic()+1
+    for _ in range(3):
+        now = wall_clock()
+        if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError("INVALID_SIMULATOR_CLOCK")
+        remaining = (end-now).total_seconds()
+        if remaining <= 0:
+            return
+        budget = deadline-monotonic()
+        if remaining > 1 or budget <= 0:
+            raise ValueError("SIMULATOR_CLOCK_OUT_OF_SYNC")
+        sleep(min(max(remaining, .001), budget))
+    if (end-wall_clock()).total_seconds() > 0:
+        raise ValueError("SIMULATOR_CLOCK_OUT_OF_SYNC")
+
+
 def run(simulator, reporter, *, interval_s=10, windows=None, switch_to=None, switch_after=0,
-        monotonic=time.monotonic, sleep=time.sleep, emit=print):
+        monotonic=time.monotonic, sleep=time.sleep, wall_clock=utcnow, emit=print):
     start = monotonic()
     index = 0
     slot = 0
@@ -28,6 +55,8 @@ def run(simulator, reporter, *, interval_s=10, windows=None, switch_to=None, swi
                     simulator.skip_windows(missed, interval_s)
                     emit(f"skipped {missed} missed windows / no backfill")
                 slot = latest
+                wait_for_completed_window(simulator, interval_s, wall_clock=wall_clock,
+                                          monotonic=monotonic, sleep=sleep)
             if switch_to and simulator.elapsed_s >= switch_after:
                 simulator.switch_scenario(switch_to)
                 switch_to = None

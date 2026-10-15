@@ -1,6 +1,6 @@
 # 智慧渔业管理平台文档
 
-`apps/docs/` 是管理平台主要入口。当前已完成 R1 网页、R2A/R2A.1 统一监测接入与 R2B-1 分析合同/规则状态。AI Runtime 保留在 `src/fishery_ai/`，原 Prototype Web 独立保留。监测风险规则全部为 PROTOTYPE，未获得生产批准。
+`apps/docs/` 是管理平台主要入口。当前已完成 R1 网页、R2A/R2A.1 统一监测接入、R2B-1 分析合同及 R2B-2 共享 Domain Analysis / Event Service。AI Runtime 保留在 `src/fishery_ai/`，原 Prototype Web 独立保留。监测风险规则全部为 PROTOTYPE，未获得生产批准。
 
 ## 阅读入口
 
@@ -36,3 +36,5 @@ R2A：监测 23、模拟器 12、管理 API 11 项 Python，前端 14 项 Node�
 R2A.1：按有效检测记录加权体长、有效帧可见数均值（含零鱼帧）、逐样本/逐帧质量过滤、阻塞跳过窗口，以及北京时间到秒显示。监测 26、模拟器 17、管理 API 11 项 Python 和前端 16 项 Node 通过；前端涵盖实际页面代码、统一时间显示及不同主机时区转换。本轮未重复运行原 AI Runtime 全量回归，未调用真实 Provider/NPU。统计合同见 [INTEGRATION](INTEGRATION.md#3-窗口与业务语义)。
 
 R2B-1：新增 18 项规则治理测试及 1 项前端状态测试；监测 44、模拟器 17、管理 API 11 项 Python，前端 17 项 Node。覆盖无效/部分/无数据、过期/离线、缺失不恢复、严重程度切换不恢复、规则/评估策略版本、旧库兼容和独立通道。当前仍未提取完整 DomainAnalysisService / EventService，也未接 AI。联调时间边界及当前保守覆盖策略见 [INTEGRATION](INTEGRATION.md#r2b-1-分析合同与规则状态)。
+
+R2B-2：新增 7 项业务服务和 3 项调度测试；监测 51、模拟器 20、管理 API 11 项 Python，前端 17 项 Node 通过。默认周期本机隔离联调两批（零人为缓冲），窗口均为 10 秒，接收间隔 10.003 秒，最小接收后于观测 0.054164 秒；这是本轮样本，不代表长期时钟稳定性。旧一秒缓冲已从联调测试移除，提前 UTC 发送问题通过有界完成检查修正。未运行 Provider/NPU 或原 AI Runtime 无关全量回归。

@@ -17,12 +17,15 @@ apps/
 ├─ monitoring/                      # Web 与未来 Tool 共享的数据基础
 │  ├─ __init__.py
 │  ├─ contracts.py                   # v1 上报、观测/质量/Finding/Event/规则身份合同
+│  ├─ analysis.py                    # 纯 DomainAnalysisService、时间/设备检查、Reading 投影
 │  ├─ rules.py                       # 纯评估函数、证据门禁与 PROTOTYPE 规则投影
-│  ├─ repository.py                  # SQLite、当前状态、有界历史和事件
-│  ├─ service.py                     # 统一读取、领域诊断与设备上下文
+│  ├─ events.py                      # 纯 EventService、事件变更及只读状态投影
+│  ├─ repository.py                  # SQLite、事务、历史与事件变更持久化
+│  ├─ service.py                     # 业务协调、统一查询/Web 投影、绑定设备上下文
 │  └─ tests/
 │     ├─ test_pipeline.py            # 校验、时序、安全、状态与共享来源
 │     ├─ test_rule_governance.py      # 规则状态、证据范围、可靠恢复与兼容
+│     ├─ test_business_services.py    # 纯服务一致性、设备/时间边界与故障回滚
 │     └─ test_local_http.py          # 真实 loopback 上报及停止/重启
 ├─ simulator/                       # 独立设备生产端
 │  ├─ __init__.py
@@ -59,8 +62,8 @@ apps/
 Simulator scenarios → generator → HTTP reporter
     → Web Ingestion（鉴权）
     → monitoring contracts（验证）→ repository（事务存储）
-    → MonitoringService → rules（证据门禁 → 复用 Domain 阈值 → Findings）
-        → Repository 事务内 Event 状态转换
+    → MonitoringService → DomainAnalysisService → rules → 复用 Domain 阈值 → Findings
+        → Repository 事务：读取旧阶段 → EventService → 持久化变更
         → Dashboard / Monitoring / Video / Events
         → bind(device_id).water_reader（未来 Tool 接入）
 
@@ -69,6 +72,8 @@ MonitoringService → 已有 Domain / Diagnosis / CurrentWaterQualityReader
 ```
 
 模拟器不导入服务器存储或网页变量。共享 monitoring 不依赖 Flask 或网页组件；水质 DTO 只有一个定义，Web 兼容导出。SQLite 连接按操作关闭，生成器与 HTTP 生命周期分离，页面轮询不触发采样或写入。
+
+DomainAnalysisService 与 EventService 不导入 Repository/Flask。Repository 只应用 EventChanges，规则/生命周期判断不再埋入 SQL；MonitoringService 只负责捕获、协调与 DTO 投影。统一分析入口和设备绑定查询已准备，未接 AI 或跨通道融合。
 
 页面负责交互与展示；API 负责输入/访问控制；服务负责用例和状态；Adapter 负责生产端/设备差异。当前七页仍在 `static/app.js`；将来 AI 接入时优先提取独立 `pages/assistant.js` 与薄 `ai_adapter.py`，不为规划创建空目录。
 

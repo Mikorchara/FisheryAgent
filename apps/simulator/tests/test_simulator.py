@@ -222,5 +222,56 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(sent[1][1]['water']['sample_count'],10)
         self.assertTrue(r.closed)
 
+    def test_default_ten_second_windows_wait_for_utc_completion_after_early_wake(self):
+        # Deterministic reproduction: QPC says 10s, UTC says 9.995s.
+        mono=[0.];wall=[0.];sent=[];waits=[]
+        class Reporter:
+            closed=False
+            def send(inner,batch):
+                now=self.start+timedelta(seconds=wall[0])
+                validate_batch(batch,now=now,device_ids=('sim-pond-1',))
+                sent.append((batch,now));return {'status':'accepted'}
+            def close(inner):inner.closed=True
+        def sleep(delay):
+            waits.append(delay);mono[0]+=delay;wall[0]+=delay
+            if len(waits)==1:wall[0]-=.005
+        sim=self.create();reporter=Reporter()
+        # The original sender would send this future window and be correctly rejected.
+        before=self.create().advance()
+        with self.assertRaisesRegex(ValueError,'OBSERVATION_TIME_REJECTED'):
+            validate_batch(before,now=self.start+timedelta(seconds=9.995),device_ids=('sim-pond-1',))
+        run(sim,reporter,windows=3,monotonic=lambda:mono[0],sleep=sleep,
+            wall_clock=lambda:self.start+timedelta(seconds=wall[0]),emit=lambda _:None)
+        self.assertEqual(len(sent),3);self.assertTrue(reporter.closed)
+        self.assertAlmostEqual(waits[1],.005)
+        self.assertEqual([b['sequence'] for b,_ in sent],[0,1,2])
+        for i,(batch,now) in enumerate(sent,1):
+            self.assertEqual(batch['window']['duration_s'],10)
+            self.assertEqual(datetime.fromisoformat(batch['window']['end']),self.start+timedelta(seconds=i*10))
+            self.assertLessEqual(datetime.fromisoformat(batch['timestamp']),now)
+            self.assertEqual(batch['water']['sample_count'],10)
+            self.assertEqual(batch['visual']['frames_processed'],20)
+
+    def test_large_clock_shift_or_stalled_clock_stops_before_send_and_closes(self):
+        for offset in (-2,-.005):
+            mono=[0.];wall=[0.]
+            class Reporter:
+                closed=False;calls=0
+                def send(inner,_):inner.calls+=1;raise AssertionError('must not send')
+                def close(inner):inner.closed=True
+            r=Reporter();waits=[]
+            def sleep(delay):
+                mono[0]+=delay;waits.append(delay)
+                if len(waits)==1:wall[0]=10+offset
+            with self.assertRaisesRegex(ValueError,'SIMULATOR_CLOCK_OUT_OF_SYNC'):
+                run(self.create(),r,windows=1,monotonic=lambda:mono[0],sleep=sleep,
+                    wall_clock=lambda:self.start+timedelta(seconds=wall[0]),emit=lambda _:None)
+            self.assertEqual(r.calls,0);self.assertTrue(r.closed)
+            self.assertLessEqual(len(waits),4)
+
+    def test_dry_run_remains_logical_and_never_checks_live_wall_clock(self):
+        run(self.create(),None,windows=3,wall_clock=lambda:(_ for _ in ()).throw(AssertionError('no wall clock')),
+            emit=lambda _:None)
+
 
 if __name__=='__main__':unittest.main()
