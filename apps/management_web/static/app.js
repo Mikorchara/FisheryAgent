@@ -4,13 +4,13 @@ import {services} from './services.js';
 import {createAssistantWorkspace} from './assistant.js';
 
 const $=id=>document.getElementById(id);
-const state={data:null,device:'demo-a',view:'available',metric:'dissolved_oxygen_mg_l',camera:'demo-camera-a',
+const state={data:null,device:'demo-a',view:'available',metric:'dissolved_oxygen_mg_l',trendRange:'1800',camera:'demo-camera-a',
   eventFilters:{q:'',severity:'',status:''},fileFilters:{q:'',category:''},settings:'devices',draft:'',revision:0};
 const assistantWorkspace=createAssistantWorkspace(services.ai,{onDevice:id=>{state.device=id;void changeMonitoring();}});
 const severity=item=>badge(eventSeverityName(item),item.severity==='critical'?'critical':item.severity==='warning'?'warning':'neutral');
 const status=item=>badge(item.source_kind==='simulator'?eventStateName(item):(item.status==='pending'?'待处理（演示）':'已处理（演示）'),eventState(item)==='RESOLVED'?'neutral':'warning');
 
-function select(label,choices,value,onchange){return el('label',{class:'field'},[el('span',{text:label}),el('select',{onchange:e=>onchange(e.target.value)},
+function select(label,choices,value,onchange){return el('label',{class:'field'},[el('span',{text:label}),el('select',{'aria-label':label,onchange:e=>onchange(e.target.value)},
   choices.map(([id,text])=>el('option',{value:id,...(id===value?{selected:'selected'}:{})},[text])))]);}
 function search(label,value,oninput){return el('label',{class:'field search-field'},[el('span',{text:label}),el('input',{type:'search',value,placeholder:'输入名称或关键字',oninput:e=>oninput(e.target.value)})]);}
 function details(title,content){$('dialog-title').textContent=title;$('dialog-body').replaceChildren(...content);$('details-dialog').showModal();}
@@ -20,8 +20,10 @@ function fileDetail(item){details(item.name,[badge('DEMO','demo'),rows([['分类
 function eventsTable(items){return table(['事件 / 类型','设备','时间','等级','状态','操作'],items,item=>[
   el('div',{class:'table-title'},[el('strong',{text:item.title}),el('small',{text:`${item.id} · ${item.type} · ${sourceName(item.source_kind)}`})]),item.device,timeText(item.occurred_at),severity(item),status(item)],eventDetail);}
 
-function trend(){return card('历史趋势','已存储的窗口均值；不代表连续实时采样。',[trendChart(state.data.monitoring,state.metric)],
-  select('指标',[['dissolved_oxygen_mg_l','溶解氧'],['temperature_c','水温'],['ph','pH']],state.metric,value=>{state.metric=value;render();}));}
+function trend(){return card('历史趋势','已存储的窗口均值；不代表连续实时采样。',[trendChart(state.data.monitoring,state.metric,{rangeSeconds:state.trendRange==='all'?null:Number(state.trendRange)})],
+  el('div',{class:'chart-controls'},[
+    select('指标',[['dissolved_oxygen_mg_l','溶解氧'],['temperature_c','水温'],['ph','pH']],state.metric,value=>{state.metric=value;render();}),
+    select('历史范围',[['1800','最近 30 分钟'],['3600','最近 1 小时'],['all','全部存储历史']],state.trendRange,value=>{state.trendRange=value;render();})]));}
 function videoPlaceholder(compact=false){return el('div',{class:`video-placeholder ${compact?'compact':''}`},[
   el('div',{class:'video-corner',text:'演示预览区域 / 无视频流'}),el('span',{class:'video-symbol'},[icon('camera')]),el('h3',{text:'等待接入监控设备'}),
   el('p',{text:'未接入真实视频；模拟视觉统计展示在下方。'}),badge('NOT CONNECTED','neutral')]);}

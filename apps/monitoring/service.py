@@ -49,7 +49,9 @@ def project_water_snapshot(capture, history=()):
             stat.valid_samples if stat else None, stat.sample_count if stat else None,
             stat.minimum if stat else None, stat.maximum if stat else None, stat.latest if stat else None,
             stat.invalid_samples if stat else None))
-    trend = tuple({"observed_at": item["observed_at"], "received_at": item["received_at"], "batch_id": item["batch_id"], "window_duration_s": item["payload"]["window"]["duration_s"],
+    trend = tuple({"observed_at": item["observed_at"], "received_at": item["received_at"], "batch_id": item["batch_id"],
+        "session_id": item.get("session_id"), "window_start": item["payload"]["window"]["start"],
+        "window_duration_s": item["payload"]["window"]["duration_s"],
         "metric_quality": {m.id: m.quality for m in stats},
         **{m.id: m.mean if m.quality == "valid" else None for m in stats}}
         for item in history for stats in (water_metric_facts(item["payload"]["data"]),))
@@ -190,6 +192,7 @@ class MonitoringService:
         if channel not in ("water", "visual") or type(limit) is not int or not 1 <= limit <= self.repository.history_limit:
             raise ValueError("INVALID_HISTORY_QUERY")
         return [{"batch_id": row["batch_id"], "device_id": device_id, "channel": channel,
+            "session_id": row.get("session_id"),
             "source_kind": "simulator", "observed_at": row["observed_at"], "received_at": row["received_at"],
             "window": row["payload"]["window"], "summary": row["payload"]["data"]}
             for row in self.repository.history(device_id, channel)[-limit:]]

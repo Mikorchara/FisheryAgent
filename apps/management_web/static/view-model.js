@@ -25,16 +25,61 @@ export function timeText(value,compact=false) {
   return new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',...(compact?{}:{year:'numeric',month:'2-digit',day:'2-digit'}),hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(value))+(compact?'':' 北京时间');
 }
 export function chartSeries(trend,key) {
-  return trend.filter(p=>typeof p[key]==='number' && Number.isFinite(p[key]));
+  return trend.filter(p=>typeof p[key]==='number' && Number.isFinite(p[key])
+    && (!p.metric_quality?.[key]||p.metric_quality[key]==='valid'));
 }
-export function chartGeometry(trend,key) {
-  const rows=chartSeries(trend,key); if (rows.length<2) return null;
-  const values=rows.map(p=>p[key]), low=Math.min(...values), high=Math.max(...values), pad=Math.max((high-low)*.4,.1);
-  const times=rows.map(r=>Date.parse(r.observed_at)),timed=times.every(Number.isFinite)&&times.at(-1)>times[0];
-  const points=values.map((v,i)=>[52+(timed?(times[i]-times[0])/(times.at(-1)-times[0]):i/(values.length-1))*690,208-(v-low+pad)/(high-low+2*pad)*155]);
-  const segments=[];
-  rows.forEach((row,i)=>{const gap=i>0&&(trend.indexOf(row)!==trend.indexOf(rows[i-1])+1||(timed&&row.window_duration_s&&(times[i]-times[i-1])/1000>row.window_duration_s+.01));if(i===0||gap)segments.push([]);segments.at(-1).push(points[i]);});
-  return {points,segments,low:low-pad,high:high+pad,rows};
+function timeTicks(start,end) {
+  const fractional=end-start<4000;
+  const day=value=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit'}).format(value);
+  const crossDay=day(start)!==day(end);
+  const format=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',second:'2-digit',
+    hourCycle:'h23',...(fractional?{fractionalSecondDigits:3}:{})});
+  // Uniform time ticks, never the first few sample indices. Five slots leave
+  // enough room for seconds/milliseconds even at the minimum chart width.
+  const count=Math.min(5,end-start+1);
+  return Array.from({length:count},(_,i)=>{const time=Math.round(start+(end-start)*i/(count-1));
+    return {x:52+690*(time-start)/(end-start),time,label:format.format(time),date:crossDay?day(time):null};});
+}
+export function chartGeometry(trend,key,{rangeSeconds=null}={}) {
+  // Parse real timestamps first. Invalid time never receives an invented index.
+  const timestamp=value=>typeof value==='string'?Date.parse(value):NaN;
+  const ordered=trend.map((row,index)=>({row,index,time:timestamp(row.observed_at),received:timestamp(row.received_at)}))
+    .filter(item=>Number.isFinite(item.time))
+    .sort((a,b)=>a.time-b.time||(Number.isFinite(a.received)?a.received:0)-(Number.isFinite(b.received)?b.received:0)
+      ||String(a.row.batch_id||'').localeCompare(String(b.row.batch_id||''))||a.index-b.index);
+  if(!ordered.length)return null;
+  // Same-time records cannot be joined vertically or averaged. Display the last
+  // received record (even if missing/invalid); keep original server history intact.
+  const unique=new Map();for(const item of ordered)unique.set(item.time,item);
+  const latest=ordered.at(-1).time;
+  const cutoff=Number.isFinite(rangeSeconds)&&rangeSeconds>0?latest-rangeSeconds*1000:-Infinity;
+  const selected=[...unique.values()].filter(item=>item.time>=cutoff);
+  const valid=chartSeries(selected.map(item=>item.row),key);
+  if(valid.length<2)return null;
+  const rows=valid,times=rows.map(row=>timestamp(row.observed_at));
+  const start=selected[0].time,end=selected.at(-1).time;
+  if(end<=start)return null;
+  const values=rows.map(row=>row[key]),min=Math.min(...values),max=Math.max(...values);
+  const pad=Math.max((max-min)*.15,.05),rough=(max-min+2*pad)/3,power=10**Math.floor(Math.log10(rough));
+  const step=([1,2,5,10].find(n=>n*power>=rough)||10)*power;
+  const low=Math.floor((min-pad)/step)*step,high=Math.ceil((max+pad)/step)*step;
+  const precision=Math.max(0,Math.min(6,-Math.floor(Math.log10(step))));
+  const y=value=>208-(value-low)/(high-low)*155;
+  const points=values.map((value,i)=>[52+(times[i]-start)/(end-start)*690,y(value)]);
+  const yTicks=Array.from({length:Math.round((high-low)/step)+1},(_,i)=>{
+    const value=low+i*step;return {y:y(value),label:(Math.abs(value)<step/100?0:value).toFixed(precision)};});
+  const positions=new Map(selected.map((item,i)=>[item.row,i])),segments=[];
+  rows.forEach((row,i)=>{
+    const previous=rows[i-1],windowStart=timestamp(row.window_start);
+    const duration=typeof row.window_duration_s==='number'&&row.window_duration_s>0?row.window_duration_s*1000:null;
+    const gap=i>0&&(positions.get(row)!==positions.get(previous)+1
+      ||(row.session_id&&previous.session_id&&row.session_id!==previous.session_id)
+      ||(Number.isFinite(windowStart)?windowStart>times[i-1]+10:duration!==null&&times[i]-times[i-1]>duration+10));
+    if(i===0||gap)segments.push([]);segments.at(-1).push(points[i]);
+  });
+  return {points,segments,low,high,rows,yTicks,xTicks:timeTicks(start,end),start,end,
+    duplicateCount:ordered.length-unique.size,invalidTimeCount:trend.length-ordered.length,
+    storedCount:trend.length,displayedCount:rows.length};
 }
 export function filterItems(items,{q='',category='',severity='',status=''}={}) {
   return items.filter(item=>(!q || [item.name,item.title,item.device,item.category].filter(Boolean).join(' ').toLowerCase().includes(q.toLowerCase()))

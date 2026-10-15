@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 import {Element} from './dom-fixture.mjs';
+import {restartHistory} from './chart-fixture.mjs';
 
 function fixture(oxygen=6.4){
   const time='2026-10-14T00:00:10+00:00';
@@ -120,4 +121,22 @@ test('event lifecycle and critical severity are distinct from data quality and h
   p.run("location.hash='#monitoring';render()");assert.match(p.node('content').textContent,/PROTOTYPE/);
   d.cameras[0].signal_status='indeterminate';p.setData(d);p.run("location.hash='#video'");await p.run('refresh()');
   assert.match(p.node('content').textContent,/当前状态待确认/);
+});
+
+
+test('chart range controls render real page: default recent, all history, polling preserves selection',async()=>{
+  const d=fixture();d.monitoring.trend=restartHistory();
+  const p=page(d);await p.ready();
+  const walk=node=>[node,...node.children.flatMap(walk)];
+  let nodes=walk(p.node('content'));
+  assert.equal(nodes.filter(n=>n.tagName==='circle').length,85);
+  const range=nodes.find(n=>n.tagName==='select'&&n.attributes['aria-label']==='历史范围');
+  assert.ok(range);range.events.change({target:{value:'all'}});
+  assert.equal(p.run('state.trendRange'),'all');
+  nodes=walk(p.node('content'));assert.equal(nodes.filter(n=>n.tagName==='circle').length,214);
+  await p.run('refresh()');assert.equal(p.run('state.trendRange'),'all');
+  assert.equal(walk(p.node('content')).filter(n=>n.tagName==='circle').length,214);
+  p.run("location.hash='#monitoring';render()");
+  assert.equal(walk(p.node('content')).filter(n=>n.tagName==='circle').length,214);
+  assert.ok(p.requests.every(url=>url.startsWith('/api/bootstrap')));
 });

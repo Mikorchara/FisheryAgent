@@ -16,3 +16,7 @@ main{max-width:1640px;margin:0 auto;padding:31px 36px 20px}.page-heading{display
 .management-message.user{align-self:flex-end;background:#eaf4f3}.management-message.assistant{align-self:flex-start;background:white}.management-message.status{color:#8f5426;background:#fff8ed}.management-message>strong{font-size:11px;color:var(--muted)}.management-message>p{font-size:13px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:8px}
 .assistant-confirm{display:flex;align-items:flex-start;gap:9px;font-size:11px;color:var(--muted);line-height:1.7;margin-top:14px}.assistant-confirm input{margin-top:3px}.management-assistant .composer-foot{flex-wrap:wrap}.management-assistant .composer-foot>span{margin-right:auto}.management-assistant button:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:760px){.management-messages{padding:16px}.management-assistant .assistant-controls{padding:16px}.management-message{max-width:100%}}
+
+/* Readable time ticks at narrow card widths; never compress long gaps into fake time. */
+.chart-viewport{overflow-x:auto;max-width:100%}.chart-viewport .trend-chart{min-width:520px}.chart-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:600px){.card-heading:has(.chart-controls){flex-wrap:wrap}.chart-controls{width:100%;justify-content:flex-start}}

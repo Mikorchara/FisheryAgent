@@ -127,3 +127,12 @@ R2B-3.4 边界测试：`python -m unittest apps.ai_service.tests.test_service ap
 存储为 `outputs/management_web/monitoring.sqlite3`，Git ignored；重启保留记录。不要删除已有数据库来“重置演示”，需要隔离测试时使用临时库和服务注入。
 
 这是本机模拟接入，不是生产设备鉴权；AI 默认 503，显式启用后使用 Normal 安全门禁。真实视频、文件写入、用户权限与设备控制未开放。安全与 DTO 详见 [INTEGRATION](INTEGRATION.md)。
+
+
+## 历史趋势人工检查（R2B-4.1）
+
+重启自己启动的管理 Web，并刷新页面加载新静态文件；无需删除数据库或重新启动模拟器。综合总览 / 水质监测中，选择“最近 30 分钟”“最近 1 小时”或“全部存储历史”。范围以最后观测为终点，页上北京时间与 stale/offline 状态仍须保留。
+
+核对：最近会话的 10 秒点展开；全部历史保留停机间距并在会话切换处断线；五个时间刻度不挤在首段，纵轴相邻标签可区分；窄卡片仅图表内部允许横向滚动。History 表与 API 仍保存全部有界历史，范围切换与 5 秒刷新只读、不采样。
+
+专项离线验证：`node --test apps/management_web/tests/chart-ui.test.mjs apps/management_web/tests/monitoring-ui.test.mjs apps/management_web/tests/view-model.test.mjs`；`python -m unittest apps.monitoring.tests.test_history_projection apps.monitoring.tests.test_pipeline apps.monitoring.tests.test_water_capture`。固定测试数据不依赖用户真实 SQLite。

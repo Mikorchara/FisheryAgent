@@ -39,6 +39,7 @@ apps/
 │     ├─ test_pipeline.py            # 校验、时序、安全、状态与共享来源
 │     ├─ test_rule_governance.py      # 规则状态、证据范围、可靠恢复与兼容
 │     ├─ test_business_services.py    # 纯服务一致性、设备/时间边界与故障回滚
+│     ├─ test_history_projection.py  # 历史 API 排序、会话与旧元数据兼容
 │     ├─ test_water_capture.py        # 单次读取/诊断、双投影一致性、质量语义和 DTO 大小
 │     └─ test_local_http.py          # 真实 loopback 上报及停止/重启
 ├─ simulator/                       # 独立设备生产端
@@ -73,6 +74,8 @@ apps/
       ├─ test_multi_round.py         # HTTP 双 Tool、Scope/revision、预算、取消与回滚
       ├─ test_knowledge.py           # Knowledge HTTP 闭环、授权/来源隔离、拒绝与确认指纹
       ├─ assistant-ui.test.mjs       # Normal 聊天、History、epoch 与 Stop 行为
+      ├─ chart-fixture.mjs            # 固定多次重启、20 小时时间跨度数据
+      ├─ chart-ui.test.mjs            # 时间坐标、重复/缺口、精度和 SVG
       ├─ dom-fixture.mjs            # 无网络 DOM 测试辅助
       ├─ view-model.test.mjs          # 纯展示合同
       └─ monitoring-ui.test.mjs       # 实际页面代码的离线 DOM 行为

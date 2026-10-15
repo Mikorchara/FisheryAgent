@@ -138,12 +138,19 @@ class MonitoringRepository:
         with self.connection() as db:
             db.execute("BEGIN")
             row = db.execute("SELECT c.*,h.last_received_at AS last_reported_at FROM current c LEFT JOIN channel_contacts h ON c.device_id=h.device_id AND c.channel=h.channel WHERE c.device_id=? AND c.channel=?", (device_id, channel)).fetchone()
-            history = [self._decode(r) for r in db.execute("SELECT * FROM history WHERE device_id=? AND channel=? ORDER BY observed_at", (device_id, channel))]
+            history = self._history(db, device_id, channel)
             return self._decode(row) if row else None, history
 
     def history(self, device_id, channel):
         with self.connection() as db:
-            return [self._decode(r) for r in db.execute("SELECT * FROM history WHERE device_id=? AND channel=? ORDER BY observed_at", (device_id, channel))]
+            return self._history(db, device_id, channel)
+
+    def _history(self, db, device_id, channel):
+        # Session metadata is read-only and optional for legacy/pruned batch records.
+        return [self._decode(r) for r in db.execute("""SELECT h.*, b.session_id FROM history h
+            LEFT JOIN batches b ON h.batch_id=b.batch_id
+            WHERE h.device_id=? AND h.channel=?
+            ORDER BY h.observed_at, h.received_at, h.batch_id""", (device_id, channel))]
 
     def events(self):
         with self.connection() as db:

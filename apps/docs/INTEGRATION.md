@@ -255,3 +255,18 @@ Video/NPU 将通信、推理、事实归一化和网页播放分离；不迁移�
 - 前端沿用通用有序 Steps、每 Tool 独立卡片、聚合 Usage、Stop 和唯一 Final。只有完整通过门禁的最终文本 pair 进入 History；不保存中间模型正文、Tool 协议、Ledger 或 payload。网络确认动态显示最多 2 或 3 次，请求结束清除确认。
 
 关闭管理开关并重启即可回滚，新 epoch 不自动续用旧确认/历史。此本地实验不等于管理链路真实资格验收；模型选择与回答质量仍需用户另行授权测试。启动与人工验收见 [BUILD_RUN](BUILD_RUN.md#r2b-4normal-multi-round-本地试用)。
+
+## R2B-4.1：历史趋势显示与 Ollama 调查
+
+图表默认显示**最后观测之前 30 分钟**，可选 1 小时或全部有界历史；这不是当前时刻的新鲜度保证。实际库存 214 个水质窗口 / 3 个 Session 跨约 20.15 小时，包含约 13.23 小时与 6.34 小时中断。原图全部压进同一时间轴，又用第 0/3/7/11 个点作为刻度，所以形成窄点簇与重叠标签；本次盘点未见相同或倒序观测时间，不是该库已有重复记录造成。
+
+- 保留真实时间比例；不按样本序号挤掉停机时长。全部历史仍可能呈现窄簇，这是实际时间跨度的结果；查看最近范围可分辨每个窗口。
+- Web trend / History API 新增可选 session_id，trend 增加 window_start。Repository 在原读事务 LEFT JOIN 批次元数据，按 observed_at / received_at / batch_id 稳定排序，不迁移 SQLite、删除历史、改写观测或影响 AI 的 current-only capture。批次元数据被裁剪时 session_id=null，仍保留历史；无法确认旧 Session 时只依时间/窗口缺口断线。
+- 图表再按时间数值排序；同时间记录只显示最后接收项（平局按 batch_id 和原顺序确定），无效/缺失的最后项不回填旧值。API/库保留所有记录。缺失、明确时间缺口与已知 Session 切换断线；非法时间不使用虚构索引。
+- 时间刻度独立于数据密度，最多五个均匀位置；短于 4 秒范围显示毫秒，跨日期补日期行；纵轴使用可辨识的步长和精度。全部显示用 Asia/Shanghai；窄卡片内部横向滚动，不压缩标签至互相重叠。
+
+Ollama 只读证据：`outputs/management_web/assistant-traces.jsonl` 中同一个 request_id `2eec55f56e3b456d9226be6f5d756981` 的 conversation + assistant 两条记录，对应**一次失败 Turn**。preset 为 ollama-qwen35-4b-r1、正式多轮 Prompt；Request #1 outcome=multiple_tool_calls、finish_reason=tool_calls，Request #2 未开始；1 Model Request、0 Tool attempts / executions，预算为 2/2/3。触发原 ToolCallingService 的 len(calls)>1 分支，不是整个 Turn 耗尽预算、Handler 执行失败或 SQLite 问题。
+
+这证明归一化后的首轮存在多个已通过结构校验的调用，且 ID 不重复（重复 ID 会更早被归为 malformed）。现有安全 Trace 不保存该拒绝分支的完整调用集合，**无法确定准确个数、重复逻辑调用还是不同 Tool，也没有独立 raw/normalized 对照证据**。不能根据短输出长度猜测。当前 Adapter 逐项解析 provider tool_calls，未配置 parallel_tool_calls=false；本轮不改变 Adapter、Prompt、Schema、Runtime 或预算。
+
+建议保留单轮一个 Tool 合同。若后续获批改善，可先增加仅含有界 call_count、allowlist Tool 名称和重复标记的安全诊断，再单独评估 Ollama 协议是否支持并遵守 parallel_tool_calls=false；即使设置该提示，Runtime 仍须整批拒绝多调用，不自动择一、补跑或扩大预算。当前仅一个失败样本，不能据此判定所有 Ollama 请求不兼容。

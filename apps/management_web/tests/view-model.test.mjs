@@ -25,7 +25,7 @@ test('file search and category do not imply indexing or retrieval',()=>{
 });
 test('chart geometry bounded flat and varied values; unavailable series empty',()=>{
   for(const values of [[6,6,6],[2.2,6.4,5.8]]){
-    const g=chartGeometry(values.map(value=>({oxygen:value})),'oxygen');
+    const g=chartGeometry(values.map((value,i)=>({oxygen:value,observed_at:new Date(i*10000).toISOString()})),'oxygen');
     for(const[x,y]of g.points){assert.ok(x>=52&&x<=742);assert.ok(y>=53&&y<=208);}
   }
   assert.equal(chartGeometry([{oxygen:null},{oxygen:NaN}],'oxygen'),null);
