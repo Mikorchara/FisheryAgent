@@ -186,3 +186,9 @@ Activity + Preview + 唯一终态]
 - 同一 DOM 回复在 Final 后转正。内部聊天滚动、稳定输入区、手动上滚暂停跟随、回到最新与键盘问题导航，不改变后端 History 或 Source/Ledger。
 - 51 Node、88 管理 Web Python、13 AI Service、154 相关核心回归通过。新增 HTTP/Fake SDK→真实前端 parser/Workspace 三路径桥接；隔离浏览器完成双 Tool，1280/390px 无横向溢出。不是实际 LLM 或语言质量证据。
 - 下一阶段：单独批准管理专属 Qwen 两工具案例、核对真实协议/清理/Stop/来源与人工回答质量，再决定实验发布；不自动开启 Streaming，不扩大到 Ollama/评分/三工具。
+
+## R2B-5D 资格准备
+
+管理候选 Scope 已与实际 Preset/协议/正式 Prompt/History/两工具 definitions 和 Monitoring/Knowledge 绑定核对。单案例 CLI 复用既有资格 Adapter、流式观察及正式管理 Service，固定 direct-final / current-water / low-oxygen，默认 Dry-run；不读取原型 Snapshot 或管理运行库。计划 hash + 单次明确确认后才可执行一个内部 candidate probe，Web 仍关闭，运行本身不发布任何资格。
+
+脱敏报告保留 Provider/组装一致性、SDK 清理、Result 传递、Ledger/来源及产品 Commit Gate；不保存正文/参数/检索内容。可选 TTY 人工预览只标记 PREVIEWED_NOT_APPROVED。CLI 未覆盖真实 HTTP/SSE 和浏览器，后续仍需独立网页验收授权；详细案例、预算与审批/回滚见 [操作说明](../../STREAMING_QUALIFICATION.md)。**REAL PROVIDER RESULTS: NOT RUN；LOCAL TRIAL: HOLD。**

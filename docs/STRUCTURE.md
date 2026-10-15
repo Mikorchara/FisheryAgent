@@ -137,6 +137,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ qualify_assistant_turn.py                                          # 单 manifest Assistant 资格入口，默认 dry-run
 │  │  ├─ qualify_local_preset_request.py                                    # Local Preset 最小请求资格验证
 │  │  ├─ qualify_multi_round.py                                             # 单案例实验 / 正式 Assistant candidate 资格，默认 dry-run
+│  │  ├─ qualify_management_streaming.py                                    # 管理 Qwen Streaming 单案例资格，默认 dry-run
 │  │  └─ qualify_preset_tools.py                                            # Preset Tool Calling 资格验证入口
 │  └─ README.md                                                             # 辅助工具用途与逐次真实联网授权边界
 ├─ src/                                                          # Runtime/Core 应用源码与安装 metadata

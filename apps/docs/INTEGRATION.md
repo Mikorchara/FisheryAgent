@@ -293,3 +293,9 @@ Web 的 streaming.py 只投递现有 AssistantEventChannel，不另写 Tool 或�
 模式默认 Normal；Streaming 选择的 profile/revision 决定确认与路由，浏览器不提交 mode/预算。正在执行的 Turn 冻结配置；History 只存同一成功文本 pair，模式切换不清 History。仅合法 Final（完整非空正文、stop、trace_recorded、completed Activity、匹配请求/设备/revision）交给 Workspace 成功提交；预览/失败/取消不会成为 History。Stop 立即隐藏预览，复用原 cancel API；接受取消后 Abort 原读流，迟到事件不改状态。服务端先完成时允许收到的合法 Final，页面离开后即使迟到也不提交。
 
 消息节点及内部滚动容器持续存在，Preview→Final 不另建一条回复；每 Tool 独立卡片和有序 Steps/Usage 沿用安全投影，不渲染 Raw Result/参数/reasoning。滚动跟随与问题导航仅为显示状态，不改变模型 History/Source 合同。后续真实测试/试用须另获明确授权，本阶段不能直接开启。
+
+### R2B-5D：qualification 边界
+
+`ai_service.development.streaming_qualification` 只由单案例 CLI/离线测试导入。先按正式 definitions/绑定/Scope 计算无副作用计划；获批后创建临时 Monitoring SQLite 与 Policy，经正式 ManagementAssistantService 冻结设备、Credential/Runtime 和执行 2/2/3。它仅为一个候选探测构造服务器内 PreparedAssistantTurn 的执行许可，保持 candidate 身份；不更改配置或 Web prepare_turn 门禁，不提供浏览器可控的 bypass。
+
+执行观察复用既有 QualificationAdapter / Streaming observer / ExperimentGateway；Tool 循环、Source Ledger、Commit Gate 均来自原 Runtime。实际 SDK 分片/清理和 Result 上下文比较可成为管理业务链证据；CLI 不走 HTTP/SSE，报告明确该缺口。产品结果完成与实验路径合格分别记录；人工预览不写 JSON，也不作为发布批准。具体审批/回滚见 [资格说明](STREAMING_QUALIFICATION.md)。

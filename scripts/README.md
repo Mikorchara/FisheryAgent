@@ -6,6 +6,7 @@
 - `dev/manual_edge_mock_probe.cjs`：人工页面调试辅助，需用户自行提供本机 Web / Edge CDP；不属于自动 Browser 测试，不自动启动服务。
 - `qualification/qualify_assistant_turn.py`：单 manifest 来源资格验证，默认 dry-run；Q1–Q4 保留为有限单次计划示例。
 - `qualification/qualify_multi_round.py`：默认 dry-run 的单案例入口；旧实验模式保留。`--assistant-product` 使用正式 AssistantService、多轮 Prompt / History / Commit Gate，只验证 Qwen 精确范围，每次最多 3 请求；可用 `--review-answer` 仅在终端预览成功回答，不保存正文或自动批准。[案例与逐次授权](../docs/deep-dive/research/ASSISTANT_MULTI_ROUND_INTEGRATION.md#10-phase-4c-正式-assistant-资格准备)。
+- `qualification/qualify_management_streaming.py`：管理 Qwen 两工具单案例，默认 dry-run；正式管理 Service + 隔离 Monitoring SQLite，固定512/2/2/3/120秒，真实执行须逐案例计划 hash 与明确确认。可选交互终端临时预览，不改 Web candidate/开关。[管理资格操作](../apps/docs/STREAMING_QUALIFICATION.md)。
 - `qualification/qualify_preset_tools.py`：单 Preset 的只读 Tool 往返与概念题维护资格验证，不自动发布。
 - `qualification/qualify_local_preset_request.py`：精确 Local 目标的单次请求检查，不扫描模型或自动发布。
 
@@ -14,6 +15,8 @@
 `qualify_multi_round.py --streaming` 为独立的 Streaming candidate 单案例入口，自动复用正式 Assistant 多轮 Prompt / History / Commit Gate；支持三个固定 Preset，默认查询水质 + Knowledge，`--tool-set three-tools` 另建精确范围。默认 dry-run，最多2/2/3、每请求1–512 tokens（默认256，非流式仍1–256）、retry=0，不预览或保存正文、不自动发布、不开放 Web Streaming。逐案例命令和仍未知的协议边界见[Phase 5C 准备](../docs/deep-dive/research/ASSISTANT_STREAMING_TOOL_CALLING.md#10-推荐最小顺序与手动命令)。
 
 资格实现集中在 `src/fishery_ai/development/qualification/`，脚本是薄入口。该子包复用产品 Runtime、凭据快照、Gateway 与 Tool 合同，正式 Web / Assistant / Analysis 不导入资格实现。包初始化不装配服务、不解析凭据、不联网；实现随安装包提供，以保留安装后 CLI 的可用性。
+
+管理平台专属装配位于 `apps/ai_service/development/streaming_qualification.py`，单向复用上述资格 Adapter/观察器与正式管理业务服务；不从产品启动路径加载，也不复用原型 Snapshot。
 
 原 `fishery_ai.assistant_qualification` 等七个模块仅为历史导入兼容别名；新开发使用 `fishery_ai.development.qualification` 下的具体模块。别名指向同一个模块对象，历史私有函数导入和测试 monkeypatch 仍有效。冻结 H / P2E fixture 与指纹仅服务单次 Harness 的兼容校验，不参与正式 History。
 

@@ -44,4 +44,5 @@ R2B-3.4 已提取独立 apps/ai_service：业务协调、Runtime 装配、Monito
 
 - R2B-5B 后端已离线实现：管理独立 candidate/关闭开关、精确 revision、唯一 claim、POST SSE 与原 Streaming Runtime；Qwen 两工具，512 上限 / 2/2/3 / 120 秒。用户已报告 Qwen 管理 Normal 多轮初步验收通过，但未因此发布 Streaming。
 - R2B-5C 前端已离线接通：模式选择、严格 SSE 消费、原卡片预览转 Final、Stop/断线撤销、共用成功 History、内部滚动和问题导航。Normal 默认，Streaming candidate 仍拒绝真实发送。
+- R2B-5D 资格准备已接入管理独立单案例入口：Dry-run、计划 hash 确认、隔离 SQLite/Policy、真实执行来源与安全报告、可选人工终端预览；不改发布配置。见 [逐案例操作与审批](STREAMING_QUALIFICATION.md)。真实结果 NOT RUN。
 - 之后单独授权 Qwen 管理 Streaming 真实技术与人工回答质量验收，再决定本地实验试用。Ollama、评分/三工具、其他 Provider 单独评估，不继承资格。

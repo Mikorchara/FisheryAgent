@@ -11,6 +11,7 @@
 - [开发规则](../AGENTS.md)
 - [R2B 架构评估基线](deep-dive/research/R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md)（R2B-0 研究；当前实现以 INTEGRATION 为准）
 - [管理 Streaming 设计与实施状态](deep-dive/research/R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md)（前后端离线就绪，默认关闭、candidate，真实试用未开放）
+- [管理 Streaming 逐案例资格与试用流程](STREAMING_QUALIFICATION.md)（R2B-5D，真实结果 NOT RUN）
 - [R2B-3 架构与 Tool 故障审查](deep-dive/research/R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md)（只读证据、修复建议与后续顺序）
 
 根 [docs](../../docs/STRUCTURE.md) 维护 AI 原型和共享 Runtime；这里不重复其 Prompt、Provider、Tool、Credential 合同。事实优先级：源码 → 测试 → 当前文档 → 历史记录。

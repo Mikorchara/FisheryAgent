@@ -160,3 +160,9 @@ node --test apps/management_web/tests/*.test.mjs
 Streaming 临时正文在同一消息卡片内转为最终回答；Tool 请求、失败、截断、超时、Stop 或断线撤销预览，保留草稿且不写成功 History。不自动重连、重发或转 Normal。离开/刷新页面尽力取消原 Handle；后端已经完成但 Final 未到达时，浏览器仍不提交，远端计算/计费停止状态为 UNKNOWN。
 
 当前可人工检查默认 Normal、candidate 拒绝、导航和滚动；完整 Streaming 仅能通过上述 Fake SDK 离线入口验收。下一阶段须另获逐案例真实请求授权，审查管理专属 Scope 的技术及人工回答质量，再决定是否发布 local_experimental；不可继承原 Prototype 资格。
+
+## R2B-5D：单案例资格准备
+
+新增默认 Dry-run 的 `scripts/qualification/qualify_management_streaming.py`，固定三个案例 direct-final / current-water / low-oxygen；只考虑当前管理 Qwen 两工具 Scope、512 tokens/请求、2/2/3 和 120 秒。正式 Web 仍 candidate/关闭，不增加试用启动参数。真实执行须逐案例批准并提供 `--confirm-network --plan-sha256`，可在正常交互终端显式选择 `--review-answer`，没有默认正文文件或自动批准。
+
+命令、资格矩阵、报告字段、人工质量审核、未来启用及回滚见 [Streaming Qualification](STREAMING_QUALIFICATION.md)。本轮只运行三个 Dry-run 与离线 Fake SDK；当前没有任何管理端真实 Streaming 新证据。
