@@ -19,6 +19,8 @@ FAST_MODULES = (
     "tests.tools.test_tool_argument_contract",
     "tests.tools.test_tool_status_no_match",
     "tests.tools.test_tool_policy",
+    "apps.ai_backend.tests.test_protocol_specs",
+    "apps.ai_service.runtime.tests.test_foundation",
 )
 
 
@@ -26,16 +28,22 @@ def build_suite(selection):
     loader = unittest.TestLoader()
     if selection == "fast":
         return loader.loadTestsFromNames(FAST_MODULES)
+    if selection == "backend":
+        return unittest.TestSuite(loader.discover(str(ROOT / group), top_level_dir=str(ROOT))
+            for group in ("apps/ai_backend/tests", "apps/ai_service/runtime/tests"))
     groups = PRODUCT_GROUPS if selection == "product" else (
         (*PRODUCT_GROUPS, "qualification") if selection == "all" else (selection,))
-    return unittest.TestSuite(loader.discover(str(ROOT / "tests" / group),
+    suite = unittest.TestSuite(loader.discover(str(ROOT / "tests" / group),
         top_level_dir=str(ROOT)) for group in groups)
+    if selection in ("product", "all"):
+        suite.addTests(build_suite("backend"))
+    return suite
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Offline unittest tiers; no Provider requests")
     parser.add_argument("selection", nargs="?", default="product",
-        choices=("fast", "product", "qualification", "all", *PRODUCT_GROUPS))
+        choices=("fast", "product", "qualification", "all", "backend", *PRODUCT_GROUPS))
     parser.add_argument("--list", action="store_true", help="Count discovery without executing tests")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)

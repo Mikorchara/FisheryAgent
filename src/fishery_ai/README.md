@@ -23,7 +23,7 @@
 ## Tool Runtime · 正式 Runtime
 
 - [tool_conversation.py](tool_conversation.py)：默认 1/1/2 与显式 2/2/3 的共享协调；Normal / 组装后的 Streaming 复用同一循环，保留 steps、Usage / 安全 Trace；Web Streaming 由独立实验范围授权。
-- [tool_argument_diagnostics.py](tool_argument_diagnostics.py)：通用参数拒因合同的旧路径别名；唯一实现已迁入 [apps/ai_backend](../../apps/ai_backend/README.md)，保留同一模块/类型身份，安全字段与执行权限不变。
+- [tool_argument_diagnostics.py](tool_argument_diagnostics.py)：Prototype 自有参数拒因合同；与 [新 Backend](../../apps/ai_backend/README.md) 分叉维护，不共享 Alias/类型，安全字段与执行权限不变。
 - [tools/__init__.py](tools/__init__.py)：Tool 执行层公共接口导出。
 - [tools/contracts.py](tools/contracts.py)：Tool 定义、执行结果、业务状态与安全错误合同。
 - [tools/registry.py](tools/registry.py)：静态 allowlist、正式模型 Tool Definition 及固定 Handler 绑定。

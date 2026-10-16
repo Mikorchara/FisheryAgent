@@ -1,6 +1,6 @@
 # R2C-1B：独立 AI Backend 整体迁移方案
 
-日期：2026-10-16。**评估方案，尚未实施。** 依据当前源码、测试定义、安装清单和 [R2C-1A 审计](R2C1A_LLM_BACKEND_AUDIT.md)。本轮只新增本文，不执行测试或真实请求，不修改现有产品、配置、发布状态或数据。
+日期：2026-10-16。**原评估基线；方案已获批准，Phase I 实施状态见 §13。** 原评估依据源码、测试定义、安装清单和 [R2C-1A 审计](R2C1A_LLM_BACKEND_AUDIT.md)，当时未执行代码迁移或真实请求；以下设计保留其原阶段语境。
 
 ## 1. 推荐结论与新的项目边界
 
@@ -284,3 +284,33 @@ Fake SDK chunk与安全虚构夹具可一次性复制为新侧测试支持；管
 批准后先执行阶段I的完整新侧闭包，不再继续R2C-1A逐个搬类。**先完成闭包再切管理端，少做过渡层，多复用已经验证的方法体与测试场景。** 阶段I若不能在禁止旧Runtime导入下完成Fake路径，就不进入Web切换。
 
 本轮只做源码/测试定义/资源元数据的静态核对，未执行Python/Browser回归或qualification dry-run。新增文档16条本地Markdown链接无损坏，新增文件空白检查和`git diff --check`通过；哈希核对确认此前15个已有改动文件均未改变。未修改产品代码、测试、配置、发布范围或数据。旧方案文档、AGENTS和README暂保持原状，待用户批准实施时一并更新。
+
+
+## 13. R2C-1C Phase I 实施结果
+
+新 Backend 已建立闭包；新业务成员先放 `apps/ai_service/runtime/`，避免覆盖仍在工作的顶层 service/contracts/execution/streaming。这是一次性切换前的实际新实现，不是 facade、旧类型桥接或运行时选择器；Phase II 可直接切到这组模块。新侧公共入口及冻结合同指纹见 [Backend README](../../../ai_backend/README.md)，业务文件职责见 [业务装配入口](../../../ai_service/runtime/README.md)。
+
+已迁入 Gateway/Provider/Protocol/Normal/Streaming assembler、1/1/2 与2/2/3循环、请求控制、通用 Activity/EventChannel、安全 Trace/Credential；复制方法体，移除未迁的业务 Mock/converse/Managed JSON loader/Analysis Trace。新静态 Registry 接收 Definition；Policy 必须显式提供；摘要回调固定在 Handle/Registry，不透传任意 metadata。新旧参数诊断已分叉，无 Alias。
+
+Prompt、History、Tool Schema/description、Preset 初始资源均保持语义及指纹；管理两份发布文件未改。已知评分 Policy 仍可合法保存，完整选择进入 revision；执行只与实际两工具相交，没有评分 Handler。Source Ledger/Receipt、History裁剪、最终提交位于业务侧，仍只消费新执行 Steps。
+
+**未切换现有 Web/ManagementAssistantService、CLI 或资格执行入口。** 它们仍使用旧实现。新侧业务仅保留明确的旧领域债务：Monitoring的Diagnosis/telemetry/Reading，KnowledgeService/Evidence及固定知识资源，sources的canonical Reading/Quality/Freshness；连带旧model_options。阻断全部旧 LLM执行模块的独立进程仍能完成新侧六条Normal/Streaming Fake路径；Backend本身在阻断全部fishery_ai时可完成Fake执行。没有读取或修改真实凭据、SQLite、Policy和安全报告。
+
+### 离线验收
+
+- 新侧115项：独立Assembler/编码、凭据、请求/取消/Deadline、Fake全路径、Scope、Policy、来源/提交和差分。
+- 新旧18条模式/路径差分及8条负向业务结果差分：协议编码、Result、Steps、Usage、Ledger、Activity/安全DTO和Commit一致；只排除随机ID及执行耗时。固定epoch/完整Policy的Scope/revision一致。
+- FAST164项、FULL PRODUCT1180项通过；1180个唯一测试ID，无重复收集。现有管理AI Service32项、管理HTTP/Web92项、管理Node52项、原Prototype Node219项通过。
+- 离线FULL QUALIFICATION167项（1项因当前Windows目录symlink不可用而skip）通过；不把Fake作为Provider证据，未执行真实请求。
+- pyproject包含Backend子包、排除测试；build_py安装布局118文件，其中23个Backend Python模块/包；全部独立导入及Fake执行通过。
+- 正式wheel尚未通过：虚拟环境缺setuptools/wheel/build，离线wheel失败于缺构建backend；系统65.5只能辅助验证build_py，未降低>=68要求或联网安装。
+- Python语法55文件、本地Markdown文件链接463条/锚点30处、71个改动/新增文件敏感模式扫描及diff/空白检查通过。24份既有管理入口、Prompt/History/Schema及发布配置基线文件hash未变；旧Prototype阻断新Backend导入仍可独立Fake执行。
+
+### Phase II 前置与回滚
+
+1. 获批后将Web/ai_service顶层合同、Handle/Registry、异常/ContextVar、SSE和管理qualification一起切换；不得先局部混用，也不保留双后端选择器。
+2. 补齐正式wheel构建；若要安装管理业务，明确Monitoring/ai_service/resources的安装清单，当前清单只承诺Backend与原Prototype。
+3. 使用新Fake对象重新运行真正管理HTTP/SSE和浏览器桥接，核对资源路径、固定Scope/revision、重启epoch、Stop/断线/Trace失败和唯一Final。Prompt/发布语义若不等价，停止新侧试用并另行资格设计。
+4. 旧报告保持其原运行归属和人工待审状态；不伪造新qualification_id，不将现有Qwen local_experimental升级released；新侧真实smoke须新授权。
+
+Phase I生产装配未动，无需数据回滚。若撤销，仅按本轮文件差异恢复工程规则/测试/诊断，新增新侧文件不被原入口引用即可；不reset工作树、不覆盖用户数据、不复用旧会话自动发请求。Phase II以后回滚仍是整应用停止后恢复原装配并重启新epoch。

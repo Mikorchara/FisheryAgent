@@ -13,11 +13,12 @@
 - [管理 Streaming 设计与实施状态](deep-dive/research/R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md)（默认关闭；Qwen 两工具可显式启用本地实验）
 - [管理 Streaming 逐案例资格与试用流程](deep-dive/STREAMING_QUALIFICATION.md)（三个真实技术 PASS，回答质量待审；local_experimental 非正式发布）
 - [R2B-3 架构与 Tool 故障审查](deep-dive/research/R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md)（只读证据、修复建议与后续顺序）
+- [R2C-1B 独立 Backend 获批方案与 Phase I 状态](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md)
 - [R2C-1A LLM Backend 审计](deep-dive/research/R2C1A_LLM_BACKEND_AUDIT.md)（实际依赖、最小迁移、资格保护和后续次序）
 
 根 [docs](../../docs/STRUCTURE.md) 维护 AI 原型和共享 Runtime；这里不重复其 Prompt、Provider、Tool、Credential 合同。事实优先级：源码 → 测试 → 当前文档 → 历史记录。
 
-R2C-1A：新增 [ai_backend](../ai_backend/README.md)，仅迁入通用参数拒因合同；旧路径是同一模块对象的兼容别名。管理 AI 仍依赖旧包的大部分 Runtime，未改 Prompt、发布范围或 Streaming 默认状态。
+R2C-1C Phase I：已建立 [独立 Backend](../ai_backend/README.md) 与 [新侧业务装配](../ai_service/runtime/README.md)，Normal/Streaming、1/1/2 与 2/2/3 离线闭包成立；撤销诊断共享 Alias。现有 Web / ManagementAssistantService 尚未切换，仍使用旧 Runtime；Prompt、发布范围和默认开关不变。Phase II 须整体切换类型/请求控制/资格入口，不能混用。
 
 R2B-3.4：AI 业务已独立为 `apps/ai_service/`，Web 经明确的 AssistantBackend 合同调用。Monitoring、Knowledge 绑定及 Runtime 装配不再依附 Web；HTTP/浏览器/请求控制留在管理网页，当前能力与启动方式不变，见 [模块边界](INTEGRATION.md#r2b-34独立-ai-业务边界)。
 

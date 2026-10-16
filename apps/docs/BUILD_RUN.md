@@ -193,3 +193,17 @@ R2B-5E 允许显式启动本地试用后人工检查 Streaming。关闭开关、
 若需保留原 Normal 多轮，回滚命令可追加 `--assistant-multi-round-trial`。新 epoch 撤销旧会话/确认；刷新页面，Streaming 被拒绝，Normal 可用。磁盘 `enabled=false` 不被启动参数写回；不用改数据库、Policy、凭据或原 Prototype。
 
 本轮离线验证：管理配置/AI Service/资格兼容/HTTP SSE 与 Normal 相关 Python 124 项、共享 Streaming Assembler/Runtime/Source/Web 回归134项，合计258项通过；管理前端 Node 52项通过，包含 HTTP/SSE → 正式 parser/Workspace 的三路径桥接。覆盖512实际编码、发布拒绝、Scope/revision、双 Tool Result/独立Ledger、Preview→Final、Stop/超时/截断、History和回滚。未运行无关全量测试，没有调用真实 Provider/NPU，也没有启动实际网页推理；真实网页体验由用户后续验收。
+
+## R2C-1C：新侧离线验证（未切 Web）
+
+```powershell
+.\.venv\Scripts\python.exe scripts/dev/run_tests.py backend
+.\.venv\Scripts\python.exe scripts/dev/run_tests.py fast
+.\.venv\Scripts\python.exe scripts/dev/run_tests.py product
+```
+
+`backend` 发现 apps/ai_backend/tests 与 apps/ai_service/runtime/tests；当前 115 项，新 Fake SDK 覆盖 Normal/Streaming 直答、单 Tool、双 Tool、Result 传递、来源/提交、取消/Deadline、凭据和独立进程闭包。FAST 当前 164 项；FULL PRODUCT 已包含完整新侧一次。迁移差分是两次独立离线执行，不向真实 Provider 发送。
+
+此阶段没有新的 Web 启动参数；本页已有 Normal/Streaming 命令保持旧装配。正式轮换还需 Phase II 批准。默认关闭 Streaming、Qwen 两工具 local_experimental 不变。没有读取或改动现有凭据、Policy、SQLite 和报告。
+
+正式 wheel 检查尚有环境阻塞：虚拟环境缺 setuptools/wheel，禁止联网补装。本轮仅使用现有 setuptools65.5 的 build_py 验证安装形状及全部23个 Backend 模块/包和 Fake 流程；它不替代 pyproject 要求 setuptools>=68 的 wheel 构建。详见 [源码入口](../ai_backend/README.md)。

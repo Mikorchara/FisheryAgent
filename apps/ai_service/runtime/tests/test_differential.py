@@ -1,0 +1,135 @@
+"""One-time migration parity: two independent turns share only detached fixture JSON."""
+from dataclasses import asdict, replace
+import importlib
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace as NS
+import unittest
+
+from apps.ai_backend.tests import test_execution as offline_guard
+from apps.ai_backend.tests.support import FakeSDK, sdk_tool, sdk_final, tool_chunks, final_chunks
+from . import test_foundation as fixture
+
+
+def load(side, backend_name, business_name=None):
+    return importlib.import_module(('fishery_ai.'+backend_name) if side=='old' else (
+        'apps.ai_service.runtime.'+business_name if business_name else 'apps.ai_backend.'+backend_name))
+
+
+def stable(value):
+    """Only nondeterministic execution IDs and wall-clock timings are excluded."""
+    if isinstance(value, dict):
+        return {k:stable(v) for k,v in value.items() if k not in (
+            'request_id','trace_id','total_latency_ms','duration_ms','started_at','finished_at','completed_at','total_ms')}
+    if isinstance(value, (list,tuple)):return [stable(v) for v in value]
+    return value
+
+
+class DifferentialTests(unittest.TestCase):
+    def setUp(self):
+        offline_guard.ExecutionTests.setUp(self)
+        temp=TemporaryDirectory();self.addCleanup(temp.cleanup);self.root=Path(temp.name)
+
+    def run_side(self, side, path, transport, mode='BOUNDED_MULTI_ROUND', water=None, knowledge=None):
+        a=load(side,'assistant','assistant'); g=load(side,'model_gateway')
+        c=load(side,'tool_conversation'); execution=load(side,'execution')
+        p=load(side,'tools.policy'); tc=load(side,'tools.contracts'); trace=load(side,'observability')
+        definitions=load(side,'tools.registry','tools')
+        if side=='old':
+            formal=definitions.ToolRegistry(None,None,knowledge=NS())
+            water_def=formal.lookup(fixture.WATER).model_definition
+            knowledge_def=formal.lookup(fixture.KNOWLEDGE).model_definition
+            validate=importlib.import_module('fishery_ai.tools.handlers.knowledge_search').validate_arguments
+            summarize=importlib.import_module('fishery_ai.assistant_activity').tool_summary
+        else:
+            water_def=definitions.WATER_DEFINITION;knowledge_def=definitions.KNOWLEDGE_DEFINITION
+            validate=definitions.validate_arguments
+            summarize=importlib.import_module('apps.ai_service.runtime.activity').tool_summary
+        water=fixture.water_payload() if water is None else water
+        knowledge=fixture.knowledge_payload() if knowledge is None else knowledge
+        class Registry:
+            entries={fixture.WATER:tc.ToolDefinition(water_def,lambda:json.loads(json.dumps(water))),
+                fixture.KNOWLEDGE:tc.ToolDefinition(knowledge_def,lambda args:json.loads(json.dumps(knowledge)),validate)}
+            def lookup(self,name):
+                if name not in self.entries:raise tc.ToolError(tc.ToolErrorCode.UNKNOWN_TOOL)
+                return self.entries[name]
+            def model_definitions(self):return tuple(item.model_definition for item in self.entries.values())
+        registry=Registry()
+        plans=([sdk_final()] if path=='direct' else [sdk_tool(fixture.WATER),sdk_final()] if path=='single' else
+            [sdk_tool(fixture.WATER),sdk_tool(fixture.KNOWLEDGE,'call_2','{"query":"固定"}'),sdk_final()])
+        if path=='invalid':plans=[sdk_tool(fixture.WATER,arguments='{"extra":"private-fixture"}')]
+        if path=='provider-error':plans=[sdk_tool(fixture.WATER),g.GatewayError('HTTP_429')]
+        if path=='truncated':plans=[sdk_final(finish='length')]
+        if transport=='STREAMING':
+            plans=([final_chunks()] if path=='direct' else [tool_chunks(fixture.WATER),final_chunks()] if path=='single' else
+                [tool_chunks(fixture.WATER),tool_chunks(fixture.KNOWLEDGE,'call_2','{"query":"固定"}'),final_chunks()])
+            if path=='invalid':plans=[tool_chunks(fixture.WATER,arguments='{"extra":"private-fixture"}')]
+            if path=='provider-error':plans=[tool_chunks(fixture.WATER),g.GatewayError('HTTP_429')]
+            if path=='truncated':plans=[final_chunks(finish='length')]
+        profile=a.assistant_profile(fixture.QWEN)
+        cred=load(side,'credentials').CredentialStore(process_env={profile.credential_ref:'fictional-diff-key'})
+        runtime=g.ProfileRegistry([profile],cred).snapshot(profile.profile_id)
+        runtime=replace(runtime,transport_output_token_limit=512)
+        sdk=FakeSDK(plans,model=profile.model)
+        adapter=load(side,'openai_compatible_adapter').OpenAICompatibleAdapter(async_client_factory=sdk.factory)
+        traces=trace.JsonlTraceSink(self.root/(side+'.jsonl'),**({} if side=='old' else {'tool_names':(fixture.WATER,fixture.KNOWLEDGE)}))
+        coordinator=c.ToolCallingService(adapter,registry,traces,policy=p.ToolPolicy('assistant',True,(fixture.WATER,fixture.KNOWLEDGE)),
+            execution_mode=c.ToolExecutionMode(mode),model_transport=c.ToolModelTransport(transport))
+        h=execution.RequestHandle(**({} if side=='old' else {'summarize_tool':summarize}));h.start()
+        request=a.AssistantRequest(fixture.QWEN,'固定迁移输入',(a.AssistantHistoryTurn('旧问题','旧答案',fixture.STAMP),))
+        with execution.request_scope(h):
+            result=a.AssistantService(coordinator,execution_mode=c.ToolExecutionMode(mode)).send(request,runtime)
+        return {'bodies':sdk.bodies,'dto':stable(result.to_dict()),'ledger':result.source_ledger.to_dict(),
+            'steps':stable([asdict(s) for s in result.execution.steps]),'closed':[client.closed for client in sdk.clients],
+            'handle':stable(h.public_info())}
+
+    def test_normal_and_streaming_protocol_results_steps_usage_receipts_and_commit_parity(self):
+        for transport in ('NORMAL','STREAMING'):
+            for mode,paths in [('SINGLE_ROUND',('direct','single','invalid')),
+                               ('BOUNDED_MULTI_ROUND',('direct','single','double','invalid','provider-error','truncated'))]:
+                for path in paths:
+                    with self.subTest(transport=transport,mode=mode,path=path):
+                        self.assertEqual(self.run_side('old',path,transport,mode),self.run_side('new',path,transport,mode))
+
+    def test_negative_business_results_have_identical_protocol_and_receipts(self):
+        for water in [fixture.water_payload(status='NO_DATA'),fixture.water_payload(quality='partial'),
+                      fixture.water_payload(quality='invalid'),fixture.water_payload(freshness='stale')]:
+            for transport in ('NORMAL','STREAMING'):
+                self.assertEqual(self.run_side('old','double',transport,water=water,knowledge=fixture.knowledge_payload(False)),
+                    self.run_side('new','double',transport,water=water,knowledge=fixture.knowledge_payload(False)))
+
+    def test_management_scopes_profiles_and_revisions_match_for_fixed_epoch_and_policy(self):
+        from apps.ai_service.runtime import execution, streaming, bindings
+        from apps.ai_service import execution as old_execution, streaming as old_streaming
+        from fishery_ai.assistant import assistant_profile as old_profile
+        from apps.ai_service.runtime.assistant import assistant_profile
+        from fishery_ai.tools.registry import ToolRegistry as OldRegistry
+        from apps.ai_backend.tools import ToolRegistry, ToolDefinition
+        from apps.ai_service.runtime import tools
+        from fishery_ai.tools.policy import ToolPolicy as OldPolicy
+        from apps.ai_backend.tools.policy import ToolPolicy
+        knowledge=NS(source_id='legacy:eel_knowledge.json',source_version='1.0',backend='portable')
+        old_registry=OldRegistry(None,None,knowledge=knowledge)
+        # Only the assembled management definitions belong in release fingerprints.
+        old_registry._entries={name:old_registry.lookup(name) for name in (fixture.WATER,fixture.KNOWLEDGE)}
+        registry=ToolRegistry((ToolDefinition(tools.WATER_DEFINITION,lambda:{}),
+            ToolDefinition(tools.KNOWLEDGE_DEFINITION,lambda args:{},tools.validate_arguments)))
+        for preset in (fixture.QWEN,'ollama-qwen35-4b-r1'):
+            for names in ((fixture.WATER,), (fixture.WATER,fixture.KNOWLEDGE)):
+                old_policy=OldPolicy('assistant',True,names);policy=ToolPolicy('assistant',True,names)
+                # Score remains in stored selections and revision but never execution.
+                selected=ToolPolicy('assistant',True,(*names,fixture.SCORE))
+                old_selected=OldPolicy('assistant',True,(*names,fixture.SCORE))
+                args={'device_id':'fictional-device','epoch':'fixed-migration-epoch'}
+                self.assertEqual(execution.management_scope(assistant_profile(preset),policy,registry,knowledge),
+                    old_execution.management_scope(old_profile(preset),old_policy,old_registry,knowledge))
+                for new_mod,old_mod,resolve,loader in [(execution,old_execution,'resolve_execution','load_execution_config'),
+                                                       (streaming,old_streaming,'resolve_streaming','load_streaming_config')]:
+                    for enabled in (False,True):
+                        new=getattr(new_mod,resolve)(getattr(new_mod,loader)(enable_trial=enabled),assistant_profile(preset),
+                            selected,policy,registry,knowledge,**args)
+                        old=getattr(old_mod,resolve)(getattr(old_mod,loader)(enable_trial=enabled),old_profile(preset),
+                            old_selected,old_policy,old_registry,knowledge,**args)
+                        self.assertEqual(new.public(),old.public())
+

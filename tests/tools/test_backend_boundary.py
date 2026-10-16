@@ -40,7 +40,7 @@ assert not any(n.startswith(('fishery_ai','flask','apps.monitoring','apps.ai_ser
     'apps.management_web','openai','httpx','sqlite3')) for n in sys.modules)
 """)
         package=PROJECT_ROOT/'apps/ai_backend'
-        for path in package.glob('*.py'):
+        for path in (package/'tool_argument_diagnostics.py',):
             tree=ast.parse(path.read_text(encoding='utf-8'))
             for node in ast.walk(tree):
                 if isinstance(node,ast.ImportFrom):
@@ -50,29 +50,32 @@ assert not any(n.startswith(('fishery_ai','flask','apps.monitoring','apps.ai_ser
                     for alias in node.names:
                         self.assertIn(alias.name.split('.')[0],sys.stdlib_module_names,path.name)
 
-    def test_old_and_new_paths_are_one_module_in_both_import_orders(self):
+    def test_old_and_new_paths_are_independent_in_both_import_orders(self):
         for first,second in ((LEGACY,CANONICAL),(CANONICAL,LEGACY)):
             self.fresh(f"""
 import importlib,sys
 sys.path[:0]=[{str(PROJECT_ROOT)!r},{str(PROJECT_ROOT/'src')!r}]
 a=importlib.import_module({first!r}); b=importlib.import_module({second!r})
-assert a is b
+assert a is not b
 for name in ('ArgumentStage','ArgumentRejection','ToolArgumentDiagnostic','ToolArgumentError',
              'public_argument_diagnostic','rejection'):
-    assert getattr(a,name) is getattr(b,name)
+    assert getattr(a,name) is not getattr(b,name)
 """)
 
-    def test_monkeypatch_class_identity_and_serialization_are_shared(self):
+    def test_separate_class_identity_serialization_and_equal_safe_contracts(self):
         old=importlib.import_module(LEGACY);new=importlib.import_module(CANONICAL)
         diagnostic=old.rejection(old.ArgumentStage.EXECUTOR,old.ArgumentRejection.NOT_OBJECT,'[]')
-        self.assertIs(type(diagnostic),new.ToolArgumentDiagnostic)
+        self.assertIs(type(diagnostic),old.ToolArgumentDiagnostic)
+        self.assertIsNot(type(diagnostic),new.ToolArgumentDiagnostic)
         self.assertEqual(pickle.loads(pickle.dumps(diagnostic)),diagnostic)
-        public=new.public_argument_diagnostic(diagnostic)
+        self.assertIsNone(new.public_argument_diagnostic(diagnostic))
+        public=old.public_argument_diagnostic(diagnostic)
         self.assertEqual(json.dumps(public,sort_keys=True),
             '{"argument_bytes": 2, "object_member_count": null, "reason": "NOT_OBJECT", '
             '"schema_version": 1, "stage": "executor"}')
         with patch(LEGACY+'.rejection',return_value=diagnostic) as factory:
-            self.assertIs(new.rejection(),diagnostic)
+            self.assertIs(old.rejection(),diagnostic)
+            self.assertIsNot(new.rejection(new.ArgumentStage.EXECUTOR,new.ArgumentRejection.NOT_OBJECT,'[]'),diagnostic)
         factory.assert_called_once_with()
         self.assertIsNone(old.public_argument_diagnostic({'reason':'private-value'}))
 
@@ -81,7 +84,7 @@ for name in ('ArgumentStage','ArgumentRejection','ToolArgumentDiagnostic','ToolA
         build=config['tool']['setuptools']
         self.assertEqual(build['packages']['find']['where'],['src','.'])
         self.assertEqual(build['packages']['find']['include'],
-            ['fishery_ai','fishery_ai.*','apps','apps.ai_backend'])
+            ['fishery_ai','fishery_ai.*','apps','apps.ai_backend','apps.ai_backend.*'])
         self.assertEqual(build['package-dir'],{'fishery_ai':'src/fishery_ai','apps':'apps'})
         # An install-shaped, isolated import must not obtain apps via the repository cwd.
         with TemporaryDirectory() as directory:
@@ -96,7 +99,7 @@ for name in ('ArgumentStage','ArgumentRejection','ToolArgumentDiagnostic','ToolA
 import importlib,sys
 sys.path.insert(0,{str(stage)!r})
 old=importlib.import_module({LEGACY!r}); new=importlib.import_module({CANONICAL!r})
-assert old is new
+assert old is not new
 assert new.__file__.startswith({str(stage)!r})
 assert 'apps.management_web' not in sys.modules
 """,cwd=stage)

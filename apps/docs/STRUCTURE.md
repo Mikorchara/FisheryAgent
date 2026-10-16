@@ -18,11 +18,42 @@ apps/
 │        ├─ R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md # R2B-0 评估基线，非实现现状
 │        ├─ R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md # Streaming 设计与实施状态
 │        ├─ R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md # 当前架构、参数故障证据与路线建议
-│        └─ R2C1A_LLM_BACKEND_AUDIT.md # 通用后端依赖审计、最小迁移与兼容计划
-├─ ai_backend/                      # 已迁入的通用 LLM 基础，不依赖旧 Runtime
-│  ├─ __init__.py                    # 无 I/O 的包标记
-│  ├─ README.md                      # 公共接口、当前范围与迁移边界
-│  └─ tool_argument_diagnostics.py   # 参数拒因、阶段、有界计数与安全投影唯一实现
+│        ├─ R2C1A_LLM_BACKEND_AUDIT.md # 独立化审计基线
+│        └─ R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md # 获批分叉方案与 Phase I 实施记录
+├─ ai_backend/                      # 新侧通用 Backend 闭包，尚未切换管理 Web
+│  ├─ tests/                                                       # 实际子目录
+│  │  ├─ __init__.py                                               # 无启动 I/O 的包标记
+│  │  ├─ support.py                                                # 独立 Fake SDK/分片，无真实传输
+│  │  ├─ test_assembler.py                                         # 独立分片、截断、清理与错误测试
+│  │  ├─ test_boundary.py                                          # 阻断旧包导入与跨 Runtime 拒绝
+│  │  ├─ test_credentials.py                                       # 虚构凭据来源与快照安全
+│  │  ├─ test_execution.py                                         # 请求、Stop/Deadline 或发布合同测试
+│  │  └─ test_protocol_specs.py                                    # 三 Provider 参数编码 parity
+│  ├─ tools/                                                       # 实际子目录
+│  │  ├─ __init__.py                                               # 无启动 I/O 的包标记
+│  │  ├─ contracts.py                                              # 通用 Usage/Runtime 或业务数据合同
+│  │  ├─ executor.py                                               # 参数/权限/去重/执行边界
+│  │  ├─ policy.py                                                 # 明确授权和参数门禁
+│  │  └─ registry.py                                               # 调用方提供的静态绑定
+│  ├─ README.md                                                    # 职责与当前边界
+│  ├─ __init__.py                                                  # 无启动 I/O 的包标记
+│  ├─ assistant_activity.py                                        # 安全通用 Steps 投影
+│  ├─ assistant_events.py                                          # 有序有界事件及临时预览
+│  ├─ contracts.py                                                 # 通用 Usage/Runtime 或业务数据合同
+│  ├─ credential_paths.py                                          # 底层私有位置检查合同
+│  ├─ credentials.py                                               # 私有 Store/Snapshot 与来源优先级
+│  ├─ execution.py                                                 # 请求上下文、取消及 Deadline
+│  ├─ history_projection.py                                        # 原 B 默认投影与 A 兼容
+│  ├─ manual.py                                                    # 原 Raw 传输合同，无管理 UI 入口
+│  ├─ model_gateway.py                                             # 新模型消息、Profile/Snapshot 与 Gateway
+│  ├─ model_options.py                                             # 原能力与生成选项校验
+│  ├─ observability.py                                             # 限定字段安全 Trace
+│  ├─ openai_compatible_adapter.py                                 # SDK 传输、Streaming assembler 与归一化
+│  ├─ protocol_specs.py                                            # Provider 参数编码规则
+│  ├─ providers.py                                                 # Provider/Auth 元数据
+│  ├─ secure_files.py                                              # 原私有文件/锁/链接安全逻辑
+│  ├─ tool_argument_diagnostics.py                                 # 新侧独立参数拒因合同
+│  └─ tool_conversation.py                                         # 有序 Steps、预算与唯一 Tool 循环
 ├─ ai_service/                      # 独立 AI 业务包（同进程，无新端口）
 │  ├─ __init__.py                    # 包标识，不自动创建业务实例
 │  ├─ contracts.py                   # AssistantBackend 与服务器内 PreparedAssistantTurn
@@ -36,6 +67,35 @@ apps/
 │  ├─ resources/
 │  │  ├─ assistant_streaming.json     # Qwen 两工具 local_experimental，默认关闭
 │  │  └─ assistant_execution.json    # Qwen/Ollama 独立本地实验 Scope，默认关闭
+│  ├─ runtime/                      # Phase I 新业务闭包，生产入口尚未引用
+│  │  ├─ resources/                                                   # 实际子目录
+│  │  │  ├─ presets.json                                              # 固定 Preset 合同的独立副本
+│  │  │  └─ tool_policies.json                                        # 原默认授权，不覆盖用户文件
+│  │  ├─ tests/                                                       # 实际子目录
+│  │  │  ├─ __init__.py                                               # 无启动 I/O 的包标记
+│  │  │  ├─ test_differential.py                                      # 独立新旧 Turn 确定性对拍
+│  │  │  ├─ test_execution.py                                         # 请求、Stop/Deadline 或发布合同测试
+│  │  │  ├─ test_foundation.py                                        # 来源/History/预算/提交/评分兼容
+│  │  │  ├─ test_integration.py                                       # 新侧 Fake Normal/Streaming 全路径
+│  │  │  ├─ test_service.py                                           # 新侧业务装配及冻结/设备/取消
+│  │  │  └─ test_streaming_config.py                                  # 精确 Streaming 范围/默认关闭
+│  │  ├─ README.md                                                    # 职责与当前边界
+│  │  ├─ __init__.py                                                  # 无启动 I/O 的包标记
+│  │  ├─ activity.py                                                  # 固定水质/Knowledge 安全摘要
+│  │  ├─ assembly.py                                                  # 未切 Web 的新侧业务装配
+│  │  ├─ assistant.py                                                 # 业务 Prompt、History 裁剪及最终提交
+│  │  ├─ bindings.py                                                  # Monitoring 单次捕获与 Knowledge 绑定
+│  │  ├─ catalog.py                                                   # 业务展示 metadata，不授予权限
+│  │  ├─ contracts.py                                                 # 通用 Usage/Runtime 或业务数据合同
+│  │  ├─ execution.py                                                 # 请求上下文、取消及 Deadline
+│  │  ├─ locations.py                                                 # 保留原私有目录身份算法
+│  │  ├─ policy.py                                                    # 明确授权和参数门禁
+│  │  ├─ presets.py                                                   # 新侧固定 Preset 资源加载
+│  │  ├─ release_contracts.py                                         # 原 Normal 发布合同与指纹
+│  │  ├─ sources.py                                                   # 业务 Requirement/Receipt/Ledger
+│  │  ├─ streaming.py                                                 # 模块文件
+│  │  ├─ streaming_contracts.py                                       # 原 Streaming 发布合同与指纹
+│  │  └─ tools.py                                                     # 两工具 Definition/query 合同及已知评分名称
 │  └─ tests/
 │     ├─ __init__.py
 │     ├─ test_service.py             # 无 Web 的执行、冻结、取消、路径及依赖边界
@@ -141,3 +201,7 @@ Runtime/Core 为共享领域与 AI 包；Development 为模拟器和测试；Gen
 资格 CLI 位于 `scripts/qualification/qualify_management_streaming.py`；只导入 `ai_service.development` 并复用共享资格 Adapter/观察器。报告在 Git ignored 的 `outputs/assistant-qualification/`，临时夹具在其 `.management-work/` 下结束清理；不导入原型 Snapshot，不读取管理生产库或用户 Policy。
 
 R2C-1A 的 ai_backend 目前只提供参数诊断模块，旧 `fishery_ai.tool_argument_diagnostics` 单向别名到同一实现。Gateway/执行控制/History/Tool 循环尚未迁移；完整现状与目标图见 [后端审计](deep-dive/research/R2C1A_LLM_BACKEND_AUDIT.md)。边界测试在根 `tests/tools/test_backend_boundary.py`，纳入既有产品发现；根安装清单同时包含该 Backend，不发布其余管理模块。
+
+## R2C-1C 新侧闭包
+
+`ai_service/runtime → ai_backend` 是待 Phase II 接入的新侧路径；当前 Web 仍调用 ai_service 顶层 service 和旧 Runtime。新业务 sources/Monitoring/Knowledge 暂留旧领域合同依赖，Backend 无旧包依赖。详见 [Backend 入口](../ai_backend/README.md)。测试层级新增 `backend`，被 FAST（小集合）与 FULL PRODUCT（完整新侧）纳入；不自动执行真实资格。

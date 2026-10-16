@@ -243,7 +243,7 @@ Video/NPU 将通信、推理、事实归一化和网页播放分离；不迁移�
 
 共享 Runtime 的内部合同见 [Analysis / Assistant](../../docs/deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)、[Tool Runtime](../../docs/deep-dive/tools/READ_ONLY_TOOL_CALLING.md)、[凭据](../../docs/deep-dive/operations/PRIVATE_CREDENTIAL_STORAGE.md)。启动与验收见 [BUILD_RUN](BUILD_RUN.md)。
 
-R2C-1A：参数拒因合同的唯一实现已迁到 `apps.ai_backend.tool_argument_diagnostics`，旧路径保留相同模块/类型的单向别名。业务装配、Tool/Source 语义、Scope/revision 与发布状态不变；其余执行仍依赖原 Runtime。后续中立合同、执行控制、传输、来源映射和业务配置的迁移顺序见 [Backend 审计](deep-dive/research/R2C1A_LLM_BACKEND_AUDIT.md)，不是已完成的全面独立化。
+R2C-1C Phase I：新侧通用 Backend 已闭合，业务 Assistant/Prompt/Receipt/Ledger/Policy/发布装配在 `apps/ai_service/runtime/`；旧 Prototype 的参数诊断恢复为独立实现。当前 Web 仍使用原顶层 service，尚未切换。新侧 Monitoring/Knowledge 暂留领域依赖，单个新 Turn 不调用旧 LLM Runtime；下一阶段整体切换，禁止运行时 fallback。见 [Backend 边界与指纹](../ai_backend/README.md)。
 
 ## R2B-4：管理独立 Normal 多轮执行范围
 

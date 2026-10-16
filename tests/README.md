@@ -16,7 +16,7 @@
 | support/ | 固定测试路径与显式历史模型兼容性 overlay；不包含测试用例 |
 | fixtures/ | 虚构基线及历史兼容性资料；不参与正常启动 |
 
-`tools/test_backend_boundary.py` 验证已迁入 ai_backend 的标准库依赖边界、旧新模块/类型身份、patch/序列化、安全投影、安装选择与隔离布局导入。它归已有 FULL PRODUCT，不引入新 runner；后续迁移的实际合同测试仍沿用各子系统分类。
+`tools/test_backend_boundary.py` 验证参数诊断的标准库依赖、独立旧新模块/类型、patch/序列化、安全投影、安装选择与隔离导入。完整新 Backend 边界及协议/业务闭包测试位于 apps 子包，通过现有 runner 的 backend 选择纳入 FULL PRODUCT。
 
 ## 分层入口
 
@@ -30,14 +30,14 @@ python scripts/dev/run_tests.py fast
 python scripts/dev/run_tests.py assistant
 python -m unittest tests.assistant.test_history_projection
 
-# FULL PRODUCT：六个正式子系统 + 单独的 Node 页面回归
+# FULL PRODUCT：六个正式子系统 + 新侧 Backend/业务闭包；Node 单独运行
 python scripts/dev/run_tests.py product
 node --test tests/web/test_browser_streaming.cjs
 
 # FULL QUALIFICATION：仅资格基础设施变化时，仍然全离线
 python scripts/dev/run_tests.py qualification
 
-# 标准 discovery：包括 product + qualification；-t . 保证规范包名
+# 原 tests discovery：包括旧 product + qualification；apps 新侧用 backend 入口；-t . 保证规范包名
 python -m unittest discover -s tests -t .
 ```
 
@@ -53,3 +53,6 @@ python -m unittest discover -s tests -t .
 - `qualification/test_qualification_boundary.py` 锁定正常 Runtime 不加载资格实现、包初始化无副作用、旧别名与新实现身份相同、CLI 按需分派，以及产品资源定位不变。移动边界不改变资格预算、授权、报告或正式 History 合同。
 
 原实验和结果见 [records](../docs/records/README.md) 与 Git history；不保留第二套执行资产 archive，不读取或清理 `outputs/` 的真实报告。
+
+
+R2C-1C 新增 `python scripts/dev/run_tests.py backend`，覆盖 apps/ai_backend/tests 与 apps/ai_service/runtime/tests。FULL PRODUCT 自动包含该组一次；FAST 只纳入协议与来源基础小集合。新侧 Fake SDK/类型独立，不借用旧Runtime对象；迁移差分是显式旧/新两个离线Turn。现有管理Web尚未切新Backend，HTTP回归仍验证旧装配。安装与切换边界见 [Backend入口](../apps/ai_backend/README.md)。

@@ -16,7 +16,8 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src", "."]
-include = ["fishery_ai", "fishery_ai.*", "apps", "apps.ai_backend"]
+include = ["fishery_ai", "fishery_ai.*", "apps", "apps.ai_backend", "apps.ai_backend.*"]
+exclude = ["apps.ai_backend.tests", "apps.ai_backend.tests.*"]
 
 [tool.setuptools.package-dir]
 fishery_ai = "src/fishery_ai"

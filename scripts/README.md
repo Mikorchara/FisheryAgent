@@ -2,7 +2,7 @@
 
 这些工具不是正常 Web 运行所必需。项目根目录执行，使用已经安装项目的 Python 环境。
 
-- `dev/run_tests.py`：简单离线 unittest 分层入口，默认 FULL PRODUCT；不启动 Provider 或批次任务。
+- `dev/run_tests.py`：简单离线 unittest 分层入口，默认 FULL PRODUCT；`backend` 单独发现新 Backend / 新业务闭包测试，product 包含该组一次，fast 包含其小集合。不启动 Provider 或批次任务。
 - `dev/manual_edge_mock_probe.cjs`：人工页面调试辅助，需用户自行提供本机 Web / Edge CDP；不属于自动 Browser 测试，不自动启动服务。
 - `qualification/qualify_assistant_turn.py`：单 manifest 来源资格验证，默认 dry-run；Q1–Q4 保留为有限单次计划示例。
 - `qualification/qualify_multi_round.py`：默认 dry-run 的单案例入口；旧实验模式保留。`--assistant-product` 使用正式 AssistantService、多轮 Prompt / History / Commit Gate，只验证 Qwen 精确范围，每次最多 3 请求；可用 `--review-answer` 仅在终端预览成功回答，不保存正文或自动批准。[案例与逐次授权](../docs/deep-dive/research/ASSISTANT_MULTI_ROUND_INTEGRATION.md#10-phase-4c-正式-assistant-资格准备)。
