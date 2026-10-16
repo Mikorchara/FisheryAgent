@@ -29,14 +29,19 @@ def build_suite(selection):
     if selection == "fast":
         return loader.loadTestsFromNames(FAST_MODULES)
     if selection == "backend":
-        return unittest.TestSuite(loader.discover(str(ROOT / group), top_level_dir=str(ROOT))
+        suite = unittest.TestSuite(loader.discover(str(ROOT / group), top_level_dir=str(ROOT))
             for group in ("apps/ai_backend/tests", "apps/ai_service/runtime/tests"))
+        suite.addTests(loader.loadTestsFromNames(tuple("apps.ai_service.tests." + name for name in (
+            "test_service", "test_execution", "test_streaming_config", "test_backend_migration"))))
+        return suite
     groups = PRODUCT_GROUPS if selection == "product" else (
         (*PRODUCT_GROUPS, "qualification") if selection == "all" else (selection,))
     suite = unittest.TestSuite(loader.discover(str(ROOT / "tests" / group),
         top_level_dir=str(ROOT)) for group in groups)
     if selection in ("product", "all"):
         suite.addTests(build_suite("backend"))
+    if selection in ("qualification", "all"):
+        suite.addTests(loader.loadTestsFromName("apps.ai_service.tests.test_streaming_qualification"))
     return suite
 
 

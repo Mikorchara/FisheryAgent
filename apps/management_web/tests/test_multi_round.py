@@ -5,10 +5,10 @@ import json
 from unittest.mock import patch
 import unittest
 
-from fishery_ai.assistant import AssistantService, MULTI_ROUND_SYSTEM_INSTRUCTION
-from fishery_ai.assistant_sources import SourceRequirement, requirement_satisfied_by_ledger
-from fishery_ai.execution import current_handle
-from fishery_ai.model_gateway import ModelResponse, ModelToolCall
+from apps.ai_service.runtime.assistant import AssistantService, MULTI_ROUND_SYSTEM_INSTRUCTION
+from apps.ai_service.runtime.sources import SourceRequirement, requirement_satisfied_by_ledger
+from apps.ai_backend.execution import current_handle
+from apps.ai_backend.model_gateway import ModelResponse, ModelToolCall
 from apps.ai_service.service import ManagementAssistantService, PRESETS
 from apps.ai_service.execution import load_execution_config
 from apps.management_web.ai_adapter import ManagementAssistant
@@ -122,7 +122,7 @@ class ManagementMultiRoundTests(unittest.TestCase):
     def test_device_frozen_and_usage_aggregated_across_three_requests(self):
         self.batch(oxygen=2.2);self.batch('pond-b',oxygen=6.4);self.start_trial()
         gateway=self.two_tool_gateway();old_decide=gateway.decide
-        from fishery_ai.contracts import Usage,UsageSource
+        from apps.ai_backend.contracts import Usage,UsageSource
         def decide(index,request):
             self.client.get('/api/monitoring?device=pond-b')
             return replace(old_decide(index,request),usage=Usage(2,3,5,source=UsageSource.PROVIDER))
@@ -207,7 +207,7 @@ class ManagementMultiRoundTests(unittest.TestCase):
                 else:clock[0]+=1000
                 return result
             self.gateway=fixture.RecordingGateway(tool(),fixture.final())
-            with patch('fishery_ai.execution.time.monotonic',side_effect=lambda:clock[0]), \
+            with patch('apps.ai_backend.execution.time.monotonic',side_effect=lambda:clock[0]), \
                  patch.object(self.monitoring,'capture_water',side_effect=capture):
                 public,run=self.captured_send()
             self.assert_failed(public,'USER_CANCELLED' if stop else 'TOTAL_TIMEOUT')

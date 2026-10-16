@@ -99,37 +99,23 @@ class DifferentialTests(unittest.TestCase):
                 self.assertEqual(self.run_side('old','double',transport,water=water,knowledge=fixture.knowledge_payload(False)),
                     self.run_side('new','double',transport,water=water,knowledge=fixture.knowledge_payload(False)))
 
-    def test_management_scopes_profiles_and_revisions_match_for_fixed_epoch_and_policy(self):
-        from apps.ai_service.runtime import execution, streaming, bindings
-        from apps.ai_service import execution as old_execution, streaming as old_streaming
-        from fishery_ai.assistant import assistant_profile as old_profile
-        from apps.ai_service.runtime.assistant import assistant_profile
-        from fishery_ai.tools.registry import ToolRegistry as OldRegistry
-        from apps.ai_backend.tools import ToolRegistry, ToolDefinition
+    def test_management_published_scopes_still_match_exact_fixed_definitions(self):
+        from apps.ai_service import execution, streaming
         from apps.ai_service.runtime import tools
-        from fishery_ai.tools.policy import ToolPolicy as OldPolicy
+        from apps.ai_service.runtime.assistant import assistant_profile
+        from apps.ai_backend.tools import ToolRegistry, ToolDefinition
         from apps.ai_backend.tools.policy import ToolPolicy
-        knowledge=NS(source_id='legacy:eel_knowledge.json',source_version='1.0',backend='portable')
-        old_registry=OldRegistry(None,None,knowledge=knowledge)
-        # Only the assembled management definitions belong in release fingerprints.
-        old_registry._entries={name:old_registry.lookup(name) for name in (fixture.WATER,fixture.KNOWLEDGE)}
+        from apps.ai_service.runtime.streaming_contracts import streaming_scope
+        config=streaming.load_streaming_config()
+        binding=json.loads(config.releases[0].data_bindings_json)
+        knowledge=NS(source_id=binding['knowledge_source'],source_version=binding['knowledge_version'],backend=binding['retrieval_backend'])
         registry=ToolRegistry((ToolDefinition(tools.WATER_DEFINITION,lambda:{}),
-            ToolDefinition(tools.KNOWLEDGE_DEFINITION,lambda args:{},tools.validate_arguments)))
-        for preset in (fixture.QWEN,'ollama-qwen35-4b-r1'):
-            for names in ((fixture.WATER,), (fixture.WATER,fixture.KNOWLEDGE)):
-                old_policy=OldPolicy('assistant',True,names);policy=ToolPolicy('assistant',True,names)
-                # Score remains in stored selections and revision but never execution.
-                selected=ToolPolicy('assistant',True,(*names,fixture.SCORE))
-                old_selected=OldPolicy('assistant',True,(*names,fixture.SCORE))
-                args={'device_id':'fictional-device','epoch':'fixed-migration-epoch'}
-                self.assertEqual(execution.management_scope(assistant_profile(preset),policy,registry,knowledge),
-                    old_execution.management_scope(old_profile(preset),old_policy,old_registry,knowledge))
-                for new_mod,old_mod,resolve,loader in [(execution,old_execution,'resolve_execution','load_execution_config'),
-                                                       (streaming,old_streaming,'resolve_streaming','load_streaming_config')]:
-                    for enabled in (False,True):
-                        new=getattr(new_mod,resolve)(getattr(new_mod,loader)(enable_trial=enabled),assistant_profile(preset),
-                            selected,policy,registry,knowledge,**args)
-                        old=getattr(old_mod,resolve)(getattr(old_mod,loader)(enable_trial=enabled),old_profile(preset),
-                            old_selected,old_policy,old_registry,knowledge,**args)
-                        self.assertEqual(new.public(),old.public())
-
+            ToolDefinition(tools.KNOWLEDGE_DEFINITION,lambda a:{},tools.validate_arguments)))
+        policy=ToolPolicy('assistant',True,(fixture.WATER,fixture.KNOWLEDGE))
+        for record in execution.load_execution_config().releases:
+            published=json.loads(record.runtime.scope_json)
+            actual=execution.management_scope(assistant_profile(published['preset_id']),policy,registry,knowledge)
+            self.assertEqual(actual['runtime'],published)
+            self.assertEqual(actual['data_bindings'],json.loads(record.data_bindings_json))
+        actual=streaming_scope(assistant_profile(fixture.QWEN),policy,registry,execution.DEFAULT_HISTORY_PROJECTION)
+        self.assertEqual(actual,json.loads(config.releases[0].runtime.scope_json))

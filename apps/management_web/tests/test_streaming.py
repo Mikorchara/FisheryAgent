@@ -10,19 +10,19 @@ from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import patch
 
-from fishery_ai.assistant import AssistantService,MULTI_ROUND_SYSTEM_INSTRUCTION
-from fishery_ai.assistant_sources import SourceRequirement,requirement_satisfied_by_ledger
-from fishery_ai.assistant_streaming import AssistantEventChannel
-from fishery_ai.execution import current_handle
-from fishery_ai.openai_compatible_adapter import OpenAICompatibleAdapter
+from apps.ai_service.runtime.assistant import AssistantService,MULTI_ROUND_SYSTEM_INSTRUCTION
+from apps.ai_service.runtime.sources import SourceRequirement,requirement_satisfied_by_ledger
+from apps.ai_backend.assistant_events import AssistantEventChannel
+from apps.ai_backend.execution import current_handle
+from apps.ai_backend.openai_compatible_adapter import OpenAICompatibleAdapter
 from apps.ai_service.service import ManagementAssistantService,PRESETS
 from apps.ai_service.streaming import load_streaming_config,ManagementStreamingConfig
 from apps.management_web.ai_adapter import ManagementAssistant
 from apps.management_web.app import create_app
 import apps.management_web.tests.test_assistant as fixture
-import tests.security.test_execution as execution_fixture
-from tests.providers.test_streaming_tool_assembler import chunk,delta
-from tests.tools.test_streaming_multi_round import tool_chunks,final_chunks
+import apps.ai_backend.tests.test_execution as execution_fixture
+from apps.ai_backend.tests.test_assembler import chunk,delta
+from apps.ai_backend.tests.support import tool_chunks,final_chunks
 
 WATER='get_current_water_quality'
 KNOWLEDGE='search_fishery_knowledge'
@@ -87,7 +87,7 @@ class ManagementStreamingTests(unittest.TestCase):
         self.app=create_app(data_service=self.monitoring,ai=self.ai);self.client=self.app.test_client()
         self.config=self.client.get('/api/ai/bootstrap?device=pond-a').get_json()
         self.headers={'X-Management-AI':self.config['browser_token']}
-        from fishery_ai.assistant import assistant_profile
+        from apps.ai_service.runtime.assistant import assistant_profile
         PRESET_MODEL=assistant_profile(PRESETS[0]).model
 
     def send_stream(self,**changes):
@@ -394,7 +394,7 @@ class ManagementStreamingTests(unittest.TestCase):
             self.assertFalse(rows[-1]['result']['successful_turn']);self.assertEqual(len(self.bodies),1)
 
     def test_source_gate_unmet_cannot_commit_even_with_full_model_stream(self):
-        from fishery_ai.assistant import AssistantRequest
+        from apps.ai_service.runtime.assistant import AssistantRequest
         original=AssistantRequest.from_dict
         def requirement(value):
             return replace(original(value),source_requirement=SourceRequirement.PROJECT_KNOWLEDGE_SEARCH)
@@ -417,7 +417,7 @@ class ManagementStreamingTests(unittest.TestCase):
         for timeout in (False,True):
             self.setup_stream();pending=[];clock=[100.0]
             def deferred(**kwargs):return NS(start=lambda:pending.append(kwargs['target']))
-            with patch('fishery_ai.execution.time.monotonic',side_effect=lambda:clock[0]), \
+            with patch('apps.ai_backend.execution.time.monotonic',side_effect=lambda:clock[0]), \
                  patch('apps.management_web.streaming.threading.Thread',side_effect=deferred):
                 response=self.send_stream()
                 self.assertEqual(len(pending),1)

@@ -31,7 +31,7 @@ R2B-3.4 已提取独立 apps/ai_service：业务协调、Runtime 装配、Monito
 
 ## 后续独立工作
 
-- R2C-1C Phase I 已完成新侧 Backend / 业务闭包与离线对拍，管理 Web 未切换；下一步待批准 Phase II 整体切换 service/Web/资格入口与新类型，并补正式 wheel 验收。按获批选择性分叉方案独立维护，不再采用长期 Alias。见 [方案与实施状态](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md)。
+- R2C-1D Phase II已完成独立Backend整体切换、正式Wheel及离线HTTP/SSE差分，删除准备期重复装配；下一步为单独批准Phase III真实网页smoke。领域/Knowledge独立化另立任务，不自动扩大Provider或Tool发布范围。见 [实施记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#14-r2c-1d-phase-ii-管理端整体切换)。
 - 真实 Monitoring：设备登记/认证、物理采集 Adapter、持久历史与运维策略；不由客户端自报真实来源。
 - Video/NPU：实际视频传输、校准、推理结果归一化、受控截图/片段；不迁移旧 GPU 桌面项目。
 - Events：生产告警策略、通知、人工处理和审计；当前 closed 只表示模拟信号消退。

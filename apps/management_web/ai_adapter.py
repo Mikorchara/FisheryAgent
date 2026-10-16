@@ -3,10 +3,11 @@
 from pathlib import Path
 import secrets
 
-from fishery_ai.execution import RequestRegistry
-from fishery_ai.model_gateway import GatewayError
-from fishery_ai.tool_conversation import ToolModelTransport
+from apps.ai_backend.execution import RequestRegistry
+from apps.ai_backend.model_gateway import GatewayError
+from apps.ai_backend.tool_conversation import ToolModelTransport
 from apps.ai_service.contracts import AssistantBackend
+from apps.ai_service.runtime.activity import tool_summary
 from apps.ai_service.service import ManagementAssistantService
 
 
@@ -16,7 +17,7 @@ class ManagementAssistant:
     def __init__(self, backend: AssistantBackend):
         self.backend = backend
         self.browser_token = secrets.token_urlsafe(32)
-        self.requests = RequestRegistry()
+        self.requests = RequestRegistry(summarize_tool=tool_summary)
 
     @classmethod
     def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False):

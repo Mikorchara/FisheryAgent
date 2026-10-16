@@ -5,11 +5,11 @@ import hashlib
 import json
 from pathlib import Path
 
-from fishery_ai.assistant_execution import (AssistantExecutionConfig, AssistantExecutionProfile,
+from .runtime.release_contracts import (AssistantExecutionConfig, AssistantExecutionProfile,
     AssistantMultiRoundRelease, release_scope, resolve_execution_profile)
-from fishery_ai.history_projection import DEFAULT_HISTORY_PROJECTION
-from fishery_ai.model_gateway import GatewayError
-from fishery_ai.tool_conversation import ToolExecutionMode, ToolModelTransport
+from apps.ai_backend.history_projection import DEFAULT_HISTORY_PROJECTION
+from apps.ai_backend.model_gateway import GatewayError
+from apps.ai_backend.tool_conversation import ToolExecutionMode, ToolModelTransport
 
 from . import bindings
 

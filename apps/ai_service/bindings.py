@@ -1,33 +1,11 @@
-"""Management Tool bindings and DTO projection; no HTTP or orchestration."""
-
-from dataclasses import asdict, replace
-from types import MappingProxyType
-
-from fishery_ai.tools.contracts import ToolError, ToolErrorCode
-from fishery_ai.tools.registry import ToolRegistry, CURRENT_WATER_QUALITY, SEARCH_FISHERY_KNOWLEDGE
-
+"""Monitoring and Knowledge bindings; handlers return detached JSON, never old Runtime types."""
+from dataclasses import asdict
+from functools import partial
+from apps.ai_backend.tools import ToolRegistry, ToolDefinition
+from .runtime.tools import WATER_DEFINITION, KNOWLEDGE_DEFINITION, validate_arguments, search_fishery_knowledge
 
 WATER_TOOL_PROJECTION = "management-current-water@1"
 KNOWLEDGE_BINDING_VERSION = "management-project-knowledge@1"
-
-
-class ManagementToolRegistry:
-    """Keep formal contracts/Knowledge handler; replace only the water data binding."""
-    registered_names = staticmethod(ToolRegistry.registered_names)
-
-    def __init__(self, formal, monitoring, device_id):
-        self._entries = MappingProxyType({
-            CURRENT_WATER_QUALITY: replace(formal.lookup(CURRENT_WATER_QUALITY),
-                handler=lambda: water_payload(monitoring, device_id)),
-            SEARCH_FISHERY_KNOWLEDGE: formal.lookup(SEARCH_FISHERY_KNOWLEDGE)})
-
-    def lookup(self, name):
-        if name not in self._entries:
-            raise ToolError(ToolErrorCode.UNKNOWN_TOOL)
-        return self._entries[name]
-
-    def model_definitions(self):
-        return tuple(entry.model_definition for entry in self._entries.values())
 
 
 def water_payload(monitoring, device_id):
@@ -63,3 +41,15 @@ def project_water_tool(capture):
             "reason": f.reason, "rule": asdict(f.rule)} for f in analysis.findings]})
     return result
 
+
+
+
+def bind_tools(monitoring, device_id, knowledge, *, formal=None):
+    # Definitions have one application owner. Rebind only the frozen device's
+    # read handler; preserve the same shared Knowledge service and contract.
+    water_definition = formal.lookup(WATER_DEFINITION.name).model_definition if formal else WATER_DEFINITION
+    knowledge_entry = formal.lookup(KNOWLEDGE_DEFINITION.name) if formal else ToolDefinition(
+        KNOWLEDGE_DEFINITION, partial(search_fishery_knowledge, service=knowledge),
+        validate_arguments=validate_arguments)
+    return ToolRegistry((
+        ToolDefinition(water_definition, partial(water_payload, monitoring, device_id)), knowledge_entry))

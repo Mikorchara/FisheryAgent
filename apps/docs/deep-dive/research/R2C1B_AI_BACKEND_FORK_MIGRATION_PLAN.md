@@ -1,6 +1,6 @@
 # R2C-1B：独立 AI Backend 整体迁移方案
 
-日期：2026-10-16。**原评估基线；方案已获批准，Phase I 实施状态见 §13。** 原评估依据源码、测试定义、安装清单和 [R2C-1A 审计](R2C1A_LLM_BACKEND_AUDIT.md)，当时未执行代码迁移或真实请求；以下设计保留其原阶段语境。
+日期：2026-10-16。**原评估基线；方案已获批准，Phase I实施见§13，Phase II整体切换见§14。** 原评估依据源码、测试定义、安装清单和 [R2C-1A 审计](R2C1A_LLM_BACKEND_AUDIT.md)，当时未执行代码迁移或真实请求；以下设计保留其原阶段语境。
 
 ## 1. 推荐结论与新的项目边界
 
@@ -314,3 +314,81 @@ Prompt、History、Tool Schema/description、Preset 初始资源均保持语义�
 4. 旧报告保持其原运行归属和人工待审状态；不伪造新qualification_id，不将现有Qwen local_experimental升级released；新侧真实smoke须新授权。
 
 Phase I生产装配未动，无需数据回滚。若撤销，仅按本轮文件差异恢复工程规则/测试/诊断，新增新侧文件不被原入口引用即可；不reset工作树、不覆盖用户数据、不复用旧会话自动发请求。Phase II以后回滚仍是整应用停止后恢复原装配并重启新epoch。
+
+
+## 14. R2C-1D Phase II 管理端整体切换
+
+阶段II已实施；起点Git干净，基线`0cf64f6bef2b150c28aa265c6bbf8b7dab118223`。未使用旧授权调用Provider/NPU，未读取或修改真实凭据、SQLite、用户Policy和既有报告；未commit/push。Phase III真实网页验收待人工批准。
+
+### 当前实际依赖
+
+```mermaid
+flowchart TD
+    W[Management Web HTTP / POST SSE] --> S[ai_service.service.ManagementAssistantService]
+    W --> C[ai_backend RequestRegistry / Handle / EventChannel]
+    S --> A[ai_service.runtime Assistant / Prompt / History trimming]
+    A --> B[ai_backend ToolCallingService / Gateway / Adapter / Assembler]
+    B --> T[ai_backend Registry / Policy / Executor]
+    T --> M[ai_service.bindings → Monitoring capture_water / SQLite]
+    T --> K[ai_service.runtime Knowledge handler → KnowledgeService]
+    A --> G[业务 Ledger / Source Gate / Trace Commit Gate]
+    B --> C
+    G --> W
+    M -. 暂留领域依赖 .-> D[旧 Domain / contracts / telemetry]
+    K -. 暂留业务依赖 .-> D
+    P[旧 Prototype 独立 Runtime]
+```
+
+单个管理Turn使用唯一新ContextVar/Handle、Gateway、Tool循环、Registry/Executor，Normal和Streaming复用。不存在逐请求新旧选择器、失败fallback、自动重跑或双维护Facade。源码静态扫描与独立进程阻断旧LLM模块均通过。
+
+### 模块归属及最小改动
+
+| 位置 | 切换结果 |
+|---|---|
+| ai_service/service.py | Phase I的assembly实际实现成为唯一ManagementAssistantService，非转发/别名 |
+| 顶层contracts/bindings/execution/streaming | 新PreparedTurn/类型、同设备Monitoring绑定、原管理Scope/revision；资源仍是原管理发布JSON |
+| ai_service/runtime | 保留业务Assistant/Prompt、来源/History裁剪、Policy/Preset、摘要及发布纯计算；移除assembly及4个重复装配模块 |
+| management_web | RequestRegistry、Handle、异常、SSE/worker都使用新Backend；UI JS及网络确认合同不变 |
+| ai_service/development | 资格Adapter/Assembler Observer、有限Gateway观察和安全报告辅助独立使用新Backend；不导入旧资格执行实现 |
+| tests | 原管理测试换新Fake SDK/类型；3份重复准备期测试合并回顶层；新增HTTP前后哈希、旧执行阻断、旧Prototype独立和旧授权拒绝测试 |
+| pyproject | 明确纳入Backend及管理应用子包/JSON/静态资源，排除全部apps测试及生成数据；build-system要求未降低 |
+
+每轮冻结设备与Policy；实际Registry只绑定水质和Knowledge。保留合法存储的评分项、完整选择进入revision，但无评分Handler。formal Registry作为Definition唯一所有者，按设备只重绑水质读取，Knowledge共享同一服务实例。原Schema/description/query validator未改变。
+
+安装入口增加必要的root确认：源码启动保持原模块root；wheel安装从有效项目工作区定位，相同root得到相同私有目录身份；未知工作区在创建DB/凭据前拒绝WORKSPACE_REQUIRED。不把site-packages误当应用数据目录，不迁移数据。
+
+### 正式Wheel验收
+
+- 现有.venv没有setuptools/wheel/build。只读检查本机pip缓存找到setuptools84.0.0软件wheel，CRC/元数据通过；没有读取HTTP鉴权缓存头。
+- 在工作区`outputs/r2c1d-build/env`建立隔离venv，使用缓存离线安装setuptools84.0.0，通过PEP517的setuptools.build_meta构建；未联网、未改变运行.venv，仍满足setuptools>=68。
+- 最终wheel：`fishery_ai_prototype-0.1.0-py3-none-any.whl`，SHA256 `ea08d4dd85b62544646c39ca26351f525b4b51ab3ebe650767db73f45e631e30`；175条zip内容、23个Backend Python模块/包，CRC通过。无apps测试、旧重复装配、outputs、.env或SQLite。
+- 新wheel在隔离环境实际安装；第三方SDK/Flask等依赖从现有.venv只读提供，没有重新下载安装。全部应用模块位置断言来自安装环境；实际HTTP/SSE六条Fake路径、资格plan/资源、工作区身份通过。Backend禁止旧包的独立安装Fake亦通过。这是正式wheel验证，不使用build_py替代。
+
+### 差分、指纹与资格
+
+切换前在六条实际管理HTTP路径捕获安全哈希基线，切换后逐项相同：Normal/Streaming各自Direct Final、水质→Final、水质→Knowledge→Final。比较实际SDK编码、步骤/Tool Result、Ledger、Usage、DTO、revision与最终提交；只剔除随机request/trace ID及运行耗时/完成时刻，保留设备/批次/观测与评估时间。fixture只存哈希/计数，不存Prompt、query、答案、Raw Result或凭据。
+
+Phase I的18条模式/路径和8条负向结果差分仍通过。Prompt/Schema/History/Provider编码、数据绑定、规则、预算未变，保护文件hash未改变。Qwen完整Streaming Scope仍为：
+
+`fc476b2e9ac19046b0127e65d70dc1488016c04f9dde29698d681c6047708e90`
+
+管理两个发布JSON字节hash与[Backend基线表](../../../ai_backend/README.md#合同基线)相同。Qwen仍精确两工具local_experimental、默认关闭，512/请求、2/2/3、120秒、retry=0；Ollama保持独立Normal实验，不授予新Streaming/DeepSeek/评分/三工具范围。
+
+管理资格计划升级`management-streaming-qualification@2`，新增`backend_implementation=apps.ai_backend@1`。三案例只有experiment_version/backend_implementation/plan_sha256变化；Scope、配置、问题、History framing及预算均相同。旧plan授权在读取凭据/模型I/O前拒绝QUALIFICATION_PLAN_CHANGED。旧真实报告继续属于旧Runtime，不改记录，不伪造新qualification_id，不升级released；本轮Fake不替代新侧真实验收或回答质量审核。
+
+### 离线测试
+
+- FULL PRODUCT1186项通过，FAST164项通过；backend121项纳入product一次。
+- FULL QUALIFICATION184项通过（含管理新资格17项；1项Windows目录symlink不可用跳过）。
+- 管理HTTP/Web93项、管理前端52项、原Prototype前端219项通过；HTTP/SSE→实际前端parser/Workspace桥接仍只提交一条最终回答。
+- Direct Final/单Tool/双Tool、Stop/断流/Timeout/截断/重复claim、Preview撤销/History、Source/Ledger/Trace/Commit、Policy/Scope/revision/设备/默认关闭与回滚均由Fake覆盖。
+- 独立进程阻断旧Gateway/Adapter/Tool循环/Handle/ContextVar/资格实现后，真实管理HTTP/SSE及资格Fake均通过；旧Prototype阻断新Backend仍可独立Fake执行。
+- Python语法30文件、JSON2文件、TOML1文件；60份Markdown中466条本地链接/35处锚点、敏感模式扫描及diff/空白检查通过。7份核心Runtime/Prompt/History/Source/Tool实现与Phase I基线相同；src旧Prototype无代码修改，现有.venv构建工具/SDK版本未改变。
+
+### 剩余依赖与下一阶段
+
+管理LLM执行不再依赖旧Runtime。仍保留的业务依赖是`fishery_ai.knowledge`及固定Knowledge资源、`contracts`中的Reading/Quality/Freshness/Evidence、Monitoring的DiagnosisService/telemetry，连带旧model_options。它们不向新Backend传旧模型/请求/Handle类型；完全卸载旧distribution需要单独领域/Knowledge独立化，不能把这些业务塞进Backend。
+
+Phase III前由用户重启自己的Web，刷新取得新epoch/确认，核对Policy两工具、Preset及Scope；先Normal，再明确启用QwenStreaming。新真实请求须单独明确授权/新dry-run计划。验收直答、单/双Tool、数据来源/质量、History跨模式、Stop/断线/截断和本地实验标签；回答质量与技术资格分开，失败不自动重试。没有自动进入Phase III。
+
+整体代码回滚：先保存当前补丁/新增文件清单、停止自己启动的Web，再按本轮文件范围恢复Phase I基线的服务/合同/绑定/发布装配、Web请求控制/SSE、管理资格和打包；不只恢复Adapter/Handle，不reset整个工作树，不改数据/Policy/凭据/报告。新Backend可保留未被旧装配引用；重启生成新epoch，旧确认及失败请求不可自动复用。只关闭实验时去掉两个trial参数重启即可保持Normal1/1/2，此操作不会回退Backend代码。

@@ -79,12 +79,15 @@ for name in ('ArgumentStage','ArgumentRejection','ToolArgumentDiagnostic','ToolA
         factory.assert_called_once_with()
         self.assertIsNone(old.public_argument_diagnostic({'reason':'private-value'}))
 
-    def test_packaging_selects_backend_and_excludes_management_and_test_packages(self):
+    def test_packaging_selects_explicit_apps_and_excludes_test_packages(self):
         config=tomllib.loads((PROJECT_ROOT/'pyproject.toml').read_text(encoding='utf-8'))
         build=config['tool']['setuptools']
         self.assertEqual(build['packages']['find']['where'],['src','.'])
-        self.assertEqual(build['packages']['find']['include'],
-            ['fishery_ai','fishery_ai.*','apps','apps.ai_backend','apps.ai_backend.*'])
+        included=build['packages']['find']['include']
+        for name in ('apps.ai_backend','apps.ai_service','apps.monitoring','apps.simulator','apps.management_web'):
+            self.assertIn(name,included);self.assertIn(name+'.*',included)
+        self.assertNotIn('apps.*',included)
+        self.assertIn('apps.ai_backend.tests*',build['packages']['find']['exclude'])
         self.assertEqual(build['package-dir'],{'fishery_ai':'src/fishery_ai','apps':'apps'})
         # An install-shaped, isolated import must not obtain apps via the repository cwd.
         with TemporaryDirectory() as directory:

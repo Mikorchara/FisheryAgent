@@ -10,15 +10,21 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from fishery_ai.assistant import assistant_profile
-from fishery_ai.credentials import CredentialStore
-from fishery_ai.execution import RequestHandle, current_handle
-from fishery_ai.model_gateway import GatewayError, MockGateway, ModelResponse, ModelToolCall
-from fishery_ai.observability import JsonlTraceSink
+from apps.ai_service.runtime.assistant import assistant_profile
+from apps.ai_backend.credentials import CredentialStore
+from apps.ai_backend.execution import RequestHandle, current_handle
+from apps.ai_backend.model_gateway import GatewayError, ModelResponse, ModelToolCall
+from apps.ai_backend.observability import JsonlTraceSink
 from apps.ai_service.service import ManagementAssistantService, PRESETS
 from apps.monitoring.repository import MonitoringRepository
 from apps.monitoring.service import MonitoringService
 from apps.simulator.generator import Simulator
+
+
+from apps.ai_backend.tests.support import ScriptedGateway as MockGateway
+
+
+from apps.ai_backend.tests.support import ScriptedGateway as MockGateway
 
 
 class RecordingGateway(MockGateway):
@@ -46,7 +52,8 @@ class AIServiceTests(unittest.TestCase):
         self.gateway = RecordingGateway(ModelResponse('headless final', finish_reason='stop'))
         self.backend = ManagementAssistantService(self.monitoring,
             credentials=CredentialStore(process_env={ref:'fictional-headless-value'}),
-            traces=JsonlTraceSink(self.root/'trace.jsonl'), policy_directory=self.root/'policy',
+            traces=JsonlTraceSink(self.root/'trace.jsonl',tool_names=(
+                'get_current_water_quality','search_fishery_knowledge')), policy_directory=self.root/'policy',
             gateway_factory=lambda:self.gateway)
 
     def envelope(self, **overrides):
@@ -146,7 +153,7 @@ class AIServiceTests(unittest.TestCase):
 
     def test_local_composition_preserves_existing_storage_locations_without_private_access(self):
         location = SimpleNamespace(env_path=self.root/'not-read.env')
-        with patch('fishery_ai.credential_paths.private_project_location',return_value=location) as locate, \
+        with patch('apps.ai_service.runtime.locations.private_project_location',return_value=location) as locate, \
              patch('apps.ai_service.service.CredentialStore') as credentials:
             backend = ManagementAssistantService.local(self.monitoring,self.root)
         locate.assert_called_once_with(self.root.resolve())
@@ -157,7 +164,7 @@ class AIServiceTests(unittest.TestCase):
 
     def test_local_streaming_opt_in_is_independent_of_normal_mode_and_creates_new_epoch(self):
         location=SimpleNamespace(env_path=self.root/'not-read.env')
-        with patch('fishery_ai.credential_paths.private_project_location',return_value=location), \
+        with patch('apps.ai_service.runtime.locations.private_project_location',return_value=location), \
              patch('apps.ai_service.service.CredentialStore'):
             trial=ManagementAssistantService.local(self.monitoring,self.root,streaming_trial=True)
             rollback=ManagementAssistantService.local(self.monitoring,self.root)

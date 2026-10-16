@@ -253,4 +253,3 @@ class FoundationTests(unittest.TestCase):
                 receipts.append(receipt.to_dict())
             self.assertEqual(*receipts)
         self.assertNotIn(SCORE,self.registry().registered_names())
-

@@ -194,16 +194,29 @@ R2B-5E 允许显式启动本地试用后人工检查 Streaming。关闭开关、
 
 本轮离线验证：管理配置/AI Service/资格兼容/HTTP SSE 与 Normal 相关 Python 124 项、共享 Streaming Assembler/Runtime/Source/Web 回归134项，合计258项通过；管理前端 Node 52项通过，包含 HTTP/SSE → 正式 parser/Workspace 的三路径桥接。覆盖512实际编码、发布拒绝、Scope/revision、双 Tool Result/独立Ledger、Preview→Final、Stop/超时/截断、History和回滚。未运行无关全量测试，没有调用真实 Provider/NPU，也没有启动实际网页推理；真实网页体验由用户后续验收。
 
-## R2C-1C：新侧离线验证（未切 Web）
+## R2C-1D：独立 Backend 验收与启动
+
+管理Service/Web/SSE/管理qualification已统一使用apps.ai_backend和ai_service.runtime，不再运行旧LLM Runtime。正常命令和精确local_experimental授权保持不变：
 
 ```powershell
+# 默认Normal，单轮；不启用Streaming
+.\.venv\Scripts\python.exe -m apps.management_web --enable-assistant
+# 本地实验：Normal多轮 + Qwen精确两工具Streaming，网页默认仍Normal
+.\.venv\Scripts\python.exe -m apps.management_web --enable-assistant --assistant-multi-round-trial --assistant-streaming-trial
+# 离线测试
 .\.venv\Scripts\python.exe scripts/dev/run_tests.py backend
 .\.venv\Scripts\python.exe scripts/dev/run_tests.py fast
 .\.venv\Scripts\python.exe scripts/dev/run_tests.py product
+.\.venv\Scripts\python.exe scripts/dev/run_tests.py qualification
+node --test apps/management_web/tests/*.test.mjs
 ```
 
-`backend` 发现 apps/ai_backend/tests 与 apps/ai_service/runtime/tests；当前 115 项，新 Fake SDK 覆盖 Normal/Streaming 直答、单 Tool、双 Tool、Result 传递、来源/提交、取消/Deadline、凭据和独立进程闭包。FAST 当前 164 项；FULL PRODUCT 已包含完整新侧一次。迁移差分是两次独立离线执行，不向真实 Provider 发送。
+先停止自己启动的旧进程，再重启并刷新页面；新epoch使旧确认失效，不能自动重发问题。访问http://127.0.0.1:8766；沿用上文Tool Policy配置，必须授权水质+Knowledge才匹配Streaming Scope。本轮没有打开开关或修改用户Policy，默认关闭Streaming、Qwen两工具512/2/2/3/120秒/retry=0不变。
 
-此阶段没有新的 Web 启动参数；本页已有 Normal/Streaming 命令保持旧装配。正式轮换还需 Phase II 批准。默认关闭 Streaming、Qwen 两工具 local_experimental 不变。没有读取或改动现有凭据、Policy、SQLite 和报告。
+正式wheel已在outputs/r2c1d-build/env隔离环境以本机缓存setuptools84.0.0构建/安装，build-system>=68未改，不联网、不修改现有.venv。Wheel包括明确的管理应用包、JSON和静态资源，排除tests/outputs。源码启动保持原root；wheel安装后从有效项目工作区启动，无法确认时WORKSPACE_REQUIRED，避免变更私有凭据身份或写入site-packages。
 
-正式 wheel 检查尚有环境阻塞：虚拟环境缺 setuptools/wheel，禁止联网补装。本轮仅使用现有 setuptools65.5 的 build_py 验证安装形状及全部23个 Backend 模块/包和 Fake 流程；它不替代 pyproject 要求 setuptools>=68 的 wheel 构建。详见 [源码入口](../ai_backend/README.md)。
+管理资格计划升级management-streaming-qualification@2，增加apps.ai_backend@1标记，旧plan-sha不可复用；问题/Prompt/Scope/Schema/预算保持。旧报告不编辑或重新解释为新Backend真实运行。后续真实smoke必须另获明确授权并重新dry-run，不使用上次资格授权。
+
+仅关闭试用的回滚：停止Web，去掉--assistant-streaming-trial和--assistant-multi-round-trial重启，恢复默认Normal1/1/2。若需回滚Backend代码：保存当前修改，停止自己启动的Web，整体恢复Phase I基线0cf64f6的service/contracts/bindings/execution/streaming、Web请求控制/SSE、管理资格与打包；不要只替换Adapter或Handle，不reset整个工作树，不修改SQLite/凭据/Policy/报告。重启新epoch，失败请求不自动重发。
+
+Phase III人工验收尚待批准；本轮只使用Fake SDK与临时数据，不声称已有新侧真实Provider或回答质量资格。

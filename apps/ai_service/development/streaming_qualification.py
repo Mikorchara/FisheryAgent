@@ -15,29 +15,27 @@ import json
 import logging
 import uuid
 
-from fishery_ai.assistant import AssistantRequest, assistant_profile
-from fishery_ai.assistant_sources import SourceRequirement as Requirement, requirement_satisfied_by_ledger
-from fishery_ai.assistant_streaming import streaming_scope
-from fishery_ai.contracts import utcnow
-from fishery_ai.credential_paths import CredentialLocationError
-from fishery_ai.credentials import CredentialFileError
-from fishery_ai.domain import DiagnosisService
-from fishery_ai.execution import RequestHandle
-from fishery_ai.history_projection import DEFAULT_HISTORY_PROJECTION, TRANSCRIPT_KIND, TRANSCRIPT_NOTICE
+from ..runtime.assistant import AssistantRequest, assistant_profile
+from ..runtime.sources import SourceRequirement as Requirement, requirement_satisfied_by_ledger
+from ..runtime.streaming_contracts import streaming_scope
+from apps.ai_backend.contracts import utcnow
+from apps.ai_backend.credential_paths import CredentialLocationError
+from apps.ai_backend.credentials import CredentialFileError
+from apps.ai_backend.execution import RequestHandle
+from apps.ai_backend.history_projection import DEFAULT_HISTORY_PROJECTION, TRANSCRIPT_KIND, TRANSCRIPT_NOTICE
 from fishery_ai.knowledge import KnowledgeService
-from fishery_ai.model_gateway import GatewayError
-from fishery_ai.model_options import Support
-from fishery_ai.tool_conversation import ToolModelTransport, ToolExecutionStep
-from fishery_ai.tools.policy import ToolPolicy
-from fishery_ai.tools.registry import ToolRegistry
-from fishery_ai.development.qualification.assistant_qualification import (
+from apps.ai_backend.model_gateway import GatewayError
+from apps.ai_backend.model_options import Support
+from apps.ai_backend.tool_conversation import ToolModelTransport, ToolExecutionStep
+from apps.ai_backend.tools.policy import ToolPolicy
+from .qualification_support import (
     QualificationError, _credentials, _RunTrace, write_report)
-from fishery_ai.development.qualification.multi_round_qualification import _ExperimentGateway, _code
-from fishery_ai.development.qualification.qualification_adapter import QualificationAdapter
+from .qualification_support import _ExperimentGateway, _code
+from .qualification_adapter import QualificationAdapter
 from apps.monitoring.repository import MonitoringRepository
 from apps.monitoring.service import MonitoringService
 from apps.simulator.generator import Simulator
-from ..bindings import ManagementToolRegistry
+from ..bindings import bind_tools
 from ..contracts import PreparedAssistantTurn
 from ..execution import _json, data_bindings
 from ..service import ManagementAssistantService
@@ -45,7 +43,7 @@ from ..streaming import STREAMING_PRESET, STREAMING_TOOLS, load_streaming_config
 
 WATER, KNOWLEDGE = STREAMING_TOOLS
 DEVICE = 'qualification-pond'
-VERSION = 'management-streaming-qualification@1'
+VERSION = 'management-streaming-qualification@2'
 LOCAL_ERRORS = frozenset({'QUALIFICATION_MANAGEMENT_SCOPE_MISMATCH', 'QUALIFICATION_BUDGET_MISMATCH',
     'QUALIFICATION_PLAN_CHANGED', 'QUALIFICATION_REQUEST_NOT_APPROVED', 'QUALIFICATION_PROTOCOL_UNOBSERVED',
     'QUALIFICATION_WORKSPACE_ERROR', 'QUALIFICATION_SOURCE_BINDING_MISMATCH'})
@@ -103,8 +101,7 @@ def plan(case_id):
     case = get_case(case_id)
     profile = assistant_profile(STREAMING_PRESET)
     knowledge = KnowledgeService(files('fishery_ai').joinpath('resources/knowledge/eel_knowledge.json'))
-    formal = ToolRegistry(_NoDataAccess(), DiagnosisService(), knowledge=knowledge)
-    registry = ManagementToolRegistry(formal, _NoDataAccess(), DEVICE)
+    registry = bind_tools(_NoDataAccess(), DEVICE, knowledge)
     policy = ToolPolicy('assistant', True, STREAMING_TOOLS)
     scope = _scope(profile, policy, registry, knowledge)
     config = load_streaming_config()
@@ -120,7 +117,8 @@ def plan(case_id):
     if (record.runtime.max_output_tokens != 512 or field is None
             or encoded.get(field) is not None and encoded[field] < 512):
         raise QualificationError('QUALIFICATION_BUDGET_MISMATCH')
-    result = {'experiment_version': VERSION, 'case_id': case.case_id, 'scope': scope,
+    result = {'experiment_version': VERSION, 'backend_implementation': 'apps.ai_backend@1',
+        'case_id': case.case_id, 'scope': scope,
         'scope_sha256': hashlib.sha256(_json(scope).encode()).hexdigest(),
         'release_status': record.runtime.status, 'web_flag_enabled': config.enabled,
         'config_sha256': hashlib.sha256(_json(asdict(config)).encode()).hexdigest(),

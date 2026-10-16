@@ -5,13 +5,14 @@ import json
 import unittest
 from unittest.mock import patch
 
-from fishery_ai.assistant import AssistantService
-from fishery_ai.assistant_sources import SourceRequirement, requirement_satisfied_by_ledger
+from apps.ai_service.runtime.assistant import AssistantService
+from apps.ai_service.runtime.sources import SourceRequirement, requirement_satisfied_by_ledger
 from fishery_ai.contracts import KnowledgeEvidence
-from fishery_ai.execution import current_handle
-from fishery_ai.model_gateway import ModelResponse, ModelToolCall
-from fishery_ai.tools.registry import SEARCH_FISHERY_KNOWLEDGE as KNOWLEDGE, CURRENT_WATER_QUALITY as WATER
-from apps.ai_service.bindings import ManagementToolRegistry
+from apps.ai_backend.execution import current_handle
+from apps.ai_backend.model_gateway import ModelResponse, ModelToolCall
+from apps.ai_service.runtime.tools import SEARCH_FISHERY_KNOWLEDGE as KNOWLEDGE, CURRENT_WATER_QUALITY as WATER
+from apps.ai_service.bindings import bind_tools
+from apps.ai_backend.tools.registry import ToolRegistry
 import apps.management_web.tests.test_assistant as fixture
 
 
@@ -75,7 +76,7 @@ class ManagementKnowledgeTests(unittest.TestCase):
         self.assertEqual([d.name for d in self.gateway.requests[0].tools], [WATER])
 
     def test_formal_bindings_and_single_service_reused_without_score_handler(self):
-        registry = ManagementToolRegistry(self.backend.formal_registry, self.monitoring, 'pond-a')
+        registry = bind_tools(self.monitoring, 'pond-a', self.backend.knowledge, formal=self.backend.formal_registry)
         knowledge = registry.lookup(KNOWLEDGE)
         self.assertIs(knowledge, self.backend.formal_registry.lookup(KNOWLEDGE))
         self.assertIs(knowledge.handler.keywords['service'], self.backend.knowledge)
@@ -257,8 +258,8 @@ class ManagementKnowledgeTests(unittest.TestCase):
 
     def test_assembled_tool_set_change_invalidates_old_confirmation(self):
         self.authorize()
-        original = ManagementToolRegistry.model_definitions
-        with patch.object(ManagementToolRegistry, 'model_definitions',
+        original = ToolRegistry.model_definitions
+        with patch.object(ToolRegistry, 'model_definitions',
             lambda registry:tuple(d for d in original(registry) if d.name!=KNOWLEDGE)):
             response = self.send()
         self.assertEqual(response.get_json()['error_code'], 'ASSISTANT_EXECUTION_PROFILE_CHANGED')

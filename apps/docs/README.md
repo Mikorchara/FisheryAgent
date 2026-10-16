@@ -18,7 +18,7 @@
 
 根 [docs](../../docs/STRUCTURE.md) 维护 AI 原型和共享 Runtime；这里不重复其 Prompt、Provider、Tool、Credential 合同。事实优先级：源码 → 测试 → 当前文档 → 历史记录。
 
-R2C-1C Phase I：已建立 [独立 Backend](../ai_backend/README.md) 与 [新侧业务装配](../ai_service/runtime/README.md)，Normal/Streaming、1/1/2 与 2/2/3 离线闭包成立；撤销诊断共享 Alias。现有 Web / ManagementAssistantService 尚未切换，仍使用旧 Runtime；Prompt、发布范围和默认开关不变。Phase II 须整体切换类型/请求控制/资格入口，不能混用。
+R2C-1D Phase II：管理Service/Web/SSE/资格入口已整体切换到 [独立 Backend](../ai_backend/README.md) 与 [业务 Runtime](../ai_service/runtime/README.md)。Phase I重复装配已移除，无新旧selector/fallback。正式Wheel隔离构建通过；Monitoring/Knowledge暂留领域依赖，旧Prototype独立。Prompt/Schema/Scope/预算/默认开关不变；新资格计划@2需新确认，Phase III真实网页验收待批准。
 
 R2B-3.4：AI 业务已独立为 `apps/ai_service/`，Web 经明确的 AssistantBackend 合同调用。Monitoring、Knowledge 绑定及 Runtime 装配不再依附 Web；HTTP/浏览器/请求控制留在管理网页，当前能力与启动方式不变，见 [模块边界](INTEGRATION.md#r2b-34独立-ai-业务边界)。
 

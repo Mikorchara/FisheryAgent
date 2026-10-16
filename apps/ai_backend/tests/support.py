@@ -27,7 +27,7 @@ def chunk(calls=None, *, content=None, finish=None, model="fixture-model", usage
 USAGE = NS(prompt_tokens=2, completion_tokens=3, total_tokens=5)
 
 
-def tool_chunks(name, identifier="call_1", arguments="{}"):
+def tool_chunks(name="get_current_water_quality", identifier="call_1", arguments="{}"):
     midpoint = len(arguments) // 2
     return [chunk([delta(name=name[:5], identifier=identifier)]),
             chunk([delta(arguments[:midpoint], name=name[5:])]),

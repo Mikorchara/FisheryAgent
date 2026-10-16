@@ -16,7 +16,7 @@
 
 资格实现集中在 `src/fishery_ai/development/qualification/`，脚本是薄入口。该子包复用产品 Runtime、凭据快照、Gateway 与 Tool 合同，正式 Web / Assistant / Analysis 不导入资格实现。包初始化不装配服务、不解析凭据、不联网；实现随安装包提供，以保留安装后 CLI 的可用性。
 
-管理平台专属装配位于 `apps/ai_service/development/streaming_qualification.py`，单向复用上述资格 Adapter/观察器与正式管理业务服务；不从产品启动路径加载，也不复用原型 Snapshot。
+管理平台资格位于 `apps/ai_service/development/streaming_qualification.py`，Adapter/Observer及安全报告辅助同目录独立维护并调用新apps.ai_backend；不调用Prototype资格执行模块。计划@2绑定新Backend，默认dry-run，旧plan-sha授权无效；不从产品启动路径加载，不复用原型Snapshot，不修改既有报告。
 
 原 `fishery_ai.assistant_qualification` 等七个模块仅为历史导入兼容别名；新开发使用 `fishery_ai.development.qualification` 下的具体模块。别名指向同一个模块对象，历史私有函数导入和测试 monkeypatch 仍有效。冻结 H / P2E fixture 与指纹仅服务单次 Harness 的兼容校验，不参与正式 History。
 

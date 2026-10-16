@@ -1,4 +1,4 @@
-"""Headless AI application composition; reuse the formal Assistant execution path."""
+"""Management AI composition using only the independent Backend execution types."""
 
 from importlib.resources import files
 from dataclasses import replace
@@ -6,19 +6,19 @@ from pathlib import Path
 import secrets
 import threading
 
-from fishery_ai.assistant import AssistantRequest, AssistantService, assistant_profile
-from fishery_ai.assistant_activity import safe_code
-from fishery_ai.credentials import CredentialStore
-from fishery_ai.execution import RequestHandle, request_scope, turn_deadline_scope
+from .runtime.assistant import AssistantRequest, AssistantService, assistant_profile
+from apps.ai_backend.assistant_activity import safe_code
+from apps.ai_backend.credentials import CredentialStore
+from apps.ai_backend.execution import RequestHandle, request_scope, turn_deadline_scope
 from fishery_ai.knowledge import KnowledgeService
-from fishery_ai.model_gateway import GatewayError, ProfileRegistry
-from fishery_ai.observability import JsonlTraceSink
-from fishery_ai.openai_compatible_adapter import OpenAICompatibleAdapter
-from fishery_ai.providers import AuthSpec
-from fishery_ai.tools.policy import ToolPolicy, UserToolPolicyStore
-from fishery_ai.tools.registry import ToolRegistry
-from fishery_ai.tool_conversation import ToolCallingService, ToolModelTransport
-from fishery_ai.history_projection import DEFAULT_HISTORY_PROJECTION
+from apps.ai_backend.model_gateway import GatewayError, ProfileRegistry
+from apps.ai_backend.observability import JsonlTraceSink
+from apps.ai_backend.openai_compatible_adapter import OpenAICompatibleAdapter
+from apps.ai_backend.providers import AuthSpec
+from .runtime.policy import ToolPolicy, UserToolPolicyStore
+from apps.ai_backend.tools.registry import ToolRegistry
+from apps.ai_backend.tool_conversation import ToolCallingService, ToolModelTransport
+from apps.ai_backend.history_projection import DEFAULT_HISTORY_PROJECTION
 
 from . import bindings
 from .contracts import PreparedAssistantTurn
@@ -46,21 +46,25 @@ class ManagementAssistantService:
         devices = monitoring.devices()
         if not devices:
             raise ValueError("NO_MONITORING_DEVICE")
-        reader = monitoring.bind(devices[0]["id"]).water_reader
-        # One KnowledgeService per application; use the original Registry binding.
-        # The full Registry still validates existing Analysis/Assistant selections;
-        # only the two management bindings below are eligible for execution.
+        # Explicit business dependency only: no old Gateway/Registry/Executor.
         self.knowledge = KnowledgeService(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json"))
-        self.formal_registry = ToolRegistry(reader, monitoring.diagnosis, knowledge=self.knowledge)
+        self.formal_registry = bindings.bind_tools(monitoring, devices[0]["id"], self.knowledge)
         self.policy_store = UserToolPolicyStore(policy_directory, self.formal_registry)
+
+    @staticmethod
+    def request_registry(**kwargs):
+        from apps.ai_backend.execution import RequestRegistry
+        from .runtime.activity import tool_summary
+        return RequestRegistry(summarize_tool=tool_summary, **kwargs)
 
     @classmethod
     def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False):
-        from fishery_ai.credential_paths import private_project_location
+        from .runtime.locations import private_project_location
         root = Path(project_root).resolve()
         location = private_project_location(root)
         return cls(monitoring, credentials=CredentialStore(location.env_path, private_location=location),
-            traces=JsonlTraceSink(root / "outputs/management_web/assistant-traces.jsonl"),
+            traces=JsonlTraceSink(root / "outputs/management_web/assistant-traces.jsonl",
+                tool_names=("get_current_water_quality", "search_fishery_knowledge")),
             policy_directory=root / "outputs/tool-policies",
             execution_config=load_execution_config(enable_trial=multi_round_trial),
             streaming_config=load_streaming_config(enable_trial=streaming_trial))
@@ -77,8 +81,9 @@ class ManagementAssistantService:
         if not isinstance(device_id, str):
             raise GatewayError("INVALID_ASSISTANT_REQUEST")
         self.monitoring.bind(device_id)  # Validate registered device, never page-global state.
-        registry = bindings.ManagementToolRegistry(self.formal_registry, self.monitoring, device_id)
-        selected = self.policy_store.effective()["assistant"]
+        registry = bindings.bind_tools(self.monitoring, device_id, self.knowledge, formal=self.formal_registry)
+        stored = self.policy_store.load()["modes"]["assistant"]["selected_tools"]
+        selected = ToolPolicy("assistant", True, stored)
         bound = {definition.name for definition in registry.model_definitions()}
         policy = ToolPolicy("assistant", selected.llm_tool_calling,
             tuple(name for name in selected.exposed_tools if name in bound))
@@ -130,7 +135,7 @@ class ManagementAssistantService:
 
     def claim_turn(self, prepared: PreparedAssistantTurn, handle: RequestHandle):
         """Claim before worker/headers; return one server-only, single-use execution."""
-        if not isinstance(prepared, PreparedAssistantTurn):
+        if not isinstance(prepared, PreparedAssistantTurn) or not isinstance(handle, RequestHandle):
             raise GatewayError("INVALID_ASSISTANT_REQUEST")
         if prepared.epoch != self.epoch:
             raise GatewayError("ASSISTANT_SESSION_EXPIRED")

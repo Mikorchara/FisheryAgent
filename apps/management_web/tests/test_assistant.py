@@ -8,12 +8,12 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from fishery_ai.assistant import assistant_profile
-from fishery_ai.assistant_sources import SourceRequirement, requirement_satisfied_by_ledger
-from fishery_ai.credentials import CredentialStore
-from fishery_ai.execution import current_handle
-from fishery_ai.model_gateway import GatewayError, MockGateway, ModelResponse, ModelToolCall
-from fishery_ai.observability import JsonlTraceSink
+from apps.ai_service.runtime.assistant import assistant_profile
+from apps.ai_service.runtime.sources import SourceRequirement, requirement_satisfied_by_ledger
+from apps.ai_backend.credentials import CredentialStore
+from apps.ai_backend.execution import current_handle
+from apps.ai_backend.model_gateway import GatewayError, ModelResponse, ModelToolCall
+from apps.ai_backend.observability import JsonlTraceSink
 from apps.management_web.ai_adapter import ManagementAssistant
 from apps.ai_service.service import ManagementAssistantService, PRESETS
 from apps.ai_service.bindings import water_payload
@@ -33,6 +33,9 @@ def call(name=QUERY, arguments='{}'):
 
 def final(text='离线测试最终回答', reason='stop'):
     return ModelResponse(text, finish_reason=reason)
+
+
+from apps.ai_backend.tests.support import ScriptedGateway as MockGateway
 
 
 class RecordingGateway(MockGateway):
@@ -84,7 +87,7 @@ class ManagementAssistantTests(unittest.TestCase):
         ref = assistant_profile(PRESETS[0]).credential_ref
         self.backend = ManagementAssistantService(self.monitoring,
             credentials=CredentialStore(process_env={ref: 'fictional-management-test-value'}),
-            traces=JsonlTraceSink(self.traces), policy_directory=self.root/'policies',
+            traces=JsonlTraceSink(self.traces,tool_names=(QUERY,'search_fishery_knowledge')), policy_directory=self.root/'policies',
             gateway_factory=lambda: self.gateway)
         self.ai = ManagementAssistant(self.backend)
         self.app = create_app(data_service=self.monitoring, ai=self.ai)
@@ -321,7 +324,7 @@ class ManagementAssistantTests(unittest.TestCase):
         self.assertFalse(result['successful_turn']); self.assertEqual(result['final_text'], '')
 
     def test_receipt_gate_preserved_for_no_data_and_governed_water_payload(self):
-        from fishery_ai.assistant import AssistantService
+        from apps.ai_service.runtime.assistant import AssistantService
         original = AssistantService.send
         captured = []
         def collect(service, request, runtime):
@@ -341,7 +344,7 @@ class ManagementAssistantTests(unittest.TestCase):
         self.assertEqual(captured[1].source_receipt.quality.value, 'valid')
 
     def test_compact_payload_retains_receipt_semantics_for_partial_invalid_stale_offline(self):
-        from fishery_ai.assistant import AssistantService
+        from apps.ai_service.runtime.assistant import AssistantService
         original = AssistantService.send
         captured = []
         def collect(service, request, runtime):
@@ -370,7 +373,7 @@ class ManagementAssistantTests(unittest.TestCase):
 
     def test_runtime_capability_gate_and_unexpected_error_do_not_leak(self):
         from dataclasses import replace
-        from fishery_ai.model_options import Support
+        from apps.ai_backend.model_options import Support
         p = assistant_profile(PRESETS[0])
         with patch('apps.ai_service.service.assistant_profile', return_value=replace(p,
             capabilities=replace(p.capabilities, tool_calling=Support.UNKNOWN))):

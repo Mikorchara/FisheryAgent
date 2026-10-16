@@ -1,23 +1,21 @@
-# 新 Backend 的业务装配
+# 管理 Assistant 业务 Runtime
 
-R2C-1C Phase I 的真实业务实现，当前未被管理 Web 引用。顶层 `apps.ai_service.service.ManagementAssistantService` 和 Web 仍按原方式工作；这里没有旧 Runtime fallback 或每请求选择器。
+R2C-1D后由正式ManagementAssistantService直接使用；通用执行由 [ai_backend](../../ai_backend/README.md) 负责，业务层不复制循环。
 
-- `assistant.py`：原业务 Assistant / 两版 Prompt、完整 pair 裁剪和最终 Trace/Source Commit Gate。
-- `sources.py`：原 SourceRequirement / Receipt / Ledger，认证每次真实执行，不从正文或历史推断。
-- `tools.py`、`bindings.py`：原两工具 Definition/query validator/Knowledge 映射及 Monitoring capture DTO；一个静态 Registry 只绑定水质/Knowledge。评分只有合法存储名称和来源合同，无 Handler。
-- `activity.py`、`catalog.py`：原安全业务摘要；委托 Backend 的通用步骤投影。
-- `presets.py`、`resources/`：自有固定 Preset 和默认 Policy 资源，初始逐字一致；不读取旧 Preset 发布资源。
-- `policy.py`：保留完整旧格式选择，已知评分项不丢失；执行时与实际绑定求交，完整选择仍进入确认 revision；不读取/改写真实用户文件进行迁移。
-- `locations.py`：原项目身份与私有目录算法，用新底层 Location 类型；不移动或读取凭据。
-- `release_contracts.py`、`streaming_contracts.py`：原发布合同与哈希计算，无额外发布资源。
-- `execution.py`、`streaming.py`：读取上一级现有管理发布 JSON，精确 Scope/预算/revision，默认关闭不变。
-- `contracts.py`、`assembly.py`：Prepared Turn 和新侧 IndependentAssistantService；由显式配置装配 Backend，冻结设备/Policy/Runtime，复用原唯一循环。`request_registry()` 固定安全摘要；不是 Web 新入口。
-- `tests/`：新 Fake SDK 端到端、History/来源、Policy/Scope、旧新差分和提交门禁。
+- `assistant.py`：原两版业务Prompt、History完整pair裁剪、Source/Trace Commit Gate。
+- `sources.py`：原Requirement/Receipt/Ledger，只从本轮新Backend执行步骤认证来源。
+- `tools.py`：两工具Definition、query validator与Knowledge映射；评分仅为已知存储名称，无Handler。
+- `activity.py`、`catalog.py`：固定安全摘要和显示metadata，委托Backend通用步骤投影。
+- `policy.py`：完整旧格式选择与安全存储，执行与实际绑定求交；评分项不丢失，不扩授权。
+- `presets.py`、`resources/`：固定Preset和默认Policy，自有资源，不读取Prototype发布合同。
+- `locations.py`：原project root身份/私有目录算法，用新Backend Location类型。
+- `release_contracts.py`、`streaming_contracts.py`：原发布dataclass/精确Scope及hash，无第二套发布JSON。
+- `tests/`：来源/History/执行/协议差分；顶层Service/Scope/管理资格测试在上一级tests。
 
-依赖方向：新侧 Assistant / 装配 → [ai_backend](../../ai_backend/README.md)；业务 Handler → Monitoring / 原 KnowledgeService。Backend 不反向 import 本包。
+唯一业务装配位于 [service.py](../service.py)；PreparedTurn在 [contracts.py](../contracts.py)，Monitoring/Knowledge绑定在 [bindings.py](../bindings.py)，管理发布文件由上一级execution.py/streaming.py加载。Phase I的assembly/contracts/bindings/execution/streaming重复模块已移除，不设置兼容别名。
 
-明确保留的领域债务：Monitoring 的 Diagnosis/telemetry/canonical Reading，KnowledgeService 及其 Evidence/资源，业务 sources 的 Quality/Freshness/Reading。它们会连带加载旧 model_options，但新 Turn 不调用旧 Assistant/Gateway/Adapter/Executor/Credential/ContextVar；独立进程阻断这些旧 LLM 模块仍可完成六条 Fake Normal/Streaming 路径。它不表示已能卸载整个 fishery_ai distribution。
+依赖为Web → AI Service → Backend；Handler → Monitoring / 原KnowledgeService。暂留旧领域依赖仅包括Diagnosis/telemetry/Reading、Knowledge/Evidence/资源、sources中的Quality/Freshness，连带旧model_options；不调用旧Assistant/Gateway/Adapter/Executor/Handle/ContextVar。阻断这些旧执行模块后，实际HTTP/SSE及管理资格Fake测试仍通过。
 
-Phase II 才统一切换 Web、请求控制、管理 qualification 与服务合同；当前没有资格 CLI 调用本新侧实现。旧 qualification 报告继续属于旧 Runtime，不能改写证据归属。新侧真实 smoke 仍须新授权。
+资格观察器在上一级development，使用新Backend，正式启动不加载它。既有真实资格记录仍属于旧Runtime；新计划@2改变授权hash，不改Scope或既有记录，不自动联网。
 
-运行：`python scripts/dev/run_tests.py backend`。Prompt、History、Schema、Scope 指纹及安装限制见 [Backend 源码入口](../../ai_backend/README.md)。
+验证：`python scripts/dev/run_tests.py backend`。当前执行路径、指纹与回滚见 [实施记录](../../docs/deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#14-r2c-1d-phase-ii-管理端整体切换)。

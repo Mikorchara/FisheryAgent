@@ -20,9 +20,9 @@ from apps.ai_backend.tool_conversation import ToolModelTransport
 from apps.ai_backend.tests import test_execution as control_fixture
 from apps.ai_backend.tests.support import FakeSDK, sdk_tool, sdk_final, tool_chunks, final_chunks
 from apps.ai_service.runtime import assistant, sources
-from apps.ai_service.runtime.assembly import IndependentAssistantService, PRESETS
-from apps.ai_service.runtime.execution import load_execution_config
-from apps.ai_service.runtime.streaming import load_streaming_config
+from apps.ai_service.service import ManagementAssistantService, PRESETS
+from apps.ai_service.execution import load_execution_config
+from apps.ai_service.streaming import load_streaming_config
 from apps.monitoring.repository import MonitoringRepository
 from apps.monitoring.service import MonitoringService
 from apps.simulator.generator import Simulator
@@ -72,7 +72,7 @@ class IntegrationTests(unittest.TestCase):
             return (sdk_tool(WATER) if kind=='water' else
                 sdk_tool(KNOWLEDGE,'call_2','{"query":"鳗鲡低氧表现"}') if kind=='knowledge' else sdk_final())
         self.sdk=FakeSDK(plan,model=self.profile.model,on_close=close)
-        self.backend=IndependentAssistantService(self.monitoring,
+        self.backend=ManagementAssistantService(self.monitoring,
             credentials=CredentialStore(process_env={self.profile.credential_ref:'fictional-fixture-credential'}),
             traces=self.traces,policy_directory=self.root/'policies',
             gateway_factory=lambda:OpenAICompatibleAdapter(async_client_factory=self.sdk.factory),
@@ -213,4 +213,3 @@ assert result.wasSuccessful()
 '''.replace('REPO_ROOT',repr(str(Path(__file__).resolve().parents[4])))
         result=subprocess.run([sys.executable,'-I','-c',code],capture_output=True,text=True,timeout=30)
         self.assertEqual(result.returncode,0,result.stderr)
-

@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from fishery_ai.model_gateway import GatewayError
+from apps.ai_backend.model_gateway import GatewayError
 from apps.ai_service.execution import ManagementExecutionConfig, load_execution_config
 
 

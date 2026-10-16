@@ -4,12 +4,12 @@ import hashlib
 import json
 from pathlib import Path
 
-from fishery_ai.assistant_execution import AssistantExecutionProfile
-from fishery_ai.assistant_streaming import (AssistantStreamingConfig, AssistantStreamingRelease,
+from .runtime.release_contracts import AssistantExecutionProfile
+from .runtime.streaming_contracts import (AssistantStreamingConfig, AssistantStreamingRelease,
     resolve_streaming_profile, streaming_scope)
-from fishery_ai.history_projection import DEFAULT_HISTORY_PROJECTION
-from fishery_ai.model_gateway import GatewayError
-from fishery_ai.tool_conversation import ToolExecutionMode, ToolModelTransport
+from apps.ai_backend.history_projection import DEFAULT_HISTORY_PROJECTION
+from apps.ai_backend.model_gateway import GatewayError
+from apps.ai_backend.tool_conversation import ToolExecutionMode, ToolModelTransport
 from .execution import ExecutionDecision, _json, data_bindings
 
 STREAMING_PRESET = 'dashscope-qwen38-flash-r1'

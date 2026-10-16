@@ -174,7 +174,7 @@ Web 的 `snapshot()` 继续在同一读事务捕获 current + history，再使�
  → Source Ledger / Commit Gate / 安全 Trace → 唯一 Final
 ```
 
-- 启用开关 --enable-assistant；默认关闭，与 --legacy-demo 互斥。不读取或继承旧 Web 的多轮/Streaming 开关。只提供 Qwen 3.8 Flash（默认）与 Ollama Qwen3.5 4B，正式 Preset Identity、协议、Capability、OFF/Normal 均由原 Runtime 固定；DeepSeek 不列入首版。页面“已启用/已装配”仅表示本地 Adapter 可用，不表示 Provider 已联网或凭据已验证；启动不发健康 Probe。
+- 启用开关 --enable-assistant；默认关闭，与 --legacy-demo 互斥。不读取或继承旧 Web 的多轮/Streaming 开关。只提供 Qwen 3.8 Flash（默认）与 Ollama Qwen3.5 4B，正式 Preset Identity、协议、Capability、OFF/Normal 均由管理侧固定Preset资源提供；DeepSeek 不列入首版。页面“已启用/已装配”仅表示本地 Adapter 可用，不表示 Provider 已联网或凭据已验证；启动不发健康 Probe。
 - 默认 1 Tool Call / 1 Round / 最多 2 Model Requests；R2B-4 显式本地实验可为 2/2/3，retry=0；同一个 RequestHandle 的整 Turn Deadline 包含全部模型请求与 Tool，复用 Stop/Trace 提交门禁，无失败重跑。没有 Streaming、新 RAG、评分、视觉 Tool 或固定 Analysis。
 - ManagementToolRegistry 复用正式 Definition / validator；水质只替换为 Monitoring 数据 Handler，Knowledge 直接使用原绑定。Tool Policy 从已有 outputs/tool-policies/tool_policies.json 读取；不存在时复用内置默认（只授权水质）。实际授权 = 现有 Assistant Policy ∩ 本应用装配集合（水质查询、项目知识检索）；不自动修改用户 Policy。评分只参与全局 Policy 兼容校验，不进入管理执行 Registry，不回退旧 Snapshot。
 - Tool Result 保留 canonical 水质与来源合同，使用精简 `management-current-water@1` 投影（下节）。这些数据只送入后续模型请求，不原样发给浏览器。存在窗口时 status=OK 表示读取完成，不表示有效或正常；NO_DATA 是未收到窗口。canonical quality 保守投影，独立 data_quality/coverage 保留实际覆盖；Findings 和 PROTOTYPE Rule Identity 与同批次网页一致，STALE/OFFLINE 不得证明恢复。
@@ -201,7 +201,7 @@ Web 的 `snapshot()` 继续在同一读事务捕获 current + history，再使�
 
 ### R2B-3.3：Knowledge Tool 装配与来源隔离
 
-- 每个 ManagementAssistantService 只创建一个原 `KnowledgeService`，数据固定为包内 `src/fishery_ai/resources/knowledge/eel_knowledge.json`，使用原 portable 检索实现；不是资料页面 Demo 文件，不接入新上传/索引/RAG。
+- 每个 ManagementAssistantService 只创建一个 `KnowledgeService`，数据固定为包内 `src/fishery_ai/resources/knowledge/eel_knowledge.json`，使用原 portable 检索实现；不是资料页面 Demo 文件，不接入新上传/索引/RAG。
 - 原 ToolRegistry 创建唯一 `search_fishery_knowledge` Definition、validator 和 Handler；ManagementToolRegistry 直接保留该 ToolDefinition 对象。实际执行仍走同一 ToolCallingService / ToolExecutor，不复制检索逻辑、Schema 或执行循环。全局 Policy 校验 Registry 可识别评分等原 Tool，不表示管理应用可以执行它们。
 - Knowledge 只接受现有 `{"query":"..."}` 合同，固定 top_k=3、每条正文最多 800 字符加省略号；参数、结果大小限制和异常映射均由原合同执行。非法参数不会检索，未授权返回 TOOL_NOT_ALLOWED；检索异常是 TOOL_EXECUTION_ERROR，不能伪装成 NO_MATCH，不继续模型请求。
 - OK 的合法 Evidence 只能授予 RETRIEVED_PROJECT_EVIDENCE；NO_MATCH 只表示本轮检索完成，不授予命中或当前观测来源。二者都不能满足 CURRENT_OBSERVATION_QUERY / CURRENT_SCORE_EVALUATION。History、模型正文和来源声明不生成 Receipt。
@@ -243,7 +243,7 @@ Video/NPU 将通信、推理、事实归一化和网页播放分离；不迁移�
 
 共享 Runtime 的内部合同见 [Analysis / Assistant](../../docs/deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)、[Tool Runtime](../../docs/deep-dive/tools/READ_ONLY_TOOL_CALLING.md)、[凭据](../../docs/deep-dive/operations/PRIVATE_CREDENTIAL_STORAGE.md)。启动与验收见 [BUILD_RUN](BUILD_RUN.md)。
 
-R2C-1C Phase I：新侧通用 Backend 已闭合，业务 Assistant/Prompt/Receipt/Ledger/Policy/发布装配在 `apps/ai_service/runtime/`；旧 Prototype 的参数诊断恢复为独立实现。当前 Web 仍使用原顶层 service，尚未切换。新侧 Monitoring/Knowledge 暂留领域依赖，单个新 Turn 不调用旧 LLM Runtime；下一阶段整体切换，禁止运行时 fallback。见 [Backend 边界与指纹](../ai_backend/README.md)。
+R2C-1D：正式ManagementAssistantService和Web/SSE/资格入口已统一使用apps.ai_backend新类型；业务Prompt/History/Receipt/Ledger/Policy在ai_service.runtime。顶层service/contracts/bindings/execution/streaming分别负责装配与业务边界，不留runtime重复装配。Backend与旧Prototype互不依赖，Monitoring/Knowledge暂留旧领域服务。Scope及授权/输出预算不变，qualification计划@2重新绑定授权，非新真实资格。见 [当前Backend](../ai_backend/README.md)。
 
 ## R2B-4：管理独立 Normal 多轮执行范围
 

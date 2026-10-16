@@ -1,5 +1,7 @@
 # 管理 Assistant Streaming 资格与本地试用
 
+R2C-1D更新：当前管理CLI使用独立apps.ai_backend，计划版本为management-streaming-qualification@2（backend_implementation=apps.ai_backend@1），需重新dry-run和逐案例授权。此前三个真实PASS报告保留旧Runtime归属；当前只有离线等价证据，未重跑Provider或升级released。Scope/512/2/2/3/120秒和已有local_experimental授权不变。
+
 **R2B-5E：三个真实案例技术 PASS；用户已批准 Qwen 精确两工具 local_experimental。默认关闭，人工回答质量待审，非 released。**
 
 本入口只验证管理数据绑定，复用已有资格 Adapter、协议观察、正式 ManagementAssistantService 和 ToolCallingService。每个进程只处理一个固定案例，没有批量、重试、failover 或发布写入。

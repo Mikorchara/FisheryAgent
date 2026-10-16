@@ -1,10 +1,10 @@
 """Request-scoped POST SSE delivery; business execution stays in AI Service."""
 import threading
 from flask import Response, stream_with_context
-from fishery_ai.assistant_streaming import AssistantEventChannel
-from fishery_ai.assistant_activity import safe_code
-from fishery_ai.model_gateway import GatewayError
-from fishery_ai.execution import TERMINAL
+from apps.ai_backend.assistant_events import AssistantEventChannel
+from apps.ai_backend.assistant_activity import safe_code
+from apps.ai_backend.model_gateway import GatewayError
+from apps.ai_backend.execution import TERMINAL
 
 
 def stream_response(prepared,handle,execute,epoch):

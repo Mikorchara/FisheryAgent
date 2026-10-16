@@ -4,7 +4,7 @@
 
 - `apps/monitoring/` 是共享数据合同、存储与读取服务；`apps/simulator/` 是独立生产端，只经受控 HTTP 上报，不直接写服务器状态。模拟源不可由客户端声明为真实设备。
 
-- `apps/management_web/` 放页面、HTTP/浏览器访问控制与请求控制；`apps/ai_service/` 放 AI 业务协调、Runtime 装配和数据 Tool 绑定。AI service 不导入 Flask/Web，Monitoring 不反向依赖 AI service。当前 Web 仍调用原 `ManagementAssistantService`；新侧闭包位于 `ai_service/runtime/`，Phase II 获批前不得切换生产入口或新增运行时选择器。
+- `apps/management_web/` 放页面、HTTP/浏览器访问控制与请求控制；`apps/ai_service/` 放 AI 业务协调、Runtime 装配和数据 Tool 绑定。AI service 不导入 Flask/Web，Monitoring 不反向依赖 AI service。当前 `ManagementAssistantService`、Web/SSE、管理资格入口统一使用 `apps.ai_backend`；`ai_service/runtime/` 只保留业务 Assistant、来源/Prompt/Policy/Preset 与发布计算。禁止逐请求新旧选择器、fallback 和长期转发 Facade。
 - `apps/ai_backend/` 是获批 R2C-1B 一次性选择性分叉的通用 LLM Backend；禁止导入 `fishery_ai`、AI service、Web、Monitoring、Knowledge 或 SQLite。目标为 Web → AI service → Backend，业务 Prompt、Tool/Policy、Preset/发布配置、Receipt/Ledger/Commit Gate 留服务层。Prototype 保留独立实现，不使用新旧 Alias/Facade；单个 Turn 只能使用一套新类型、ContextVar、Handle、Registry、循环和取消状态。不得自动回退旧 Runtime。
 - 分叉允许新旧平台后续独立演进，不建立自动同步；管理端内部仍禁止复制第二个 Gateway、Tool 循环、Assembler 或执行状态。迁移要检查协议/提交差分、安装清单与 Scope 指纹；旧真实资格不能改写为新 Backend 的真实运行记录。Monitoring/Knowledge 暂留的旧领域合同依赖单独列账，不能借此引入旧 LLM Runtime。
 - 页面负责交互，组件负责展示，应用服务负责用例，Adapter 负责设备、数据库或 Runtime 接入；HTTP 路由保持薄。先使用现有结构，只有出现实际消费者时才拆文件，不建空框架或动态插件。

@@ -3,14 +3,14 @@
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
-from fishery_ai.assistant import AssistantRequest
-from fishery_ai.execution import RequestHandle
-from fishery_ai.model_gateway import ModelProfile
-from fishery_ai.tool_conversation import ToolModelTransport
-from fishery_ai.tools.policy import ToolPolicy
+from .runtime.assistant import AssistantRequest
+from apps.ai_backend.execution import RequestHandle
+from apps.ai_backend.model_gateway import ModelProfile
+from apps.ai_backend.tool_conversation import ToolModelTransport
+from apps.ai_backend.tools.policy import ToolPolicy
 from apps.monitoring.service import MonitoringService
 
-from .bindings import ManagementToolRegistry
+from apps.ai_backend.tools.registry import ToolRegistry
 from .execution import ExecutionDecision
 
 
@@ -26,7 +26,7 @@ class PreparedAssistantTurn:
     epoch: str = field(repr=False)
     profile: ModelProfile = field(repr=False)
     policy: ToolPolicy = field(repr=False)
-    registry: ManagementToolRegistry = field(repr=False)
+    registry: ToolRegistry = field(repr=False)
     execution: ExecutionDecision = field(repr=False)
 
 

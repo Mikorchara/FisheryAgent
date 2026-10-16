@@ -12,14 +12,14 @@ from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import patch
 
-from fishery_ai.assistant import assistant_profile, MULTI_ROUND_SYSTEM_INSTRUCTION
-from fishery_ai.credentials import CredentialStore, CredentialFileError
-from fishery_ai.execution import RequestHandle
-from fishery_ai.model_gateway import GatewayError
-from fishery_ai.tool_conversation import ToolModelTransport
+from apps.ai_service.runtime.assistant import assistant_profile, MULTI_ROUND_SYSTEM_INSTRUCTION
+from apps.ai_backend.credentials import CredentialStore, CredentialFileError
+from apps.ai_backend.execution import RequestHandle
+from apps.ai_backend.model_gateway import GatewayError
+from apps.ai_backend.tool_conversation import ToolModelTransport
 from apps.ai_service.development import streaming_qualification as q
-import tests.security.test_execution as execution_fixture
-from tests.providers.test_streaming_tool_assembler import chunk, delta
+import apps.ai_backend.tests.test_execution as execution_fixture
+from apps.ai_backend.tests.test_assembler import chunk, delta
 
 ROOT = Path(__file__).resolve().parents[3]
 SECRET = 'fictional-management-qualification-secret'

@@ -1,6 +1,8 @@
 """Web owns access/control tokens; business backend receives only its contract."""
 
 from types import SimpleNamespace
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import Mock, patch
 
@@ -10,6 +12,17 @@ from apps.management_web.app import create_app
 
 
 class WebAIBoundaryTests(unittest.TestCase):
+    def test_installed_entrypoint_keeps_workspace_identity_and_refuses_unknown_root(self):
+        from apps.management_web.__main__ import project_root
+        with TemporaryDirectory() as temporary:
+            root=Path(temporary);workspace=root/'workspace';workspace.mkdir()
+            (workspace/'pyproject.toml').write_text('[project]\nname="fixture"',encoding='utf-8')
+            (workspace/'apps').mkdir()
+            installed=root/'install/site-packages/apps/management_web/__main__.py'
+            self.assertEqual(project_root(module_file=installed,working_directory=workspace),workspace.resolve())
+            with self.assertRaisesRegex(ValueError,'WORKSPACE_REQUIRED'):
+                project_root(module_file=installed,working_directory=root)
+        self.assertEqual(project_root(),Path(__file__).resolve().parents[3])
     def test_local_adapter_forwards_explicit_trial_flags_only_to_business_composition(self):
         with patch('apps.management_web.ai_adapter.ManagementAssistantService.local') as local:
             adapter=ManagementAssistant.local(None,'.',streaming_trial=True)

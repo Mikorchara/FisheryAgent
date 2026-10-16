@@ -1,0 +1,23 @@
+{
+  "current-water": {
+    "config_sha256": "406bfa7ff11fc4b6b35211a3e2974c7afb71ce003b3dc1b10d8d7f3fcdb84272",
+    "history_framing_sha256": "b89e56048a5d47ddab295946fd3a610007adbe5eb4091e2dd960d3f4450a6783",
+    "plan_sha256": "efe96b9a03e127706a2b40a253a9486616d1188e2e2eabeb220cdba174311da6",
+    "question_sha256": "642ea540e3a6f8a1d3cd86f7a5c8bc4a752e79f499c668992bdd4646c7cd169c",
+    "scope_sha256": "fc476b2e9ac19046b0127e65d70dc1488016c04f9dde29698d681c6047708e90"
+  },
+  "direct-final": {
+    "config_sha256": "406bfa7ff11fc4b6b35211a3e2974c7afb71ce003b3dc1b10d8d7f3fcdb84272",
+    "history_framing_sha256": "b89e56048a5d47ddab295946fd3a610007adbe5eb4091e2dd960d3f4450a6783",
+    "plan_sha256": "79e583398b199edd6b263c93f1f357e5cdb2e9baf207a2b8c98530111625ae93",
+    "question_sha256": "a50565e394784c132773e671c1ebcd26d5026789f0c8d51b4d5c3356a345983d",
+    "scope_sha256": "fc476b2e9ac19046b0127e65d70dc1488016c04f9dde29698d681c6047708e90"
+  },
+  "low-oxygen": {
+    "config_sha256": "406bfa7ff11fc4b6b35211a3e2974c7afb71ce003b3dc1b10d8d7f3fcdb84272",
+    "history_framing_sha256": "b89e56048a5d47ddab295946fd3a610007adbe5eb4091e2dd960d3f4450a6783",
+    "plan_sha256": "4a91ad9be89faed0680d316f36ef0c4fb097ac19c4cbd85fe0f4b26c20cc6f79",
+    "question_sha256": "0c23a7ac04aea892264e45d9798fe08cfc1803625afd0c429e9fe7626da493a9",
+    "scope_sha256": "fc476b2e9ac19046b0127e65d70dc1488016c04f9dde29698d681c6047708e90"
+  }
+}

@@ -1,6 +1,6 @@
 # AI Backend 源码入口
 
-R2C-1C Phase I 已建立新侧闭包。起点为 `d88dbf34f6f20f7dcfe62f828bbf78970acfc7c2` 的既有实现，选择性分叉，不重写执行算法。旧 Prototype 保留自身实现；参数诊断已撤销共享 Alias。**现有管理 Web / ManagementAssistantService 尚未切换**，Phase II 另行批准。
+R2C-1C Phase I 已建立新侧闭包。起点为 `d88dbf34f6f20f7dcfe62f828bbf78970acfc7c2` 的既有实现，选择性分叉，不重写执行算法。旧 Prototype 保留自身实现；参数诊断已撤销共享 Alias。R2C-1D Phase II 已将管理 Web / ManagementAssistantService / SSE / 资格入口统一切到这里；旧 Prototype 仍独立。
 
 ## 模块与公共边界
 
@@ -54,14 +54,18 @@ RequestHandle/RequestRegistry 可在构造时固定 `summarize_tool`，只接收
 .\.venv\Scripts\python.exe scripts/dev/run_tests.py product
 ```
 
-`backend` 覆盖 Backend 与新业务合同；product 纳入该组一次，不重复继承收集。迁移差分以独立旧/新 Turn 比较协议、Tool JSON、Steps、Usage、Ledger、DTO/提交；仅剔除随机 ID 与运行耗时。它是本次迁移证据，不要求未来两个平台自动同步。
+`backend` 覆盖 Backend、runtime业务合同及顶层Service/发布/迁移边界；product 纳入该组一次，不重复继承收集。迁移差分以独立旧/新 Turn 比较协议、Tool JSON、Steps、Usage、Ledger、DTO/提交；仅剔除随机 ID 与运行耗时。它是本次迁移证据，不要求未来两个平台自动同步。
 
-pyproject 明确打包 `apps.ai_backend.*` 并排除其 tests；没有用 `apps.*` 意外装入 Web/业务/运行数据。业务层当前仍从仓库运行，尚非完整安装包。独立进程禁止全部 fishery_ai 后，Backend Fake Normal/Streaming 均通过；安装布局所有 Backend 子包导入通过。
+pyproject 明确打包 Backend、AI Service、Monitoring、Simulator、Management Web及业务JSON/静态资源，排除所有apps测试；没有使用宽泛apps.*。新旧平台在同一个wheel分发，但管理Turn不调用旧LLM实现。领域/Knowledge依赖仍在业务侧。
 
-当前虚拟环境无 setuptools / wheel / build，离线 wheel 命令失败于缺少 build backend；未联网安装或降低 setuptools>=68 要求。系统 setuptools 65.5 的 build_py 可校核安装清单，但不替代正式 wheel 验收；Phase II 前需在具备要求的离线构建环境补齐。
+正式PEP517 wheel已用本机缓存的setuptools84.0.0在工作区隔离venv中构建/安装；没有联网或改现有.venv，build-system仍要求setuptools>=68。内容/CRC和隔离导入、Fake流程见 [实施记录§14](../docs/deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#14-r2c-1d-phase-ii-管理端整体切换)。不是build_py替代验收。
 
-## Phase II 与回滚
+## 当前装配与回滚
 
-切换前统一处理 ai_service 顶层 contracts/service、Web RequestRegistry/异常/SSE、CLI 与管理 qualification 的新类型，补真实 HTTP Fake SDK/前端回归及安装清单。不能只替换 Adapter 或在同一 Session 混用两套 Handle。新的 epoch 使旧确认失效，不自动重发请求。
+顶层service.py拥有唯一ManagementAssistantService；contracts/bindings/execution/streaming拥有业务入口、数据绑定和发布装配。Phase I的runtime/assembly及另外四个重复装配文件已移除，不留Alias。Web的RequestRegistry、Handle、异常、SSE、worker ContextVar全部来自本包；业务安全摘要由固定回调提供。
 
-Phase I 没有修改管理生产入口，也未迁移用户数据；现有管理启动/回滚命令不变。撤销本轮时按本轮差异逐文件恢复工程/文档/测试和旧诊断，新增新侧文件可保留未引用；不重置工作树、不改 SQLite、Policy、凭据或既有报告。完整策略见 [获批方案](../docs/deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md)。
+管理qualification观察器已独立到ai_service/development，继承这里的Adapter/Assembler；新计划为management-streaming-qualification@2并绑定apps.ai_backend@1，旧plan-sha授权失效。Scope/Prompt/Schema/预算未变，不改写既有真实报告或升级资格。
+
+源码启动仍使用原project root；wheel安装入口从有效工作区定位，无法确认时拒绝WORKSPACE_REQUIRED，避免写到site-packages或改变私有凭据身份。应用启动与回滚见 [BUILD_RUN](../docs/BUILD_RUN.md)。
+
+回滚必须停止自己启动的Web，按本轮完整文件清单恢复Phase I管理装配、请求控制、资格/打包，再重启新epoch；不单独恢复Adapter/Handle，不自动重发，不改SQLite、Policy、凭据或报告。新Backend可保留不被旧装配引用。等待Phase III人工批准的真实网页smoke，本轮不请求Provider。

@@ -55,4 +55,4 @@ python -m unittest discover -s tests -t .
 原实验和结果见 [records](../docs/records/README.md) 与 Git history；不保留第二套执行资产 archive，不读取或清理 `outputs/` 的真实报告。
 
 
-R2C-1C 新增 `python scripts/dev/run_tests.py backend`，覆盖 apps/ai_backend/tests 与 apps/ai_service/runtime/tests。FULL PRODUCT 自动包含该组一次；FAST 只纳入协议与来源基础小集合。新侧 Fake SDK/类型独立，不借用旧Runtime对象；迁移差分是显式旧/新两个离线Turn。现有管理Web尚未切新Backend，HTTP回归仍验证旧装配。安装与切换边界见 [Backend入口](../apps/ai_backend/README.md)。
+R2C-1D的backend选择覆盖apps/ai_backend/tests、ai_service/runtime/tests及顶层Service/配置/迁移测试，FULL PRODUCT包含一次；FULL QUALIFICATION另含管理streaming_qualification17项。管理HTTP/SSE测试均使用新类型/Fake SDK，并在阻断旧LLM模块的独立进程中执行；六路径保留切换前哈希fixture，不保存Prompt/Raw Result或凭据。重复准备期测试已移除，领域依赖单独记录。安装与切换见 [Backend入口](../apps/ai_backend/README.md)。

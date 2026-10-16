@@ -222,17 +222,17 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
             handle.cancel()
         return jsonify(handle.public_info())
 
-    from fishery_ai.assistant import AssistantError
-    from fishery_ai.credentials import CredentialFileError
-    from fishery_ai.model_gateway import GatewayError
-    from fishery_ai.tools.policy import ToolPolicyError
+    from apps.ai_service.runtime.assistant import AssistantError
+    from apps.ai_backend.credentials import CredentialFileError
+    from apps.ai_backend.model_gateway import GatewayError
+    from apps.ai_backend.tools.policy import ToolPolicyError
 
     @app.errorhandler(AssistantError)
     @app.errorhandler(GatewayError)
     @app.errorhandler(ToolPolicyError)
     @app.errorhandler(CredentialFileError)
     def ai_error(error):
-        from fishery_ai.assistant_activity import safe_code
+        from apps.ai_backend.assistant_activity import safe_code
         return jsonify(error_code=safe_code(error.code) or "AI_SERVICE_UNAVAILABLE"), 409
 
     @app.errorhandler(ValueError)
