@@ -14,9 +14,9 @@ python -m venv .venv
 
 离线示例：`.venv\Scripts\python.exe -m fishery_ai demo --scenario low_oxygen`。Web 默认只监听 `127.0.0.1:8765`。真实模型请求须在界面显式确认；自动测试保持离线。
 
-## 独立管理系统 R2A
+## 独立管理系统
 
-管理工作区在 `apps/management_web/`，执行 `python -m apps.management_web`，访问 `http://127.0.0.1:8766`。统一监测服务在 `apps/monitoring/`，连续生产端在 `apps/simulator/`；受控本机 HTTP 上报、SQLite 当前状态/有界历史和模拟事件已接入四个业务页面。默认写入关闭；联调步骤见[管理启动说明](apps/docs/BUILD_RUN.md)。AI发送、真实设备/NPU/视频及生产权限未接入。原Prototype Web保留；架构见[管理平台文档](apps/docs/README.md)。
+管理工作区在 `apps/management_web/`，执行 `python -m apps.management_web`，访问 `http://127.0.0.1:8766`。统一监测服务在 `apps/monitoring/`，连续生产端在 `apps/simulator/`；AI 经 `apps/ai_service/` 使用独立的 `apps/ai_backend/`。Qwen Normal 水质查询、Streaming 水质 + Knowledge 已通过用户基本网页验收；Streaming 仍为默认关闭的精确两工具本地实验。启动与回滚见[管理启动说明](apps/docs/BUILD_RUN.md)。真实设备/NPU/视频及生产权限未接入。原 `src/fishery_ai/` Prototype 保留独立实验定位；架构见[管理平台文档](apps/docs/README.md)。
 
 ## 模型接入
 

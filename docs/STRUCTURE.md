@@ -155,16 +155,16 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  └─ test_water_capture.py                                           # 单次读取/诊断、双投影一致性、质量语义和 DTO 大小
 │  │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
 │  │  ├─ analysis.py                                                        # 纯领域求值、单次水质捕获与 canonical Reading 投影
-│  │  ├─ contracts.py                                                       # Web Protocol、共享 DTO 导出
+│  │  ├─ contracts.py                                                       # v1 上报校验、监测事实与分析 DTO
 │  │  ├─ events.py                                                          # 纯 EventService、事件变更及只读状态投影
 │  │  ├─ repository.py                                                      # SQLite、事务、历史与事件变更持久化
 │  │  ├─ rules.py                                                           # 纯评估函数、证据门禁与 PROTOTYPE 规则投影
-│  │  └─ service.py                                                         # 唯一ManagementAssistantService业务装配
+│  │  └─ service.py                                                         # 监测业务协调、统一查询与设备绑定
 │  ├─ simulator/                                                            # 独立设备生产端
 │  │  ├─ tests/                                                             # 离线测试及Fake SDK
 │  │  │  └─ test_simulator.py                                               # Seed、采样、场景、调度与清理
 │  │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
-│  │  ├─ __main__.py                                                        # 本机启动、存储装配与写入开关
+│  │  ├─ __main__.py                                                        # 场景 CLI、窗口调度与连续 HTTP 上报
 │  │  ├─ generator.py                                                       # 确定性水质/视觉窗口生成
 │  │  ├─ scenarios.py                                                       # 手写 Phase 时间线
 │  │  └─ transport.py                                                       # 受控 HTTP 上报，无重试/重定向
@@ -476,9 +476,9 @@ Fishery_AI_Prototype/                                            # 项目工作�
    └─ README.md                                                             # 测试分类、四层策略与覆盖边界
 ```
 
-**Runtime / Core：** src/fishery_ai 是运行源码，resources 是包内固定资源；源码根 .env 只标位置，不读取内容，也不参与运行时。
+**Runtime / Core：** src/fishery_ai 是旧 Prototype 的独立实验源码；apps/ai_backend 是管理平台独立通用执行实现，ai_service 保留业务装配和来源合同。resources 是各包固定资源；源码根 .env 只标位置，不读取内容，也不参与运行时。
 
-**管理平台：** apps/management_web 经 ai_service → 独立 ai_backend 执行AI，apps/monitoring 是统一监测服务，apps/simulator 是独立HTTP生产端。管理当前状态与有界历史在 Git ignored 的 outputs/management_web/monitoring.sqlite3。其测试独立运行，入口见 [apps/docs](../apps/docs/README.md)；原 Prototype 的 Snapshot/Tool 尚未接入管理数据库。
+**管理平台：** apps/management_web 经 ai_service → 独立 ai_backend 执行AI，apps/monitoring 是统一监测服务，apps/simulator 是独立HTTP生产端。管理当前状态与有界历史在 Git ignored 的 outputs/management_web/monitoring.sqlite3。R2C-1E 用户已报告新 Backend 的 Qwen Normal / Streaming 基本网页验收通过；其测试独立运行，入口见 [apps/docs](../apps/docs/README.md)。Monitoring/Knowledge 暂留旧领域依赖；旧 Prototype 的 Snapshot/Tool 仍独立于管理数据库。
 
 **Development / Test：** src/fishery_ai/development/qualification 集中资格实现，旧顶层模块仅为兼容别名；正式 Web / Assistant / Analysis 不导入资格实现，validate-real CLI 按需加载。tests 分为正式子系统与 qualification，support / fixtures 为共享测试资料。scripts/dev 保存开发辅助，scripts/qualification 保存单次维护验证；.egg-info 为安装生成 metadata。已删除 H / P2E manifests、历史 batch / continuation、preparation generator 和六份实验测试；产品 History 与安全合同仍在正式测试中，历史见 records 与 Git。
 

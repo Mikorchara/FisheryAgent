@@ -194,7 +194,7 @@ R2B-5E 允许显式启动本地试用后人工检查 Streaming。关闭开关、
 
 本轮离线验证：管理配置/AI Service/资格兼容/HTTP SSE 与 Normal 相关 Python 124 项、共享 Streaming Assembler/Runtime/Source/Web 回归134项，合计258项通过；管理前端 Node 52项通过，包含 HTTP/SSE → 正式 parser/Workspace 的三路径桥接。覆盖512实际编码、发布拒绝、Scope/revision、双 Tool Result/独立Ledger、Preview→Final、Stop/超时/截断、History和回滚。未运行无关全量测试，没有调用真实 Provider/NPU，也没有启动实际网页推理；真实网页体验由用户后续验收。
 
-## R2C-1D：独立 Backend 验收与启动
+## 独立 Backend：启动与回滚
 
 管理Service/Web/SSE/管理qualification已统一使用apps.ai_backend和ai_service.runtime，不再运行旧LLM Runtime。正常命令和精确local_experimental授权保持不变：
 
@@ -219,4 +219,6 @@ node --test apps/management_web/tests/*.test.mjs
 
 仅关闭试用的回滚：停止Web，去掉--assistant-streaming-trial和--assistant-multi-round-trial重启，恢复默认Normal1/1/2。若需回滚Backend代码：保存当前修改，停止自己启动的Web，整体恢复Phase I基线0cf64f6的service/contracts/bindings/execution/streaming、Web请求控制/SSE、管理资格与打包；不要只替换Adapter或Handle，不reset整个工作树，不修改SQLite/凭据/Policy/报告。重启新epoch，失败请求不自动重发。
 
-Phase III人工验收尚待批准；本轮只使用Fake SDK与临时数据，不声称已有新侧真实Provider或回答质量资格。
+R2C-1E：用户已通过真实管理网页完成 Qwen Normal 水质 Tool / Final、Qwen Streaming 水质 + Knowledge / Final 提交，以及模拟来源与 PROTOTYPE 标签的基本验收。迁移主线结束；回答质量专项审核与正式资格仍分开处理，local_experimental 和默认关闭不变。该人工观察没有新增资格 JSON、qualification_id 或 released 授权。
+
+最终工程快速检查只运行 FAST、Backend 迁移/边界和管理前端离线测试；具体数量见 [收尾记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。本轮未请求 Provider/NPU。`a256569` 是已提交的 Phase II 切换基线；`0cf64f6` 是需要整体回退旧管理装配时的 Phase I 参考点，不能以重置工作树代替审阅和完整回滚。

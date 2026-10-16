@@ -18,4 +18,6 @@ R2C-1D后由正式ManagementAssistantService直接使用；通用执行由 [ai_b
 
 资格观察器在上一级development，使用新Backend，正式启动不加载它。既有真实资格记录仍属于旧Runtime；新计划@2改变授权hash，不改Scope或既有记录，不自动联网。
 
+R2C-1E：用户已报告新 Backend 的 Qwen Normal 水质查询、Streaming 水质 + Knowledge 与最终提交基本网页验收通过。迁移主线已结束；这不替代回答质量专项审核，不增加 Provider 资格或发布范围。Monitoring/Knowledge 领域独立化留待后续任务。
+
 验证：`python scripts/dev/run_tests.py backend`。当前执行路径、指纹与回滚见 [实施记录](../../docs/deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#14-r2c-1d-phase-ii-管理端整体切换)。

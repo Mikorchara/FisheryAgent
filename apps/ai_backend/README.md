@@ -25,7 +25,7 @@ Backend 不导入 `fishery_ai`、业务、Flask、Monitoring、Knowledge、SQLit
 
 ## 服务层装配
 
-[apps/ai_service/runtime](../ai_service/runtime/README.md) 保存实际的新侧业务 Assistant、原 Prompt、Preset/Policy、领域 Receipt/Ledger、Commit Gate、Monitoring/Knowledge 绑定及发布解析。它调用本 Backend。业务捕获仍允许既有领域/Knowledge 依赖，Backend 本身完全闭合。
+[apps/ai_service/runtime](../ai_service/runtime/README.md) 保存业务 Assistant、Prompt、Preset/Policy、领域 Receipt/Ledger、Commit Gate 及发布计算。顶层 `ai_service/service.py` 负责唯一业务装配，`bindings.py` 绑定 Monitoring/Knowledge，`execution.py` / `streaming.py` 加载管理发布配置。业务捕获仍允许既有领域/Knowledge 依赖，Backend 本身完全闭合。
 
 RequestHandle/RequestRegistry 可在构造时固定 `summarize_tool`，只接收既有安全字段；不会接受浏览器或模型提供的回调/metadata。Trace 构造时显式传 `tool_names`。不共享旧对象、取消 Owner 或类异常；新 Registry 拒绝旧 Definition，ProfileRegistry/request_scope 拒绝旧运行类型。
 
@@ -44,7 +44,7 @@ RequestHandle/RequestRegistry 可在构造时固定 `summarize_tool`，只接收
 | 管理 Normal 发布文件 | `5e25d73888fb2bbac3501a196eaf9dc1269b1065503445e36201b008d750c17b` |
 | 管理 Streaming 发布文件 | `b19ce6a36afb44ce6030302928356656bfe34fedaf20e24f1c7c4d43f5f2d903` |
 
-固定 epoch、设备、完整 Policy 下新旧 Scope/revision 对拍一致；Qwen 仍为精确两 Tool local_experimental，Streaming 默认关闭、512 / request、2/2/3、retry=0、120 秒。未修改资格记录，未请求真实 Provider；历史技术证据不等于新侧真实验收。
+固定 epoch、设备、完整 Policy 下新旧 Scope/revision 对拍一致；Qwen 仍为精确两 Tool local_experimental，Streaming 默认关闭、512 / request、2/2/3、retry=0、120 秒。迁移离线测试没有请求真实 Provider；R2C-1E 用户另行报告新侧 Normal / Streaming 基本网页验收通过，未因此改写历史资格或升级发布状态。
 
 ## 验证与安装
 
@@ -68,4 +68,6 @@ pyproject 明确打包 Backend、AI Service、Monitoring、Simulator、Managemen
 
 源码启动仍使用原project root；wheel安装入口从有效工作区定位，无法确认时拒绝WORKSPACE_REQUIRED，避免写到site-packages或改变私有凭据身份。应用启动与回滚见 [BUILD_RUN](../docs/BUILD_RUN.md)。
 
-回滚必须停止自己启动的Web，按本轮完整文件清单恢复Phase I管理装配、请求控制、资格/打包，再重启新epoch；不单独恢复Adapter/Handle，不自动重发，不改SQLite、Policy、凭据或报告。新Backend可保留不被旧装配引用。等待Phase III人工批准的真实网页smoke，本轮不请求Provider。
+R2C-1E 已完成工程收尾：用户报告 Qwen Normal 水质 Tool / Final、Streaming 水质 + Knowledge / Final 提交，以及模拟来源 / PROTOTYPE 标签正常。它是基本人工观察，未生成新的 Provider 资格记录，回答质量专项审核仍独立进行。迁移主线结束，下一阶段可开展管理业务开发。
+
+仅关闭试用时去掉 trial 启动参数并重启，仍使用本 Backend。代码整体回滚基线为 Phase I `0cf64f6`；应完整撤销 Phase II `a256569` 的切换范围并重启新 epoch，不单独替换 Adapter/Handle，不自动重发，不修改 SQLite、Policy、凭据或报告。本轮只核对回滚方案，不执行回滚；详见 [迁移收尾记录](../docs/deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。

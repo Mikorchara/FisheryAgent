@@ -15,4 +15,4 @@
 - Tool 继续按 Policy / Registry / Executor 执行；Source Ledger、Commit Gate、预算、Deadline、Stop、发布 Scope 与逐次网络确认不得绕过。预览不作为成功回答或 History。
 - 当前本机展示边界不是生产鉴权。禁用或隐藏按钮不提供权限保护；新增写 API、文件访问或 AI 执行前补服务端安全检查。管理员操作与开发调试入口分开，禁止未经授权的设备、数据库和阈值修改。
 - 行为变更补离线 Python / Node 测试和中文文档；UI 变更检查导航、空状态和响应式布局。相关 Runtime 桥接还须运行对应原型回归。真实请求须本轮明确授权，禁止测试自动调用 Provider / Ollama。
-- `apps/docs/` 描述管理平台当前状态；根 `docs/` 描述 AI 原型与共享 Runtime。以源码、测试为事实，规划明确标为未实现。保护未提交改动，不修改 `D:\Fishery_Project` 或工作区外文件。
+- `apps/docs/` 描述管理平台及独立 Backend 当前状态；根 `docs/` 描述旧 AI Prototype 实验平台。两侧 Runtime 可独立演进，暂留领域/Knowledge 依赖单独记录，不要求自动同步。以源码、测试为事实，规划明确标为未实现。保护未提交改动，不修改 `D:\Fishery_Project` 或工作区外文件。

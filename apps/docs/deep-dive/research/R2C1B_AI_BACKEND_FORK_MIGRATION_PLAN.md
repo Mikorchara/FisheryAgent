@@ -1,6 +1,6 @@
 # R2C-1B：独立 AI Backend 整体迁移方案
 
-日期：2026-10-16。**原评估基线；方案已获批准，Phase I实施见§13，Phase II整体切换见§14。** 原评估依据源码、测试定义、安装清单和 [R2C-1A 审计](R2C1A_LLM_BACKEND_AUDIT.md)，当时未执行代码迁移或真实请求；以下设计保留其原阶段语境。
+日期：2026-10-16。**R2C-1 主要迁移已结束：Phase I 实施见 §13，Phase II 整体切换见 §14，最终工程收尾与用户基本网页验收见 §15。** §1–12 为原获批评估基线，依据源码、测试定义、安装清单和 [R2C-1A 审计](R2C1A_LLM_BACKEND_AUDIT.md)，当时未执行代码迁移或真实请求；原设计保留其阶段语境。
 
 ## 1. 推荐结论与新的项目边界
 
@@ -318,7 +318,7 @@ Phase I生产装配未动，无需数据回滚。若撤销，仅按本轮文件�
 
 ## 14. R2C-1D Phase II 管理端整体切换
 
-阶段II已实施；起点Git干净，基线`0cf64f6bef2b150c28aa265c6bbf8b7dab118223`。未使用旧授权调用Provider/NPU，未读取或修改真实凭据、SQLite、用户Policy和既有报告；未commit/push。Phase III真实网页验收待人工批准。
+阶段II已实施；起点Git干净，基线`0cf64f6bef2b150c28aa265c6bbf8b7dab118223`。未使用旧授权调用Provider/NPU，未读取或修改真实凭据、SQLite、用户Policy和既有报告；该轮助手未commit/push。阶段II结束时真实网页验收待人工批准；Phase II 后续已提交为`a256569`，基本验收记录见§15。
 
 ### 当前实际依赖
 
@@ -392,3 +392,84 @@ Phase I的18条模式/路径和8条负向结果差分仍通过。Prompt/Schema/H
 Phase III前由用户重启自己的Web，刷新取得新epoch/确认，核对Policy两工具、Preset及Scope；先Normal，再明确启用QwenStreaming。新真实请求须单独明确授权/新dry-run计划。验收直答、单/双Tool、数据来源/质量、History跨模式、Stop/断线/截断和本地实验标签；回答质量与技术资格分开，失败不自动重试。没有自动进入Phase III。
 
 整体代码回滚：先保存当前补丁/新增文件清单、停止自己启动的Web，再按本轮文件范围恢复Phase I基线的服务/合同/绑定/发布装配、Web请求控制/SSE、管理资格和打包；不只恢复Adapter/Handle，不reset整个工作树，不改数据/Policy/凭据/报告。新Backend可保留未被旧装配引用；重启生成新epoch，旧确认及失败请求不可自动复用。只关闭实验时去掉两个trial参数重启即可保持Normal1/1/2，此操作不会回退Backend代码。
+
+## 15. R2C-1E 工程收尾与人工验收
+
+日期：2026-10-16。本轮起点工作树干净，HEAD 为 `a256569f08766b73820e49c9809bc9399cb047db`（R2C-1D）；Phase I 为 `0cf64f6bef2b150c28aa265c6bbf8b7dab118223`。用户明确批准结束主要迁移工作。本轮仅修改工程规则与 Markdown，未修改代码、测试、配置、Prompt、Tool、发布范围、用户 Policy 或真实数据，未请求 Provider/NPU，未提交或推送。
+
+### 15.1 最终职责与依赖核对
+
+| 区域 | 当前职责 | 核对结果 |
+|---|---|---|
+| `management_web` | HTTP / SSE、浏览器访问控制、请求注册与取消、页面 | 使用新 Backend 的 Handle、Registry、EventChannel、错误类型；不装配另一套执行循环 |
+| `ai_service` 顶层 | 唯一 ManagementAssistantService、冻结设备 / Policy / Scope、业务 Tool 绑定 | `service.py` 是唯一业务装配实现；contracts / bindings / execution / streaming 分工明确 |
+| `ai_service/runtime` | 业务 Assistant、Prompt、Preset / Policy、Receipt / Ledger、Source / Commit Gate、发布计算 | 不再保留准备期 assembly / contracts / bindings / execution / streaming 重复实现 |
+| `ai_backend` | Gateway / Provider / Transport / Assembler、Tool 循环、执行上下文、取消 / Deadline、安全 Trace / 事件 | 23 个运行 Python 文件；无 fishery_ai、Monitoring、Knowledge、Flask、SQLite 或业务反向导入 |
+| `ai_service/development` | 单案例资格计划、安全观察与脱敏报告 | 只由显式开发入口 / 测试加载，不是正式请求的依赖 |
+| `src/fishery_ai` | 独立 Prototype 与后续实验 | 保留自身 Runtime；管理 Turn 不混入旧 Gateway / Adapter / Handle / ContextVar / Tool 循环 |
+
+实际执行依赖图沿用 §14。AST / 导入检查及独立进程 Fake 测试均未发现临时新旧 Runtime 选择器、动态 Alias、自动 fallback 或重复执行 Owner。`legacy-demo` 是 R1 展示入口，旧字段兼容和单轮结果投影是既有合同兼容；它们不选择旧 LLM Runtime，故保留。新旧平台分别存在实现是获批分叉的结果，不要求自动同步。
+
+仍存在的旧领域依赖：
+
+- Monitoring 的 `contracts.py` / `analysis.py` / `rules.py` 使用旧 Reading、Quality / Freshness 与 DiagnosisService；`service.py` 使用旧 `telemetry.current.CurrentWaterQualityReader`。
+- AI Service 的 `service.py`、`runtime/tools.py` 和开发资格入口使用旧 KnowledgeService / 固定知识资源；`runtime/sources.py` 使用旧领域 Reading / Quality / Freshness / 时间解析。旧领域导入还会连带加载旧 model_options，但它不作为管理执行类型使用。
+- 后续应独立设计 Domain / Knowledge 归属，再消除这些依赖；当前不能直接卸载整个 fishery_ai 分发包，也不应将这些业务放进通用 Backend。本轮不迁移。
+
+### 15.2 用户真实网页观察与证据边界
+
+以下来自本轮用户说明，未由助手重新执行，也未补造报告或 Run ID：
+
+| 人工场景 | 用户观察 |
+|---|---|
+| Qwen Normal | 当前水质 Tool 成功，Final 正常 |
+| Qwen Streaming | 水质 + Knowledge 两工具成功，Final 正常提交 |
+| 来源和规则 | 模拟监测来源与 PROTOTYPE 规则状态显示正常 |
+
+结论：独立 Backend 的基本管理网页人工验收通过，R2C-1 主要迁移可收口。它与 §14 的 Fake SDK 协议 / HTTP / SSE 差分证据分别记录；历史资格报告仍归属当时 Runtime，当前人工观察不转写为新 CLI 资格，不生成 qualification_id，不标记 released。回答质量、全部异常路径的人工验证与长期稳定性不由这三项观察推导。
+
+原发布边界保持：Qwen 精确两工具 Streaming 为默认关闭的 local_experimental，512 tokens / request、2 Calls / 2 Rounds / 3 Requests、retry=0、120 秒；Scope 仍为 `fc476b2e9ac19046b0127e65d70dc1488016c04f9dde29698d681c6047708e90`。不扩展到其他 Provider、评分或三工具。Normal 默认及独立实验开关保持不变。
+
+### 15.3 本轮快速验证与产物检查
+
+- FAST：164 项通过，1.478 秒。
+- 迁移 / 管理 Web 边界 / Backend 闭包：17 项通过，8.897 秒；包含六条实际管理 HTTP/SSE Fake 路径差分、旧执行模块阻断、新类型所有权、旧计划授权拒绝及旧 Prototype 独立执行。独立子进程还执行 17 项管理资格离线测试，不计为外层用例数；不是历史真实样本补跑。
+- 管理前端：52 项通过，771.8965 毫秒，覆盖 SSE、History、Stop / 迟到事件、模式与确认，以及其余页面回归。
+- 本轮不重复 FULL PRODUCT / FULL QUALIFICATION；§14 的 1186 项产品回归及 184 项资格回归（1 项环境跳过）属于 Phase II 的既有结果，不冒充本轮运行。
+- 已有正式 Wheel 仅核对元数据 / CRC / SHA-256，未重建或安装：175 项、CRC 正常，SHA 与 §14 一致；不含 tests、outputs、pyc 或数据库。正式隔离构建 / 安装与 Fake 导入证据仍见 §14。
+- `build/`、`outputs/`（含既有 Wheel / 安全报告）和 `__pycache__/` 被忽略；Git 未跟踪构建缓存、测试输出、Wheel、SQLite 或 .env。两份已跟踪 ZIP 是既有文档历史档案。本轮未删除这些有用产物，也未读取凭据或真实数据库。
+- Markdown：60 份文件、472 条本地引用、40 处锚点，损坏链接 0；13 份改动文档的敏感模式 / 行尾空白扫描与 `git diff --check` 通过。只存在本节清单中的已跟踪 Markdown 修改，无新增、删除或未跟踪文件。
+
+### 15.4 本轮完整文件清单
+
+共 13 份已跟踪 Markdown 修改；新增 0，删除 0，无业务源码 / 配置 / 测试改动。
+
+| 状态 | 文件 | 修改内容 |
+|---|---|---|
+| M | `README.md` | 管理平台当前 AI 状态与旧 Prototype 定位 |
+| M | `apps/AGENTS.md` | 新旧文档 / Runtime 归属及独立演进规则 |
+| M | `apps/ai_backend/README.md` | 最终职责、真实基本验收与整体回滚 |
+| M | `apps/ai_service/runtime/README.md` | 业务层收尾状态与残余领域依赖 |
+| M | `apps/docs/README.md` | 当前入口、验收状态与证据边界 |
+| M | `apps/docs/STRUCTURE.md` | 依赖状态和 Monitoring / Simulator 职责注释 |
+| M | `apps/docs/BUILD_RUN.md` | 当前启动、试用 / 代码回滚与人工验收 |
+| M | `apps/docs/INTEGRATION.md` | 当前 capture_water 链路及独立 Backend 归属 |
+| M | `apps/docs/ROADMAP.md` | 迁移已结束、后续业务与领域独立化任务 |
+| M | `apps/docs/deep-dive/STREAMING_QUALIFICATION.md` | 基本网页观察与正式资格分开记录 |
+| M | `apps/docs/deep-dive/research/R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md` | 更新实施状态尾注，保留原研究阶段语境 |
+| M | `apps/docs/deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md` | 本节收尾、验收、核对与提交建议 |
+| M | `docs/STRUCTURE.md` | 根地图职责注释与新旧 Runtime 定位 |
+
+### 15.5 提交、回滚与下一阶段
+
+R2C-1C / R2C-1D 已分别提交为 `0cf64f6` / `a256569`，不建议为收尾拆改既有 Runtime 切换提交。本轮只有相互引用的文档，建议作为一个提交：
+
+`docs(ai): close R2C-1 migration and record management web acceptance`
+
+提交前审阅本节 13 文件清单；不使用 git add . 纳入无关资产。本轮不执行 commit、tag、push 或回滚。
+
+- 工程收尾前基线：`a256569`；撤销本轮文档提交即可返回，运行代码不会变化。
+- 仅关闭试用：Stop / 停止本人 Web，移除两个 trial 参数重启；保留独立 Backend 和 Normal 1/1/2，新 epoch 撤销旧确认，不自动重发。
+- 必须退回旧管理装配时：先保存后续成果，停止服务，由用户批准完整反向提交 Phase II `a256569`（如有后续改动需审查冲突），参考 Phase I `0cf64f6`；不逐文件混用新旧执行类型，不 reset 工作树，不动数据库 / Policy / 凭据 / 历史报告。
+
+已具备进入下一阶段管理业务开发的基础。下一项功能由用户另行选择；Domain / Knowledge 独立化、回答质量、真实设备与生产权限仍是独立任务，不影响本轮迁移主线结项，也不意味着生产发布。

@@ -149,16 +149,16 @@ apps/
 │  │  └─ test_water_capture.py                                           # 单次读取/诊断、双投影一致性、质量语义和 DTO 大小
 │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
 │  ├─ analysis.py                                                        # 纯领域求值、单次水质捕获与 canonical Reading 投影
-│  ├─ contracts.py                                                       # Web Protocol、共享 DTO 导出
+│  ├─ contracts.py                                                       # v1 上报校验、监测事实与分析 DTO
 │  ├─ events.py                                                          # 纯 EventService、事件变更及只读状态投影
 │  ├─ repository.py                                                      # SQLite、事务、历史与事件变更持久化
 │  ├─ rules.py                                                           # 纯评估函数、证据门禁与 PROTOTYPE 规则投影
-│  └─ service.py                                                         # 唯一ManagementAssistantService业务装配
+│  └─ service.py                                                         # 监测业务协调、统一查询与设备绑定
 ├─ simulator/                                                            # 独立设备生产端
 │  ├─ tests/                                                             # 离线测试及Fake SDK
 │  │  └─ test_simulator.py                                               # Seed、采样、场景、调度与清理
 │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
-│  ├─ __main__.py                                                        # 本机启动、存储装配与写入开关
+│  ├─ __main__.py                                                        # 场景 CLI、窗口调度与连续 HTTP 上报
 │  ├─ generator.py                                                       # 确定性水质/视觉窗口生成
 │  ├─ scenarios.py                                                       # 手写 Phase 时间线
 │  └─ transport.py                                                       # 受控 HTTP 上报，无重试/重定向
@@ -183,6 +183,6 @@ management_web HTTP/SSE/访问控制 + 新RequestRegistry
 
 Backend无fishery_ai/Flask/SQLite/业务反向依赖。Monitoring/Knowledge及业务sources保留旧领域合同/资源，连带旧model_options；它们不调用旧LLM Runtime。旧Prototype独立，管理单个Turn只用新ContextVar/Handle/Registry/Adapter。
 
-Phase I的runtime/assembly、contracts、bindings、execution、streaming五个准备模块已合并回顶层实际实现，三份重复测试已移除；无alias/fallback。CURRENT STATE和回滚见 [R2C-1D实施记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#14-r2c-1d-phase-ii-管理端整体切换)。
+Phase I的runtime/assembly、contracts、bindings、execution、streaming五个准备模块已合并回顶层实际实现，三份重复测试已移除；无alias/fallback。R2C-1E 已完成迁移收尾及用户基本网页验收；依赖核对、证据边界和回滚见 [收尾记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。
 
 测试层级：FAST小集合；backend为新Backend及业务合同；FULL PRODUCT含backend一次；FULL QUALIFICATION额外包含管理资格17项；Web/Node按BUILD_RUN运行。Qualification只在显式开发入口加载，默认dry-run，无批次或自动Provider请求。

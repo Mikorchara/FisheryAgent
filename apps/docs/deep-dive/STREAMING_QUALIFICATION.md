@@ -1,6 +1,8 @@
 # 管理 Assistant Streaming 资格与本地试用
 
-R2C-1D更新：当前管理CLI使用独立apps.ai_backend，计划版本为management-streaming-qualification@2（backend_implementation=apps.ai_backend@1），需重新dry-run和逐案例授权。此前三个真实PASS报告保留旧Runtime归属；当前只有离线等价证据，未重跑Provider或升级released。Scope/512/2/2/3/120秒和已有local_experimental授权不变。
+R2C-1D 更新：当前管理 CLI 使用独立 apps.ai_backend，计划版本为 management-streaming-qualification@2（backend_implementation=apps.ai_backend@1），需重新 dry-run 和逐案例授权。此前三个真实 PASS 报告保留旧 Runtime 归属；迁移阶段以离线等价测试验收，未重跑 Provider 或升级 released。Scope/512/2/2/3/120秒和已有 local_experimental 授权不变。
+
+R2C-1E 更新：用户另行报告独立 Backend 的真实管理网页 Qwen Normal 水质查询、Streaming 水质 + Knowledge 与 Final 提交正常。该基本人工观察记录在 [迁移收尾](research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)，不是本 CLI 的新资格报告，不补造 run_id 或人工回答质量批准。
 
 **R2B-5E：三个真实案例技术 PASS；用户已批准 Qwen 精确两工具 local_experimental。默认关闭，人工回答质量待审，非 released。**
 

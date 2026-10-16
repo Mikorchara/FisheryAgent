@@ -195,4 +195,4 @@ Activity + Preview + 唯一终态]
 
 ## R2B-5E 本地实验开放
 
-用户完成三个真实案例（Direct Final / 当前水质 / 低氧双 Tool）技术 PASS 后，另行明确批准 Qwen 精确两工具 local_experimental，回答质量留待后续。管理资源只更新发布状态，qualification_id/validated_at 为空、enabled=false；`--assistant-streaming-trial` 在启动 composition 时启用当前 epoch，不修改磁盘、Policy 或原型配置。Normal 默认，两个试用参数独立。精确门禁、512/2/2/3/120秒、Stop、Ledger、Commit Gate 和原 SSE/预览流程复用；未开放其他 Provider/Tool 组合，也不自动重跑或降级。真实网页仍待用户验收，操作和回滚以 [BUILD_RUN](../../BUILD_RUN.md#r2b-5eqwen-streaming-本地实验) 为准。
+用户完成三个真实案例（Direct Final / 当前水质 / 低氧双 Tool）技术 PASS 后，另行明确批准 Qwen 精确两工具 local_experimental，回答质量留待后续。管理资源只更新发布状态，qualification_id/validated_at 为空、enabled=false；`--assistant-streaming-trial` 在启动 composition 时启用当前 epoch，不修改磁盘、Policy 或原型配置。Normal 默认，两个试用参数独立。精确门禁、512/2/2/3/120秒、Stop、Ledger、Commit Gate 和原 SSE/预览流程复用；未开放其他 Provider/Tool 组合，也不自动重跑或降级。R2C-1E 用户已另行报告独立 Backend 的基本真实网页验收通过，回答质量仍待专项研究；详见 [迁移收尾](R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。操作和回滚以 [BUILD_RUN](../../BUILD_RUN.md#r2b-5eqwen-streaming-本地实验) 为准。

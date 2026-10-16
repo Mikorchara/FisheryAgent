@@ -11,7 +11,7 @@ Simulator：Scenario → 逻辑采样 → 10 秒窗口 → HTTP
         → EventService：计算事件变更 → 同事务持久化
     → MonitoringService：统一查询、历史、Web 投影
         → Dashboard / Monitoring / Video / Events
-        → bind(device_id).water_reader（未来 AI Tool 接入口）
+        → capture_water(device_id) → AI Tool 精简投影（与网页同源）
 ```
 
 `apps/monitoring/` 不依赖 Flask 或页面。Web `create_app(data_service=...)` 将同一服务用于监测、视觉和事件；CLI 正常入口总是装配 SQLite 服务。无 data_service 的工厂保留 R1 测试/兼容 Demo；CLI 必须显式 `--legacy-demo` 才使用它，接入失败不回退 Demo。
@@ -241,9 +241,11 @@ Web 的 `snapshot()` 继续在同一读事务捕获 current + history，再使�
 
 Video/NPU 将通信、推理、事实归一化和网页播放分离；不迁移桌面 GPU 项目。Events 人工处理、附件授权和通知待独立设计。管理员权限与开发设备接入开关分离。
 
-共享 Runtime 的内部合同见 [Analysis / Assistant](../../docs/deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)、[Tool Runtime](../../docs/deep-dive/tools/READ_ONLY_TOOL_CALLING.md)、[凭据](../../docs/deep-dive/operations/PRIVATE_CREDENTIAL_STORAGE.md)。启动与验收见 [BUILD_RUN](BUILD_RUN.md)。
+管理 Runtime 的当前边界见 [独立 Backend](../ai_backend/README.md) 与 [业务 Runtime](../ai_service/runtime/README.md)。旧 Prototype 的 [Analysis / Assistant](../../docs/deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)、[Tool Runtime](../../docs/deep-dive/tools/READ_ONLY_TOOL_CALLING.md) 与 [凭据](../../docs/deep-dive/operations/PRIVATE_CREDENTIAL_STORAGE.md) 保留迁移来源和独立实验说明，不作为新侧自动同步合同。启动与验收见 [BUILD_RUN](BUILD_RUN.md)。
 
 R2C-1D：正式ManagementAssistantService和Web/SSE/资格入口已统一使用apps.ai_backend新类型；业务Prompt/History/Receipt/Ledger/Policy在ai_service.runtime。顶层service/contracts/bindings/execution/streaming分别负责装配与业务边界，不留runtime重复装配。Backend与旧Prototype互不依赖，Monitoring/Knowledge暂留旧领域服务。Scope及授权/输出预算不变，qualification计划@2重新绑定授权，非新真实资格。见 [当前Backend](../ai_backend/README.md)。
+
+R2C-1E：迁移主线和基本真实网页人工验收已结束；Qwen Normal 水质查询、Streaming 水质 + Knowledge、Final 提交及来源 / PROTOTYPE 标签由用户观察为正常。本轮工程检查未再调用 Provider，未改变资格记录、发布范围或默认开关。Monitoring 的旧 Diagnosis / telemetry / 领域合同、KnowledgeService / 固定资源仍在业务层，后续独立化不应反向引入通用 Backend。
 
 ## R2B-4：管理独立 Normal 多轮执行范围
 
