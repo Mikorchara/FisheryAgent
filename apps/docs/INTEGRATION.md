@@ -1,5 +1,7 @@
 # 统一监测协议与集成边界
 
+AI 的扩展操作见 [AI Backend 与 Assistant 开发指南](AI_BACKEND_DEVELOPMENT_GUIDE.md)；本文件维护当前数据/应用边界。带 R 阶段编号的章节保留来源脉络，下述执行类均为管理独立 Backend，只有明确说明的领域/Knowledge 代码仍来自旧包。
+
 ## 1. 当前运行链路
 
 ```text
@@ -165,25 +167,25 @@ Web 的 `snapshot()` 继续在同一读事务捕获 current + history，再使�
  → 同源 AI HTTP：访问令牌 / epoch / 确认 revision / 设备登记校验
  → Web ManagementAssistant：浏览器令牌 / RequestRegistry / 同一个 RequestHandle
  → ai_service.ManagementAssistantService：冻结 device_id、Preset、Policy，取得正式 RuntimeSnapshot
- → 原 AssistantService：默认 Prompt v2 / 试用正式多轮 Prompt；History v2 / 现有裁剪
- → 原 ToolCallingService / Gateway / Registry / Executor
+ → ai_service.runtime.assistant.AssistantService：Prompt v2 / 正式多轮 Prompt；History完整pair裁剪
+ → ai_backend History Projection / ToolCallingService / Gateway / Registry / Executor
       → get_current_water_quality：MonitoringService.capture_water(device_id)
           → DomainAnalysisService.capture_water → project_water_tool，无历史/二次诊断
-      或 search_fishery_knowledge：原 KnowledgeService / 原 Handler
+      或 search_fishery_knowledge：旧领域 KnowledgeService / ai_service.runtime.tools Handler
           → 项目背景 Evidence 或 NO_MATCH，不读取 Monitoring
  → Source Ledger / Commit Gate / 安全 Trace → 唯一 Final
 ```
 
 - 启用开关 --enable-assistant；默认关闭，与 --legacy-demo 互斥。不读取或继承旧 Web 的多轮/Streaming 开关。只提供 Qwen 3.8 Flash（默认）与 Ollama Qwen3.5 4B，正式 Preset Identity、协议、Capability、OFF/Normal 均由管理侧固定Preset资源提供；DeepSeek 不列入首版。页面“已启用/已装配”仅表示本地 Adapter 可用，不表示 Provider 已联网或凭据已验证；启动不发健康 Probe。
-- 默认 1 Tool Call / 1 Round / 最多 2 Model Requests；R2B-4 显式本地实验可为 2/2/3，retry=0；同一个 RequestHandle 的整 Turn Deadline 包含全部模型请求与 Tool，复用 Stop/Trace 提交门禁，无失败重跑。没有 Streaming、新 RAG、评分、视觉 Tool 或固定 Analysis。
-- ManagementToolRegistry 复用正式 Definition / validator；水质只替换为 Monitoring 数据 Handler，Knowledge 直接使用原绑定。Tool Policy 从已有 outputs/tool-policies/tool_policies.json 读取；不存在时复用内置默认（只授权水质）。实际授权 = 现有 Assistant Policy ∩ 本应用装配集合（水质查询、项目知识检索）；不自动修改用户 Policy。评分只参与全局 Policy 兼容校验，不进入管理执行 Registry，不回退旧 Snapshot。
+- 默认 1 Tool Call / 1 Round / 最多 2 Model Requests；显式 Normal 多轮本地实验可为 2/2/3，retry=0；同一个 RequestHandle 的整 Turn Deadline 包含全部模型请求与 Tool，复用 Stop/Trace 提交门禁，无失败重跑。Qwen 精确两工具 Streaming 可由独立 trial 参数开启（下文）；新 RAG、评分、视觉 Tool 或固定 Analysis 未接入。
+- `bindings.bind_tools()` 返回新 Backend 的 ToolRegistry，使用 ai_service.runtime.tools 的 Definition / validator；水质绑定 Monitoring Handler，Knowledge 绑定业务检索映射。当前不存在名为 ManagementToolRegistry 的类。Tool Policy 从已有 outputs/tool-policies/tool_policies.json 读取；不存在时复用内置默认（只授权水质）。实际授权 = 用户 Assistant Policy ∩ 本应用装配集合（水质查询、项目知识检索）；不自动修改用户 Policy。评分只参与已知存储配置校验，不进入管理 Registry，不回退旧 Snapshot。
 - Tool Result 保留 canonical 水质与来源合同，使用精简 `management-current-water@1` 投影（下节）。这些数据只送入后续模型请求，不原样发给浏览器。存在窗口时 status=OK 表示读取完成，不表示有效或正常；NO_DATA 是未收到窗口。canonical quality 保守投影，独立 data_quality/coverage 保留实际覆盖；Findings 和 PROTOTYPE Rule Identity 与同批次网页一致，STALE/OFFLINE 不得证明恢复。
 - 设备按本次请求的服务器登记 ID 冻结，不跟随其他页面的选择变化。冻结的是设备而非旧读数；Tool 执行时读取该设备最新已接收数据，并保留时间/批次。因此不同时间的页面读取可能有不同批次，不能声称始终是同一时刻。
-- 凭据使用原 private_project_location(仓库根) + CredentialStore；发送前一次 resolve 得到冻结 CredentialSnapshot。云端凭据缺失/私有文件权限错误安全失败，不复制、不迁移、不创建项目 .env。Ollama 按既有 Auth NONE；没有第二套凭据 UI。
+- 凭据使用 ai_service.runtime.locations 的 private_project_location(仓库根) + ai_backend.credentials.CredentialStore；执行时一次 resolve 得到冻结 CredentialSnapshot。云端凭据缺失/私有文件权限错误安全失败，不复制、不迁移、不创建项目 .env。Ollama 按既有 Auth NONE；没有第二套凭据 UI。
 - API：GET /api/ai/bootstrap?device；POST /api/ai/requests 创建有界 RequestHandle；POST /api/ai/messages 发送；POST /api/ai/request-state 与 /api/ai/cancel 用控制令牌读取安全状态/停止。Bootstrap 只返回安全模型列表、工具名、预算、epoch、revision、进程内浏览器访问令牌，不解析/回显 Secret。
 - AI 写 API 要求 loopback peer、固定 Host、同源 Origin（存在时）、JSON 与 X-Management-AI；无 CORS。仅在 AI API 使用 32 KiB 有界消息，Ingestion 仍限 8 KiB。浏览器不能提交 mode、预算、Prompt、SourceRequirement、Provider 或自定义连接。revision 绑定既有 Preset 配置、设备、完整有效 Policy、实际授权集合、实际装配的 Tool 名称/type/description/parameters、水质投影版本和 epoch；变化时联网前拒绝，要求重新确认。本轮校验并冻结的同一个 Registry/Policy 用于实际执行，不在凭据读取后重建另一套绑定。RequestHandle 不允许重复执行。
 - History 只在页面 Session 内保存成功文本 pair，复用后端 6 轮/6 KiB 完整 pair 裁剪和 UNTRUSTED_TRANSCRIPT_V1。失败、取消、截断、pending、Tool 协议/Result/Trace 不进入成功 History。浏览器只限制提交 envelope 大小，不重写后端 Projection；模型/设备切换确认并清本会话，刷新清空；epoch 失效保留草稿、清旧历史、重新 Bootstrap，不自动重发。
-- UI textContent 渲染；独立 Tool 卡片、安全有序 Steps、Usage/状态详情，500ms 状态轮询不丢最终步骤。无 Prompt、参数、Raw Tool Result、Reasoning、凭据或 traceback。最终 POST 是提交依据，Stop 后迟到响应不作为成功回答；远端计算/费用是否停止仍为 UNKNOWN。
+- UI textContent 渲染；独立 Tool 卡片、安全有序 Steps、Usage/状态详情，Normal 状态轮询不丢最终步骤，Streaming 使用严格校验的 SSE。无 Prompt、参数、Raw Tool Result、Reasoning、凭据或 traceback。Normal 合法完整响应或 Streaming 合法 Final 是提交依据；取消已接受后的迟到响应不提交，远端计算/费用是否停止仍为 UNKNOWN。
 - 安全 Trace 位于 Git ignored 的 outputs/management_web/assistant-traces.jsonl，复用 JsonlTraceSink，只存 allowlist 元数据，不保存对话正文。SQLite 和事件生命周期不因聊天清空/切换而改变。
 
 这是本机开发集成，不是生产账户/租户权限或设备鉴权。离线 Fake Provider 验证不代表真实回答质量已验收；真实 Provider 调用需要用户另行授权。
@@ -192,17 +194,17 @@ Web 的 `snapshot()` 继续在同一读事务捕获 current + history，再使�
 
 `apps/ai_service/` 是可无 Web 使用的同进程 Python 业务包，不是新微服务，没有新端口。`service.py` 迁移原业务代码，`bindings.py` 原样迁移管理 Tool 绑定与水质投影；`management_web/ai_adapter.py` 保留薄 Web 门面，HTTP 路由、UI、请求/响应 JSON 和启动命令不变。内部业务符号的导入改用新位置，不增加旧路径转发层。
 
-- `AssistantBackend` 明确 availability、bootstrap、prepare_turn、execute_turn 及 monitoring/epoch。Protocol 是开发合同，不是权限；Web 仍只通过显式装配的 ManagementAssistant 启用执行，并校验其 Monitoring 与页面服务是同一实例。
+- `contracts.py` 定义进程内 frozen PreparedAssistantTurn 与 AssistantBackend Protocol，包含 availability、bootstrap、prepare_turn、execute_turn、claim_turn 及 monitoring/epoch；不是 HTTP DTO，也不接受 Flask 对象。Protocol 是开发合同，不是权限；Web 仍只通过显式装配的 ManagementAssistant 启用执行，并校验其 Monitoring 与页面服务是同一实例。
 - `prepare_turn(value)` 只接受业务字段，复用 AssistantRequest 校验及原 Policy/Definition/revision 确认；返回 frozen `PreparedAssistantTurn`，含既有 Request、设备、epoch、Profile、Policy 与 Registry。它只在服务器内短暂使用，不序列化、不进 History/数据库、不含已解析凭据，其 repr 不暴露问题/历史。预检不读观测、不解析凭据、不发请求。
 - Web 保留浏览器令牌、RequestRegistry、控制令牌校验、状态/Stop API；移除 request_id/control_token 后调用业务预检。预检成功后才取出原 Handle，交给 `execute_turn(prepared, handle)`。后者检查 epoch，再沿用 handle.start 防重放/取消、原整 Turn deadline、一次 CredentialSnapshot/RuntimeSnapshot 和 AssistantService。未建立第二套取消、循环或 Trace。
 - 同一 Turn 冻结 Registry/Policy/设备；另一个页面选择不改变它。本次 Tool 执行仍查询该设备当时的统一 Monitoring 数据，不冻结旧读数；Knowledge 仍独立。业务包不导入 Flask/management_web，Monitoring 生产代码不反向导入 AI service；没有全局 Demo fallback。
 - `local()` 的私有凭据工厂、outputs/tool-policies 与 outputs/management_web/assistant-traces.jsonl 保持原位置；本次整理未读取/迁移/复制私有文件，真实执行仍由原 CredentialStore 获取 Snapshot。UI epoch/revision、每次网络确认、Qwen/Ollama、OFF/Normal/1/1/2 和所有提交安全语义不变。
-- Normal Multi-Round：本业务层已接入原 Runtime 的显式模式和管理独立精确门禁（见下节）；Streaming：本层装配模式，Web 负责 SSE/断线，核心 Adapter 负责分片归一；新 Tool：本层绑定现有 Registry/Executor 与管理数据服务；新 RAG：替换 Knowledge 依赖和检索实现，保持背景 Evidence 合同，不将其放入 UI、HTTP 或水质规则中。除 Normal 多轮本地试用外，其余尚未开放。
+- Normal Multi-Round：本业务层通过 execution.py 解析管理独立 Scope/flag/revision，再选择 Backend 的显式执行模式；Streaming：streaming.py 只负责发布配置/Scope，Web 的同名文件负责 SSE worker/断线，Backend Adapter 负责组装。新 Tool 在本层绑定管理业务服务；新 RAG 应替换 Knowledge 依赖，保持背景 Evidence 边界。当前 Normal 多轮与 Qwen 精确两工具 Streaming 均可显式本地试用，其他组合不自动开放。
 
 ### R2B-3.3：Knowledge Tool 装配与来源隔离
 
 - 每个 ManagementAssistantService 只创建一个 `KnowledgeService`，数据固定为包内 `src/fishery_ai/resources/knowledge/eel_knowledge.json`，使用原 portable 检索实现；不是资料页面 Demo 文件，不接入新上传/索引/RAG。
-- 原 ToolRegistry 创建唯一 `search_fishery_knowledge` Definition、validator 和 Handler；ManagementToolRegistry 直接保留该 ToolDefinition 对象。实际执行仍走同一 ToolCallingService / ToolExecutor，不复制检索逻辑、Schema 或执行循环。全局 Policy 校验 Registry 可识别评分等原 Tool，不表示管理应用可以执行它们。
+- `ai_service.runtime.tools` 定义唯一 Knowledge model definition、validator 和检索结果映射；`bindings.bind_tools()` 用 Backend ToolDefinition 绑定共享 KnowledgeService，并在逐 Turn 装配时保留 formal Registry 中的 Knowledge entry。实际执行仍走 Backend ToolCallingService / ToolExecutor，不复制检索逻辑或执行循环。Policy 的已知名称包含评分以兼容存储，不表示管理应用装配了评分 Handler。
 - Knowledge 只接受现有 `{"query":"..."}` 合同，固定 top_k=3、每条正文最多 800 字符加省略号；参数、结果大小限制和异常映射均由原合同执行。非法参数不会检索，未授权返回 TOOL_NOT_ALLOWED；检索异常是 TOOL_EXECUTION_ERROR，不能伪装成 NO_MATCH，不继续模型请求。
 - OK 的合法 Evidence 只能授予 RETRIEVED_PROJECT_EVIDENCE；NO_MATCH 只表示本轮检索完成，不授予命中或当前观测来源。二者都不能满足 CURRENT_OBSERVATION_QUERY / CURRENT_SCORE_EVALUATION。History、模型正文和来源声明不生成 Receipt。
 - 默认 Web 是 OFF / Normal / 1 Call / 1 Round / 最多 2 Requests（R2B-4 显式实验另见下节）。两项授权表示模型择一，不表示同轮双 Tool；多个调用整批拒绝，Request #2 的 tool_choice=none，继续调用为 TOOL_ROUND_LIMIT，失败不重试、不提交成功 History。Knowledge 成功但后续模型失败时仍可保留执行审计，不提交成功回答。
@@ -254,7 +256,7 @@ R2C-1E：迁移主线和基本真实网页人工验收已结束；Qwen Normal �
 - 精确 Scope：Preset ID/variant/contract、service/adapter/normalized URL/model、完整 ProtocolSpec、OFF/Normal、正式 `ASSISTANT_BOUNDED_MULTI_ROUND@1` 的 hash、History projection/version、实际授权 Tool 名称和 definitions hash，以及 `management-current-water@1`、Knowledge binding/source/version/backend。当前唯一组合为水质查询 + 项目知识检索。
 - 复用核心 `release_scope` / `resolve_execution_profile` 的纯计算，传入管理自己的维护者记录；不加载 Prototype 发布文件。管理 revision 还绑定完整用户 Policy、实际装配 Definition、设备、epoch 和配置。输出预算/Timeout/retry/凭据引用通过核心 runtime revision 纳入确认；安全摘要不向浏览器暴露这些私有设置。
 - Bootstrap 每个 Preset 返回有效 mode、can_send、预算、实验状态和 revision。Turn 预检先核对 epoch / confirm / revision / Scope，再取得 RequestHandle、一次 CredentialSnapshot 和 RuntimeSnapshot；Policy / Registry / ExecutionDecision / 设备在预检时冻结。开关开启但未匹配时联网前拒绝，不静默降级；浏览器过期确认不能复用。
-- `ManagementAssistantService` 仅选择原 AssistantService/ToolCallingService 的 mode；正式多轮 Prompt、原 History v2 裁剪、Source Gate、Ledger、Commit Gate、预算和 Deadline 均复用。Tool A Result 进入下一请求，由模型决定 Tool B 或 Final；最后请求 tool_choice=none。没有预执行、第三个 Tool、第四次模型请求、自动重试或 failover。
+- `ManagementAssistantService` 选择 apps.ai_service.runtime.assistant.AssistantService 与 apps.ai_backend.tool_conversation.ToolCallingService 的 mode；正式多轮 Prompt、History v2 裁剪、Source Gate、Ledger、Commit Gate、预算和 Deadline 均复用。Tool A Result 进入下一请求，由模型决定 Tool B 或 Final；最后请求 tool_choice=none。没有预执行、第三个 Tool、第四次模型请求、自动重试或 failover。
 - 水质 Tool 仍执行一次 `capture_water`，冻结设备而非旧读数，保留 batch/time/quality/coverage/Findings/PROTOTYPE Rule Identity。Knowledge 独立检索，Ledger 每次执行留独立 Receipt，不把知识 Evidence 合并为现场事实。后续错误保留已有 Ledger 审计，但不提交成功回答。
 - 前端沿用通用有序 Steps、每 Tool 独立卡片、聚合 Usage、Stop 和唯一 Final。只有完整通过门禁的最终文本 pair 进入 History；不保存中间模型正文、Tool 协议、Ledger 或 payload。网络确认动态显示最多 2 或 3 次，请求结束清除确认。
 

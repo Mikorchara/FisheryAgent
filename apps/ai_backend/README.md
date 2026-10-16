@@ -2,16 +2,20 @@
 
 R2C-1C Phase I 已建立新侧闭包。起点为 `d88dbf34f6f20f7dcfe62f828bbf78970acfc7c2` 的既有实现，选择性分叉，不重写执行算法。旧 Prototype 保留自身实现；参数诊断已撤销共享 Alias。R2C-1D Phase II 已将管理 Web / ManagementAssistantService / SSE / 资格入口统一切到这里；旧 Prototype 仍独立。
 
+扩展 Tool、Prompt 与执行配置先看 [AI Backend 与 Assistant 开发指南](../docs/AI_BACKEND_DEVELOPMENT_GUIDE.md)。本 README 只定位通用实现；业务 Assistant 在 ai_service/runtime，HTTP SSE worker 在 management_web。
+
 ## 模块与公共边界
 
 | 模块 | 职责 |
 |---|---|
-| `contracts.py`、`model_options.py` | 中立 Usage / RuntimeInfo / 选项和能力合同，不含领域 Facts |
+| `contracts.py` | Mode / Status、Usage / SessionUsage / UsageAccumulator、RuntimeInfo 与 UTC 时间辅助，不含 Web Protocol 或领域 Facts |
+| `model_options.py` | 生成/Thinking 选项、能力状态及校验，不负责业务授权 |
 | `model_gateway.py`、`providers.py`、`protocol_specs.py` | 新消息/Tool/快照/错误类型、固定 Provider 元数据和原编码 |
 | `openai_compatible_adapter.py`、`manual.py` | 原 SDK Normal/Streaming/Assembler/Raw 传输；不开放管理 Manual UI |
 | `execution.py` | 独立 ContextVar、RequestHandle/Registry、唯一 claim、Stop、整 Turn deadline |
 | `tool_conversation.py` | 原 Steps / Budget / ToolCallingService 循环；显式 Policy，1/1/2 或 2/2/3 |
-| `tools/contracts.py`、`registry.py`、`policy.py`、`executor.py` | 显式静态绑定、参数与授权、去重、执行和结果限额；无业务 Handler/默认文件 |
+| `tools/contracts.py` | ToolStatus / ToolError、Definition 的 Handler/validator 绑定、ToolExecutionResult，不是模型消息或 HTTP DTO |
+| `tools/registry.py`、`policy.py`、`executor.py` | 静态绑定索引、不可变授权、参数/去重/执行/结果限额；无默认业务 Handler 或配置文件 |
 | `history_projection.py` | 已裁剪完整 pair 的原 B 投影及 A 回滚，不二次裁剪 |
 | `assistant_activity.py`、`assistant_events.py` | 有界安全 Steps、固定业务摘要回调、原有序事件与临时预览；不含发布配置或 HTTP |
 | `observability.py` | Tool/Assistant 安全 JSONL，Tool 名单显式提供，不含 Analysis 专用入口 |

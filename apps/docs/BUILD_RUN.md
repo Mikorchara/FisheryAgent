@@ -198,6 +198,8 @@ R2B-5E 允许显式启动本地试用后人工检查 Streaming。关闭开关、
 
 管理Service/Web/SSE/管理qualification已统一使用apps.ai_backend和ai_service.runtime，不再运行旧LLM Runtime。正常命令和精确local_experimental授权保持不变：
 
+修改业务 Tool、Prompt、Preset 或发布配置前先读 [开发指南](AI_BACKEND_DEVELOPMENT_GUIDE.md)。其中区分实际代码 owner、测试入口与需要另行批准的精确实验范围；本节命令不授予新的 Provider 或 Tool 资格。
+
 ```powershell
 # 默认Normal，单轮；不启用Streaming
 .\.venv\Scripts\python.exe -m apps.management_web --enable-assistant

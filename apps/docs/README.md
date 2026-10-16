@@ -5,6 +5,7 @@
 ## 阅读入口
 
 - [目录与职责](STRUCTURE.md)
+- [AI Backend 与 Assistant 开发指南](AI_BACKEND_DEVELOPMENT_GUIDE.md)（请求链、Tool/Prompt 扩展、Scope 与测试清单）
 - [启动、模拟器与验证](BUILD_RUN.md)
 - [上报 DTO、存储和集成边界](INTEGRATION.md)
 - [路线](ROADMAP.md)

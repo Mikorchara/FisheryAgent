@@ -17,23 +17,23 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  ├─ test_assembler.py                                               # 独立分片、截断、清理与错误测试
 │  │  │  ├─ test_boundary.py                                                # 阻断旧包导入与跨 Runtime 拒绝
 │  │  │  ├─ test_credentials.py                                             # 虚构凭据来源与快照安全
-│  │  │  ├─ test_execution.py                                               # 管理配置校验、独立 Scope 与默认关闭
+│  │  │  ├─ test_execution.py                                               # Fake SDK 取消、资源关闭与 Raw body 隔离
 │  │  │  └─ test_protocol_specs.py                                          # 三 Provider 参数编码 parity
 │  │  ├─ tools/                                                             # 通用Registry/Executor/Policy合同
 │  │  │  ├─ __init__.py                                                     # 无启动 I/O 的包标记
-│  │  │  ├─ contracts.py                                                    # Web Protocol、共享 DTO 导出
+│  │  │  ├─ contracts.py                                                    # Tool 状态/错误、Handler/validator 绑定及执行结果
 │  │  │  ├─ executor.py                                                     # 参数/权限/去重/执行边界
-│  │  │  ├─ policy.py                                                       # 明确授权和参数门禁
+│  │  │  ├─ policy.py                                                       # 不可变的逐 Turn Tool 授权与 Registry 求交
 │  │  │  └─ registry.py                                                     # 调用方提供的静态绑定
 │  │  ├─ README.md                                                          # 快速入口
 │  │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
 │  │  ├─ assistant_activity.py                                              # 安全通用 Steps 投影
 │  │  ├─ assistant_events.py                                                # 有序有界事件及临时预览
-│  │  ├─ contracts.py                                                       # Web Protocol、共享 DTO 导出
+│  │  ├─ contracts.py                                                       # 执行状态、Usage 聚合、RuntimeInfo 与 UTC 辅助
 │  │  ├─ credential_paths.py                                                # 底层私有位置检查合同
 │  │  ├─ credentials.py                                                     # 私有 Store/Snapshot 与来源优先级
 │  │  ├─ execution.py                                                       # 请求上下文、取消及 Deadline
-│  │  ├─ history_projection.py                                              # 原 B 默认投影与 A 兼容
+│  │  ├─ history_projection.py                                              # 已保留完整 pair 的 B 默认投影与 A 回滚
 │  │  ├─ manual.py                                                          # 原 Raw 传输合同，无管理 UI 入口
 │  │  ├─ model_gateway.py                                                   # 新模型消息、Profile/Snapshot 与 Gateway
 │  │  ├─ model_options.py                                                   # 原能力与生成选项校验
@@ -69,11 +69,11 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  ├─ assistant.py                                                    # 业务 Prompt、History 裁剪及最终提交
 │  │  │  ├─ catalog.py                                                      # 业务展示 metadata，不授予权限
 │  │  │  ├─ locations.py                                                    # 保留原私有目录身份算法
-│  │  │  ├─ policy.py                                                       # 明确授权和参数门禁
+│  │  │  ├─ policy.py                                                       # 默认/用户 Tool 选择校验、安全存储与授权求交
 │  │  │  ├─ presets.py                                                      # 新侧固定 Preset 资源加载
-│  │  │  ├─ release_contracts.py                                            # 原 Normal 发布合同与指纹
+│  │  │  ├─ release_contracts.py                                            # Normal 发布合同、Prompt/Tool 指纹与执行模式解析
 │  │  │  ├─ sources.py                                                      # 业务 Requirement/Receipt/Ledger
-│  │  │  ├─ streaming_contracts.py                                          # 原 Streaming 发布合同与指纹
+│  │  │  ├─ streaming_contracts.py                                          # Streaming 发布合同、Scope 指纹与可用性解析
 │  │  │  └─ tools.py                                                        # 两工具 Definition/query 合同及已知评分名称
 │  │  ├─ tests/                                                             # 离线测试及Fake SDK
 │  │  │  ├─ fixtures/                                                       # 虚构/哈希测试基线
@@ -88,10 +88,10 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  └─ test_streaming_qualification.py                                 # 计划授权、正式管理链路、来源/报告与安全预览
 │  │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
 │  │  ├─ bindings.py                                                        # Monitoring 单次捕获与 Knowledge 绑定
-│  │  ├─ contracts.py                                                       # Web Protocol、共享 DTO 导出
-│  │  ├─ execution.py                                                       # 请求上下文、取消及 Deadline
+│  │  ├─ contracts.py                                                       # 进程内 PreparedAssistantTurn 与 AssistantBackend 合同
+│  │  ├─ execution.py                                                       # Normal 多轮发布、数据绑定、Scope 与确认 revision
 │  │  ├─ service.py                                                         # 唯一ManagementAssistantService业务装配
-│  │  └─ streaming.py                                                       # 请求内 SSE 投递、worker 生命周期与断线清理
+│  │  └─ streaming.py                                                       # Streaming 发布配置、精确 Scope 与确认 revision
 │  ├─ docs/                                                                 # 实际目录
 │  │  ├─ deep-dive/                                                         # 实际目录
 │  │  │  ├─ model/                                                          # 实际目录
@@ -100,8 +100,9 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  │  ├─ R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md           # Streaming 设计与实施状态
 │  │  │  │  ├─ R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md                    # R2B-0 评估基线，非实现现状
 │  │  │  │  ├─ R2C1A_LLM_BACKEND_AUDIT.md                                   # 独立化审计基线
-│  │  │  │  └─ R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md                      # 获批分叉方案与 Phase I 实施记录
+│  │  │  │  └─ R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md                      # 独立 Backend 迁移方案、实施与最终人工验收
 │  │  │  └─ STREAMING_QUALIFICATION.md                                      # 单案例批准、脱敏报告、人工预览及试用/回滚
+│  │  ├─ AI_BACKEND_DEVELOPMENT_GUIDE.md                                    # 请求链、Tool/Prompt 扩展与安全测试指南
 │  │  ├─ BUILD_RUN.md                                                       # 启动、联调与验证
 │  │  ├─ INTEGRATION.md                                                     # 上报合同和替换边界
 │  │  ├─ README.md                                                          # 快速入口
