@@ -1,6 +1,6 @@
 # 管理 Assistant Streaming 资格与本地试用
 
-**R2B-5D：OFFLINE PREPARED / REAL PROVIDER RESULTS: NOT RUN / WEB TRIAL: CLOSED。**
+**R2B-5E：三个真实案例技术 PASS；用户已批准 Qwen 精确两工具 local_experimental。默认关闭，人工回答质量待审，非 released。**
 
 本入口只验证管理数据绑定，复用已有资格 Adapter、协议观察、正式 ManagementAssistantService 和 ToolCallingService。每个进程只处理一个固定案例，没有批量、重试、failover 或发布写入。
 
@@ -17,9 +17,9 @@
 | 水质绑定 | `management-current-water@1`；正式 MonitoringService / SQLite / Domain Analysis |
 | Knowledge 绑定 | `management-project-knowledge@1`，`legacy:eel_knowledge.json / 1.0 / portable` |
 | 预算 | 每请求 512 output tokens，最多 2 Calls / 2 Rounds / 3 Requests，每轮一个 Tool，retry=0，整 Turn 120 秒 |
-| 当前发布 | 管理独立配置 `enabled=false / candidate`，无 qualification_id、无发布结论 |
+| 当前发布 | 管理独立配置 `enabled=false / local_experimental`，无 qualification_id / validated_at；显式启动参数开启，不代表人工回答质量通过 |
 
-以上来自当前维护者合同。Dry-run 重新计算精确 Scope，与 [管理配置](../ai_service/resources/assistant_streaming.json) 比较；Identity、协议、Prompt、History、Tool 或绑定不匹配直接拒绝。输出预算必须与候选的 512 一致。配置、SDK 版本、案例、问题、Scope、预算、History framing 改变都会影响计划指纹，不沿用旧批准。
+以上来自当前维护者合同。Dry-run 重新计算精确 Scope，与 [管理配置](../../ai_service/resources/assistant_streaming.json) 比较；Identity、协议、Prompt、History、Tool 或绑定不匹配直接拒绝。输出预算必须与该范围的 512 一致。配置、SDK 版本、案例、问题、Scope、预算、History framing 改变都会影响计划指纹，不沿用旧批准。
 
 本轮核对的 Scope SHA256：`fc476b2e9ac19046b0127e65d70dc1488016c04f9dde29698d681c6047708e90`。它不代表资格通过；未来使用重新计算的 Dry-run 为准。
 
@@ -78,14 +78,21 @@ SDK 不公开原始 `[DONE]`，只记录 `NOT_OBSERVABLE_BY_SDK`。关闭调用�
 
 ## 5. 审批、本地试用和回滚
 
-1. 先逐案例审批并运行；确认 `evidence_kind=real_provider` 且实际请求数大于零，再审核安全 JSON 中模型一致性、1/2/3 路径、结果传递、清理、Ledger、所有来源断言、Usage/截断、Trace 与 Commit Gate。离线 success 不作为真实资格。
-2. 人工核对预览：概念问题无伪造查询；水质值及来源正确；低氧关联项目证据而非疾病确诊；NO_MATCH/过期/无效不冒充命中或正常。记录 run_id、plan/scope hash、审核人/时间、结论与限制，单独保存批准结论，不能用模型正文生成批准。
-3. 若准备试用，用户另行批准“该精确管理 Scope 的 local_experimental + 网页真实验收预算”。维护者届时才把管理配置唯一记录改为 `local_experimental` 并启用 `enabled=true`；不填写虚构 qualification_id，不升级为 released，不修改原 Prototype/其他 Preset 范围。**本轮不执行此操作。**
-4. 重启管理 Web（原 `--enable-assistant` 入口即可）；使用 Tool Manager 明确授权精确两工具，不由资格脚本改用户 Policy。选择 Qwen/Streaming 后重新确认，页面应显示 local_experimental、512 tokens、最多三请求。Normal 仍为默认和独立回滚路径。
-5. 真实网页单独检查：新问题跟随、向上读历史暂停、编号/键盘跳转、预览原位转 Final、跨模式 History；各请求阶段 Stop、断线和截断撤销；验证只有一条成功回复。故障后不自动重跑。
-6. 关闭试用：把**管理独立** `enabled` 改回 false，停止并重启自己启动的 Web。新 epoch 使旧确认/Session 失效；数据库、Policy、Credential 保留。可继续 Normal，不将失败 Streaming 自动以 Normal 重发。
+用户已在正常 PowerShell 完成三次真实资格实验（本轮实现未联网）：
 
-当前结论：离线准备就绪，真实试用 **HOLD / 等待逐案例授权**。首批没有 History 场景、真实数据老化、Ollama、评分或三工具资格；后续若需要，应另行限定实验。
+| case | run_id | 实际请求数 | 技术结果 |
+|---|---|---:|---|
+| direct-final | cd17c4158ca44a3c820af3022f59bf23 | 1 | PASS |
+| current-water | 39f62c27cf1d4e3aab31e8cc6eecfb35 | 2 | PASS |
+| low-oxygen | be51879050f44d14b6df52f4cabfce26 | 3 | PASS |
+
+三份历史报告保留原 candidate 身份、PENDING_MANUAL_REVIEW 和人工预览状态，不改写报告或填造 qualification_id。它们是三个受控样本，不证明长期稳定性；报告未覆盖真实浏览器 HTTP/SSE。R2B-5E 用户另行明确批准精确范围的本地实验，回答质量审核留待后续，未声称其已通过。
+
+启动：`python -m apps.management_web --enable-assistant --assistant-streaming-trial`。启动参数只将本进程冻结配置 enabled 置 true，磁盘仍 false。使用已有 Tool Manager 明确授权精确两工具，不自动改用户 Policy；在管理页选择 Qwen/Streaming，核对 local_experimental、512 tokens、最多三请求并逐次确认。Normal 默认1/1/2；如需其既有多轮可另加 --assistant-multi-round-trial。
+
+网页待人工检查：新问题跟随、向上读历史暂停、编号/键盘跳转、预览原位转 Final、跨模式 History；各请求阶段 Stop、断线和截断撤销；验证只有一条成功回复。失败不自动重发或转 Normal；具体操作见 [BUILD_RUN](../BUILD_RUN.md#r2b-5eqwen-streaming-本地实验)。
+
+回滚：Stop 后停止自己启动的 Web，去掉 --assistant-streaming-trial，以 `python -m apps.management_web --enable-assistant` 重启（可保留独立 Normal 多轮参数）。新 epoch 撤销旧确认/Session，Streaming 再次拒绝，保留数据库、Policy 和 Credential。Ollama、DeepSeek、评分及三工具 Streaming 未开放，History/真实数据老化与回答质量没有因这次授权获得资格结论。
 
 ## 6. 离线验证
 

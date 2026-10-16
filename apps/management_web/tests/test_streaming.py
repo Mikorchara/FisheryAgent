@@ -30,9 +30,8 @@ BLOCK=object()
 
 
 def trial_config():
-    # Temporary fixture only: not a product publication or real model evidence.
-    config=load_streaming_config()
-    return replace(config,enabled=True,releases=tuple(replace(r,runtime=replace(r.runtime,status='local_experimental')) for r in config.releases))
+    # Exercise the actual CLI opt-in and publication, using only an offline SDK.
+    return load_streaming_config(enable_trial=True)
 
 
 class ManagementStreamingTests(unittest.TestCase):
@@ -217,7 +216,9 @@ class ManagementStreamingTests(unittest.TestCase):
         self.assertEqual(payload['status'],'NO_DATA');self.assertIsNone(payload['water_quality'])
 
     def test_default_off_candidate_even_when_enabled_and_ollama_not_allowed(self):
-        for config in (load_streaming_config(),replace(load_streaming_config(),enabled=True)):
+        trial=trial_config()
+        candidate=replace(trial,releases=tuple(replace(r,runtime=replace(r.runtime,status='candidate')) for r in trial.releases))
+        for config in (load_streaming_config(),candidate):
             self.setup_stream(config=config)
             self.assertFalse(self.config['presets'][0]['streaming']['can_send'])
             self.assertEqual(self.send_stream().get_json()['error_code'],'ASSISTANT_STREAMING_NOT_RELEASED')
@@ -225,6 +226,35 @@ class ManagementStreamingTests(unittest.TestCase):
         p=self.config['presets'][1]
         self.assertFalse(p['streaming']['can_send'])
         self.assertEqual(self.send_stream(preset_id=PRESETS[1],revision=p['streaming']['revision']).get_json()['error_code'],'ASSISTANT_STREAMING_NOT_RELEASED')
+        self.assertEqual(self.bodies,[])
+
+    def test_trial_scope_policy_and_unapproved_presets_refuse_before_credentials(self):
+        self.setup_stream()
+        self.assertTrue(self.config['presets'][0]['streaming']['can_send'])
+        self.assertEqual(self.config['presets'][0]['streaming']['release_status'],'local_experimental')
+        self.assertEqual(self.config['presets'][0]['execution']['mode'],'SINGLE_ROUND')
+        with patch.object(self.backend.credentials,'resolve',side_effect=AssertionError('no credentials')):
+            response=self.send_stream(preset_id='deepseek-flash-r1')
+        self.assertEqual(response.get_json()['error_code'],'ASSISTANT_PRESET_NOT_ALLOWED')
+        for names in ((),(WATER,),(KNOWLEDGE,),('score_current_water_quality',)):
+            self.setup_stream(names=names)
+            before=self.backend.policy_store.effective()['assistant']
+            self.assertFalse(self.config['presets'][0]['streaming']['can_send'])
+            self.assertEqual(self.config['presets'][0]['streaming']['mode_reason'],'scope_not_published')
+            with patch.object(self.backend.credentials,'resolve',side_effect=AssertionError('no credentials')):
+                response=self.send_stream()
+            self.assertEqual(response.get_json()['error_code'],'ASSISTANT_STREAMING_NOT_RELEASED')
+            self.assertEqual(before,self.backend.policy_store.effective()['assistant'])
+        self.assertEqual(self.bodies,[])
+
+    def test_trial_rollback_rejects_old_epoch_and_fresh_stream_before_io(self):
+        self.setup_stream();old=self.envelope(revision=self.config['presets'][0]['streaming']['revision'])
+        self.setup_stream(config=load_streaming_config())
+        with patch.object(self.backend.credentials,'resolve',side_effect=AssertionError('no credentials')):
+            response=self.client.post('/api/ai/messages/stream',headers=self.headers,json=old)
+            self.assertEqual(response.get_json()['error_code'],'ASSISTANT_SESSION_EXPIRED')
+            self.assertEqual(self.send_stream().get_json()['error_code'],'ASSISTANT_STREAMING_NOT_RELEASED')
+        self.assertEqual(self.config['presets'][0]['execution']['mode'],'SINGLE_ROUND')
         self.assertEqual(self.bodies,[])
 
     def test_scope_identity_protocol_prompt_history_tool_and_binding_mismatch_preflight(self):

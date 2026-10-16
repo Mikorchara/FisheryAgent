@@ -55,14 +55,15 @@ class ManagementAssistantService:
         self.policy_store = UserToolPolicyStore(policy_directory, self.formal_registry)
 
     @classmethod
-    def local(cls, monitoring, project_root, *, multi_round_trial=False):
+    def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False):
         from fishery_ai.credential_paths import private_project_location
         root = Path(project_root).resolve()
         location = private_project_location(root)
         return cls(monitoring, credentials=CredentialStore(location.env_path, private_location=location),
             traces=JsonlTraceSink(root / "outputs/management_web/assistant-traces.jsonl"),
             policy_directory=root / "outputs/tool-policies",
-            execution_config=load_execution_config(enable_trial=multi_round_trial))
+            execution_config=load_execution_config(enable_trial=multi_round_trial),
+            streaming_config=load_streaming_config(enable_trial=streaming_trial))
 
     def availability(self):
         return {"connected": True, "mode": "normal", "thinking": "off",

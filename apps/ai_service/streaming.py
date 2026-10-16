@@ -1,5 +1,5 @@
 """Management-owned Streaming publication; pure scope resolution, no Tool loop."""
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 from pathlib import Path
@@ -71,12 +71,15 @@ class ManagementStreamingConfig:
             raise GatewayError(CONFIG_ERROR) from None
 
 
-def load_streaming_config():
-    """Fixed management path, once per app epoch. Never the Prototype loader."""
+def load_streaming_config(*, enable_trial=False):
+    """Fixed management scope; CLI opt-in enables only this app epoch, not the file."""
+    if type(enable_trial) is not bool:
+        raise GatewayError(CONFIG_ERROR)
     try:
         path=Path(__file__).with_name('resources')/'assistant_streaming.json'
         if path.stat().st_size>65536:raise ValueError()
-        return ManagementStreamingConfig.from_dict(json.loads(path.read_text(encoding='utf-8')))
+        config = ManagementStreamingConfig.from_dict(json.loads(path.read_text(encoding='utf-8')))
+        return replace(config, enabled=True) if enable_trial else config
     except (OSError,ValueError,TypeError,RecursionError):
         raise GatewayError(CONFIG_ERROR) from None
 

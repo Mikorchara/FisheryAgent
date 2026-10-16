@@ -43,6 +43,6 @@ R2B-3.4 已提取独立 apps/ai_service：业务协调、Runtime 装配、Monito
 ## R2B-5：Streaming 分阶段接入
 
 - R2B-5B 后端已离线实现：管理独立 candidate/关闭开关、精确 revision、唯一 claim、POST SSE 与原 Streaming Runtime；Qwen 两工具，512 上限 / 2/2/3 / 120 秒。用户已报告 Qwen 管理 Normal 多轮初步验收通过，但未因此发布 Streaming。
-- R2B-5C 前端已离线接通：模式选择、严格 SSE 消费、原卡片预览转 Final、Stop/断线撤销、共用成功 History、内部滚动和问题导航。Normal 默认，Streaming candidate 仍拒绝真实发送。
-- R2B-5D 资格准备已接入管理独立单案例入口：Dry-run、计划 hash 确认、隔离 SQLite/Policy、真实执行来源与安全报告、可选人工终端预览；不改发布配置。见 [逐案例操作与审批](STREAMING_QUALIFICATION.md)。真实结果 NOT RUN。
-- 之后单独授权 Qwen 管理 Streaming 真实技术与人工回答质量验收，再决定本地实验试用。Ollama、评分/三工具、其他 Provider 单独评估，不继承资格。
+- R2B-5C 前端已离线接通：模式选择、严格 SSE 消费、原卡片预览转 Final、Stop/断线撤销、共用成功 History、内部滚动和问题导航。Normal 默认，未启用或不匹配的 Streaming 仍拒绝真实发送。
+- R2B-5D 管理独立单案例入口已完成三个真实技术 PASS（Direct Final、当前水质、低氧双 Tool），共六次模型请求；安全报告不保存正文，人工回答质量仍未批准，CLI 未覆盖真实浏览器。见 [逐案例操作与审批](deep-dive/STREAMING_QUALIFICATION.md)。
+- R2B-5E 用户明确批准 Qwen OFF / 两工具 Streaming local_experimental；`--assistant-streaming-trial` 进程内启用，默认关闭，非 released。下一步由用户进行网页体验；回答质量另行研究。Ollama、评分/三工具、其他 Provider 不继承范围。启动和回滚见 [BUILD_RUN](BUILD_RUN.md#r2b-5eqwen-streaming-本地实验)。

@@ -154,3 +154,15 @@ class AIServiceTests(unittest.TestCase):
         self.assertIs(backend.monitoring,self.monitoring)
         self.assertEqual(backend.traces.path,self.root/'outputs/management_web/assistant-traces.jsonl')
         self.assertEqual(backend.policy_store.directory,self.root/'outputs/tool-policies')
+
+    def test_local_streaming_opt_in_is_independent_of_normal_mode_and_creates_new_epoch(self):
+        location=SimpleNamespace(env_path=self.root/'not-read.env')
+        with patch('fishery_ai.credential_paths.private_project_location',return_value=location), \
+             patch('apps.ai_service.service.CredentialStore'):
+            trial=ManagementAssistantService.local(self.monitoring,self.root,streaming_trial=True)
+            rollback=ManagementAssistantService.local(self.monitoring,self.root)
+        self.assertTrue(trial._streaming_config.enabled)
+        self.assertFalse(trial._execution_config.multi_round_enabled)
+        self.assertFalse(rollback._streaming_config.enabled)
+        self.assertNotEqual(trial.epoch,rollback.epoch)
+        self.assertFalse((self.root/'outputs/tool-policies').exists())

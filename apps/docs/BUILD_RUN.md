@@ -140,7 +140,7 @@ R2B-3.4 边界测试：`python -m unittest apps.ai_service.tests.test_service ap
 
 ## R2B-5B：Streaming 后端离线验证
 
-启动命令保持原样：`python -m apps.management_web --enable-assistant`；原 Normal 多轮试用参数也不变。网页可选择 Normal / Streaming，默认 Normal。Streaming 默认配置关闭且只有 Qwen 两工具 candidate，选择后显示未开放并禁止发送；没有真实试用启动参数，不要为验收而自行修改发布状态或请求真实模型。
+不带试用参数启动时仍关闭 Streaming；原 Normal 参数不变。R2B-5E 已获批准开放 Qwen 精确两工具本地实验，启用与回滚见下节；这不是正式 released。
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest apps.ai_service.tests.test_streaming_config apps.management_web.tests.test_streaming
@@ -159,10 +159,37 @@ node --test apps/management_web/tests/*.test.mjs
 
 Streaming 临时正文在同一消息卡片内转为最终回答；Tool 请求、失败、截断、超时、Stop 或断线撤销预览，保留草稿且不写成功 History。不自动重连、重发或转 Normal。离开/刷新页面尽力取消原 Handle；后端已经完成但 Final 未到达时，浏览器仍不提交，远端计算/计费停止状态为 UNKNOWN。
 
-当前可人工检查默认 Normal、candidate 拒绝、导航和滚动；完整 Streaming 仅能通过上述 Fake SDK 离线入口验收。下一阶段须另获逐案例真实请求授权，审查管理专属 Scope 的技术及人工回答质量，再决定是否发布 local_experimental；不可继承原 Prototype 资格。
+R2B-5E 允许显式启动本地试用后人工检查 Streaming。关闭开关、candidate 或 Scope 错配仍拒绝发送；不继承原 Prototype 资格。
 
 ## R2B-5D：单案例资格准备
 
-新增默认 Dry-run 的 `scripts/qualification/qualify_management_streaming.py`，固定三个案例 direct-final / current-water / low-oxygen；只考虑当前管理 Qwen 两工具 Scope、512 tokens/请求、2/2/3 和 120 秒。正式 Web 仍 candidate/关闭，不增加试用启动参数。真实执行须逐案例批准并提供 `--confirm-network --plan-sha256`，可在正常交互终端显式选择 `--review-answer`，没有默认正文文件或自动批准。
+默认 Dry-run 的 `scripts/qualification/qualify_management_streaming.py` 固定三个案例 direct-final / current-water / low-oxygen；只考虑管理 Qwen 两工具 Scope、512 tokens/请求、2/2/3 和 120 秒。真实执行须逐案例批准并提供 `--confirm-network --plan-sha256`，可在交互终端选择 `--review-answer`，不保存正文或自动批准。用户已完成三个真实案例，技术均 PASS，共六次模型请求；人工回答质量仍待审，CLI 未验证真实浏览器 HTTP/SSE。
 
-命令、资格矩阵、报告字段、人工质量审核、未来启用及回滚见 [Streaming Qualification](STREAMING_QUALIFICATION.md)。本轮只运行三个 Dry-run 与离线 Fake SDK；当前没有任何管理端真实 Streaming 新证据。
+命令、报告与证据边界见 [Streaming Qualification](deep-dive/STREAMING_QUALIFICATION.md)。配置状态变化会改变后续资格计划 hash，旧报告保留，不补跑或覆盖。
+
+## R2B-5E：Qwen Streaming 本地实验
+
+用户明确批准本地试用，回答质量审核留待后续。维护者范围为 `local_experimental`，不是 `released`；qualification_id / validated_at 仍为空，不伪造人工批准。磁盘配置仍为 `enabled=false`，只在显式启动的进程中开启：
+
+```powershell
+.\.venv\Scripts\python.exe -m apps.management_web --enable-assistant --assistant-streaming-trial
+```
+
+访问 `http://127.0.0.1:8766`。如还需保留 Normal 2/2/3 本地实验，追加 `--assistant-multi-round-trial`；否则 Normal 仍为 1/1/2。两个开关独立，界面默认始终 Normal。模拟接入另按前文配置开发令牌后追加 `--enable-ingestion`，启动与切换本身不调用模型。
+
+1. 在现有 Prototype Tool Manager → Assistant 中，由用户明确授权水质查询与项目知识检索，并开启 LLM Tool Calling；不要修改默认 Policy。管理端只装配这两个 Tool，不装配评分。
+2. 刷新管理页面 → AI 智能助手 → Qwen 3.8 Flash → 选择监测设备 → Streaming。核对“本地实验 · local_experimental”、512 tokens/请求与最多三次模型请求；模型/Policy/Scope 不匹配时页面解释原因，服务端在凭据解析/联网前拒绝。
+3. 输入概念问题、当前水质问题，或“先查询当前水质，如果异常，再检索项目资料解释低氧风险”。勾选本次 REAL NETWORK REQUEST 确认后发送；一次确认覆盖最多三次请求及本地只读 Tool。检查独立 Tool 卡片、Steps、Usage 和预览原位转 Final；模型可以提前 Final，不保证每次都选 Tool。
+4. Normal / Streaming 切换只影响下一条消息、保留成功 History并清除旧确认；执行中冻结模式/设备/模型。测试向上阅读暂停跟随、问题标记跳转、Stop 和断线撤销。临时预览、失败、截断及取消不进入成功 History；不自动重连、重试、切 Provider 或以 Normal 重发。
+
+精确范围：`dashscope-qwen38-flash-r1` / OFF / STREAMING / `get_current_water_quality` + `search_fishery_knowledge`，2 Calls / 2 Rounds / 3 Requests、每轮最多一个 Tool、retry=0、120 秒整 Turn、每请求最多512 output tokens。Identity、协议、Prompt、History、definitions、数据绑定、设备、Policy、预算和 epoch/revision 必须匹配。Ollama、DeepSeek、评分与三工具 Streaming 均未开放。Tool 返回的模拟观测不是实际硬件采样；规则为 PROTOTYPE，知识为背景来源，回答质量尚未完成审核，512 tokens 仍可能截断。Stop 不保证远端计算/计费停止。
+
+回滚：先在页面 Stop，停止自己启动的管理服务器（Ctrl+C），去掉 `--assistant-streaming-trial` 后重启：
+
+```powershell
+.\.venv\Scripts\python.exe -m apps.management_web --enable-assistant
+```
+
+若需保留原 Normal 多轮，回滚命令可追加 `--assistant-multi-round-trial`。新 epoch 撤销旧会话/确认；刷新页面，Streaming 被拒绝，Normal 可用。磁盘 `enabled=false` 不被启动参数写回；不用改数据库、Policy、凭据或原 Prototype。
+
+本轮离线验证：管理配置/AI Service/资格兼容/HTTP SSE 与 Normal 相关 Python 124 项、共享 Streaming Assembler/Runtime/Source/Web 回归134项，合计258项通过；管理前端 Node 52项通过，包含 HTTP/SSE → 正式 parser/Workspace 的三路径桥接。覆盖512实际编码、发布拒绝、Scope/revision、双 Tool Result/独立Ledger、Preview→Final、Stop/超时/截断、History和回滚。未运行无关全量测试，没有调用真实 Provider/NPU，也没有启动实际网页推理；真实网页体验由用户后续验收。

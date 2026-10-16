@@ -191,4 +191,8 @@ Activity + Preview + 唯一终态]
 
 管理候选 Scope 已与实际 Preset/协议/正式 Prompt/History/两工具 definitions 和 Monitoring/Knowledge 绑定核对。单案例 CLI 复用既有资格 Adapter、流式观察及正式管理 Service，固定 direct-final / current-water / low-oxygen，默认 Dry-run；不读取原型 Snapshot 或管理运行库。计划 hash + 单次明确确认后才可执行一个内部 candidate probe，Web 仍关闭，运行本身不发布任何资格。
 
-脱敏报告保留 Provider/组装一致性、SDK 清理、Result 传递、Ledger/来源及产品 Commit Gate；不保存正文/参数/检索内容。可选 TTY 人工预览只标记 PREVIEWED_NOT_APPROVED。CLI 未覆盖真实 HTTP/SSE 和浏览器，后续仍需独立网页验收授权；详细案例、预算与审批/回滚见 [操作说明](../../STREAMING_QUALIFICATION.md)。**REAL PROVIDER RESULTS: NOT RUN；LOCAL TRIAL: HOLD。**
+脱敏报告保留 Provider/组装一致性、SDK 清理、Result 传递、Ledger/来源及产品 Commit Gate；不保存正文/参数/检索内容。可选 TTY 人工预览只标记 PREVIEWED_NOT_APPROVED。CLI 未覆盖真实 HTTP/SSE 和浏览器；详细案例、预算与审批/回滚见 [操作说明](../STREAMING_QUALIFICATION.md)。
+
+## R2B-5E 本地实验开放
+
+用户完成三个真实案例（Direct Final / 当前水质 / 低氧双 Tool）技术 PASS 后，另行明确批准 Qwen 精确两工具 local_experimental，回答质量留待后续。管理资源只更新发布状态，qualification_id/validated_at 为空、enabled=false；`--assistant-streaming-trial` 在启动 composition 时启用当前 epoch，不修改磁盘、Policy 或原型配置。Normal 默认，两个试用参数独立。精确门禁、512/2/2/3/120秒、Stop、Ledger、Commit Gate 和原 SSE/预览流程复用；未开放其他 Provider/Tool 组合，也不自动重跑或降级。真实网页仍待用户验收，操作和回滚以 [BUILD_RUN](../../BUILD_RUN.md#r2b-5eqwen-streaming-本地实验) 为准。

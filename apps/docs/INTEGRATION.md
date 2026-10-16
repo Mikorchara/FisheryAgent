@@ -274,7 +274,7 @@ Ollama 只读证据：`outputs/management_web/assistant-traces.jsonl` 中同一�
 
 ## R2B-5B：管理 Streaming 后端
 
-**前后端已离线实现，真实 Web 试用尚未开放。** `ai_service.streaming` 读取管理自己的固定 resources/assistant_streaming.json，一次加载、随 epoch 冻结；默认 enabled=false，唯一 Qwen OFF / Streaming / 水质 + Knowledge 两工具 candidate，qualification_id/validated_at 为空。即使只把开关改为 true，candidate 仍被拒绝；不继承 Normal 或 Prototype 发布资格。前端有模式选择，没有新增试用 CLI。
+**R2B-5E 已获明确授权开放本地实验，默认仍关闭。** `ai_service.streaming` 读取管理自己的固定 resources/assistant_streaming.json，一次加载、随 epoch 冻结；默认 enabled=false，唯一 Qwen OFF / Streaming / 水质 + Knowledge 两工具 local_experimental，qualification_id/validated_at 为空。`--enable-assistant --assistant-streaming-trial` 只在本进程启用，不写回文件或修改用户 Policy；candidate 仍不能授权发送，不继承 Normal 或 Prototype 发布资格。回答质量审核留待后续，当前不是 released。
 
 复用核心 streaming_scope / resolve_streaming_profile，管理外层绑定 Monitoring/Knowledge 版本、source/version/backend；revision 同时绑定实际 definitions、完整 Policy、设备、epoch、配置、预算与 Runtime 设置。Bootstrap 每 Preset 增加 streaming 安全摘要（can_send / mode / transport / revision / release_status / mode_reason / 请求及 Tool 上限 / max_output_tokens），原 execution 和 revision 保留 Normal 语义。Ollama 不在 Streaming 范围。浏览器不能传入 mode、Transport、预算、Prompt、Deadline 或来源要求。
 
@@ -296,6 +296,6 @@ Web 的 streaming.py 只投递现有 AssistantEventChannel，不另写 Tool 或�
 
 ### R2B-5D：qualification 边界
 
-`ai_service.development.streaming_qualification` 只由单案例 CLI/离线测试导入。先按正式 definitions/绑定/Scope 计算无副作用计划；获批后创建临时 Monitoring SQLite 与 Policy，经正式 ManagementAssistantService 冻结设备、Credential/Runtime 和执行 2/2/3。它仅为一个候选探测构造服务器内 PreparedAssistantTurn 的执行许可，保持 candidate 身份；不更改配置或 Web prepare_turn 门禁，不提供浏览器可控的 bypass。
+`ai_service.development.streaming_qualification` 只由单案例 CLI/离线测试导入。先按正式 definitions/绑定/Scope 计算无副作用计划；获批后创建临时 Monitoring SQLite 与 Policy，经正式 ManagementAssistantService 冻结设备、Credential/Runtime 和执行 2/2/3。它仅为单案例资格构造服务器内 PreparedAssistantTurn 的执行许可，保留当时的 Scope 发布状态；不更改配置或 Web prepare_turn 门禁，不提供浏览器可控的 bypass。
 
-执行观察复用既有 QualificationAdapter / Streaming observer / ExperimentGateway；Tool 循环、Source Ledger、Commit Gate 均来自原 Runtime。实际 SDK 分片/清理和 Result 上下文比较可成为管理业务链证据；CLI 不走 HTTP/SSE，报告明确该缺口。产品结果完成与实验路径合格分别记录；人工预览不写 JSON，也不作为发布批准。具体审批/回滚见 [资格说明](STREAMING_QUALIFICATION.md)。
+执行观察复用既有 QualificationAdapter / Streaming observer / ExperimentGateway；Tool 循环、Source Ledger、Commit Gate 均来自原 Runtime。实际 SDK 分片/清理和 Result 上下文比较可成为管理业务链证据；CLI 不走 HTTP/SSE，报告明确该缺口。产品结果完成与实验路径合格分别记录；人工预览不写 JSON，也不作为发布批准。具体审批/回滚见 [资格说明](deep-dive/STREAMING_QUALIFICATION.md) 和 [本地启动](BUILD_RUN.md#r2b-5eqwen-streaming-本地实验)。

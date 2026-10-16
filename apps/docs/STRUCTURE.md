@@ -12,11 +12,12 @@ apps/
 │  ├─ BUILD_RUN.md                   # 启动、联调与验证
 │  ├─ INTEGRATION.md                 # 上报合同和替换边界
 │  ├─ ROADMAP.md                     # 当前状态与后续工作
-│  ├─ STREAMING_QUALIFICATION.md      # 单案例批准、脱敏报告、人工预览及试用/回滚
-│  └─ deep-dive/research/
-│     ├─ R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md # R2B-0 评估基线，非实现现状
-│     ├─ R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md # Streaming 设计与前后端离线实施状态
-│     └─ R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md # 当前架构、参数故障证据与路线建议
+│  └─ deep-dive/
+│     ├─ STREAMING_QUALIFICATION.md   # 单案例批准、脱敏报告、人工预览及试用/回滚
+│     └─ research/
+│        ├─ R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md # R2B-0 评估基线，非实现现状
+│        ├─ R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md # Streaming 设计与实施状态
+│        └─ R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md # 当前架构、参数故障证据与路线建议
 ├─ ai_service/                      # 独立 AI 业务包（同进程，无新端口）
 │  ├─ __init__.py                    # 包标识，不自动创建业务实例
 │  ├─ contracts.py                   # AssistantBackend 与服务器内 PreparedAssistantTurn
@@ -26,14 +27,14 @@ apps/
 │  ├─ streaming.py                   # 管理独立 Streaming 配置、精确 Scope 与确认
 │  ├─ development/                   # 显式开发入口，不由正式 Runtime 导入
 │  │  ├─ __init__.py                 # 惰性 development 边界
-│  │  └─ streaming_qualification.py  # 管理 candidate 单案例、隔离 SQLite 与安全观察
+│  │  └─ streaming_qualification.py  # 管理单案例资格、隔离 SQLite 与安全观察
 │  ├─ resources/
-│  │  ├─ assistant_streaming.json     # Qwen 两工具 candidate，默认关闭
+│  │  ├─ assistant_streaming.json     # Qwen 两工具 local_experimental，默认关闭
 │  │  └─ assistant_execution.json    # Qwen/Ollama 独立本地实验 Scope，默认关闭
 │  └─ tests/
 │     ├─ __init__.py
 │     ├─ test_service.py             # 无 Web 的执行、冻结、取消、路径及依赖边界
-│     ├─ test_streaming_config.py    # Streaming 候选、类型/预算与独立范围
+│     ├─ test_streaming_config.py    # Streaming 本地试用、类型/预算与独立范围
 │     ├─ test_streaming_qualification.py # 计划授权、正式管理链路、来源/报告与安全预览
 │     └─ test_execution.py           # 管理配置校验、独立 Scope 与默认关闭
 ├─ monitoring/                      # Web 与未来 Tool 共享的数据基础
@@ -130,6 +131,6 @@ DomainAnalysisService 与 EventService 不导入 Repository/Flask。Repository �
 
 Normal Multi-Round 的管理专用 Scope/Flag/revision 归 ai_service.execution，service 冻结 ExecutionDecision 并装配正式 Prompt/History/预算；复用核心 ToolCallingService。默认 1/1/2，显式本地试用且匹配精确 Scope 后才为 2/2/3。Streaming 的业务模式也在 ai_service 装配，HTTP SSE/断线/重连归 management_web，Provider delta 归原 Runtime Adapter。新视觉/历史 Tool 的管理数据绑定归 ai_service.bindings、事实/判断归 Monitoring；新 RAG 的服务装配入口归 ai_service，检索实现不写进 Web 或本业务协调器。出现实际需求再拆领域文件，不提前建空框架。
 
-Runtime/Core 为共享领域与 AI 包；Development 为模拟器和测试；Generated 为 Git ignored 的 outputs/management_web/（SQLite、脱敏 Assistant Trace）；User-private 为已有凭据目录，管理前端不可接触。可显式启用 Qwen/Ollama Normal；Streaming 前后端已离线接通，但仅 Qwen 精确两工具 candidate、默认关闭。真实 Streaming 试用、设备、NPU、文件索引和固定 Analysis 尚未开放。
+Runtime/Core 为共享领域与 AI 包；Development 为模拟器和测试；Generated 为 Git ignored 的 outputs/management_web/（SQLite、脱敏 Assistant Trace）；User-private 为已有凭据目录，管理前端不可接触。可显式启用 Qwen/Ollama Normal；Qwen 精确两工具 Streaming 已获本地实验授权，启动参数 --assistant-streaming-trial 进程内启用、默认关闭，非 released。真实设备、NPU、文件索引和固定 Analysis 尚未开放。
 
 资格 CLI 位于 `scripts/qualification/qualify_management_streaming.py`；只导入 `ai_service.development` 并复用共享资格 Adapter/观察器。报告在 Git ignored 的 `outputs/assistant-qualification/`，临时夹具在其 `.management-work/` 下结束清理；不导入原型 Snapshot，不读取管理生产库或用户 Policy。

@@ -115,6 +115,10 @@ export function createAssistantWorkspace(api,options={}){
     const streaming=s.transport==='streaming',execution=profile();
     const maxRequests=execution?.max_model_requests??s.config?.max_model_requests??2;
     const blocked=streaming?execution?.can_send!==true:execution?.can_send===false;
+    const streamingReason={flag_disabled:'未启用本地 Streaming 试用启动参数，请重启服务器并刷新页面',
+      candidate:'此精确范围仍为 candidate，尚未开放本地试用',
+      scope_not_published:'模型、Tool Policy 或运行配置未匹配；仅开放 Qwen OFF 与水质查询 + 项目知识两工具',
+      runtime_constraints_mismatch:'重试或整 Turn Deadline 不符合本地试用要求'}[execution?.mode_reason]||'精确 Streaming Scope 未匹配';
     const multi=execution?.mode==='BOUNDED_MULTI_ROUND';
     const actual=s.lastRun||{transport:s.transport,multi,maxRequests,tokens:execution?.max_output_tokens};
     const selectField=(label,choices,value,change)=>el('label',{class:'field'},[el('span',{text:label}),
@@ -135,7 +139,7 @@ export function createAssistantWorkspace(api,options={}){
           selectField('监测设备',s.devices.map(d=>[d.id,d.name]),s.device,changeDevice),
           selectField('响应模式',[['normal','Normal'],['streaming','Streaming']],s.transport,changeTransport),
           badge(`Thinking OFF · ${streaming?'Streaming':'Normal'}`,'neutral'),
-          badge(streaming?`Streaming · ${execution?.release_status||'unpublished'}${blocked?' · 未开放':''}`:
+          badge(streaming?`Streaming · ${execution?.release_status==='local_experimental'?'本地实验 · ':''}${execution?.release_status||'unpublished'}${blocked?' · 未开放':''}`:
             blocked?'多轮 Scope / Policy 不匹配':multi?'Multi-Round · 本地实验（未真实验证）':'Single-Round · 1/1/2','neutral'),
           el('button',{class:'button text',text:'清空对话',...(s.pending?{disabled:'disabled'}:{}),onclick:clear})]),lane,
         el('div',{class:'chat-composer'},[composer,
@@ -146,7 +150,7 @@ export function createAssistantWorkspace(api,options={}){
       el('div',{class:'side-stack'},[card('本次运行',`${s.lastRun?'实际':'待运行'} ${actual.transport} · 冻结设备 · ${actual.multi?2:1}/${actual.multi?2:1}/${actual.maxRequests}${actual.transport==='streaming'?' · '+(actual.tokens??'—')+' tokens/请求':''}`,[activityNode]),
         card('来源与权限','共用 Monitoring SQLite 与领域规则。',[rows([['本轮设备',s.device],['可用 Tool',s.config?.tools.join('、')||'无（受 Tool Policy 限制）'],
           ['监测来源','Simulator · 非真实传感器'],['规则状态','PROTOTYPE']]),el('p',{class:'muted',text:
-            streaming&&blocked?'Streaming 尚未开放：'+(execution?.mode_reason||'scope_not_published')+'。当前仅 candidate，默认关闭；不会发起模型请求。请切回 Normal，真实试用需另行授权。':
+            streaming&&blocked?'Streaming 不可用：'+streamingReason+'（'+(execution?.mode_reason||'scope_not_published')+'）。不会发起模型请求；切回 Normal 后须重新确认。':
             blocked?'精确 Scope / Policy 未匹配，请检查授权组合并刷新。不会联网或自动降级重跑。':
             '缺失、无效、过期或离线不表示环境正常。项目知识不是当前观测或疾病确诊。临时预览未通过提交门禁；只有完整成功回答进入会话，刷新页面清空。'})])]) ]));
     messages.scrollTop=scrollPosition;syncMessages();

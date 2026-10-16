@@ -10,8 +10,8 @@
 - [路线](ROADMAP.md)
 - [开发规则](../AGENTS.md)
 - [R2B 架构评估基线](deep-dive/research/R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md)（R2B-0 研究；当前实现以 INTEGRATION 为准）
-- [管理 Streaming 设计与实施状态](deep-dive/research/R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md)（前后端离线就绪，默认关闭、candidate，真实试用未开放）
-- [管理 Streaming 逐案例资格与试用流程](STREAMING_QUALIFICATION.md)（R2B-5D，真实结果 NOT RUN）
+- [管理 Streaming 设计与实施状态](deep-dive/research/R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md)（默认关闭；Qwen 两工具可显式启用本地实验）
+- [管理 Streaming 逐案例资格与试用流程](deep-dive/STREAMING_QUALIFICATION.md)（三个真实技术 PASS，回答质量待审；local_experimental 非正式发布）
 - [R2B-3 架构与 Tool 故障审查](deep-dive/research/R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md)（只读证据、修复建议与后续顺序）
 
 根 [docs](../../docs/STRUCTURE.md) 维护 AI 原型和共享 Runtime；这里不重复其 Prompt、Provider、Tool、Credential 合同。事实优先级：源码 → 测试 → 当前文档 → 历史记录。
@@ -26,7 +26,7 @@ R2B-3.4：AI 业务已独立为 `apps/ai_service/`，Web 经明确的 AssistantB
 | 水质监测 | 窗口事实、样本覆盖、历史、PROTOTYPE 规则及明确无法判断状态 | 真实传感器、批准生产规则 |
 | 视频监控 | 视觉窗口汇总、行为比例、疑似异常、标定状态 | 视频流、真实 NPU、截图/片段 |
 | 事件记录 | 模拟异常事件、去重、可靠恢复/待确认、真实严重程度及规则身份 | 人工处置/通知工作流 |
-| AI 助手 | Qwen/Ollama Normal、统一水质/Knowledge、可选本地多轮；Streaming 前后端离线接通、History/Stop/安全 Activity/问题导航 | 管理 Streaming 真实资格与试用、评分/视觉 Tool、真实质量验收 |
+| AI 助手 | Qwen/Ollama Normal、统一水质/Knowledge、可选本地多轮；Qwen 两工具 Streaming 显式本地实验、History/Stop/安全 Activity/问题导航 | 真实网页验收、回答质量审核、其他 Streaming 范围、评分/视觉 Tool |
 | 资料与知识库 | Demo 元数据与分类/详情 | 文件上传下载、索引、检索桥接 |
 | 设置 | 分类、禁用操作、独立开发入口 | 账户权限、生产配置 |
 

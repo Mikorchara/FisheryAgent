@@ -82,7 +82,7 @@ class StreamingQualificationTests(unittest.TestCase):
         return q.run(case,self.root,confirm_network=True,approved_plan_sha256=approved['plan_sha256'],
             credential_store=self.credentials,adapter_factory=self.factory(frames,close_error=options.pop('close_error',False)),**options)
 
-    def test_plan_is_inert_exact_candidate_and_three_cases_are_independent(self):
+    def test_plan_is_inert_exact_local_scope_and_three_cases_are_independent(self):
         with patch.object(q,'_credentials',side_effect=AssertionError('no credentials')), \
              patch.object(q,'MonitoringRepository',side_effect=AssertionError('no SQLite')), \
              patch.object(q,'_Adapter',side_effect=AssertionError('no SDK')):
@@ -96,7 +96,7 @@ class StreamingQualificationTests(unittest.TestCase):
             self.assertEqual(p['scope']['runtime']['identity'],['dashscope','openai_chat',
                 'https://dashscope.aliyuncs.com/compatible-mode/v1','qwen3.8-flash'])
             self.assertEqual(p['scope']['runtime']['protocol_spec']['spec_id'],'dashscope_chat')
-            self.assertEqual(p['release_status'],'candidate');self.assertFalse(p['web_flag_enabled'])
+            self.assertEqual(p['release_status'],'local_experimental');self.assertFalse(p['web_flag_enabled'])
             self.assertEqual(p['max_output_tokens'],512);self.assertEqual(p['turn_deadline_s'],120)
             self.assertEqual(p['scope']['data_bindings']['water'],'management-current-water@1')
         self.assertEqual([p['expected_requests'] for p in plans],[1,2,3])
@@ -157,7 +157,7 @@ class StreamingQualificationTests(unittest.TestCase):
         execute=q.ManagementAssistantService.execute_turn
         def guarded(service,prepared,handle):
             public=service.bootstrap(q.DEVICE)['presets'][0]['streaming']
-            self.assertFalse(public['can_send']);self.assertEqual(public['release_status'],'candidate')
+            self.assertFalse(public['can_send']);self.assertEqual(public['release_status'],'local_experimental')
             self.assertTrue(prepared.execution.can_send)
             value={'question':'fixture','preset_id':q.STREAMING_PRESET,'device_id':q.DEVICE,
                 'epoch':service.epoch,'revision':public['revision'],'confirm_network':True,'history':[]}

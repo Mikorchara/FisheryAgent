@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from apps.ai_service.contracts import AssistantBackend
 from apps.management_web.ai_adapter import ManagementAssistant
@@ -10,6 +10,33 @@ from apps.management_web.app import create_app
 
 
 class WebAIBoundaryTests(unittest.TestCase):
+    def test_local_adapter_forwards_explicit_trial_flags_only_to_business_composition(self):
+        with patch('apps.management_web.ai_adapter.ManagementAssistantService.local') as local:
+            adapter=ManagementAssistant.local(None,'.',streaming_trial=True)
+        self.assertIs(adapter.backend,local.return_value)
+        self.assertEqual(local.call_args.kwargs,{'multi_round_trial':False,'streaming_trial':True})
+
+    def test_cli_streaming_opt_in_requires_assistant_and_preserves_local_startup(self):
+        import io
+        from apps.management_web.__main__ import main
+        with patch('sys.argv',['management_web','--assistant-streaming-trial']), \
+             patch('sys.stderr',new_callable=io.StringIO), \
+             patch('apps.management_web.ai_adapter.ManagementAssistant.local') as local:
+            with self.assertRaises(SystemExit):main()
+        local.assert_not_called()
+        for options in ([],['--assistant-streaming-trial'],
+                        ['--assistant-streaming-trial','--assistant-multi-round-trial']):
+            with patch('sys.argv',['management_web','--enable-assistant',*options]), \
+                 patch('apps.monitoring.repository.MonitoringRepository'), \
+                 patch('apps.monitoring.service.MonitoringService'), \
+                 patch('apps.management_web.ai_adapter.ManagementAssistant.local') as local, \
+                 patch('apps.management_web.__main__.create_app') as factory,patch('builtins.print'):
+                main()
+            self.assertEqual(local.call_args.kwargs,{'multi_round_trial':'--assistant-multi-round-trial' in options,
+                'streaming_trial':'--assistant-streaming-trial' in options})
+            self.assertEqual(factory.return_value.run.call_args.kwargs,
+                {'host':'127.0.0.1','port':8766,'debug':False,'load_dotenv':False})
+
     def setUp(self):
         self.monitoring = SimpleNamespace()
         self.backend = Mock(spec=AssistantBackend)
