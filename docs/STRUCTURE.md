@@ -12,6 +12,10 @@ Fishery_AI_Prototype/                                            # 项目工作�
 ├─ apps/                                                         # 独立管理应用、模拟器及共享数据基础
 │  ├─ AGENTS.md                         # 管理工程与安全规则
 │  ├─ __init__.py                       # 应用命名空间
+│  ├─ ai_backend/                      # 已迁入的通用后端叶子合同，无旧 Runtime 依赖
+│  │  ├─ __init__.py                    # 无 I/O 的包入口
+│  │  ├─ README.md                      # 公共接口与迁移边界
+│  │  └─ tool_argument_diagnostics.py   # 参数拒因、安全计数及投影唯一实现
 │  ├─ docs/
 │  │  ├─ README.md                      # 当前状态与文档入口
 │  │  ├─ STRUCTURE.md                   # 真实目录与职责
@@ -184,7 +188,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ repositories.py                                         # 水质与 Detection Mock 资源读取
 │  │  ├─ secure_files.py                                         # 安全文件操作与 Windows ACL 检查
 │  │  ├─ tool_capability_probe.py                                # Managed Tool Calling 显式 Probe
-│  │  ├─ tool_argument_diagnostics.py                            # 安全参数拒因、阶段与有界计数合同
+│  │  ├─ tool_argument_diagnostics.py                            # 单向兼容别名到 apps.ai_backend，同一模块/类型
 │  │  ├─ tool_conversation.py                                    # 有界共享协调、内部 Normal/Streaming 传输
 │  │  ├─ water_quality_scoring.py                                # 水质实验评分与等级规则
 │  │  ├─ web.py                                                  # Web API、共享服务与页面入口
@@ -332,6 +336,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
    │  ├─ test_read_only_tools.py                                            # Registry、Executor 与只读 Handler 测试
    │  ├─ test_tool_argument_contract.py                                     # Tool 受控参数合同与旧工具兼容测试
    │  ├─ test_tool_argument_diagnostics.py                                  # 拒因脱敏、执行阻断、来源及提交门禁
+   │  ├─ test_backend_boundary.py                                           # 新旧类型身份、后端依赖和安装布局边界
    │  ├─ test_bounded_multi_round.py                                        # 内部两轮预算、模型决策、去重与取消测试
    │  ├─ test_streaming_multi_round.py                                     # 流式组装到真实 Tool 的离线多轮与提交测试
    │  ├─ test_tool_conversation.py                                          # steps、固定预算、单轮与兼容投影测试

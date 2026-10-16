@@ -16,6 +16,8 @@
 | support/ | 固定测试路径与显式历史模型兼容性 overlay；不包含测试用例 |
 | fixtures/ | 虚构基线及历史兼容性资料；不参与正常启动 |
 
+`tools/test_backend_boundary.py` 验证已迁入 ai_backend 的标准库依赖边界、旧新模块/类型身份、patch/序列化、安全投影、安装选择与隔离布局导入。它归已有 FULL PRODUCT，不引入新 runner；后续迁移的实际合同测试仍沿用各子系统分类。
+
 ## 分层入口
 
 项目根目录运行 `python scripts/dev/run_tests.py`，默认是 **FULL PRODUCT**，不包含 qualification。

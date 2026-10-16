@@ -17,7 +17,12 @@ apps/
 │     └─ research/
 │        ├─ R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md # R2B-0 评估基线，非实现现状
 │        ├─ R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md # Streaming 设计与实施状态
-│        └─ R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md # 当前架构、参数故障证据与路线建议
+│        ├─ R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md # 当前架构、参数故障证据与路线建议
+│        └─ R2C1A_LLM_BACKEND_AUDIT.md # 通用后端依赖审计、最小迁移与兼容计划
+├─ ai_backend/                      # 已迁入的通用 LLM 基础，不依赖旧 Runtime
+│  ├─ __init__.py                    # 无 I/O 的包标记
+│  ├─ README.md                      # 公共接口、当前范围与迁移边界
+│  └─ tool_argument_diagnostics.py   # 参数拒因、阶段、有界计数与安全投影唯一实现
 ├─ ai_service/                      # 独立 AI 业务包（同进程，无新端口）
 │  ├─ __init__.py                    # 包标识，不自动创建业务实例
 │  ├─ contracts.py                   # AssistantBackend 与服务器内 PreparedAssistantTurn
@@ -134,3 +139,5 @@ Normal Multi-Round 的管理专用 Scope/Flag/revision 归 ai_service.execution�
 Runtime/Core 为共享领域与 AI 包；Development 为模拟器和测试；Generated 为 Git ignored 的 outputs/management_web/（SQLite、脱敏 Assistant Trace）；User-private 为已有凭据目录，管理前端不可接触。可显式启用 Qwen/Ollama Normal；Qwen 精确两工具 Streaming 已获本地实验授权，启动参数 --assistant-streaming-trial 进程内启用、默认关闭，非 released。真实设备、NPU、文件索引和固定 Analysis 尚未开放。
 
 资格 CLI 位于 `scripts/qualification/qualify_management_streaming.py`；只导入 `ai_service.development` 并复用共享资格 Adapter/观察器。报告在 Git ignored 的 `outputs/assistant-qualification/`，临时夹具在其 `.management-work/` 下结束清理；不导入原型 Snapshot，不读取管理生产库或用户 Policy。
+
+R2C-1A 的 ai_backend 目前只提供参数诊断模块，旧 `fishery_ai.tool_argument_diagnostics` 单向别名到同一实现。Gateway/执行控制/History/Tool 循环尚未迁移；完整现状与目标图见 [后端审计](deep-dive/research/R2C1A_LLM_BACKEND_AUDIT.md)。边界测试在根 `tests/tools/test_backend_boundary.py`，纳入既有产品发现；根安装清单同时包含该 Backend，不发布其余管理模块。

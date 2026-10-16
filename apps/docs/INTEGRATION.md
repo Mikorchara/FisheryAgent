@@ -243,6 +243,8 @@ Video/NPU 将通信、推理、事实归一化和网页播放分离；不迁移�
 
 共享 Runtime 的内部合同见 [Analysis / Assistant](../../docs/deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)、[Tool Runtime](../../docs/deep-dive/tools/READ_ONLY_TOOL_CALLING.md)、[凭据](../../docs/deep-dive/operations/PRIVATE_CREDENTIAL_STORAGE.md)。启动与验收见 [BUILD_RUN](BUILD_RUN.md)。
 
+R2C-1A：参数拒因合同的唯一实现已迁到 `apps.ai_backend.tool_argument_diagnostics`，旧路径保留相同模块/类型的单向别名。业务装配、Tool/Source 语义、Scope/revision 与发布状态不变；其余执行仍依赖原 Runtime。后续中立合同、执行控制、传输、来源映射和业务配置的迁移顺序见 [Backend 审计](deep-dive/research/R2C1A_LLM_BACKEND_AUDIT.md)，不是已完成的全面独立化。
+
 ## R2B-4：管理独立 Normal 多轮执行范围
 
 `ai_service.execution` 加载自己固定资源 `resources/assistant_execution.json`，开关/Scope 在业务实例的 epoch 内冻结，无 Web 模式或路径覆写。默认关闭、1/1/2；显式 `--assistant-multi-round-trial` 后，只有匹配 local_experimental Scope 的 Qwen/Ollama 才能执行 2/2/3。两者独立声明、qualification_id/validated_at 均为空，不继承 Prototype released 或真实模型结论；DeepSeek/Streaming/评分均未纳入。

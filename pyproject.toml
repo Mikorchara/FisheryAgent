@@ -15,7 +15,12 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src", "."]
+include = ["fishery_ai", "fishery_ai.*", "apps", "apps.ai_backend"]
+
+[tool.setuptools.package-dir]
+fishery_ai = "src/fishery_ai"
+apps = "apps"
 
 [tool.setuptools.package-data]
 fishery_ai = ["resources/knowledge/*", "resources/mock/*", "resources/scenarios/water_quality/*.json", "resources/scenarios/detection/*.json", "resources/profiles/*", "resources/tools/*.json", "resources/web/*"]

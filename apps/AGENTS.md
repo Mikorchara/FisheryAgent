@@ -5,6 +5,7 @@
 - `apps/monitoring/` 是共享数据合同、存储与读取服务；`apps/simulator/` 是独立生产端，只经受控 HTTP 上报，不直接写服务器状态。模拟源不可由客户端声明为真实设备。
 
 - `apps/management_web/` 放页面、HTTP/浏览器访问控制与请求控制；`apps/ai_service/` 放独立 AI 业务协调、Runtime 装配和数据 Tool 绑定。依赖方向是 Web → AI service → Monitoring / `src/fishery_ai/`；AI service 不导入 Flask/Web，Monitoring 不反向依赖 AI service。不复制 Gateway、Tool 循环、History、Credential 或取消机制；Web 提供同一个 RequestHandle 给业务执行。
+- `apps/ai_backend/` 只放已迁入的通用 LLM 基础，不反向导入 `fishery_ai`、AI service、Web 或 Monitoring。当前仅参数诊断合同已迁；其余旧 Runtime 仍由 ai_service 复用。目标为 Web → AI service → Backend，业务 Prompt/Tool/发布装配留服务层；兼容接口只能旧包单向指向新实现，迁移须校验类型身份、唯一执行上下文、安装清单与 Scope 指纹。
 - 页面负责交互，组件负责展示，应用服务负责用例，Adapter 负责设备、数据库或 Runtime 接入；HTTP 路由保持薄。先使用现有结构，只有出现实际消费者时才拆文件，不建空框架或动态插件。
 - 接口用明确 DTO、版本和安全错误表达。值、单位、来源、观测时间、质量、新鲜度不可丢失；缺失不补 0、不回退 Demo。Protocol 类型声明不等于运行时校验。
 - 网页与 AI Tool 的当前事实必须来自同一权威监测来源；不能各自维护一份 current state。多设备选择须有明确、冻结的上下文，不能依赖可变全局选择。新鲜度与诊断复用 Domain 规则，前端不复制阈值。

@@ -31,6 +31,7 @@ R2B-3.4 已提取独立 apps/ai_service：业务协调、Runtime 装配、Monito
 
 ## 后续独立工作
 
+- R2C-1A 后端独立化基础已完成：通用参数诊断迁入 ai_backend，保留旧路径与安装兼容；其余 Runtime 未迁。下一步先审查中立模型/Usage/错误合同，再逐步处理执行上下文与传输，禁止复制循环。[审计与迁移计划](deep-dive/research/R2C1A_LLM_BACKEND_AUDIT.md)。
 - 真实 Monitoring：设备登记/认证、物理采集 Adapter、持久历史与运维策略；不由客户端自报真实来源。
 - Video/NPU：实际视频传输、校准、推理结果归一化、受控截图/片段；不迁移旧 GPU 桌面项目。
 - Events：生产告警策略、通知、人工处理和审计；当前 closed 只表示模拟信号消退。
