@@ -1,6 +1,6 @@
 # 管理平台目录与职责
 
-当前实际结构；缓存不展开。完整仓库见根 [地图](../../docs/STRUCTURE.md)。Tool/Prompt/Scope 的开发步骤见 [开发指南](AI_BACKEND_DEVELOPMENT_GUIDE.md)。
+当前实际结构；缓存不展开。完整仓库见根 [地图](../../docs/STRUCTURE.md)。Tool/Prompt/Scope 的开发步骤见 [开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)。
 
 ```text
 apps/
@@ -115,10 +115,11 @@ apps/
 │  │  │  ├─ R2C1A_LLM_BACKEND_AUDIT.md                                   # 独立化审计基线
 │  │  │  ├─ R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md                      # 独立 Backend 迁移方案、实施与最终人工验收
 │  │  │  ├─ R2D1A_WATER_HISTORY_TOOL_DESIGN.md                            # 历史查询、来源合同与分阶段分析设计
+│  │  │  ├─ R2D1_TOOL_RETROSPECTIVE_AUDIT.md                               # 最终成本、质量风险与简化开发流程
 │  │  │  └─ R2D1F_TOOL_INTEGRATION_COST_AUDIT.md                           # 历史Tool成本盘点、预算与批量准备
+│  │  ├─ AI_BACKEND_DEVELOPMENT_GUIDE.md                                  # 请求链、Tool/Prompt 扩展与安全测试指南
 │  │  ├─ HISTORY_QUALIFICATION.md                                         # 历史候选逐案例计划、审批与人工预览
 │  │  └─ STREAMING_QUALIFICATION.md                                      # 单案例批准、脱敏报告、人工预览及试用/回滚
-│  ├─ AI_BACKEND_DEVELOPMENT_GUIDE.md                                    # 请求链、Tool/Prompt 扩展与安全测试指南
 │  ├─ BUILD_RUN.md                                                       # 启动、联调与验证
 │  ├─ INTEGRATION.md                                                     # 上报合同和替换边界
 │  ├─ README.md                                                          # 快速入口
@@ -214,10 +215,12 @@ Phase I 的五个 runtime 准备模块和三份重复测试已移除；当前 Se
 
 测试层级：FAST小集合；backend为新Backend及业务合同；FULL PRODUCT含backend一次；FULL QUALIFICATION额外包含管理 Streaming、历史单案例及固定批次资格测试；Web/Node按BUILD_RUN运行。Qualification只在显式开发入口加载，默认dry-run，不自动请求Provider。
 
-业务 Tool：business_tools 下每个模块拥有自己的 Definition/validator/Handler/有限 DTO，registry.py 是唯一装配入口；runtime 的 Policy/来源/Activity 职责不变。旧 runtime/tools.py 与顶层 bindings.py 已删除，不设兼容转发；评分只为已知 Policy 名称，不装配 Handler。新增 Tool 参见 [开发指南](AI_BACKEND_DEVELOPMENT_GUIDE.md#2-新增业务-tool)。
+业务 Tool：business_tools 下每个模块拥有自己的 Definition/validator/Handler/有限 DTO，registry.py 是唯一装配入口；runtime 的 Policy/来源/Activity 职责不变。旧 runtime/tools.py 与顶层 bindings.py 已删除，不设兼容转发；评分只为已知 Policy 名称，不装配 Handler。新增 Tool 参见 [开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md#2-新增业务-tool)。
 
 历史资格 CLI 位于 [scripts/qualification/qualify_management_history.py](../../scripts/qualification/qualify_management_history.py)；默认 Dry-run，只用新 Backend 和正式单轮业务 Assistant，不是 Web 发布开关。见 [逐案例操作](deep-dive/HISTORY_QUALIFICATION.md)。
 
 历史产品试用使用`python -m apps.management_web --enable-assistant --assistant-history-trial`，由Service/Scope/Policy/现有Adapter共同执行，未导入development资格代码。页面使用一次性的「历史查询」业务快捷操作，不暴露执行Profile；不将历史加入两工具组合。三工具统一Normal仅为独立candidate，不能由浏览器指定或启用。启动与回滚见[BUILD_RUN](BUILD_RUN.md#r2d-1g历史水质单工具本地试用)。
 
 [qualify_management_history_batch.py](../../scripts/qualification/qualify_management_history_batch.py) 是固定3案例×5的薄进程编排入口：每个子进程仍只运行一个案例，默认Dry-run，真实执行需三个新计划的一次性明确批准；无重试、补跑或自动恢复。
+
+[scripts/manual_real_tests/](../../scripts/manual_real_tests/README.md) 为用户人工真实连接统一索引；`run_qualification.py`只委托现有管理单案例CLI，不参与应用启动或自动模型测试。对应的自动测试`tests/qualification/test_manual_real_tests.py`全部mock子进程。当前`product`入口不包含Monitoring/管理HTTP/Node；完整管理回归须按BUILD_RUN显式补齐，不能将离线资格层当作真实Provider验证。

@@ -4,6 +4,43 @@
 
 Python 3.11+，使用根项目已有 Flask 依赖；SQLite、生成器和 HTTP transport 使用标准库。Node 用于前端测试，无需 npm install 或构建。所有命令在 `D:\CodexProject\Fishery_AI_Prototype` 执行；首次环境配置见根 [BUILD_RUN](../../docs/BUILD_RUN.md#环境与启动)。
 
+## 一行式常用命令
+
+以下从仓库根目录、同一个正常用户PowerShell执行。先查看现有8766服务；若已运行，不另启第二个，也不强杀未知进程。以下只启动本地网页和模拟数据，不发送LLM请求、不修改用户Policy。三个已批准试用开关分别启用既有精确范围，不开放三工具统一candidate。
+
+第一行启动自己的服务器并让子进程继承临时开发接入令牌；端口占用时直接停止该命令，不覆盖令牌。令牌不是Provider Key，不打印、不落盘：
+
+```powershell
+if (Get-NetTCPConnection -LocalPort 8766 -State Listen -ErrorAction SilentlyContinue) { throw '8766已有服务，请先核对并停止自己启动的实例。' }; $env:FISHERY_SIM_INGEST_TOKEN = [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N'); $managementServer = Start-Process -FilePath .\.venv\Scripts\python.exe -ArgumentList '-m','apps.management_web','--enable-ingestion','--enable-assistant','--assistant-multi-round-trial','--assistant-streaming-trial','--assistant-history-trial' -WorkingDirectory (Get-Location).Path -WindowStyle Hidden -PassThru
+```
+
+随后在**同一终端**运行模拟器，让它使用相同令牌；默认每10秒上报，不触发LLM：
+
+```powershell
+.\.venv\Scripts\python.exe -m apps.simulator --scenario normal --seed 42 --interval 10
+```
+
+访问`http://127.0.0.1:8766`。默认Normal；在管理系统设置中授权Tool，历史问题点击“历史查询”。退出模拟器按Ctrl+C；只停止自己保存的服务器进程：
+
+```powershell
+if ($managementServer -and -not $managementServer.HasExited) { Stop-Process -Id $managementServer.Id }; Remove-Item Env:\FISHERY_SIM_INGEST_TOKEN -ErrorAction SilentlyContinue
+```
+
+关闭历史试用：停止自己的服务器，保留所需其他参数但去掉`--assistant-history-trial`后重启、刷新页面；也可在管理设置撤销历史授权（影响尚未领取的新请求，已领取Turn保持冻结；需停止它时用Stop）。关闭全部AI试用则去掉三个trial参数，Normal单轮仍可由`--enable-assistant`启用。不删除数据或改JSON。
+
+日常小改动只跑受影响层；以下每条均为一行，全部离线（HTTP测试使用本机Fake/临时数据）：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/dev/run_tests.py fast
+.\.venv\Scripts\python.exe -m unittest apps.monitoring.tests.test_water_history apps.ai_service.tests.test_water_history_tool apps.ai_service.tests.test_history_candidate apps.ai_service.tests.test_management_policy
+.\.venv\Scripts\python.exe -m unittest discover -s apps/management_web/tests -p 'test_*.py'
+node --test apps/management_web/tests/*.test.mjs
+```
+
+现有`product`包含旧Prototype与新Backend/AI业务层，**不含Monitoring、Simulator、管理HTTP与Node**。只有这些层受到影响时追加对应测试；不用每个小步骤都重复所有层。资格入口改变时运行离线`python scripts/dev/run_tests.py qualification`；本轮新增薄入口可只跑`python -m unittest tests.qualification.test_manual_real_tests`。不要将`FULL QUALIFICATION`误解为真实请求。
+
+真实外部连接由用户从[统一人工入口](../../scripts/manual_real_tests/README.md)亲自执行。这里没有新增启动框架；一行启动命令沿用既有模块和参数。本轮验证参数传递及PowerShell语法，没有启动真实服务、模拟器或Provider。
+
 ## 只读启动
 
 ```powershell
@@ -35,7 +72,7 @@ Qwen 使用现有正式用户私有凭据，不需要复制 Key、创建项目 .
 
 ### 项目 Knowledge Tool 使用
 
-默认仍只授权水质。需要 Knowledge 时，在仓库根目录运行 `python -m fishery_ai web`，打开原 Prototype `http://127.0.0.1:8765` 的 Tool Manager → Assistant 标签，勾选项目知识检索并保存。该操作使用已有共享 Policy，不需发送模型请求；不要手工复制 Tool Schema 或修改默认配置。两网页共用授权，调整会影响原 Prototype 的下一次请求。
+默认仍只授权水质。需要Knowledge时，在**新管理系统 → 系统设置 → Assistant Tool授权**中保留既有选择、勾选项目知识并保存，再返回聊天刷新/确认。管理端独立Policy存在后，不再跟随旧Prototype Tool Manager的后续改动；没有独立文件时仅只读继承旧选择。保存管理授权不会修改旧Prototype，不需发送模型请求。
 
 管理端执行 `python -m apps.management_web --enable-assistant`，打开 `http://127.0.0.1:8766` → AI 智能助手，刷新后核对“可用 Tool”含 `search_fishery_knowledge`。选择 Qwen/Ollama，逐次确认模型请求，再问“请检索项目资料，说明鳗鲡低氧表现”；观察项目背景 Knowledge 卡片、命中数/NO_MATCH。当前水质问题仍用 Monitoring Tool，不得把知识命中解释为当前 DO 或疾病确诊。真实模型请求须有用户授权；启动与授权配置本身不联网。
 
@@ -51,8 +88,8 @@ Qwen 使用现有正式用户私有凭据，不需要复制 Key、创建项目 .
 
 访问 `http://127.0.0.1:8766` → AI 智能助手。同时接入模拟器时，在设置下文开发令牌后追加 `--enable-ingestion`。启动本身不调用模型；每次发送仍须明确确认。
 
-- 先在原 Tool Manager → Assistant 授权水质查询与项目知识检索，并保持 LLM Tool Calling 开启。管理端实际执行集合必须恰好为这两个 Tool；不会改写用户 Policy，也不装配评分 Tool。刷新管理页面后核对 **Multi-Round · 本地实验（未真实验证）**、最多三次模型请求。
-- Qwen 优先；Ollama 有独立精确实验 Scope，均未取得管理系统真实多轮资格，不继承旧 Prototype 的发布记录。固定 OFF / Normal，每轮最多一个 Tool，整 Turn 最多 2 Calls / 2 Rounds / 3 Requests、retry=0。
+- 在新管理系统设置中授权当前水质与项目知识，实际执行集合仍须精确匹配；授权历史不将其加入普通两工具请求。评分无Handler。页面显示“多轮 · 本地实验”、最多三次模型请求。
+- Qwen优先，已有管理网页基本人工观察；Ollama有独立实验Scope，不继承Qwen或旧Prototype资格。二者仍是local_experimental，人工观察不等于正式released。固定OFF / Normal，每轮最多一个Tool，整Turn最多2 Calls / 2 Rounds / 3 Requests、retry=0。
 - 开关启用但 Scope/Policy 不匹配时禁用发送；服务端联网前拒绝 `ASSISTANT_MULTI_ROUND_SCOPE_MISMATCH`。Policy/定义/配置/设备/epoch 改变时旧 revision 失效，刷新并重新确认；不自动重发、降级或切换 Provider。
 - 配置来自 [管理专用 Scope](../ai_service/resources/assistant_execution.json)，在应用启动时冻结。文件的 `multi_round_enabled` 默认为 false，上述命令仅在本进程启用；浏览器不能指定模式、预算、Prompt 或配置路径。
 
@@ -198,7 +235,7 @@ R2B-5E 允许显式启动本地试用后人工检查 Streaming。关闭开关、
 
 管理Service/Web/SSE/管理qualification已统一使用apps.ai_backend和ai_service.runtime，不再运行旧LLM Runtime。正常命令和精确local_experimental授权保持不变：
 
-修改业务 Tool、Prompt、Preset 或发布配置前先读 [开发指南](AI_BACKEND_DEVELOPMENT_GUIDE.md)。其中区分实际代码 owner、测试入口与需要另行批准的精确实验范围；本节命令不授予新的 Provider 或 Tool 资格。
+修改业务 Tool、Prompt、Preset 或发布配置前先读 [开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)。其中区分实际代码 owner、测试入口与需要另行批准的精确实验范围；本节命令不授予新的 Provider 或 Tool 资格。
 
 ```powershell
 # 默认Normal，单轮；不启用Streaming
@@ -225,7 +262,7 @@ R2C-1E：用户已通过真实管理网页完成 Qwen Normal 水质 Tool / Final
 
 最终工程快速检查只运行 FAST、Backend 迁移/边界和管理前端离线测试；具体数量见 [收尾记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。本轮未请求 Provider/NPU。`a256569` 是已提交的 Phase II 切换基线；`0cf64f6` 是需要整体回退旧管理装配时的 Phase I 参考点，不能以重置工作树代替审阅和完整回滚。
 
-业务 Tool 组织与专项回归：Definition/Handler/validator 在 business_tools 的对应 Tool 模块，唯一装配入口为 registry.bind_tools；旧 runtime/tools.py 与 bindings.py 已移除。离线可运行 `python -m unittest apps.ai_service.tests.test_business_tools`；backend 测试层已包含该合同测试，前后 Definition/DTO 基线不因目录迁移重写。新增 Tool 操作见 [开发指南](AI_BACKEND_DEVELOPMENT_GUIDE.md#2-新增业务-tool)。
+业务 Tool 组织与专项回归：Definition/Handler/validator 在 business_tools 的对应 Tool 模块，唯一装配入口为 registry.bind_tools；旧 runtime/tools.py 与 bindings.py 已移除。离线可运行 `python -m unittest apps.ai_service.tests.test_business_tools`；backend 测试层已包含该合同测试，前后 Definition/DTO 基线不因目录迁移重写。新增 Tool 操作见 [开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md#2-新增业务-tool)。
 
 ## 管理端 Tool 授权与历史候选（R2D-1D）
 

@@ -5,7 +5,7 @@
 ## 阅读入口
 
 - [目录与职责](STRUCTURE.md)
-- [AI Backend 与 Assistant 开发指南](AI_BACKEND_DEVELOPMENT_GUIDE.md)（请求链、Tool/Prompt 扩展、Scope 与测试清单）
+- [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)（请求链、Tool/Prompt 扩展、Scope 与测试清单）
 - [启动、模拟器与验证](BUILD_RUN.md)
 - [上报 DTO、存储和集成边界](INTEGRATION.md)
 - [路线](ROADMAP.md)
@@ -14,6 +14,8 @@
 - [管理 Streaming 设计与实施状态](deep-dive/research/R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md)（默认关闭；Qwen 两工具可显式启用本地实验）
 - [管理历史Tool资格与试用](deep-dive/HISTORY_QUALIFICATION.md)（三个案例各5个真实样本技术通过；Qwen Normal单工具local_experimental、默认关闭）
 - [历史 Tool 工程成本审计](deep-dive/research/R2D1F_TOOL_INTEGRATION_COST_AUDIT.md)（实际文件/行数、可简化点与固定15样本准备）
+- [R2D-1 最终工程复盘](deep-dive/research/R2D1_TOOL_RETROSPECTIVE_AUDIT.md)（最终提交成本、代码风险、保留建议及简单Tool流程）
+- [人工真实连接测试](../../scripts/manual_real_tests/README.md)（用户手动执行，默认Dry-run；自动离线与回答质量分开）
 - [管理 Streaming 逐案例资格与试用流程](deep-dive/STREAMING_QUALIFICATION.md)（三个真实技术 PASS，回答质量待审；local_experimental 非正式发布）
 - [R2B-3 架构与 Tool 故障审查](deep-dive/research/R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md)（只读证据、修复建议与后续顺序）
 - [独立 Backend 迁移方案、实施与人工验收](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)

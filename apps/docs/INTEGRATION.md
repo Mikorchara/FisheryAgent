@@ -1,6 +1,6 @@
 # 统一监测协议与集成边界
 
-AI 的扩展操作见 [AI Backend 与 Assistant 开发指南](AI_BACKEND_DEVELOPMENT_GUIDE.md)；本文件维护当前数据/应用边界。带 R 阶段编号的章节保留来源脉络，下述执行类均为管理独立 Backend，只有明确说明的领域/Knowledge 代码仍来自旧包。
+AI 的扩展操作见 [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)；本文件维护当前数据/应用边界。带 R 阶段编号的章节保留来源脉络，下述执行类均为管理独立 Backend，只有明确说明的领域/Knowledge 代码仍来自旧包。
 
 ## 1. 当前运行链路
 

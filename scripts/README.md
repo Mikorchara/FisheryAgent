@@ -2,11 +2,15 @@
 
 这些工具不是正常 Web 运行所必需。项目根目录执行，使用已经安装项目的 Python 环境。
 
+**人工真实连接统一从 [manual_real_tests](manual_real_tests/README.md) 查找。** 真实 Qwen / Ollama / DeepSeek / 设备连接由用户在正常PowerShell中亲自执行；Codex执行自动离线测试。常用管理单案例薄入口默认Dry-run，只委托原CLI一次，不搬迁旧入口，不接收Key，不自动批量/重试。回答质量抽样独立安排，不是每次功能开发必经的研究阶段。
+
 - `dev/run_tests.py`：简单离线 unittest 分层入口，默认 FULL PRODUCT；`backend` 单独发现新 Backend / 新业务闭包测试，product 包含该组一次，fast 包含其小集合。不启动 Provider 或批次任务。
 - `dev/manual_edge_mock_probe.cjs`：人工页面调试辅助，需用户自行提供本机 Web / Edge CDP；不属于自动 Browser 测试，不自动启动服务。
 - `qualification/qualify_assistant_turn.py`：单 manifest 来源资格验证，默认 dry-run；Q1–Q4 保留为有限单次计划示例。
 - `qualification/qualify_multi_round.py`：默认 dry-run 的单案例入口；旧实验模式保留。`--assistant-product` 使用正式 AssistantService、多轮 Prompt / History / Commit Gate，只验证 Qwen 精确范围，每次最多 3 请求；可用 `--review-answer` 仅在终端预览成功回答，不保存正文或自动批准。[案例与逐次授权](../docs/deep-dive/research/ASSISTANT_MULTI_ROUND_INTEGRATION.md#10-phase-4c-正式-assistant-资格准备)。
 - `qualification/qualify_management_streaming.py`：管理 Qwen 两工具单案例，默认 dry-run；正式管理 Service + 隔离 Monitoring SQLite，固定512/2/2/3/120秒，真实执行须逐案例计划 hash 与明确确认。可选交互终端临时预览，不改 Web 发布状态/开关。[管理资格操作](../apps/docs/deep-dive/STREAMING_QUALIFICATION.md)。
+- `qualification/qualify_management_history.py`：管理Qwen Normal历史单工具，默认Dry-run，1024/1/1/2/120秒；本次完整计划hash与确认缺一不可。
+- `qualification/qualify_management_history_batch.py`：固定三案例各5次，默认Dry-run；不得在日常测试中自动启动真实批次，已用授权不能重复使用。[历史资格记录](../apps/docs/deep-dive/HISTORY_QUALIFICATION.md)。
 - `qualification/qualify_preset_tools.py`：单 Preset 的只读 Tool 往返与概念题维护资格验证，不自动发布。
 - `qualification/qualify_local_preset_request.py`：精确 Local 目标的单次请求检查，不扫描模型或自动发布。
 

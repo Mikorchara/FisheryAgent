@@ -13,7 +13,7 @@
 - 历史来源独立认证；查询成功不等于有可用数据，更不等于取得当前观测。
 - 先做离线及单 Tool 资格，再研究“当前 + 历史”两 Tool；不改变现有 2/2/3 或 Qwen 两工具 Streaming 范围。
 
-依据：[开发指南](../../AI_BACKEND_DEVELOPMENT_GUIDE.md)、[集成合同](../../INTEGRATION.md)、[工程规则](../../../AGENTS.md)。开发指南 §2 的 `limit` 是通用参数校验示例，不足以成为本 Tool 的正式时间合同。
+依据：[开发指南](../AI_BACKEND_DEVELOPMENT_GUIDE.md)、[集成合同](../../INTEGRATION.md)、[工程规则](../../../AGENTS.md)。开发指南 §2 的 `limit` 是通用参数校验示例，不足以成为本 Tool 的正式时间合同。
 
 ## 2. 当前 Monitoring 实际能力
 

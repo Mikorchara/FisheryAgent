@@ -1,6 +1,6 @@
 # Qwen 历史水质 Tool 单案例资格
 
-**当前R2D-1G：固定15个真实样本技术通过；用户批准Qwen Normal历史单工具local_experimental，Web默认关闭。回答质量未审核、非released；当前操作见第9节及BUILD_RUN。下文1～8节保留当时资格准备/停止记录，不代表已发放永久网络授权。**
+**当前：固定15个真实样本技术通过，用户已完成真实管理网页基本验收；Qwen Normal历史单工具仍为local_experimental、Web默认关闭、非released。回答质量独立抽样，不阻塞普通功能开发；用户观察不等于正式资格。操作见第9～11节及BUILD_RUN。下文1～8节保留准备/停止记录，不代表永久网络授权。**
 
 入口：[qualify_management_history.py](../../../scripts/qualification/qualify_management_history.py)。实现位于 [history_qualification.py](../../ai_service/development/history_qualification.py)，只复用正式管理 Service / Assistant / ToolCallingService；没有第二个执行循环或自动重试。固定批次薄入口见第7节。旧 [Streaming 资格](STREAMING_QUALIFICATION.md) 与其授权独立。
 
@@ -205,4 +205,10 @@ $historyBatch.batch.plans | ConvertTo-Json -Depth 15
 - 迁移差分测试原先把512 Streaming专用预算同时设给Normal，旧Normal侧因此未进入SDK。修正为只给Streaming设置后，增加每条比较至少一次SDK请求断言；新旧真正执行结果仍相等，未更新黄金基线或修改旧Prototype。
 - 原两工具六条HTTP路径与三份资格计划、Scope/定义/Prompt/History/Monitoring统计保持既有基线。历史三个candidate计划hash保持第7节原值；本次仅批准产品local_experimental，不新增或篡改真实资格记录。
 - Python AST 31文件、JSON 2文件、JS语法7文件和新增2段PowerShell启动/回滚示例通过；280个Markdown本地链接、42个锚点无损坏，diff/行尾空白检查通过。工作树改动文件的API Key/Bearer/private-key模式扫描无命中；9个受保护实现/配置字节hash未变，旧Prototype无diff。模式扫描不等于绝对无泄漏证明。
-- 尚未完成：真实网页最终人工验收、回答质量/真实性专项审核、History Streaming、其他Provider/组合、持续异常/恢复分析和生产鉴权。默认关闭状态不代表生产可用。
+- 1G当时尚未完成：真实网页最终人工验收、回答质量/真实性专项审核、History Streaming、其他Provider/组合、持续异常/恢复分析和生产鉴权。网页基本人工验收随后由用户确认，见第11节；其他边界不变。
+
+## 11. R2D-1I：人工网页验收与后续测试
+
+用户确认：Qwen在真实管理网页成功选择历史Tool，Monitoring返回实际统计，Tool Execution与Source Gate正常，生成完整Final；管理设置和启动开关可禁用。此处记录用户观察，本轮没有读取真实报告、数据库或私有配置，没有新增qualification_id、人工回答质量批准或released状态。
+
+历史Tool作为可长期维护的有限业务模块保留；模型组合发布、默认开关与用户授权继续分别控制。后续真实连接由用户从[manual_real_tests](../../../scripts/manual_real_tests/README.md)亲自执行，原单案例/批次CLI不搬迁；默认Dry-run，真实执行需要本次计划与明确确认，旧hash不作为永久授权。完整复盘及并发保存问题见[R2D-1最终审计](research/R2D1_TOOL_RETROSPECTIVE_AUDIT.md)。
