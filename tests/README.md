@@ -37,11 +37,14 @@ node --test tests/web/test_browser_streaming.cjs
 # FULL QUALIFICATION：仅资格基础设施变化时，仍然全离线
 python scripts/dev/run_tests.py qualification
 
+# MANAGEMENT：Monitoring + Simulator + Backend/AI业务 + 管理HTTP/SSE + 自动运行管理Node
+python scripts/dev/run_tests.py management
+
 # 原 tests discovery：包括旧 product + qualification；apps 新侧用 backend 入口；-t . 保证规范包名
 python -m unittest discover -s tests -t .
 ```
 
-任一 runner 选择加 `--list` 可仅检查发现数量；`all` 包含 product + qualification。FAST 是显式核心模块集合，不替代完整产品回归。Node 页面测试不由 Python runner 隐式启动。
+任一 runner 选择加 `--list` 可仅检查发现数量；`all` 仍包含 product + qualification。FAST 是显式核心模块集合，不替代完整产品回归。只有显式 `management` 自动运行管理Node；其余层的Node仍单独执行。management不收集资格探测模块，无真实模型请求。
 
 ## 清理与覆盖边界
 

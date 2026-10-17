@@ -15,9 +15,14 @@ class SafeParser(argparse.ArgumentParser):
         self.exit(2,'INVALID_QUALIFICATION_ARGUMENTS\n')
 
 
-def main(argv=None):
-    parser = SafeParser(description='管理 Qwen 历史 Tool 单案例资格；默认 dry-run，不自动重试')
-    parser.add_argument('--case',required=True,choices=[case.case_id for case in CASES])
+def main(argv=None, *, qualification=None):
+    # Share only CLI consent/report plumbing; each qualification owns its plan/run.
+    cases, make_plan, execute, save_report = CASES, plan, run, write_report
+    if qualification is not None:
+        cases, make_plan, execute, save_report = (qualification.CASES, qualification.plan,
+                                                qualification.run, qualification.write_report)
+    parser = SafeParser(description='管理 Qwen 单案例资格；默认 dry-run，不自动重试')
+    parser.add_argument('--case',required=True,choices=[case.case_id for case in cases])
     consent = parser.add_mutually_exclusive_group()
     consent.add_argument('--dry-run',action='store_true')
     consent.add_argument('--confirm-network',action='store_true')
@@ -29,7 +34,7 @@ def main(argv=None):
     try:
         if Path.cwd().resolve() != ROOT or not (ROOT/'pyproject.toml').is_file():
             raise QualificationError('WORKSPACE_REQUIRED')
-        approved = plan(args.case)
+        approved = make_plan(args.case)
         if not args.confirm_network:
             print(json.dumps({'dry_run':True,'plan':approved,'actual_network_requests':0},ensure_ascii=True,indent=2))
             return 0
@@ -39,11 +44,11 @@ def main(argv=None):
             raise QualificationError('QUALIFICATION_REVIEW_REQUIRES_TERMINAL')
         def review(text):
             safe = ''.join(c for c in text if c in '\n\t' or unicodedata.category(c)[0] != 'C')
-            print('\n隔离历史夹具 · 人工回答预览（不保存、未批准）：\n'+safe,file=sys.stderr)
+            print('\n隔离业务夹具 · 人工回答预览（不保存、未批准）：\n'+safe,file=sys.stderr)
         execution_started = True
-        report = run(args.case,ROOT,confirm_network=True,approved_plan_sha256=args.plan_sha256,
+        report = execute(args.case,ROOT,confirm_network=True,approved_plan_sha256=args.plan_sha256,
                      answer_reviewer=review if args.review_answer else None)
-        filename = write_report(ROOT,report)
+        filename = save_report(ROOT,report)
         summary = {k:report[k] for k in ('run_id','status','error_code','technical_success','request_count',
             'actual_network_requests','qualification_verdict','human_review_status')}
         print(json.dumps({**summary,'report':'outputs/assistant-qualification/'+filename},ensure_ascii=True))

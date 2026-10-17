@@ -8,27 +8,35 @@ Python 3.11+，使用根项目已有 Flask 依赖；SQLite、生成器和 HTTP t
 
 以下从仓库根目录、同一个正常用户PowerShell执行。先查看现有8766服务；若已运行，不另启第二个，也不强杀未知进程。以下只启动本地网页和模拟数据，不发送LLM请求、不修改用户Policy。三个已批准试用开关分别启用既有精确范围，不开放三工具统一candidate。
 
-第一行启动自己的服务器并让子进程继承临时开发接入令牌；端口占用时直接停止该命令，不覆盖令牌。令牌不是Provider Key，不打印、不落盘：
+推荐一行启动（默认场景 normal；以下为逐渐低氧）：
 
 ```powershell
-if (Get-NetTCPConnection -LocalPort 8766 -State Listen -ErrorAction SilentlyContinue) { throw '8766已有服务，请先核对并停止自己启动的实例。' }; $env:FISHERY_SIM_INGEST_TOKEN = [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N'); $managementServer = Start-Process -FilePath .\.venv\Scripts\python.exe -ArgumentList '-m','apps.management_web','--enable-ingestion','--enable-assistant','--assistant-multi-round-trial','--assistant-streaming-trial','--assistant-history-trial' -WorkingDirectory (Get-Location).Path -WindowStyle Hidden -PassThru
+.\scripts\dev\run_local.ps1 -Scenario low_oxygen
 ```
 
-随后在**同一终端**运行模拟器，让它使用相同令牌；默认每10秒上报，不触发LLM：
+访问 `http://127.0.0.1:8766`。前台启动器生成一次性接入令牌，仅传给自己创建的两个子进程，不打印/保存，也不改当前终端环境。模拟器每10秒上报；启动与刷新不会请求模型。端口占用时报 `LOCAL_PORT_IN_USE`，不杀外部进程。**在此终端按 Ctrl+C**，启动器终止并回收自己的模拟器和服务器。不要直接关闭终端或强杀启动器；这种退出方式无法保证执行清理。子进程意外退出时，启动器也会清理另一子进程并报告错误。
+
+默认启用已批准的 Normal 多轮、Qwen 两工具 Streaming 和历史单工具试用；网页仍默认 Normal，实际 Tool 必须在系统设置授权并满足精确 Scope。三工具统一仍为 candidate，不被此启动器开放。保留所有原 CLI；无需新建 `.env` 或读取/传递 API Key。服务器启动失败时回到原 CLI 检查安全错误，不重复启动。
+
+按需关闭功能（先 Ctrl+C 停止旧实例，再执行一行）：
 
 ```powershell
-.\.venv\Scripts\python.exe -m apps.simulator --scenario normal --seed 42 --interval 10
+.\scripts\dev\run_local.ps1 -Scenario normal -NoStreaming
+.\scripts\dev\run_local.ps1 -Scenario normal -NoStreaming -NoMultiRound -NoHistory
+.\scripts\dev\run_local.ps1 -Scenario normal -NoAssistant
 ```
 
-访问`http://127.0.0.1:8766`。默认Normal；在管理系统设置中授权Tool，历史问题点击“历史查询”。退出模拟器按Ctrl+C；只停止自己保存的服务器进程：
+`-Port 8767`、`-Seed 42` 可选；六个 Scenario 沿用模拟器。关闭不会删除 SQLite 或改用户 Policy；重启的新 epoch 使旧确认失效。高级手动服务器/模拟器命令保留在下文。
+
+聊天支持「进入全屏」「阅读 / 截图」「收起运行面板」。全屏隐藏主导航，输入区保留；阅读隐藏输入/选择控件，以正常文档流展开**当前全部聊天**，可使用浏览器整页截图，并手动展开消息内 Tool 记录。运行中阅读仍保留 Stop，临时预览始终标记未提交。退出阅读返回之前模式，ESC 再退出全屏，恢复滚动位置；布局切换不发送请求、不改变 History 或网络确认。向上阅读暂停自动跟随，「回到最新」恢复，右侧问题标记仍可跳转。
+
+日常小改动跑受影响层；管理完整离线链路使用：
 
 ```powershell
-if ($managementServer -and -not $managementServer.HasExited) { Stop-Process -Id $managementServer.Id }; Remove-Item Env:\FISHERY_SIM_INGEST_TOKEN -ErrorAction SilentlyContinue
+.\.venv\Scripts\python.exe scripts/dev/run_tests.py management
 ```
 
-关闭历史试用：停止自己的服务器，保留所需其他参数但去掉`--assistant-history-trial`后重启、刷新页面；也可在管理设置撤销历史授权（影响尚未领取的新请求，已领取Turn保持冻结；需停止它时用Stop）。关闭全部AI试用则去掉三个trial参数，Normal单轮仍可由`--enable-assistant`启用。不删除数据或改JSON。
-
-日常小改动只跑受影响层；以下每条均为一行，全部离线（HTTP测试使用本机Fake/临时数据）：
+其他针对性命令（全部离线、临时数据）：
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/dev/run_tests.py fast
@@ -37,9 +45,9 @@ if ($managementServer -and -not $managementServer.HasExited) { Stop-Process -Id 
 node --test apps/management_web/tests/*.test.mjs
 ```
 
-现有`product`包含旧Prototype与新Backend/AI业务层，**不含Monitoring、Simulator、管理HTTP与Node**。只有这些层受到影响时追加对应测试；不用每个小步骤都重复所有层。资格入口改变时运行离线`python scripts/dev/run_tests.py qualification`；本轮新增薄入口可只跑`python -m unittest tests.qualification.test_manual_real_tests`。不要将`FULL QUALIFICATION`误解为真实请求。
+`management` 包含 Backend/AI业务、Monitoring、Simulator、管理 HTTP/SSE，并自动运行管理前端 Node；403项 Python 无重复收集。`fast`、`product`、`qualification` 含义不变：`product`仍不含上述完整管理层；资格基础设施变更才跑离线 `qualification` 或受影响的资格模块，不把它解释成真实请求。`--list` 只列数量，不运行 Python/Node 测试。
 
-真实外部连接由用户从[统一人工入口](../../scripts/manual_real_tests/README.md)亲自执行。这里没有新增启动框架；一行启动命令沿用既有模块和参数。本轮验证参数传递及PowerShell语法，没有启动真实服务、模拟器或Provider。
+真实外部连接由用户从[统一人工入口](../../scripts/manual_real_tests/README.md#5-三工具-normal-候选r2d-2a)亲自执行。R2D-2A 已在隔离 SQLite/Fake SDK 验证启动、10秒实际HTTP上报、占用拒绝、清理、聊天双模式和布局；未启动用户真实数据服务、读取私有凭据或调用 Provider。详见[实施记录](deep-dive/R2D2A_PRODUCT_INTEGRATION.md)。
 
 ## 只读启动
 
@@ -214,7 +222,7 @@ R2B-5E 允许显式启动本地试用后人工检查 Streaming。关闭开关、
 
 访问 `http://127.0.0.1:8766`。如还需保留 Normal 2/2/3 本地实验，追加 `--assistant-multi-round-trial`；否则 Normal 仍为 1/1/2。两个开关独立，界面默认始终 Normal。模拟接入另按前文配置开发令牌后追加 `--enable-ingestion`，启动与切换本身不调用模型。
 
-1. 在现有 Prototype Tool Manager → Assistant 中，由用户明确授权水质查询与项目知识检索，并开启 LLM Tool Calling；不要修改默认 Policy。管理端只装配这两个 Tool，不装配评分。
+1. 在管理平台「系统设置 → Assistant Tool 授权」中，由用户明确授权水质查询与项目知识检索；不要修改默认Policy。管理覆盖未建立时才只读继承旧选择；已有覆盖后不要去旧Prototype Tool Manager更改管理授权。Streaming仅暴露这两个Tool，不装配评分。
 2. 刷新管理页面 → AI 智能助手 → Qwen 3.8 Flash → 选择监测设备 → Streaming。核对“本地实验 · local_experimental”、512 tokens/请求与最多三次模型请求；模型/Policy/Scope 不匹配时页面解释原因，服务端在凭据解析/联网前拒绝。
 3. 输入概念问题、当前水质问题，或“先查询当前水质，如果异常，再检索项目资料解释低氧风险”。勾选本次 REAL NETWORK REQUEST 确认后发送；一次确认覆盖最多三次请求及本地只读 Tool。检查独立 Tool 卡片、Steps、Usage 和预览原位转 Final；模型可以提前 Final，不保证每次都选 Tool。
 4. Normal / Streaming 切换只影响下一条消息、保留成功 History并清除旧确认；执行中冻结模式/设备/模型。测试向上阅读暂停跟随、问题标记跳转、Stop 和断线撤销。临时预览、失败、截断及取消不进入成功 History；不自动重连、重试、切 Provider 或以 Normal 重发。
@@ -270,7 +278,7 @@ R2C-1E：用户已通过真实管理网页完成 Qwen Normal 水质 Tool / Final
 2. 打开「系统设置 → Assistant Tool 授权」。首次读取只显示原有选择，不写文件。按需勾选/取消历史水质，再点「保存 Tool 授权」。保存前保留 Water/Knowledge 原选择，评分兼容项不可执行。
 3. 保存只写管理端的 `outputs/tool-policies/management_assistant_policy.json`，不写 Prototype 共用文件。其他窗口已修改时必须重新读取再保存；损坏配置不会自动清空或恢复默认。
 4. 保存使旧网络确认失效；下一条消息重新确认。已 claim 的 Turn 使用冻结授权，撤销对下一 Turn 生效；History/draft 保留。重新启动后读取同一管理配置，未存在覆盖时继续只读继承。
-5. **历史仍未开放真实试用**：界面授权不等于发布。candidate 只为 Qwen OFF / Normal / 历史单工具 / 1/1/2 准备；普通对话继续使用原两工具。不要编辑 JSON 的 status/enabled，也不要用旧 Prototype Tool Manager 写历史名称。
+5. **此处是1D阶段准备记录**：界面授权不等于发布。历史单工具现已获批准，按下文1G启用；普通对话仍使用原两工具，三工具组合保持candidate。不要编辑JSON的status/enabled，也不要用旧Prototype Tool Manager写历史名称。
 
 离线验证（全部使用临时数据与 Fake SDK）：
 
@@ -341,7 +349,7 @@ Stop-Process -Id $managementServer.Id
 
 - 「本地实验」是许可状态，启动开关和用户授权仍须分别满足。历史查询显示未启用时，重新勾选联网确认不能解决；按页面提示启用启动参数或到系统设置授权，再点「刷新可用状态」。禁止发送时确认框同时禁用且取消勾选。
 - 历史查询在 Streaming 或其他模型下会明确提示选择 Qwen / Normal；页面不会替用户切换模式。历史成功后恢复普通提问并清除确认；已成功的对话不丢失。
-- 三工具自主选择已建立独立 `management-normal-three-tools@1` candidate（当前水质、Knowledge、历史水质；Qwen OFF / Normal / 2/2/3 / 1024 tokens / retry=0 / 120秒），**未开放**。它不属于现有启动参数许可，也没有新增网络命令或模型资格。两个旧 Scope、历史单工具 Scope 和预算原样保留。
+- 三工具自主选择已建立独立 `management-normal-three-tools@1` candidate（当前水质、Knowledge、历史水质；Qwen OFF / Normal / 2/2/3 / 1024 tokens / retry=0 / 120秒），**未开放**。它不属于现有启动参数许可；R2D-2A补充了四个独立人工资格案例，尚无新增真实组合资格。两个旧Scope、历史单工具Scope和预算原样保留。
 - 开放三工具前，须另行批准该精确候选计划，逐案例验证三类选择、Current→History、History→Knowledge、提前Final、参数、Result传递、Ledger/提交及三来源需求的预算限制，再独立批准本地试用。三个可选工具不表示可执行三个；当前预算最多两个，不能宣称获得未执行的第三来源。离线 Fake 不能替代真实选择证据。
 
 R2D-1H 离线验收结果见[历史资格说明](deep-dive/HISTORY_QUALIFICATION.md#10-r2d-1h交互修复与独立三工具候选)。

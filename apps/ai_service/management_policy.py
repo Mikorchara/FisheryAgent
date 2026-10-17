@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+import errno
 import hashlib
 import json
 import os
@@ -47,29 +48,38 @@ def _writer_lock(path):
     try:
         if os.name == 'nt':
             import msvcrt
-            if stream.seek(0, 2) == 0:
-                stream.write(b'0'); stream.flush()
+            # Windows byte-range locks may extend beyond EOF. Lock the byte
+            # before initializing it; another writer must never write under us.
             stream.seek(0)
             try:
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
-            except OSError:
-                raise ToolPolicyError('TOOL_POLICY_BUSY') from None
+            except OSError as error:
+                if (error.errno in (errno.EACCES, errno.EAGAIN, errno.EDEADLK)
+                        and getattr(error, 'winerror', None) in (None, 33)):
+                    raise ToolPolicyError('TOOL_POLICY_BUSY') from None
+                raise
         else:
             import fcntl
             try:
                 fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                raise ToolPolicyError('TOOL_POLICY_BUSY') from None
+            except OSError as error:
+                if error.errno in (errno.EACCES, errno.EAGAIN):
+                    raise ToolPolicyError('TOOL_POLICY_BUSY') from None
+                raise
         locked = True
+        if stream.seek(0, 2) == 0:
+            stream.write(b'0'); stream.flush()
         yield
     finally:
-        if locked:
-            if os.name == 'nt':
-                stream.seek(0)
-                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(stream, fcntl.LOCK_UN)
-        stream.close()
+        try:
+            if locked:
+                if os.name == 'nt':
+                    stream.seek(0)
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(stream, fcntl.LOCK_UN)
+        finally:
+            stream.close()
 
 
 @dataclass(frozen=True)

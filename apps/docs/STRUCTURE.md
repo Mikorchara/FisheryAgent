@@ -48,6 +48,7 @@ apps/
 │  ├─ development/                                                       # 显式开发入口，不由正式 Runtime 导入
 │  │  ├─ __init__.py                                                     # 无启动 I/O 的包标记
 │  │  ├─ history_qualification.py                                        # 历史单案例计划、隔离夹具及受控候选执行
+│  │  ├─ normal_selection_qualification.py                               # 三工具Normal候选单案例，复用既有观察和同意合同
 │  │  ├─ qualification_adapter.py                                        # 新Backend资格Adapter，有限预算与安全观察
 │  │  ├─ qualification_support.py                                        # 新类型Observer/凭据定位/安全报告写入
 │  │  ├─ streaming_observation.py                                        # 有界流式统计/组装/清理观察
@@ -92,6 +93,7 @@ apps/
 │  │  ├─ test_history_candidate.py                                       # 历史 HTTP 候选门禁、Fake SDK、来源及两工具隔离
 │  │  ├─ test_management_policy.py                                       # 独立配置、CAS/并发、恢复和安全写入
 │  │  ├─ test_normal_selection.py                                        # 三工具选择、预算、候选隔离与Web输入门禁
+│  │  ├─ test_normal_selection_qualification.py                           # 四个候选计划、Fake SDK路径/来源/脱敏与拒绝
 │  │  ├─ test_execution.py                                               # 管理配置校验、独立 Scope 与默认关闭
 │  │  ├─ test_service.py                                                 # 无 Web 的执行、冻结、取消、路径及依赖边界
 │  │  ├─ test_streaming_config.py                                        # Streaming 本地试用、类型/预算与独立范围
@@ -118,6 +120,7 @@ apps/
 │  │  │  ├─ R2D1_TOOL_RETROSPECTIVE_AUDIT.md                               # 最终成本、质量风险与简化开发流程
 │  │  │  └─ R2D1F_TOOL_INTEGRATION_COST_AUDIT.md                           # 历史Tool成本盘点、预算与批量准备
 │  │  ├─ AI_BACKEND_DEVELOPMENT_GUIDE.md                                  # 请求链、Tool/Prompt 扩展与安全测试指南
+│  │  ├─ R2D2A_PRODUCT_INTEGRATION.md                                     # Policy修复、候选、启动器与聊天视图验收
 │  │  ├─ HISTORY_QUALIFICATION.md                                         # 历史候选逐案例计划、审批与人工预览
 │  │  └─ STREAMING_QUALIFICATION.md                                      # 单案例批准、脱敏报告、人工预览及试用/回滚
 │  ├─ BUILD_RUN.md                                                       # 启动、联调与验证
@@ -129,7 +132,7 @@ apps/
 │  ├─ static/                                                            # 实际目录
 │  │  ├─ app.js                                                          # 七页面路由与监测 5 秒轮询
 │  │  ├─ assistant-events.js                                             # 有界 POST SSE、序号/身份/终态校验与流清理
-│  │  ├─ assistant.js                                                    # 双模式聊天、临时预览、History、Stop、滚动和问题导航
+│  │  ├─ assistant.js                                                    # 双模式聊天、全屏/阅读、临时预览、History、Stop、滚动
 │  │  ├─ components.js                                                   # 安全文本、卡片、表格、图表
 │  │  ├─ index.html                                                      # 布局、来源标识和弹窗
 │  │  ├─ tool-policy.js                                                  # 本机设置授权面板，不授予模型发布许可
@@ -143,15 +146,18 @@ apps/
 │  │  ├─ assistant-stream-ui.test.mjs                                    # Streaming 会话、撤销、History 与滚动/导航
 │  │  ├─ assistant-transport.test.mjs                                    # 正式 fetch 路由、确认、AbortSignal 与取消
 │  │  ├─ assistant-ui.test.mjs                                           # Normal 聊天、History、epoch 与 Stop 行为
+│  │  ├─ assistant-view.test.mjs                                         # 全屏/阅读、滚动恢复、进行中Turn与Stop不变
 │  │  ├─ chart-fixture.mjs                                               # 固定多次重启、20 小时时间跨度数据
 │  │  ├─ chart-ui.test.mjs                                               # 时间坐标、重复/缺口、精度和 SVG
 │  │  ├─ dom-fixture.mjs                                                 # 无网络 DOM 测试辅助
 │  │  ├─ monitoring-ui.test.mjs                                          # 实际页面代码的离线 DOM 行为
+│  │  ├─ local_session_fixture.py                                        # 临时SQLite管理服务器，不装配AI或凭据
 │  │  ├─ stream-browser-bridge.mjs                                       # 实际管理 SSE 到前端解析/提交的 Node 桥
 │  │  ├─ test_ai_boundary.py                                             # Web 访问控制、令牌隔离、同一 Handle 与显式装配门禁
 │  │  ├─ test_app.py                                                     # R1 兼容、API 和安全
 │  │  ├─ test_assistant.py                                               # Fake Provider HTTP 闭环、同源数据、Ledger 与取消
 │  │  ├─ test_knowledge.py                                               # Knowledge HTTP 闭环、授权/来源隔离、拒绝与确认指纹
+│  │  ├─ test_local_session.py                                           # 双子进程、10秒上报、占用拒绝和清理
 │  │  ├─ test_multi_round.py                                             # HTTP 双 Tool、Scope/revision、预算、取消与回滚
 │  │  ├─ test_streaming.py                                               # Fake SDK HTTP/SSE、安全门禁及真实事件到前端的桥接
 │  │  ├─ tool-policy.test.mjs                                            # 设置保存、冲突提示与确认失效
@@ -223,4 +229,4 @@ Phase I 的五个 runtime 准备模块和三份重复测试已移除；当前 Se
 
 [qualify_management_history_batch.py](../../scripts/qualification/qualify_management_history_batch.py) 是固定3案例×5的薄进程编排入口：每个子进程仍只运行一个案例，默认Dry-run，真实执行需三个新计划的一次性明确批准；无重试、补跑或自动恢复。
 
-[scripts/manual_real_tests/](../../scripts/manual_real_tests/README.md) 为用户人工真实连接统一索引；`run_qualification.py`只委托现有管理单案例CLI，不参与应用启动或自动模型测试。对应的自动测试`tests/qualification/test_manual_real_tests.py`全部mock子进程。当前`product`入口不包含Monitoring/管理HTTP/Node；完整管理回归须按BUILD_RUN显式补齐，不能将离线资格层当作真实Provider验证。
+[scripts/manual_real_tests/](../../scripts/manual_real_tests/README.md) 为用户人工真实连接统一索引；`run_qualification.py`只委托管理单案例CLI，新增Normal三工具候选四案例，不参与应用启动。`scripts/dev/run_local.ps1` + `local_session.py` 负责已有CLI的临时令牌/双进程生命周期，不装配AI或修改Policy。`run_tests.py management` 包含Monitoring/Simulator/Backend/AI业务/管理HTTP/SSE和Node；`product`含义不变。资格层保持离线，不能当作真实Provider证据。见[R2D-2A记录](deep-dive/R2D2A_PRODUCT_INTEGRATION.md)。

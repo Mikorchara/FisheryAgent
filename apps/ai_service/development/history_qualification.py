@@ -153,8 +153,8 @@ def _monitoring(folder, case):
 
 
 class _Trace(_RunTrace):
-    def __init__(self):
-        super().__init__(tool_names=(WATER_QUALITY_HISTORY,))
+    def __init__(self, *, tool_names=(WATER_QUALITY_HISTORY,)):
+        super().__init__(tool_names=tool_names)
         self.result = None  # Transient execution/ledger only, never serialize this object.
 
     def record_assistant(self, result, **timing):

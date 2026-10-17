@@ -73,6 +73,28 @@ Streaming案例：`direct-final`、`current-water`、`low-oxygen`；固定管理
 - 薄 Tool 开发：参数/来源/未授权/取消/提交的专项离线测试，加一条实际HTTP链路；无需每个边界重复跑所有 Provider。
 - 资格基础设施改变：运行离线资格测试；不因此自动执行真实批次。
 - 新模型组合、Transport、Prompt/Schema或预算语义改变：用户集中审核精确范围，决定有限样本数，再亲自真实执行；不使用历史批准反复重跑。
+
+## 5. 三工具 Normal 候选（R2D-2A）
+
+候选 `management-normal-three-tools@1` 保持关闭。普通聊天仍在原 Current + Knowledge 范围选择；历史快捷操作保留已批准的历史单工具能力。以下资格探测使用隔离 SQLite、临时 Policy、正式多轮 Prompt/History 和新 Backend，不改变网页发布状态。
+
+最小人工矩阵：`current-water`、`water-history`、`project-knowledge` 各一次（预期2请求），`current-history`一次（预期3请求）。合计4独立Turn，预期9、理论最多12模型请求，每次最多2 Tool/2 rounds/3 requests，Qwen OFF / Normal / 三工具 / 1024 tokens / retry=0 / 120秒。不是批处理，也不是长期稳定性证明。问题由固定案例提供，不自行改写。
+
+先任选一个案例 Dry-run（默认不联网）：
+
+```powershell
+$selectionPlan = .\.venv\Scripts\python.exe scripts/manual_real_tests/run_qualification.py --target management-normal-selection --case current-water --dry-run | ConvertFrom-Json; $selectionPlan.plan
+```
+
+核对精确 Scope 与本案例完整 hash，用户明确批准这一次后才手动执行：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/manual_real_tests/run_qualification.py --target management-normal-selection --case current-water --confirm-network --plan-sha256 $selectionPlan.plan.plan_sha256 --review-answer
+```
+
+其余案例须分别替换 `--case`、重新 Dry-run、使用对应 hash。每个命令只执行一次，不自动重试、补跑或换模型。失败/中断/报告保存失败先盘点安全结果，凭据错误不复制Key或改ACL。临时预览可省略，不写正文；安全报告复用 `outputs/assistant-qualification/`，含真实调用顺序、Result传递、Ledger、Source/Commit、实际编码、清理、Usage及延迟。单案例CLI不经过HTTP；管理HTTP组合路径另有Fake测试，不能宣称已有真实三工具网页资格。
+
+技术成功后交回报告，由用户另行批准三工具 `local_experimental`。批准前不移除历史快捷操作，不改Streaming两工具范围。开放时只接入现有后端候选到普通Normal请求及其Bootstrap/确认，按维护者开关与Policy冻结选择；不需要新Registry、循环或执行Profile下拉菜单，也不应按问题关键词路由。
 - 回答质量：单独安排人工抽样；技术 PASS、人工可用性观察和正式 released 是不同证据，不自动转换。
 
 管理启动/回滚见 [BUILD_RUN](../../apps/docs/BUILD_RUN.md#一行式常用命令)。本轮仅离线准备，没有执行以上真实命令。

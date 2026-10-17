@@ -65,6 +65,23 @@ test('preview and final reuse the same message; safe text, one final pair, share
   assert.equal(p.sent[2].history.length,2);assert.equal(p.workspace.state.turns.length,3);
   assert.ok(p.sent.every(v=>!('transport'in v)&&!('mode'in v)&&!('max_output_tokens'in v)));
 });
+
+test('fullscreen and reading during Streaming preserve preview node, transport, handle and one final',async()=>{
+  const p=await setup();let preview;
+  p.api.stream=async(value,_config,{onEvent})=>{
+    p.sent.push(value);
+    for(const event of events().slice(0,3))onEvent(event);
+    preview=find(p.root,'pending');const handle=p.workspace.state.control;
+    p.workspace.changeView('fullscreen');p.workspace.changeView('reading');
+    assert.equal(find(p.root,'pending'),preview);assert.equal(p.workspace.state.control,handle);
+    assert.equal(p.workspace.state.transport,'streaming');assert.equal(p.workspace.state.turns.length,0);
+    assert.match(p.root.textContent,/临时 <img/);p.workspace.exitView();
+    return {result:events().at(-1).result};
+  };
+  p.workspace.changeTransport('streaming');p.workspace.state.draft='长回答';p.workspace.state.confirmed=true;
+  await p.workspace.send();assert.equal(find(p.root,'assistant'),preview);
+  assert.equal(p.workspace.state.turns.length,1);assert.equal(p.sent.length,1);assert.equal(p.cancelled.length,0);
+});
 test('preview reset, failures, disconnect, invalid identities, illegal Final and late frames cannot commit',async()=>{
   for(const code of ['TOTAL_TIMEOUT','STREAM_TRUNCATED','TRACE_WRITE_FAILED','TOOL_EXECUTION_ERROR',null,'invalid-final','wrong-epoch']){
     const p=await setup();p.workspace.changeTransport('streaming');const rows=events();

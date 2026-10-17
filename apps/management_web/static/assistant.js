@@ -12,9 +12,28 @@ export function createAssistantWorkspace(api,options={}){
   const confirm=options.confirm||((text)=>window.confirm(text));
   const s={device:'',devices:[],preset:'',transport:'normal',nextAction:'',config:null,turns:[],entries:[],draft:'',pending:false,
     confirmed:false,control:null,stopRequested:false,cancellation:null,cancelUnknown:false,stopRejected:false,
-    status:'就绪',activity:null,lastRun:null,trimmed:false,generation:0,turnSequence:0,followLatest:true};
-  const root=el('div',{class:'management-assistant'});
-  let composer,statusNode,activityNode,sendButton,stopButton,run=null,confirmationKey='';
+    status:'就绪',activity:null,lastRun:null,trimmed:false,generation:0,turnSequence:0,followLatest:true,
+    viewMode:'normal',detailsVisible:true};
+  const root=el('div',{class:'management-assistant',tabindex:-1});
+  let composer,statusNode,activityNode,sendButton,stopButton,run=null,confirmationKey='',viewSnapshot=null,viewReturn='normal';
+  // Layout state has no relationship to request/session/confirmation state.
+  function changeView(mode){
+    if(!['normal','fullscreen','reading'].includes(mode)||mode===s.viewMode)return;
+    if(mode==='reading')viewReturn=s.viewMode;
+    if(mode==='fullscreen'&&s.viewMode==='normal'&&window.innerWidth<=1000)s.detailsVisible=false;
+    if(s.viewMode==='normal')viewSnapshot={scroll:messages.scrollTop,follow:s.followLatest,
+      page:window.scrollY||0};
+    const saved=mode==='normal'?viewSnapshot:mode!=='reading'&&s.viewMode==='reading'?readingSnapshot:null;
+    if(mode==='reading')readingSnapshot={scroll:messages.scrollTop,follow:s.followLatest,page:window.scrollY||0};
+    s.viewMode=mode;render();
+    if(saved){messages.scrollTop=saved.scroll;s.followLatest=saved.follow;
+      window.scrollTo?.(0,saved.page);latest.hidden=s.followLatest;}
+    root.focus({preventScroll:true});
+  }
+  let readingSnapshot=null;
+  function exitView(){changeView(s.viewMode==='reading'?viewReturn:'normal');}
+  root.addEventListener('keydown',event=>{if(event.key==='Escape'&&s.viewMode!=='normal'){
+    event.preventDefault();exitView();}});
   const safeError=e=>/^[A-Z][A-Z0-9_]{0,63}$/.test(e?.message||'')?e.message:'AI_SERVICE_UNAVAILABLE';
   const preset=()=>s.config?.presets.find(p=>p.preset_id===s.preset);
   const historical=()=>s.nextAction==='history_query';
@@ -53,14 +72,16 @@ export function createAssistantWorkspace(api,options={}){
   const messageNodes=new Map(),markers=new Map();
   const bottom=()=>Math.max(0,messages.scrollHeight-messages.clientHeight);
   function follow(){
-    if(s.followLatest)messages.scrollTop=bottom();
+    if(s.followLatest&&s.viewMode!=='reading')messages.scrollTop=bottom();
     latest.hidden=s.followLatest;
   }
-  messages.addEventListener('scroll',()=>{s.followLatest=bottom()-messages.scrollTop<=40;latest.hidden=s.followLatest;});
+  messages.addEventListener('scroll',()=>{if(s.viewMode==='reading')return;
+    s.followLatest=bottom()-messages.scrollTop<=40;latest.hidden=s.followLatest;});
   function jump(entry){
     const node=messageNodes.get(entry)?.node;if(!node)return;
     s.followLatest=false;
-    messages.scrollTop+=node.getBoundingClientRect().top-messages.getBoundingClientRect().top-12;
+    if(s.viewMode==='reading')node.scrollIntoView?.({block:'start'});
+    else messages.scrollTop+=node.getBoundingClientRect().top-messages.getBoundingClientRect().top-12;
     node.focus({preventScroll:true});latest.hidden=false;
   }
   function syncMessages(){
@@ -141,6 +162,7 @@ export function createAssistantWorkspace(api,options={}){
     if(activityNode)showActivity(activityNode,s.activity);
   }
   function render(){
+    root.className=`management-assistant view-${s.viewMode}${s.detailsVisible?'':' details-collapsed'}`;
     const scrollPosition=messages.scrollTop;
     const model=preset();
     const streaming=s.transport==='streaming',execution=profile();
@@ -161,7 +183,17 @@ export function createAssistantWorkspace(api,options={}){
     sendButton=el('button',{class:'button primary',text:'发送',...(!s.confirmed||s.pending||cannotSend?{disabled:'disabled'}:{}),onclick:()=>void send()});
     stopButton=el('button',{class:'button secondary',text:'Stop',...(!s.pending?{disabled:'disabled'}:{}),onclick:()=>void stop()});
     statusNode=el('p',{class:'muted',role:'status',text:cannotSend?unavailable():s.status});activityNode=el('div');
-    root.replaceChildren(el('div',{class:'assistant-layout'},[
+    root.replaceChildren(el('div',{class:'assistant-view-toolbar'},[
+      el('strong',{text:s.viewMode==='reading'?'对话阅读 / 截图':'AI 智能助手'}),
+      el('div',{class:'actions'},[
+        el('button',{class:'button secondary assistant-view-button',text:s.viewMode==='fullscreen'?'退出全屏':'进入全屏',
+          ...(s.viewMode==='reading'?{hidden:'hidden'}:{}),onclick:()=>changeView(s.viewMode==='fullscreen'?'normal':'fullscreen')}),
+        el('button',{class:'button secondary',text:s.viewMode==='reading'?'退出阅读':'阅读 / 截图',
+          onclick:()=>s.viewMode==='reading'?exitView():changeView('reading')}),
+        el('button',{class:'button text',text:s.detailsVisible?'收起运行面板':'展开运行面板',
+          'aria-expanded':String(s.detailsVisible),onclick:()=>{s.detailsVisible=!s.detailsVisible;render();}}),
+        ...(s.viewMode==='reading'&&s.pending?[el('button',{class:'button secondary',text:'Stop',onclick:()=>void stop()})]:[])])]),
+      el('div',{class:'assistant-layout'},[
       el('section',{class:'card chat-shell'},[
         el('div',{class:'chat-top assistant-controls'},[
           selectField('模型',(s.config?.presets||[]).map(p=>[p.preset_id,p.display_name]),s.preset,changePreset),
@@ -319,7 +351,7 @@ export function createAssistantWorkspace(api,options={}){
       if(!s.device){s.device=device;void load();}
       else if(device!==s.device&&!s.pending){reset();s.device=device;void load();}
       return root;},send,stop,clear,changePreset,changeDevice,
-    changeTransport,historyQuery,
+    changeTransport,historyQuery,changeView,exitView,
     policyChanged(){s.confirmed=false;if(s.pending){s.reloadPolicy=true;return;}if(s.device)void load();},
     suspend(){
       if(!s.pending)return;

@@ -38,3 +38,55 @@ main{max-width:1640px;margin:0 auto;padding:31px 36px 20px}.page-heading{display
 .management-assistant .chat-shell{display:grid;grid-template-rows:auto minmax(160px,1fr) auto;min-height:min-content}
 .management-assistant .chat-composer .actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
 .management-assistant .chat-composer .notice{font-size:12px;line-height:1.75;overflow-wrap:anywhere;background:#fff8ed;color:#80501f;padding:8px 10px;border-radius:6px;margin:6px 0}
+
+/* View-only modes: preserve the same message DOM, request and session. */
+.assistant-view-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.assistant-view-toolbar .actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.assistant-view-toolbar [hidden]{display:none}
+.management-assistant.details-collapsed .assistant-layout{grid-template-columns:minmax(0,1fr)}
+.management-assistant.details-collapsed .assistant-layout>.side-stack{display:none}
+body:has(.management-assistant.view-fullscreen){overflow:hidden}
+body:has(.management-assistant.view-fullscreen)>.sidebar,
+body:has(.management-assistant.view-fullscreen) .topbar,
+body:has(.management-assistant.view-fullscreen) .page-heading,
+body:has(.management-assistant.view-fullscreen) .demo-notice,
+body:has(.management-assistant.view-fullscreen) footer{display:none}
+.management-assistant.view-fullscreen{position:fixed;inset:0;z-index:30;padding:16px;background:var(--surface);display:flex;flex-direction:column;overflow:hidden}
+.view-fullscreen .assistant-layout{flex:1;min-height:0;margin:0;grid-template-columns:minmax(0,1fr) minmax(220px,290px)}
+.management-assistant.view-fullscreen .chat-shell{height:100%;min-height:0;grid-template-rows:auto minmax(0,1fr) auto}
+.view-fullscreen .chat-lane{min-height:0}
+.view-fullscreen .side-stack{overflow-y:auto;min-height:0}
+.view-fullscreen .chat-top,.view-fullscreen .chat-composer{padding:12px 18px}
+.view-fullscreen .chat-composer textarea{resize:none;min-height:60px;max-height:100px}
+body:has(.management-assistant.view-reading)>.sidebar,
+body:has(.management-assistant.view-reading) .topbar,
+body:has(.management-assistant.view-reading) .page-heading,
+body:has(.management-assistant.view-reading) .demo-notice,
+body:has(.management-assistant.view-reading) footer{display:none}
+body:has(.management-assistant.view-reading) .workspace{margin-left:0}
+body:has(.management-assistant.view-reading) main{padding:18px;max-width:1300px;margin:auto}
+.view-reading .assistant-view-toolbar{position:sticky;top:0;z-index:2;background:var(--surface);padding:10px 0}
+.view-reading .assistant-layout{display:block}
+.management-assistant.view-reading .chat-shell{display:block;height:auto;min-height:0;overflow:visible}
+.view-reading .assistant-controls,.view-reading .chat-composer{display:none}
+.view-reading .chat-lane{display:block;overflow:visible}
+.view-reading .management-messages{height:auto;max-height:none;overflow:visible;overscroll-behavior:auto}
+.view-reading .question-navigation{position:fixed;right:2px;top:100px;bottom:18px;width:32px;z-index:3;border:0}
+.view-reading .management-message{scroll-margin-top:100px}
+.view-reading .side-stack{margin-top:18px}
+@media(max-width:760px){
+ .management-assistant.view-fullscreen{padding:8px}
+ .view-fullscreen .assistant-layout{position:relative;grid-template-columns:minmax(0,1fr)}
+ .view-fullscreen .assistant-layout>.side-stack{position:absolute;inset:0 0 0 15%;z-index:4;display:flex;background:var(--surface);padding:10px;box-shadow:-8px 0 24px #102f3c20}
+ .view-fullscreen .assistant-controls{gap:6px;padding:8px}
+ .view-fullscreen .assistant-controls .field{min-width:85px}
+ .view-fullscreen .chat-composer{padding:8px}
+ .view-fullscreen .chat-composer p{font-size:10px;line-height:1.4}
+ .view-fullscreen .assistant-confirm{margin-top:6px}
+ .view-reading .management-messages{padding:12px 30px 12px 10px}
+ .assistant-view-toolbar .actions{gap:8px}
+}
+@media print{
+ .view-reading .assistant-view-toolbar,.view-reading .question-navigation{display:none}
+ .view-reading .management-message{break-inside:auto}
+}

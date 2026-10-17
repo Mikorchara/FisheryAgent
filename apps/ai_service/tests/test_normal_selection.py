@@ -1,5 +1,6 @@
 """Model chooses among three definitions; admission remains closed in product."""
 from dataclasses import replace
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import unittest
@@ -44,6 +45,70 @@ class NormalSelectionTests(unittest.TestCase):
             decision = original(*args, **kwargs)
             return replace(decision, can_send=decision.profile.mode_reason == 'NORMAL_TOOL_CANDIDATE_NOT_RELEASED')
         return patch.object(composition, 'resolve_normal_selection_candidate', side_effect=permit)
+
+    @contextmanager
+    def candidate_http(self):
+        # Test-only server-side selection and unpublished admission. The browser
+        # still sends the ordinary envelope; product cannot select this candidate.
+        original = self.backend._configuration
+        def configuration(*args, **kwargs):
+            if kwargs.get('execution_profile') is None and kwargs.get('transport', ToolModelTransport.NORMAL) == ToolModelTransport.NORMAL:
+                kwargs['execution_profile'] = NORMAL_SELECTION_CANDIDATE
+            return original(*args, **kwargs)
+        with patch.object(self.backend, '_configuration', side_effect=configuration), self.admission():
+            yield
+
+    def http_body(self):
+        bootstrap = self.client.get('/api/ai/bootstrap?device=pond-a').get_json()
+        control = self.client.post('/api/ai/requests', json={'epoch':bootstrap['epoch']},headers=self.headers).get_json()
+        return {'preset_id':self.profile.preset_id,'device_id':'pond-a','question':'同一个离线问题',
+            'epoch':bootstrap['epoch'],'revision':bootstrap['presets'][0]['revision'],
+            'history':[],'confirm_network':True,**control}
+
+    def test_actual_http_normal_three_choices_and_two_tool_result_delivery(self):
+        for names in ((), (WATER,), (HISTORY,), (KNOWLEDGE,), (WATER,HISTORY)):
+            with self.subTest(names=names):
+                self.configure('sparse');self.policy(list(HISTORY_CANDIDATE_TOOL_NAMES))
+                self.sdk=FakeSDK([*[sdk_tool(name,arguments=ARGS[name],identifier='c'+str(i))
+                    for i,name in enumerate(names)],sdk_final()],model=self.profile.model)
+                captured=[];original=assistant.AssistantService.send
+                def capture(owner,*args,**kwargs):
+                    result=original(owner,*args,**kwargs);captured.append(result);return result
+                with self.candidate_http(),patch.object(assistant.AssistantService,'send',capture):
+                    body=self.http_body()
+                    response=self.client.post('/api/ai/messages',json=body,headers=self.headers)
+                    replay=self.client.post('/api/ai/messages',json=body,headers=self.headers)
+                result=response.get_json()['result']
+                self.assertEqual(response.status_code,200,result)
+                self.assertTrue(result['successful_turn'])
+                self.assertNotEqual(replay.status_code,200)
+                self.assertEqual(len(self.sdk.bodies),len(names)+1)
+                self.assertEqual([step['tool_name'] for step in result['activity']['steps']
+                    if step['kind']=='tool' and step['handler_started']],list(names))
+                self.assertEqual(len(captured[0].source_ledger.entries),len(names))
+                for i,request in enumerate(self.sdk.bodies):
+                    self.assertEqual(request['max_tokens'],1024)
+                    self.assertEqual(len([m for m in request['messages'] if m['role']=='tool']),i)
+                    self.assertTrue(all(json.loads(m['content'])['device_id']=='pond-a'
+                        for m in request['messages'] if m['role']=='tool' and 'device_id' in json.loads(m['content'])))
+                self.assertTrue(all(client.closed for client in self.sdk.clients))
+
+    def test_http_revocation_and_invalid_arguments_fail_without_sources_or_followup(self):
+        self.policy(list(HISTORY_CANDIDATE_TOOL_NAMES))
+        with self.candidate_http():
+            stale=self.http_body();self.policy(list(FORMAL_TOOL_NAMES))
+            response=self.client.post('/api/ai/messages',json=stale,headers=self.headers)
+            self.assertEqual(response.get_json()['error_code'],'ASSISTANT_EXECUTION_PROFILE_CHANGED')
+            body=self.http_body()
+            self.assertEqual(self.client.post('/api/ai/messages',json=body,headers=self.headers).get_json()['error_code'],
+                             'ASSISTANT_MULTI_ROUND_SCOPE_MISMATCH')
+            self.assertFalse(self.sdk.bodies)
+            self.policy(list(HISTORY_CANDIDATE_TOOL_NAMES))
+            self.sdk=FakeSDK([sdk_tool(HISTORY,arguments='{"lookback_minutes":true}')],model=self.profile.model)
+            result=self.client.post('/api/ai/messages',json=self.http_body(),headers=self.headers).get_json()['result']
+        self.assertFalse(result['successful_turn']);self.assertEqual(result['final_text'],'')
+        self.assertEqual(result['error_code'],'INVALID_TOOL_ARGUMENTS');self.assertEqual(len(self.sdk.bodies),1)
+        self.assertEqual(result['activity']['counts']['tools_executed'],0)
 
     def test_pinned_candidate_scope_closed_and_separate_from_existing_releases(self):
         self.policy(list(HISTORY_CANDIDATE_TOOL_NAMES))

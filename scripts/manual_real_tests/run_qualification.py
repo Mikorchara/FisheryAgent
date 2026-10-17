@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 TARGETS = {
     'management-history': 'qualify_management_history.py',
     'management-streaming': 'qualify_management_streaming.py',
+    'management-normal-selection': 'qualify_management_normal_selection.py',
 }
 
 

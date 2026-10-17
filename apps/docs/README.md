@@ -5,6 +5,7 @@
 ## 阅读入口
 
 - [目录与职责](STRUCTURE.md)
+- [R2D-2A 产品整理与验收](deep-dive/R2D2A_PRODUCT_INTEGRATION.md)（并发小修、一行启动、全屏/阅读、三工具候选）
 - [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)（请求链、Tool/Prompt 扩展、Scope 与测试清单）
 - [启动、模拟器与验证](BUILD_RUN.md)
 - [上报 DTO、存储和集成边界](INTEGRATION.md)
