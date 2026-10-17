@@ -132,6 +132,23 @@ class UnifiedToolsTests(unittest.TestCase):
             self.assertEqual(len(self.sdk.bodies),1)
             self.assertEqual(result['activity']['counts']['tools_executed'],0)
 
+    def test_explicit_send_still_requires_exact_confirmation_and_revision_before_provider_io(self):
+        for streaming in (False,True):
+            for confirmation in (None,False,1,'true'):
+                with self.subTest(streaming=streaming,confirmation=confirmation):
+                    self.configure();body=self.envelope(streaming)
+                    if confirmation is None:body.pop('confirm_network')
+                    else:body['confirm_network']=confirmation
+                    with patch.object(self.backend.credentials,'resolve',side_effect=AssertionError('no credentials before approval')):
+                        response=self.client.post('/api/ai/messages'+('/stream' if streaming else ''),json=body,headers=self.headers)
+                    self.assertEqual(response.get_json()['error_code'],'NETWORK_CONFIRMATION_REQUIRED')
+                    self.assertFalse(self.sdk.bodies)
+            self.configure();body=self.envelope(streaming);body['revision']='expired-ui-revision'
+            with patch.object(self.backend.credentials,'resolve',side_effect=AssertionError('no credentials with stale revision')):
+                response=self.client.post('/api/ai/messages'+('/stream' if streaming else ''),json=body,headers=self.headers)
+            self.assertEqual(response.get_json()['error_code'],'ASSISTANT_EXECUTION_PROFILE_CHANGED')
+            self.assertFalse(self.sdk.bodies)
+
     def test_three_sources_budget_rejects_third_call_without_fake_receipt_or_fourth_request(self):
         for streaming in (False,True):
             self.configure();result=self.send((WATER,HISTORY,KNOWLEDGE),streaming)

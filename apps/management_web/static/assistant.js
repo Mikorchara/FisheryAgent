@@ -11,12 +11,12 @@ export function historyForRequest(turns){
 export function createAssistantWorkspace(api,options={}){
   const confirm=options.confirm||((text)=>window.confirm(text));
   const s={device:'',devices:[],preset:'',transport:'normal',config:null,turns:[],entries:[],draft:'',pending:false,
-    confirmed:false,control:null,stopRequested:false,cancellation:null,cancelUnknown:false,stopRejected:false,
+    configStale:false,control:null,stopRequested:false,cancellation:null,cancelUnknown:false,stopRejected:false,
     status:'就绪',activity:null,lastRun:null,trimmed:false,generation:0,turnSequence:0,followLatest:true,
     viewMode:'normal',detailsVisible:true};
   const root=el('div',{class:'management-assistant',tabindex:-1});
-  let composer,statusNode,activityNode,sendButton,stopButton,run=null,confirmationKey='',viewSnapshot=null,viewReturn='normal';
-  // Layout state has no relationship to request/session/confirmation state.
+  let composer,statusNode,activityNode,sendButton,stopButton,run=null,displayedBinding='',viewSnapshot=null,viewReturn='normal';
+  // Layout state has no relationship to request/session state or send authorization.
   function changeView(mode){
     if(!['normal','fullscreen','reading'].includes(mode)||mode===s.viewMode)return;
     if(mode==='reading')viewReturn=s.viewMode;
@@ -43,6 +43,7 @@ export function createAssistantWorkspace(api,options={}){
     profile()?.revision||preset()?.revision,profile()?.max_output_tokens,profile()?.max_model_requests,tools(),blocked()]);
   function unavailable(){
     if(!s.config)return '正在读取可用能力，请稍候。';
+    if(s.configStale)return '配置已变化，请点击右上角“刷新可用状态”后重新发送。';
     if(s.transport==='streaming')return {flag_disabled:'Streaming 尚未在服务器启用，请启用本地试用参数后刷新，或主动切回 Normal。',
       candidate:'此模型的 Streaming 尚未开放，请主动切回 Normal。',
       scope_not_published:'当前模型或授权工具组合不在 Streaming 本地实验范围内，请检查设置或主动切回 Normal。',
@@ -77,13 +78,14 @@ export function createAssistantWorkspace(api,options={}){
     for(const entry of s.entries){
       let view=messageNodes.get(entry);
       if(!view){
-        const title=el('strong'),body=el('p'),details=el('div');
-        const node=el('article',{tabindex:-1},[title,body,details]);
+        const title=entry.kind==='user'?null:el('strong'),body=el('p'),details=el('div');
+        const node=el('article',{tabindex:-1},[...(title?[title]:[]),body,details]);
         view={node,title,body,details,activity:null};messageNodes.set(entry,view);messages.append(node);
       }
       view.node.className=`management-message ${entry.kind}`;
       view.node.setAttribute('aria-busy',entry.kind==='pending'?'true':'false');
-      view.title.textContent=entry.kind==='user'?'你':entry.kind==='assistant'?'渔业助手':entry.kind==='pending'?'渔业助手 · 临时预览（未提交）':'运行状态';
+      view.node.setAttribute('aria-label',entry.kind==='user'?'用户消息':entry.kind==='status'?'运行状态':'渔业助手消息');
+      if(view.title)view.title.textContent=entry.kind==='assistant'?'渔业助手':entry.kind==='pending'?'渔业助手 · 临时预览（未提交）':'运行状态';
       const text=entry.text||(entry.kind==='pending'?'正在准备回答…':'');
       if(view.body.textContent!==text)view.body.textContent=text;
       if(view.activity!==entry.activity){
@@ -141,18 +143,16 @@ export function createAssistantWorkspace(api,options={}){
     });
   }
   function updateProgress(){
-    if(statusNode)statusNode.textContent=!s.pending&&blocked()?unavailable():s.status;
+    if(statusNode)statusNode.textContent=!s.pending&&(blocked()||s.configStale)?unavailable():s.status;
     if(activityNode)showActivity(activityNode,s.activity);
   }
   function render(){
     root.className=`management-assistant view-${s.viewMode}${s.detailsVisible?'':' details-collapsed'}`;
     const scrollPosition=messages.scrollTop;
-    const model=preset();
     const streaming=s.transport==='streaming',execution=profile();
     const maxRequests=execution?.max_model_requests??s.config?.max_model_requests??2;
-    const cannotSend=blocked(),key=binding();
-    if(cannotSend||key!==confirmationKey)s.confirmed=false;
-    confirmationKey=key;
+    const cannotSend=blocked()||s.configStale;
+    displayedBinding=binding();
     const multi=execution?.mode==='BOUNDED_MULTI_ROUND';
     const actual=s.lastRun||{transport:s.transport,multi,maxRequests,tokens:execution?.max_output_tokens};
     const selectField=(label,choices,value,change,disabled=false)=>el('label',{class:'field'},[el('span',{text:label}),
@@ -161,14 +161,14 @@ export function createAssistantWorkspace(api,options={}){
     composer=el('textarea',{rows:3,'aria-label':'消息',placeholder:'输入问题，Ctrl + Enter 发送',text:s.draft,
       ...(s.pending?{disabled:'disabled'}:{}),oninput:e=>{s.draft=e.target.value;},onkeydown:e=>{
         if(e.ctrlKey&&e.key==='Enter'){e.preventDefault();void send();}}});
-    const network=el('input',{type:'checkbox',...(s.confirmed?{checked:'checked'}:{}),...(s.pending||cannotSend?{disabled:'disabled'}:{}),
-      onchange:e=>{s.confirmed=!blocked()&&e.target.checked;confirmationKey=binding();render();}});
-    sendButton=el('button',{class:'button primary',text:'发送',...(!s.confirmed||s.pending||cannotSend?{disabled:'disabled'}:{}),onclick:()=>void send()});
+    sendButton=el('button',{class:'button primary',text:'发送',...(s.pending||cannotSend?{disabled:'disabled'}:{}),onclick:()=>void send()});
     stopButton=el('button',{class:'button secondary',text:'Stop',...(!s.pending?{disabled:'disabled'}:{}),onclick:()=>void stop()});
     statusNode=el('p',{class:'muted',role:'status',text:cannotSend?unavailable():s.status});activityNode=el('div');
     root.replaceChildren(el('div',{class:'assistant-view-toolbar'},[
       el('strong',{text:s.viewMode==='reading'?'对话阅读 / 截图':'AI 智能助手'}),
       el('div',{class:'actions'},[
+        el('button',{class:'button text',text:'刷新可用状态',
+          ...(s.pending?{disabled:'disabled'}:{}),onclick:()=>void load()}),
         el('button',{class:'button secondary assistant-view-button',text:s.viewMode==='fullscreen'?'退出全屏':'进入全屏',
           ...(s.viewMode==='reading'?{hidden:'hidden'}:{}),onclick:()=>changeView(s.viewMode==='fullscreen'?'normal':'fullscreen')}),
         el('button',{class:'button secondary',text:s.viewMode==='reading'?'退出阅读':'阅读 / 截图',
@@ -187,12 +187,7 @@ export function createAssistantWorkspace(api,options={}){
             cannotSend?'当前配置不可用':multi?'多轮 · 本地实验':'单轮','neutral'),
           el('button',{class:'button text',text:'清空对话',...(s.pending?{disabled:'disabled'}:{}),onclick:clear})]),lane,
         el('div',{class:'chat-composer'},[
-          el('div',{class:'actions'},[el('button',{class:'button text',text:'刷新可用状态',
-            ...(s.pending?{disabled:'disabled'}:{}),onclick:()=>void load()})]),
-          el('p',{class:'muted',text:`模型自行选择本次可用工具；本轮最多调用 ${multi?2:1} 个。需要三个来源时请分次提问。`}),
           ...(cannotSend?[el('p',{class:'notice warning',role:'alert',text:unavailable()})]:[]),composer,
-          el('label',{class:'assistant-confirm'},[network,el('span',{text:model?.runtime_type==='local'?
-            `LOCAL MODEL REQUEST · 本次最多 ${maxRequests} 次本地模型请求`:`REAL NETWORK REQUEST · 本次最多 ${maxRequests} 次模型请求${execution?.max_output_tokens?' · 每请求最多 '+execution.max_output_tokens+' output tokens':''}，Cloud 可能产生费用`})]),
           el('div',{class:'composer-foot'},[el('div',{class:'composer-navigation'},[latest]),
             el('div',{class:'composer-actions','aria-label':'消息操作'},[sendButton,stopButton])]),statusNode,
           ...(s.trimmed?[el('p',{class:'muted',text:'较早对话未发送给模型。页面记录不代表模型记住全部历史。'})]:[])])]),
@@ -209,7 +204,7 @@ export function createAssistantWorkspace(api,options={}){
     updateProgress();
   }
   async function load(){
-    const version=++s.generation,previousEpoch=s.config?.epoch;s.config=null;s.confirmed=false;render();
+    const version=++s.generation,previousEpoch=s.config?.epoch;s.config=null;s.configStale=false;render();
     try{
       const config=await api.bootstrap(s.device);
       if(version!==s.generation)return;
@@ -220,7 +215,7 @@ export function createAssistantWorkspace(api,options={}){
     }catch(e){if(version!==s.generation)return;s.status=safeError(e);}
     render();
   }
-  function reset(){s.turns=[];s.entries=[];s.activity=null;s.lastRun=null;s.trimmed=false;s.confirmed=false;s.followLatest=true;}
+  function reset(){s.turns=[];s.entries=[];s.activity=null;s.lastRun=null;s.trimmed=false;s.followLatest=true;}
   function clear(){if(s.pending)return;if(s.turns.length&&!confirm('清空 Assistant 对话？监测数据保持不变。'))return;reset();s.status='对话已清空';render();}
   function changePreset(id){
     if(s.pending)return;
@@ -234,7 +229,7 @@ export function createAssistantWorkspace(api,options={}){
   }
   function changeTransport(value){
     if(s.pending||!['normal','streaming'].includes(value)||s.transport===value)return;
-    s.transport=value;s.confirmed=false;s.status='响应模式已更新，请重新确认下一条请求。';render();
+    s.transport=value;s.status='响应模式已更新，将用于下一条消息。';render();
   }
   function withdrawPreview(reply){if(reply?.kind==='pending'){reply.text='';syncMessages();}}
   function receive(event,active,reply){
@@ -255,9 +250,9 @@ export function createAssistantWorkspace(api,options={}){
     const question=s.draft.trim();
     if(s.pending||!question||!s.config)return;
     const execution=profile(),streaming=s.transport==='streaming';
-    if(blocked()){s.confirmed=false;s.status=unavailable();render();return;}
-    if(binding()!==confirmationKey){s.confirmed=false;s.status='模型、设备或可用工具已变化，请重新确认。';render();return;}
-    if(!s.confirmed){s.status='请先确认本次模型请求。';updateProgress();return;}
+    if(blocked()){s.status=unavailable();render();return;}
+    if(s.configStale||binding()!==displayedBinding){s.configStale=true;
+      s.status=unavailable();render();return;}
     const config=s.config,model=preset(),history=historyForRequest(s.turns);
     const captured={device_id:s.device,preset_id:s.preset,revision:execution?.revision||model.revision,epoch:config.epoch,question,history};
     s.pending=true;s.stopRequested=false;s.cancellation=null;s.cancelUnknown=false;s.stopRejected=false;
@@ -280,6 +275,7 @@ export function createAssistantWorkspace(api,options={}){
           if(info.activity&&(info.activity.revision??0)>=(s.activity?.revision??0))s.activity=info.activity;
           s.status=s.stopRequested?'取消中…':info.phase||info.state;updateProgress();}catch(_){/* Final POST remains authoritative. */}
       },500);
+      // Only an explicit Send / Ctrl+Enter authorizes this frozen Turn, never loading or mode changes.
       const value={...captured,...s.control,confirm_network:true};
       const response=streaming?await api.stream(value,config,{signal:active.controller.signal,profile:execution,
         onEvent:event=>receive(event,active,reply)}):await api.send(value,config);
@@ -307,9 +303,9 @@ export function createAssistantWorkspace(api,options={}){
         reset();await load();s.status=code==='ASSISTANT_SESSION_EXPIRED'?
           'Assistant 后端已重启，请重新发送当前问题。':'Assistant 会话已失效，请重新发送当前问题。';
       }else if(code==='ASSISTANT_EXECUTION_PROFILE_CHANGED'){
-        await load();s.status='运行配置或权限已变化，请重新确认。';
+        await load();s.status='配置或权限已变化，已刷新可用状态；请核对后重新发送。';
       }
-    }finally{if(timer)clearInterval(timer);s.pending=false;s.confirmed=false;s.control=null;run=null;render();
+    }finally{if(timer)clearInterval(timer);s.pending=false;s.control=null;run=null;render();
       if(s.reloadPolicy){s.reloadPolicy=false;void load();}}
   }
   async function stop(){
@@ -328,7 +324,7 @@ export function createAssistantWorkspace(api,options={}){
       else if(device!==s.device&&!s.pending){reset();s.device=device;void load();}
       return root;},send,stop,clear,changePreset,changeDevice,
     changeTransport,changeView,exitView,
-    policyChanged(){s.confirmed=false;if(s.pending){s.reloadPolicy=true;return;}if(s.device)void load();},
+    policyChanged(){if(s.pending){s.reloadPolicy=true;return;}if(s.device)void load();},
     suspend(){
       if(!s.pending)return;
       if(run){run.detached=true;run.controller?.abort();}

@@ -13,7 +13,7 @@ p.api.stream=async(value,_c,{onEvent,profile})=>readAssistantEvents(response(fra
   onEvent(event);if(event.kind==='preview')previews++;if(event.kind==='preview_reset')resets++;
   assert.equal(p.workspace.state.turns.length,0,'preview/activity must not commit a Turn');
 });
-p.workspace.changeTransport('streaming');p.workspace.state.draft='离线协议集成';p.workspace.state.confirmed=true;
+p.workspace.changeTransport('streaming');p.workspace.state.draft='离线协议集成';
 await p.workspace.send();
 assert.equal(p.workspace.state.turns.length,1,p.workspace.state.status);
 assert.equal(p.workspace.state.entries.filter(e=>e.kind==='assistant').length,1);
@@ -21,5 +21,5 @@ assert.equal(p.workspace.state.activity.counts.tools_executed,tools);
 assert.equal(p.workspace.state.activity.counts.model_requests_started,requests);
 assert.ok(previews>0);assert.ok(resets>=requests);
 assert.ok(p.root.textContent.includes(`Request #${requests}`));
-assert.equal(p.workspace.state.confirmed,false);
+assert.equal('confirmed' in p.workspace.state,false);
 console.log(JSON.stringify({completed:true,requests,tools,previews,resets}));

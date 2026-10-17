@@ -49,15 +49,15 @@ test('stale concurrent settings require reload; safe errors never render private
   assert.equal(walk(p.root).find(n=>n.textContent==='保存 Tool 授权').getAttribute('disabled'),'disabled');
 });
 
-test('policy save invalidates confirmation, preserves history and draft, defers refresh in flight',async()=>{
+test('policy save refreshes the send configuration, preserves history and draft, defers refresh in flight',async()=>{
   const p=fixture();await p.ready();
   p.workspace.state.turns=[{user:'old',assistant:'answer',completed_at:'2026-10-17T00:00:00Z'}];
-  p.workspace.state.draft='draft';p.workspace.state.confirmed=true;
+  p.workspace.state.draft='draft';
   p.workspace.policyChanged();await tick();
-  assert.equal(p.workspace.state.confirmed,false);assert.equal(p.workspace.state.turns.length,1);
+  assert.equal('confirmed' in p.workspace.state,false);assert.equal(p.workspace.state.turns.length,1);
   assert.equal(p.workspace.state.draft,'draft');
   const previous=p.workspace.state.config;
-  p.workspace.state.pending=true;p.workspace.state.confirmed=true;p.workspace.policyChanged();
-  assert.equal(p.workspace.state.confirmed,false);assert.equal(p.workspace.state.config,previous);
+  p.workspace.state.pending=true;p.workspace.policyChanged();
+  assert.equal('confirmed' in p.workspace.state,false);assert.equal(p.workspace.state.config,previous);
   assert.equal(p.workspace.state.reloadPolicy,true);
 });

@@ -2,6 +2,8 @@
 
 AI 的扩展操作见 [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)；本文件维护当前数据/应用边界。带 R 阶段编号的章节保留来源脉络，下述执行类均为管理独立 Backend，只有明确说明的领域/Knowledge 代码仍来自旧包。
 
+R2D-2C 本机聊天确认方式：主动点击「发送」或 Ctrl+Enter 授权一个 Turn，前端随冻结的设备、epoch/revision 提交 `confirm_network=true`，不再保存勾选状态。底层确认合同及 Host/Origin、浏览器令牌、Tool Policy、Scope、预算、唯一 claim、取消和提交校验不变；缺少确认或配置过期仍在凭据/模型 I/O 前拒绝。刷新可用状态、切换模式与 History 恢复只读，不自动重发。此规则不扩展到远程生产接口或人工资格 CLI；下文旧阶段关于勾选确认的操作以此为准。[当前网页操作](BUILD_RUN.md#一行式常用命令)。
+
 ## 1. 当前运行链路
 
 ```text
