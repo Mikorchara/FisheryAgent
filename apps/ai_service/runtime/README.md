@@ -6,15 +6,16 @@ R2C-1D后由正式ManagementAssistantService直接使用；通用执行由 [ai_b
 
 - `assistant.py`：原两版业务Prompt、History完整pair裁剪、Source/Trace Commit Gate。
 - `sources.py`：原Requirement/Receipt/Ledger，只从本轮新Backend执行步骤认证来源。
-- `tools.py`：两工具Definition、query validator与Knowledge映射；评分仅为已知存储名称，无Handler。
 - `activity.py`、`catalog.py`：固定安全摘要和显示metadata，委托Backend通用步骤投影。
-- `policy.py`：默认/用户 Tool 选择校验与安全存储，执行与实际绑定求交；评分项不丢失，不扩授权。参数 validator 在 tools.py / ToolDefinition，不在 Policy 中。
+- `policy.py`：默认/用户 Tool 选择校验与安全存储，执行与实际绑定求交；评分项不丢失，不扩授权。参数 validator 由各 business_tools 模块声明，不在 Policy 中。
 - `presets.py`、`resources/`：固定Preset和默认Policy，自有资源，不读取Prototype发布合同。
 - `locations.py`：原project root身份/私有目录算法，用新Backend Location类型。
 - `release_contracts.py`、`streaming_contracts.py`：原发布dataclass/精确Scope及hash，无第二套发布JSON。
 - `tests/`：来源/History/执行/协议差分；顶层Service/Scope/管理资格测试在上一级tests。
 
-唯一业务装配位于 [service.py](../service.py)；PreparedTurn在 [contracts.py](../contracts.py)，Monitoring/Knowledge绑定在 [bindings.py](../bindings.py)，管理发布文件由上一级execution.py/streaming.py加载。Phase I的assembly/contracts/bindings/execution/streaming重复模块已移除，不设置兼容别名。
+唯一业务 Service 装配位于 [service.py](../service.py)；PreparedTurn 在 [contracts.py](../contracts.py)，业务 Tool 统一由 [business_tools/registry.py](../business_tools/registry.py) 装配。水质 Definition / capture / DTO 在 [current_water_quality.py](../business_tools/current_water_quality.py)，Knowledge Definition / validator / Handler 在 [fishery_knowledge.py](../business_tools/fishery_knowledge.py)；评分只为 registry 中的已知 Policy 名称，无 Handler。管理发布文件由上一级 execution.py/streaming.py 加载。
+
+旧顶层 bindings.py 和本目录 tools.py 已移除，真实调用方迁到各 Tool owner / registry，不留 re-export/Alias；Policy、Receipt/Ledger、Activity/Catalog 和提交职责仍留本目录。
 
 同名文件要按层定位：顶层 execution.py 是 Normal 发布/Scope/revision，streaming.py 是 Streaming 发布/Scope；通用请求取消/Deadline 在 ai_backend/execution.py，HTTP SSE worker 在 management_web/streaming.py。顶层 contracts.py 是进程内 PreparedAssistantTurn / AssistantBackend 业务合同，不是 Web DTO。
 

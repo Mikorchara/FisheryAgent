@@ -8,6 +8,7 @@
 - `apps/ai_backend/` 是获批 R2C-1B 一次性选择性分叉的通用 LLM Backend；禁止导入 `fishery_ai`、AI service、Web、Monitoring、Knowledge 或 SQLite。目标为 Web → AI service → Backend，业务 Prompt、Tool/Policy、Preset/发布配置、Receipt/Ledger/Commit Gate 留服务层。Prototype 保留独立实现，不使用新旧 Alias/Facade；单个 Turn 只能使用一套新类型、ContextVar、Handle、Registry、循环和取消状态。不得自动回退旧 Runtime。
 - 分叉允许新旧平台后续独立演进，不建立自动同步；管理端内部仍禁止复制第二个 Gateway、Tool 循环、Assembler 或执行状态。迁移要检查协议/提交差分、安装清单与 Scope 指纹；旧真实资格不能改写为新 Backend 的真实运行记录。Monitoring/Knowledge 暂留的旧领域合同依赖单独列账，不能借此引入旧 LLM Runtime。
 - 页面负责交互，组件负责展示，应用服务负责用例，Adapter 负责设备、数据库或 Runtime 接入；HTTP 路由保持薄。先使用现有结构，只有出现实际消费者时才拆文件，不建空框架或动态插件。
+- 业务 Tool 放在 `apps/ai_service/business_tools/`，一个 Tool 模块拥有 Definition/参数校验/Handler/有限 DTO；只由 registry.py 显式装配，不扫描模块。Policy、来源 Ledger 和 Activity 留 runtime；评分兼容名称不产生可执行 Handler，不为旧 tools/bindings 路径增加转发层。
 - 接口用明确 DTO、版本和安全错误表达。值、单位、来源、观测时间、质量、新鲜度不可丢失；缺失不补 0、不回退 Demo。Protocol 类型声明不等于运行时校验。
 - 网页与 AI Tool 的当前事实必须来自同一权威监测来源；不能各自维护一份 current state。多设备选择须有明确、冻结的上下文，不能依赖可变全局选择。新鲜度与诊断复用 Domain 规则，前端不复制阈值。
 - Demo、真实观测、推理结果、实验评分和背景知识必须区分。文件管理、索引、检索分离；视频传输、NPU 推理与页面展示分离。

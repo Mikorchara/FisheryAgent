@@ -11,7 +11,7 @@ from apps.ai_backend.history_projection import DEFAULT_HISTORY_PROJECTION
 from apps.ai_backend.model_gateway import GatewayError
 from apps.ai_backend.tool_conversation import ToolExecutionMode, ToolModelTransport
 
-from . import bindings
+from .business_tools import current_water_quality, fishery_knowledge
 
 
 def _json(value):
@@ -19,7 +19,7 @@ def _json(value):
 
 
 def data_bindings(knowledge):
-    return {'water': bindings.WATER_TOOL_PROJECTION, 'knowledge': bindings.KNOWLEDGE_BINDING_VERSION,
+    return {'water': current_water_quality.WATER_TOOL_PROJECTION, 'knowledge': fishery_knowledge.KNOWLEDGE_BINDING_VERSION,
         'knowledge_source': knowledge.source_id, 'knowledge_version': knowledge.source_version,
         'retrieval_backend': knowledge.backend}
 

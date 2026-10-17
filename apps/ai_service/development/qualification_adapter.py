@@ -9,7 +9,7 @@ import json
 from apps.ai_backend.model_gateway import GatewayError, ModelToolCall
 from apps.ai_backend.model_options import GenerationOptions
 from apps.ai_backend.openai_compatible_adapter import OpenAICompatibleAdapter
-from ..runtime.tools import SEARCH_FISHERY_KNOWLEDGE
+from ..business_tools.fishery_knowledge import SEARCH_FISHERY_KNOWLEDGE
 
 
 FINISH_REASONS = {"stop", "length", "tool_calls", "function_call", "content_filter"}

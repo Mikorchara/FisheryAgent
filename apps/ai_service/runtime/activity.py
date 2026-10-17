@@ -2,7 +2,7 @@
 from apps.ai_backend.assistant_activity import _number, _timestamp, project_activity as _project_activity
 from apps.ai_backend.tool_argument_diagnostics import public_argument_diagnostic
 from .catalog import CATALOG, catalog_display
-from .tools import KNOWN_TOOL_NAMES
+from ..business_tools.registry import KNOWN_TOOL_NAMES
 
 def tool_summary(step):
     """Only labels and limited business metadata, never query, facts or evidence text."""

@@ -35,7 +35,7 @@ flowchart TD
 | 调用者 | 直接复用及作用 |
 |---|---|
 | [ai_service/service.py](../../../ai_service/service.py) | AssistantRequest/Service/profile；Gateway/Adapter/Runtime；RequestHandle/作用域/deadline；凭据、Trace、History；Knowledge/Registry/Policy。不是独立模型执行器 |
-| [bindings.py](../../../ai_service/bindings.py) | 复用正式 Definition/Handler，将水质 Handler 绑定到 `capture_water(device_id)`；Knowledge 保留原服务；只装配两工具 |
+| [原 bindings.py（现统一装配入口）](../../../ai_service/business_tools/registry.py) | 复用正式 Definition/Handler，将水质 Handler 绑定到 `capture_water(device_id)`；Knowledge 保留原服务；只装配两工具 |
 | [execution.py](../../../ai_service/execution.py) / [streaming.py](../../../ai_service/streaming.py) | 复用核心精确 Scope 计算，管理层另绑定数据服务、Policy、设备、epoch 与配置 |
 | [contracts.py](../../../ai_service/contracts.py) | PreparedAssistantTurn 持有旧 AssistantRequest、ModelProfile、ToolPolicy、Transport、Handle 等真实类型；不是序列化的第二套配置 |
 | [Web ai_adapter.py](../../../management_web/ai_adapter.py) | 持有浏览器令牌和 RequestRegistry；委托业务 prepare/claim/execute，保留同一 Handle |

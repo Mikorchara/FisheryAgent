@@ -1,0 +1,80 @@
+{
+  "water": {
+    "no_data": {
+      "sha256": "39987eeccca0a153f740d35633cc16da356bf9c4d444bdafd4274ba3624c1934",
+      "status": "NO_DATA",
+      "quality": null,
+      "freshness": null,
+      "connectivity": "never_received"
+    },
+    "valid": {
+      "sha256": "6a830567723bc635dce3c23aa771aa30bbeabe4e61febc3e9ec5d5a33cf42100",
+      "status": "OK",
+      "quality": "valid",
+      "freshness": "fresh",
+      "connectivity": "online"
+    },
+    "low_oxygen": {
+      "sha256": "d5d1049c48011f3a8a9fbd9fb1a3f9017ce992b4e57e6274ba3202f31707ef12",
+      "status": "OK",
+      "quality": "valid",
+      "freshness": "fresh",
+      "connectivity": "online"
+    },
+    "partial": {
+      "sha256": "d4c5f570d3ae065c6ec5a7ac96c076e979c413e119367397bed25170aa09428c",
+      "status": "OK",
+      "quality": "partial",
+      "freshness": "fresh",
+      "connectivity": "online"
+    },
+    "invalid": {
+      "sha256": "5b1ace19d7bd58e1d4c25855ffd8f7c0f80d26afd4cf1a0b2e712e6b5a4de406",
+      "status": "OK",
+      "quality": "invalid",
+      "freshness": "fresh",
+      "connectivity": "online"
+    },
+    "stale": {
+      "sha256": "9eed8ea72ea909fbf3056bfaeccba26ef41fc2eaeed887783734d813fc54b912",
+      "status": "OK",
+      "quality": "valid",
+      "freshness": "stale",
+      "connectivity": "online"
+    },
+    "offline": {
+      "sha256": "2bcb5db3234e6499a3d67c5016e6773bb6f543c931c5419a1eef45b6c4f49e88",
+      "status": "OK",
+      "quality": "valid",
+      "freshness": "stale",
+      "connectivity": "offline"
+    }
+  },
+  "knowledge": {
+    "no_match": {
+      "sha256": "e61ca1541e10f17530710bb2ddacd03aff37f6c691198006475f847c01e66722",
+      "status": "NO_MATCH",
+      "result_count": 0
+    },
+    "hit": {
+      "sha256": "c43898f02dc05a123368adaae0882b630fc888f1e1b578b9e8d1a8107ce57a2a",
+      "status": "OK",
+      "result_count": 1
+    },
+    "bounded_text": {
+      "sha256": "9e13739b6f8d1ac9299d950bafb2f6551f0d141dc0198cd37b7e58dd94255b83",
+      "status": "OK",
+      "result_count": 1
+    }
+  },
+  "definitions_sha256": "9b37808eeebafe1070b70f4ac22075f562f77efce661c1490bf8290e7981b249",
+  "tool_names": [
+    "get_current_water_quality",
+    "search_fishery_knowledge"
+  ],
+  "knowledge_budget": [
+    3,
+    800,
+    512
+  ]
+}

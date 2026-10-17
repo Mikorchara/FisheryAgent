@@ -35,7 +35,7 @@ from .qualification_adapter import QualificationAdapter
 from apps.monitoring.repository import MonitoringRepository
 from apps.monitoring.service import MonitoringService
 from apps.simulator.generator import Simulator
-from ..bindings import bind_tools
+from ..business_tools.registry import bind_tools
 from ..contracts import PreparedAssistantTurn
 from ..execution import _json, data_bindings
 from ..service import ManagementAssistantService

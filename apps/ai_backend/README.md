@@ -29,7 +29,7 @@ Backend 不导入 `fishery_ai`、业务、Flask、Monitoring、Knowledge、SQLit
 
 ## 服务层装配
 
-[apps/ai_service/runtime](../ai_service/runtime/README.md) 保存业务 Assistant、Prompt、Preset/Policy、领域 Receipt/Ledger、Commit Gate 及发布计算。顶层 `ai_service/service.py` 负责唯一业务装配，`bindings.py` 绑定 Monitoring/Knowledge，`execution.py` / `streaming.py` 加载管理发布配置。业务捕获仍允许既有领域/Knowledge 依赖，Backend 本身完全闭合。
+[apps/ai_service/runtime](../ai_service/runtime/README.md) 保存业务 Assistant、Prompt、Preset/Policy、领域 Receipt/Ledger、Commit Gate 及发布计算。顶层 `ai_service/service.py` 负责唯一业务装配，[business_tools/registry.py](../ai_service/business_tools/registry.py) 统一绑定 Monitoring/Knowledge，各 Tool 模块拥有 Definition / Handler / DTO；`execution.py` / `streaming.py` 加载管理发布配置。业务捕获仍允许既有领域/Knowledge 依赖，Backend 本身完全闭合。
 
 RequestHandle/RequestRegistry 可在构造时固定 `summarize_tool`，只接收既有安全字段；不会接受浏览器或模型提供的回调/metadata。Trace 构造时显式传 `tool_names`。不共享旧对象、取消 Owner 或类异常；新 Registry 拒绝旧 Definition，ProfileRegistry/request_scope 拒绝旧运行类型。
 
@@ -66,7 +66,7 @@ pyproject 明确打包 Backend、AI Service、Monitoring、Simulator、Managemen
 
 ## 当前装配与回滚
 
-顶层service.py拥有唯一ManagementAssistantService；contracts/bindings/execution/streaming拥有业务入口、数据绑定和发布装配。Phase I的runtime/assembly及另外四个重复装配文件已移除，不留Alias。Web的RequestRegistry、Handle、异常、SSE、worker ContextVar全部来自本包；业务安全摘要由固定回调提供。
+顶层 service.py 拥有唯一 ManagementAssistantService；contracts/execution/streaming 保留进程内合同与发布装配，business_tools/registry 统一装配各 Tool 模块。Phase I 重复装配及旧 bindings / runtime.tools 已移除，不留 Alias。Web 的 RequestRegistry、Handle、异常、SSE、worker ContextVar 全部来自本包；业务安全摘要由固定回调提供。
 
 管理qualification观察器已独立到ai_service/development，继承这里的Adapter/Assembler；新计划为management-streaming-qualification@2并绑定apps.ai_backend@1，旧plan-sha授权失效。Scope/Prompt/Schema/预算未变，不改写既有真实报告或升级资格。
 

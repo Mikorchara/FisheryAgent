@@ -16,7 +16,7 @@ from apps.ai_backend.model_gateway import GatewayError, ModelResponse, ModelTool
 from apps.ai_backend.observability import JsonlTraceSink
 from apps.management_web.ai_adapter import ManagementAssistant
 from apps.ai_service.service import ManagementAssistantService, PRESETS
-from apps.ai_service.bindings import water_payload
+from apps.ai_service.business_tools.current_water_quality import water_payload
 from apps.management_web.app import create_app
 from apps.monitoring.analysis import reading_from_row
 from apps.monitoring.repository import MonitoringRepository
@@ -208,7 +208,7 @@ class ManagementAssistantTests(unittest.TestCase):
         self.assertEqual(before, self.backend.policy_store.path.read_bytes())
 
     def test_tool_projection_version_change_invalidates_old_confirmation_before_provider(self):
-        with patch('apps.ai_service.bindings.WATER_TOOL_PROJECTION', 'management-current-water@2'):
+        with patch('apps.ai_service.business_tools.current_water_quality.WATER_TOOL_PROJECTION', 'management-current-water@2'):
             response = self.send()
         self.assertEqual(response.get_json()['error_code'], 'ASSISTANT_EXECUTION_PROFILE_CHANGED')
         self.assertEqual(self.gateway.requests, [])

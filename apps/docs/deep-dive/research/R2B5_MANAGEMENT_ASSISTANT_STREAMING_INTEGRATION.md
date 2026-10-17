@@ -61,7 +61,7 @@ Activity + Preview + 唯一终态]
 ### AI Service 接入方式
 
 1. `prepare_turn(value, *, internal_transport=...)` 可按内部枚举选择配置；Transport 来自已选择的 HTTP 端点，浏览器不能提交 mode/budget/deadline/Prompt。原 Normal body 保持兼容。
-2. 预检冻结同一个 device_id、Preset、Policy、管理 Registry、ExecutionDecision、epoch、revision。水质绑定仍为 [bindings.water_payload](../../../ai_service/bindings.py) → MonitoringService.capture_water；不触碰 Prototype CurrentSnapshotStore。冻结的是设备，不是提前取得旧读数。
+2. 预检冻结同一个 device_id、Preset、Policy、管理 Registry、ExecutionDecision、epoch、revision。水质绑定仍为 [water_payload（R2C-2B 后位置）](../../../ai_service/business_tools/current_water_quality.py) → MonitoringService.capture_water；不触碰 Prototype CurrentSnapshotStore。冻结的是设备，不是提前取得旧读数。
 3. **一次 claim，启动前拒绝重放**：现有 execute_turn 内部调用 handle.start；不能再在 SSE 路由 start 一次。建议在 Service 中小幅提取共用的 claim 和已 claim 执行私有函数；Normal 顺序调用两者，Streaming 在响应头/worker 启动前 claim，worker 只调用同一执行函数。重复 POST 在任何第二个 worker/模型请求前失败。不要通过外部 `skip_validation` 参数跳过此边界。
 4. 在 claim 时开始整 Turn deadline；worker 解析一次 CredentialSnapshot、创建一次 RuntimeSnapshot，设维护者成本上限，并在 worker 自身进入原 request_scope / turn_deadline_scope。ContextVar 不会自动跨线程传递，不能只在 HTTP 线程设置 scope。
 5. 同一 ToolCallingService 选择 `execution_mode=BOUNDED_MULTI_ROUND`、`model_transport=STREAMING`；AssistantService 的执行模式保持一致。**Runtime.default_response_mode 继续为 normal**，符合 Assistant 现有校验；Streaming 发布 Scope 中的 response_mode=streaming 是传输范围声明，不能据此改坏正式 Profile。

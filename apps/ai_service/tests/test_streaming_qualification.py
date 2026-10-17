@@ -204,11 +204,11 @@ class StreamingQualificationTests(unittest.TestCase):
         self.assertEqual(receipt['evidence_count'],0)
 
     def test_wrong_source_projection_can_never_be_a_technical_pass(self):
-        from apps.ai_service import bindings
-        project=bindings.project_water_tool
+        from apps.ai_service.business_tools import current_water_quality
+        project=current_water_quality.project_water_tool
         def wrong(capture):
             payload=project(capture);payload['device_id']='another-device';return payload
-        with patch.object(bindings,'project_water_tool',wrong):
+        with patch.object(current_water_quality,'project_water_tool',wrong):
             report=self.run_case('current-water',[tool(),final()])
         self.assertTrue(report['product_commit_gate_passed'])
         self.assertFalse(report['success']);self.assertFalse(report['source_binding_matches'])

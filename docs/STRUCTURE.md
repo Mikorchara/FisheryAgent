@@ -45,6 +45,11 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ tool_argument_diagnostics.py                                       # 新侧独立参数拒因合同
 │  │  └─ tool_conversation.py                                               # 有序 Steps、预算与唯一 Tool 循环
 │  ├─ ai_service/                                                           # 独立 AI 业务包（同进程，无新端口）
+│  │  ├─ business_tools/                                                      # 业务 Tool 单模块与统一静态装配
+│  │  │  ├─ __init__.py                                                       # 包标记，无 re-export 或自动发现
+│  │  │  ├─ current_water_quality.py                                          # 水质 Definition、单次 capture 与有限 DTO
+│  │  │  ├─ fishery_knowledge.py                                              # Knowledge Definition、query 校验与有限 Evidence
+│  │  │  └─ registry.py                                                       # 唯一 bind_tools、已知 Policy 名称与逐 Turn 绑定
 │  │  ├─ development/                                                       # 显式开发入口，不由正式 Runtime 导入
 │  │  │  ├─ __init__.py                                                     # 无启动 I/O 的包标记
 │  │  │  ├─ qualification_adapter.py                                        # 新Backend资格Adapter，有限预算与安全观察
@@ -74,20 +79,20 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  ├─ release_contracts.py                                            # Normal 发布合同、Prompt/Tool 指纹与执行模式解析
 │  │  │  ├─ sources.py                                                      # 业务 Requirement/Receipt/Ledger
 │  │  │  ├─ streaming_contracts.py                                          # Streaming 发布合同、Scope 指纹与可用性解析
-│  │  │  └─ tools.py                                                        # 两工具 Definition/query 合同及已知评分名称
 │  │  ├─ tests/                                                             # 离线测试及Fake SDK
 │  │  │  ├─ fixtures/                                                       # 虚构/哈希测试基线
 │  │  │  │  ├─ r2c1d_http_baseline.json                                     # 迁移前六路径安全哈希基线
-│  │  │  │  └─ r2c1d_plan_baseline.json                                     # 旧计划安全指纹与新授权隔离
+│  │  │  │  ├─ r2c1d_plan_baseline.json                                     # 旧计划安全指纹与新授权隔离
+│  │  │  │  └─ r2c2b_business_tools.json                                    # 迁移前 Definition / DTO 哈希与有限状态基线
 │  │  │  ├─ __init__.py                                                     # 无启动 I/O 的包标记
 │  │  │  ├─ capture_migration.py                                            # 六条Fake HTTP/SSE哈希采集，无正文/凭据
 │  │  │  ├─ test_backend_migration.py                                       # HTTP前后指纹、旧模块阻断与双侧独立
+│  │  │  ├─ test_business_tools.py                                          # 定义/DTO parity、冻结装配、权限与无旧入口
 │  │  │  ├─ test_execution.py                                               # 管理配置校验、独立 Scope 与默认关闭
 │  │  │  ├─ test_service.py                                                 # 无 Web 的执行、冻结、取消、路径及依赖边界
 │  │  │  ├─ test_streaming_config.py                                        # Streaming 本地试用、类型/预算与独立范围
 │  │  │  └─ test_streaming_qualification.py                                 # 计划授权、正式管理链路、来源/报告与安全预览
 │  │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
-│  │  ├─ bindings.py                                                        # Monitoring 单次捕获与 Knowledge 绑定
 │  │  ├─ contracts.py                                                       # 进程内 PreparedAssistantTurn 与 AssistantBackend 合同
 │  │  ├─ execution.py                                                       # Normal 多轮发布、数据绑定、Scope 与确认 revision
 │  │  ├─ service.py                                                         # 唯一ManagementAssistantService业务装配

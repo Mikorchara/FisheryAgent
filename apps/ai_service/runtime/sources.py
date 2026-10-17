@@ -11,7 +11,9 @@ import math
 from fishery_ai.contracts import Freshness, Quality, WaterQualityReading, parse_time
 from apps.ai_backend.tool_conversation import ModelExecutionStep, ToolConversationResult, ToolExecutionStep
 from apps.ai_backend.tools.contracts import ToolStatus
-from .tools import CURRENT_WATER_QUALITY, SEARCH_FISHERY_KNOWLEDGE, WATER_QUALITY_SCORE
+from ..business_tools.current_water_quality import CURRENT_WATER_QUALITY
+from ..business_tools.fishery_knowledge import SEARCH_FISHERY_KNOWLEDGE
+from ..business_tools.registry import WATER_QUALITY_SCORE
 
 
 class SourceRequirement(str, Enum):

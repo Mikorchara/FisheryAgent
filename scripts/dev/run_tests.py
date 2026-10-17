@@ -32,7 +32,7 @@ def build_suite(selection):
         suite = unittest.TestSuite(loader.discover(str(ROOT / group), top_level_dir=str(ROOT))
             for group in ("apps/ai_backend/tests", "apps/ai_service/runtime/tests"))
         suite.addTests(loader.loadTestsFromNames(tuple("apps.ai_service.tests." + name for name in (
-            "test_service", "test_execution", "test_streaming_config", "test_backend_migration"))))
+            "test_service", "test_execution", "test_streaming_config", "test_backend_migration", "test_business_tools"))))
         return suite
     groups = PRODUCT_GROUPS if selection == "product" else (
         (*PRODUCT_GROUPS, "qualification") if selection == "all" else (selection,))

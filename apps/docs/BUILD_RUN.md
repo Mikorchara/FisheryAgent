@@ -116,7 +116,7 @@ R2B-3.2 读取/投影改动优先运行：`python -m unittest apps.monitoring.te
 
 R2B-3.3：`python -m unittest apps.management_web.tests.test_knowledge apps.management_web.tests.test_assistant`，配合上述 Node 测试。HTTP 测试复用正式 Registry/Handler/Executor/Source Gate，含本地 KnowledgeService + Fake Provider；所有模型网络被阻断，使用临时 Policy/SQLite。覆盖 NO_MATCH、参数/授权/检索错误、来源隔离、取消、单轮预算、定义/Policy revision 和 History；不是实际 LLM 选择或回答质量资格证据。
 
-R2B-3.4 边界测试：`python -m unittest apps.ai_service.tests.test_service apps.management_web.tests.test_ai_boundary`。前者直接创建业务 Service + 临时 Monitoring/Fake Provider，复用调用方 RequestHandle，无需启动 Flask；后者验证 Web 令牌不传入业务、HTTP 门禁优先执行及 source identity。原 Assistant/Knowledge HTTP 测试全部保留，内部 patch/import 更新为 `apps.ai_service.service` / `bindings`。启动与端口不变，不新增 AI 服务进程。
+R2B-3.4 边界测试：`python -m unittest apps.ai_service.tests.test_service apps.management_web.tests.test_ai_boundary`。前者直接创建业务 Service + 临时 Monitoring/Fake Provider，复用调用方 RequestHandle，无需启动 Flask；后者验证 Web 令牌不传入业务、HTTP 门禁优先执行及 source identity。原 Assistant/Knowledge HTTP 测试全部保留，内部 patch/import 当前指向 `apps.ai_service.service` 与 `apps.ai_service.business_tools` 的实际 owner，不保留旧 bindings 入口。启动与端口不变，不新增 AI 服务进程。
 
 界面验收：七页导航；窗口均值、有效样本和历史；视觉有效帧、加权体长检测记录与无标定缺失；零鱼帧计入数量均值；PROTOTYPE 规则和事件 ACTIVE / RESOLVED / INDETERMINATE；缺失、过期、离线不能确认恢复，只有可靠同版本新观测可消退；所有时间按北京时间显示到秒；停止后 >30 秒过期、>90 秒中断；恢复上报后更新；桌面与窄屏无溢出。读取失败清除当前展示并提示失效，不将缓存当实时。阻塞后的错过窗口跳过不补发，日志显示 skipped，历史保留时间缺口。
 
@@ -224,3 +224,5 @@ node --test apps/management_web/tests/*.test.mjs
 R2C-1E：用户已通过真实管理网页完成 Qwen Normal 水质 Tool / Final、Qwen Streaming 水质 + Knowledge / Final 提交，以及模拟来源与 PROTOTYPE 标签的基本验收。迁移主线结束；回答质量专项审核与正式资格仍分开处理，local_experimental 和默认关闭不变。该人工观察没有新增资格 JSON、qualification_id 或 released 授权。
 
 最终工程快速检查只运行 FAST、Backend 迁移/边界和管理前端离线测试；具体数量见 [收尾记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。本轮未请求 Provider/NPU。`a256569` 是已提交的 Phase II 切换基线；`0cf64f6` 是需要整体回退旧管理装配时的 Phase I 参考点，不能以重置工作树代替审阅和完整回滚。
+
+业务 Tool 组织与专项回归：Definition/Handler/validator 在 business_tools 的对应 Tool 模块，唯一装配入口为 registry.bind_tools；旧 runtime/tools.py 与 bindings.py 已移除。离线可运行 `python -m unittest apps.ai_service.tests.test_business_tools`；backend 测试层已包含该合同测试，前后 Definition/DTO 基线不因目录迁移重写。新增 Tool 操作见 [开发指南](AI_BACKEND_DEVELOPMENT_GUIDE.md#2-新增业务-tool)。

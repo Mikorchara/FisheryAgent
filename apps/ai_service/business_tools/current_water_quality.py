@@ -1,11 +1,19 @@
-"""Monitoring and Knowledge bindings; handlers return detached JSON, never old Runtime types."""
+"""Current water Tool: unchanged definition, single capture and detached Monitoring DTO."""
 from dataclasses import asdict
-from functools import partial
-from apps.ai_backend.tools import ToolRegistry, ToolDefinition
-from .runtime.tools import WATER_DEFINITION, KNOWLEDGE_DEFINITION, validate_arguments, search_fishery_knowledge
+from apps.ai_backend.model_gateway import ModelToolDefinition
+
+CURRENT_WATER_QUALITY = "get_current_water_quality"
 
 WATER_TOOL_PROJECTION = "management-current-water@1"
-KNOWLEDGE_BINDING_VERSION = "management-project-knowledge@1"
+
+WATER_DEFINITION = ModelToolDefinition(
+    name=CURRENT_WATER_QUALITY,
+    description=("只读查询当前水质数值、状态、告警；用于确认当前系统水质及其追问，不负责评分、等级或分项评分。"
+                 "返回当前快照的水质观测、数据质量、新鲜度、观测与评估时间及确定性诊断。"
+                 "NO_DATA表示查询完成但无快照；存在快照时OK不代表数据一定有效、完整或新鲜，须按quality/freshness说明INVALID、PARTIAL或STALE。"
+                 "查询不等于重新采样。"),
+    parameters={"type": "object", "properties": {}, "additionalProperties": False},
+)
 
 
 def water_payload(monitoring, device_id):
@@ -40,16 +48,3 @@ def project_water_tool(capture):
             "severity": f.severity, "message": f.message, "facts_used": list(f.facts_used),
             "reason": f.reason, "rule": asdict(f.rule)} for f in analysis.findings]})
     return result
-
-
-
-
-def bind_tools(monitoring, device_id, knowledge, *, formal=None):
-    # Definitions have one application owner. Rebind only the frozen device's
-    # read handler; preserve the same shared Knowledge service and contract.
-    water_definition = formal.lookup(WATER_DEFINITION.name).model_definition if formal else WATER_DEFINITION
-    knowledge_entry = formal.lookup(KNOWLEDGE_DEFINITION.name) if formal else ToolDefinition(
-        KNOWLEDGE_DEFINITION, partial(search_fishery_knowledge, service=knowledge),
-        validate_arguments=validate_arguments)
-    return ToolRegistry((
-        ToolDefinition(water_definition, partial(water_payload, monitoring, device_id)), knowledge_entry))

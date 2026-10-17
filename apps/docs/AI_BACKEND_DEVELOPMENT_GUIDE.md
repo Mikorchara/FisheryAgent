@@ -11,7 +11,8 @@
 | 区域 | 做什么 | 不在这里做什么 |
 |---|---|---|
 | `apps/management_web/` | 页面、HTTP/SSE、浏览器访问控制、请求注册/状态/Stop | 模型执行循环、业务阈值、Provider SDK 调用 |
-| `apps/ai_service/` 顶层 | `ManagementAssistantService` 装配、设备/Policy 冻结、数据 Tool 绑定、管理发布配置 | 第二套 Tool 循环、HTTP worker |
+| `apps/ai_service/` 顶层 | `ManagementAssistantService` 装配、设备/Policy 冻结、管理发布配置 | 第二套 Tool 循环、HTTP worker |
+| `apps/ai_service/business_tools/` | 一个 Tool 一个模块：名称/Definition/validator/Handler/DTO；registry.py 显式统一装配 | 自动发现、独立权限或 Ledger、重复领域规则 |
 | `apps/ai_service/runtime/` | 渔业 Assistant、Prompt、Preset/Policy、领域 Receipt/Ledger、Source/Commit Gate | 通用 Provider 传输、Flask、数据库存储 |
 | `apps/ai_backend/` | 通用模型合同、Gateway/Adapter、Streaming Assembler、Tool 循环、执行上下文、安全事件/Trace | 渔业规则、Knowledge 实现、业务 Prompt、默认 Tool |
 | `apps/monitoring/` | 权威监测事实、SQLite、历史、确定性 Findings/Events、设备绑定查询 | LLM 解释与模型路由 |
@@ -25,7 +26,7 @@ flowchart TD
     UI[管理网页] --> HTTP[management_web: HTTP / POST SSE / RequestRegistry]
     HTTP --> SERVICE[ai_service.service: ManagementAssistantService]
     SERVICE --> BUSINESS[ai_service.runtime: Assistant / Prompt / History裁剪 / Source与Commit Gate]
-    SERVICE --> BIND[ai_service.bindings: 固定设备与业务Handler]
+    SERVICE --> BIND[ai_service.business_tools: registry与业务Handler]
     BUSINESS --> BACKEND[ai_backend: ToolCallingService / Gateway / Adapter / Assembler]
     BACKEND --> PROVIDER[Provider: Normal或Streaming]
     BACKEND --> EXEC[Registry / Policy / Executor]
@@ -49,7 +50,7 @@ flowchart TD
 3. [service.py](../ai_service/service.py) 的 `prepare_turn()` / `_configuration()` 校验 epoch、Preset、设备、Policy、Scope、revision 与本次联网确认，返回 [PreparedAssistantTurn](../ai_service/contracts.py)。它冻结设备身份、Profile、Policy、Registry 和执行决策；此时不查询观测、不解析凭据、不联网。
 4. `claim_turn()` 先 `handle.start()` 防止重放，设整 Turn 时限；`_execute_claimed_turn()` 在实际工作线程建立 `request_scope` / `turn_deadline_scope`，通过 `ProfileRegistry.snapshot()` 一次取得 `RuntimeSnapshot` / `CredentialSnapshot`。
 5. 业务 `AssistantService._send()` 构建 System + 裁剪后的 History + 当前问题；`project_retained_history()` 应用 B 投影。`ToolCallingService.run_request()` 再从有效 Policy/Registry 加入允许的 definitions，调用 Gateway。当前实际 Adapter 为 `OpenAICompatibleAdapter`。
-6. 只有模型返回合法 protocol Tool Call，Executor 才执行 `bindings.water_payload()` → `MonitoringService.capture_water(device_id)` → 领域分析 → `project_water_tool()`。同一设备使用与网页相同的 SQLite 和规则，不读取 Prototype Snapshot。
+6. 只有模型返回合法 protocol Tool Call，Executor 才执行 `business_tools.current_water_quality.water_payload()` → `MonitoringService.capture_water(device_id)` → 领域分析 → `project_water_tool()`。同一设备使用与网页相同的 SQLite 和规则，不读取 Prototype Snapshot。
 7. Result 以 `role=tool` 返回后，单轮模式要求 Final；多轮模式允许模型看到实际 Result 后再决定下一个 Tool 或提前 Final。每轮最多一个 Tool，最多 1/1/2 或 2/2/3，不自动 retry。
 8. 业务 `ledger_from_execution()` 从真实 Steps 推导来源；`AssistantService._send()` 检查完整正文、finish reason、SourceRequirement、取消/Deadline、安全 Trace。失败没有成功 Final。后端安全结果通过 Web 返回，前端只把合法成功的 user/final assistant pair 加入下一轮 History。
 
@@ -86,8 +87,8 @@ flowchart TD
 | 顺序 | 当前文件 / 入口 | 需要考虑的改动 |
 |---|---|---|
 | 1 | [monitoring/service.py](../monitoring/service.py) `MonitoringService.history(device_id, channel, limit=None)` | 已有历史读取可复用；若需要历史质量/Findings/趋势判断，先在 Monitoring 增加统一业务入口，不在 Handler/前端复制规则 |
-| 2 | [runtime/tools.py](../ai_service/runtime/tools.py) | 新名称、`ModelToolDefinition`、参数 Schema、专用 validator；加入 `KNOWN_TOOL_NAMES`。现有 `validate_arguments()` 专用于 Knowledge，不直接复用为历史参数校验 |
-| 3 | [bindings.py](../ai_service/bindings.py) `bind_tools()` | 实现有界历史 Tool DTO 与 Handler；冻结 device_id，查询 Monitoring，加入初始 formal Registry 和每 Turn Registry |
+| 2 | 拟新增 `business_tools/water_quality_history.py`；参考 [水质模块](../ai_service/business_tools/current_water_quality.py)、[Knowledge 模块](../ai_service/business_tools/fishery_knowledge.py) | 同一模块放新名称、Definition/Schema、专用 validator、Handler、有限 DTO/绑定版本；Knowledge 的 validate_arguments 只校验 query，不复用为历史参数校验 |
+| 3 | [business_tools/registry.py](../ai_service/business_tools/registry.py) `bind_tools()`、`KNOWN_TOOL_NAMES` | 显式加入新 Tool；初始 formal Registry 与每 Turn Registry 定义一致。设备来自服务器冻结上下文，不来自模型参数 |
 | 4 | [runtime/policy.py](../ai_service/runtime/policy.py)、[tool_policies.json](../ai_service/runtime/resources/tool_policies.json) | 已知名称使配置可解析；新 Tool 默认关闭。确认配置大小/数量约束，不擅自写用户 Policy |
 | 5 | [runtime/sources.py](../ai_service/runtime/sources.py) | 决定是否需历史来源类型/Requirement；明确 schema/status 校验。当前只识别三种既有来源，未知 Tool 不自动取得正向 Receipt |
 | 6 | [runtime/catalog.py](../ai_service/runtime/catalog.py)、[runtime/activity.py](../ai_service/runtime/activity.py) | 名称、短摘要、有限时间/状态/计数；不能把历史记录全文或参数放进 Activity |
@@ -96,11 +97,13 @@ flowchart TD
 | 9 | [release_contracts.py](../ai_service/runtime/release_contracts.py)、[streaming_contracts.py](../ai_service/runtime/streaming_contracts.py) | 通常只使用已有 hash/Scope 计算，不为加 Tool 放宽匹配器；不同语义的 Scope 扩展须另审 |
 | 10 | [业务测试](../ai_service/runtime/tests/test_foundation.py)、[HTTP测试](../management_web/tests/test_knowledge.py)、[资格入口](../ai_service/development/streaming_qualification.py) | 补新增 Tool 的离线单元/API/来源测试；现有管理资格仅三固定案例，不是任意新 Tool 的通用授权器 |
 
-`bind_tools(..., formal=...)` 当前只显式重绑水质、保留 formal Knowledge entry。新 Tool 不能只添加到启动时 Registry；每 Turn 的重绑也要保留它，并让 definitions 来自同一个 formal owner。否则可能“启动可见、实际不可执行”。
+`business_tools/registry.py::bind_tools(..., formal=...)` 是唯一业务 Registry 装配入口：当前只重绑水质 Handler，Knowledge 保留 formal entry 和共享 KnowledgeService。新 Tool 不能只添加到启动时 Registry；每 Turn 的重绑也要保留它，并让 definitions 来自同一个 formal owner。否则可能“启动可见、实际不可执行”。
+
+`business_tools/__init__.py` 不 re-export 工具或工厂。旧 runtime/tools.py 与顶层 bindings.py 已移除，不提供 Alias/兼容入口；调用方直接导入工具 owner 或统一 registry。`WATER_QUALITY_SCORE` 和 `KNOWN_TOOL_NAMES` 位于 registry.py，评分只用于合法存储名称校验，没有 Definition/Handler。
 
 ### 2.3 Definition 与校验的最小示例
 
-以下是未来可放入 `runtime/tools.py` 的示意片段，不注册、不执行、不授予权限：
+以下是未来可放入拟新增 `business_tools/water_quality_history.py` 的示意片段，不注册、不执行、不授予权限：
 
 ```python
 from apps.ai_backend.model_gateway import ModelToolDefinition
@@ -129,20 +132,20 @@ def validate_history_arguments(arguments):
 
 Schema 给模型说明参数；**Executor 没有运行通用 JSON Schema 引擎**，它校验有界 JSON/object，再调用 `ToolDefinition.validate_arguments`。因此必须有上述服务端 validator；`bool` 是 Python 的 int 子类，不能用 `isinstance(limit, int)` 接受它。
 
-有参数的 `ToolDefinition` 把规范化 dict 作为 Handler 的一个位置参数；无 validator 的现有水质 Tool 只允许 `{}`，执行零参数 Handler。绑定例子如下，`history_handler` 指未来实现、已绑定固定设备的服务器函数，不能来自 Web/模型输入：
+有参数的 `ToolDefinition` 把规范化 dict 作为 Handler 的一个位置参数；无 validator 的现有水质 Tool 只允许 `{}`，执行零参数 Handler。以下片段用于未来 registry.py 的 bind_tools 内部：history 指拟新增模块，monitoring/device_id 都是服务器已冻结的对象，不是 Web/模型指定的可执行代码：
 
 ```python
+from functools import partial
 from apps.ai_backend.tools import ToolDefinition
 
-def make_history_binding(history_handler):
-    return ToolDefinition(
-        HISTORY_DEFINITION,
-        history_handler,
-        validate_arguments=validate_history_arguments,
-    )
+history_entry = ToolDefinition(
+    history.HISTORY_DEFINITION,
+    partial(history.history_payload, monitoring=monitoring, device_id=device_id),
+    validate_arguments=history.validate_history_arguments,
+)
 ```
 
-实际 Handler 应调用现有 `monitoring.history(device_id, "water", limit=arguments["limit"])`；当前返回包含 batch/device/session、source_kind、observed_at/received_at、window、summary。必须显式投影需要的指标、单位、有效/无效样本数、窗口语义与时间；不要直接把全部 Web history DTO 交给 LLM。`limit` 也不得超过服务器现有 history_limit。
+拟新增 Handler 的签名可为 `history_payload(arguments, *, monitoring, device_id)`，调用现有 `monitoring.history(device_id, "water", limit=arguments["limit"])`；当前返回包含 batch/device/session、source_kind、observed_at/received_at、window、summary。必须显式投影需要的指标、单位、有效/无效样本数、窗口语义与时间；不要直接把全部 Web history DTO 交给 LLM。`limit` 也不得超过服务器现有 history_limit。示例模块/Handler 尚未实现。
 
 只是读取有限历史窗口时，不必新增领域框架；需要“趋势恶化”“恢复”等判断时，应先补 Monitoring 的确定性领域服务/测试，再绑定结果。历史中没有有效样本就返回缺失，不能填零；历史时间范围不能冒充当前 freshness。重复/跨 Session/缺口处理沿用 Monitoring，不在 AI 层另写 SQLite 查询。
 
@@ -246,6 +249,7 @@ READ ONLY 是受审查的业务 Handler 合同；Executor 不会沙箱化任意 
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest apps.ai_service.runtime.tests.test_foundation apps.ai_service.runtime.tests.test_integration apps.ai_service.tests.test_service
+.\.venv\Scripts\python.exe -m unittest apps.ai_service.tests.test_business_tools
 .\.venv\Scripts\python.exe -m unittest apps.management_web.tests.test_assistant apps.management_web.tests.test_knowledge apps.management_web.tests.test_multi_round
 .\.venv\Scripts\python.exe scripts/dev/run_tests.py fast
 ```

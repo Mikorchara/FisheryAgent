@@ -1,7 +1,9 @@
 """Static display metadata, never a source of handlers or execution permission."""
 
 from dataclasses import asdict, dataclass
-from .tools import CURRENT_WATER_QUALITY, SEARCH_FISHERY_KNOWLEDGE, WATER_QUALITY_SCORE
+from ..business_tools.current_water_quality import CURRENT_WATER_QUALITY
+from ..business_tools.fishery_knowledge import SEARCH_FISHERY_KNOWLEDGE
+from ..business_tools.registry import WATER_QUALITY_SCORE
 
 
 @dataclass(frozen=True)

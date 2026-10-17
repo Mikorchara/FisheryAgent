@@ -35,16 +35,18 @@ class DifferentialTests(unittest.TestCase):
         a=load(side,'assistant','assistant'); g=load(side,'model_gateway')
         c=load(side,'tool_conversation'); execution=load(side,'execution')
         p=load(side,'tools.policy'); tc=load(side,'tools.contracts'); trace=load(side,'observability')
-        definitions=load(side,'tools.registry','tools')
         if side=='old':
+            definitions=load(side,'tools.registry')
             formal=definitions.ToolRegistry(None,None,knowledge=NS())
             water_def=formal.lookup(fixture.WATER).model_definition
             knowledge_def=formal.lookup(fixture.KNOWLEDGE).model_definition
             validate=importlib.import_module('fishery_ai.tools.handlers.knowledge_search').validate_arguments
             summarize=importlib.import_module('fishery_ai.assistant_activity').tool_summary
         else:
-            water_def=definitions.WATER_DEFINITION;knowledge_def=definitions.KNOWLEDGE_DEFINITION
-            validate=definitions.validate_arguments
+            water_module=importlib.import_module('apps.ai_service.business_tools.current_water_quality')
+            knowledge_module=importlib.import_module('apps.ai_service.business_tools.fishery_knowledge')
+            water_def=water_module.WATER_DEFINITION;knowledge_def=knowledge_module.KNOWLEDGE_DEFINITION
+            validate=knowledge_module.validate_arguments
             summarize=importlib.import_module('apps.ai_service.runtime.activity').tool_summary
         water=fixture.water_payload() if water is None else water
         knowledge=fixture.knowledge_payload() if knowledge is None else knowledge
@@ -101,7 +103,7 @@ class DifferentialTests(unittest.TestCase):
 
     def test_management_published_scopes_still_match_exact_fixed_definitions(self):
         from apps.ai_service import execution, streaming
-        from apps.ai_service.runtime import tools
+        from apps.ai_service.business_tools import current_water_quality, fishery_knowledge
         from apps.ai_service.runtime.assistant import assistant_profile
         from apps.ai_backend.tools import ToolRegistry, ToolDefinition
         from apps.ai_backend.tools.policy import ToolPolicy
@@ -109,8 +111,8 @@ class DifferentialTests(unittest.TestCase):
         config=streaming.load_streaming_config()
         binding=json.loads(config.releases[0].data_bindings_json)
         knowledge=NS(source_id=binding['knowledge_source'],source_version=binding['knowledge_version'],backend=binding['retrieval_backend'])
-        registry=ToolRegistry((ToolDefinition(tools.WATER_DEFINITION,lambda:{}),
-            ToolDefinition(tools.KNOWLEDGE_DEFINITION,lambda a:{},tools.validate_arguments)))
+        registry=ToolRegistry((ToolDefinition(current_water_quality.WATER_DEFINITION,lambda:{}),
+            ToolDefinition(fishery_knowledge.KNOWLEDGE_DEFINITION,lambda a:{},fishery_knowledge.validate_arguments)))
         policy=ToolPolicy('assistant',True,(fixture.WATER,fixture.KNOWLEDGE))
         for record in execution.load_execution_config().releases:
             published=json.loads(record.runtime.scope_json)

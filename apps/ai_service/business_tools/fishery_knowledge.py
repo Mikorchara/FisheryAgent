@@ -1,10 +1,7 @@
-"""Two executable business definitions; score is only a known persisted Policy name."""
+"""Knowledge Tool definition, strict query contract and bounded Evidence mapping."""
 from apps.ai_backend.model_gateway import ModelToolDefinition
 from fishery_ai.knowledge import KnowledgeService
 
-CURRENT_WATER_QUALITY = "get_current_water_quality"
-
-WATER_QUALITY_SCORE = "score_current_water_quality"
 
 SEARCH_FISHERY_KNOWLEDGE = "search_fishery_knowledge"
 
@@ -21,17 +18,10 @@ KNOWLEDGE_PARAMETERS = {
     "additionalProperties": False,
 }
 
-WATER_DEFINITION = ModelToolDefinition(
-            name=CURRENT_WATER_QUALITY,
-            description=("只读查询当前水质数值、状态、告警；用于确认当前系统水质及其追问，不负责评分、等级或分项评分。"
-                         "返回当前快照的水质观测、数据质量、新鲜度、观测与评估时间及确定性诊断。"
-                         "NO_DATA表示查询完成但无快照；存在快照时OK不代表数据一定有效、完整或新鲜，须按quality/freshness说明INVALID、PARTIAL或STALE。"
-                         "查询不等于重新采样。"),
-            parameters={"type": "object", "properties": {}, "additionalProperties": False},
-        )
 KNOWLEDGE_DEFINITION = ModelToolDefinition(SEARCH_FISHERY_KNOWLEDGE, KNOWLEDGE_DESCRIPTION, KNOWLEDGE_PARAMETERS)
 
-KNOWN_TOOL_NAMES = (CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE, SEARCH_FISHERY_KNOWLEDGE)
+
+KNOWLEDGE_BINDING_VERSION = "management-project-knowledge@1"
 
 # Existing query validation and bounded result mapping; retrieval remains in KnowledgeService.
 

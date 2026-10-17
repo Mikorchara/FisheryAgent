@@ -12,7 +12,7 @@ import uuid
 
 
 def parse_tool_policies(data):
-    from .tools import KNOWN_TOOL_NAMES
+    from ..business_tools.registry import KNOWN_TOOL_NAMES
     if (not isinstance(data, dict) or set(data) != {"schema_version", "modes"}
             or type(data["schema_version"]) is not int or data["schema_version"] != 1
             or not isinstance(data["modes"], dict) or set(data["modes"]) != {"analysis", "assistant"}):
@@ -66,7 +66,7 @@ class UserToolPolicyStore:
                 or not isinstance(data["modes"], dict) or set(data["modes"]) != {"analysis", "assistant"}):
             raise ToolPolicyError()
         result = {"schema_version": 1, "modes": {}}
-        from .tools import KNOWN_TOOL_NAMES
+        from ..business_tools.registry import KNOWN_TOOL_NAMES
         for mode, record in data["modes"].items():
             if not isinstance(record, dict) or set(record) != {"selected_tools"}:
                 raise ToolPolicyError()

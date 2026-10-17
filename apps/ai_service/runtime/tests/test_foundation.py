@@ -17,11 +17,13 @@ from apps.ai_backend.tool_conversation import (ToolCallingService, ToolExecution
 from apps.ai_backend.tools import ToolDefinition, ToolRegistry
 from apps.ai_backend.tools.policy import ToolPolicy, ToolPolicyError
 from apps.ai_backend.tests.support import ScriptedGateway
-from apps.ai_service.runtime import assistant, sources, tools, activity
+from apps.ai_service.runtime import assistant, sources, activity
+from apps.ai_service.business_tools import current_water_quality, fishery_knowledge
+from apps.ai_service.business_tools.registry import WATER_QUALITY_SCORE
 from apps.ai_service.runtime.policy import UserToolPolicyStore
 
 
-WATER, KNOWLEDGE, SCORE = tools.CURRENT_WATER_QUALITY, tools.SEARCH_FISHERY_KNOWLEDGE, tools.WATER_QUALITY_SCORE
+WATER, KNOWLEDGE, SCORE = current_water_quality.CURRENT_WATER_QUALITY, fishery_knowledge.SEARCH_FISHERY_KNOWLEDGE, WATER_QUALITY_SCORE
 QWEN = assistant.ALLOWED_PRESET_IDS[0]
 STAMP = '2026-10-16T00:00:00+00:00'
 
@@ -66,8 +68,8 @@ class FoundationTests(unittest.TestCase):
         def get_knowledge(arguments):
             self.called.append(KNOWLEDGE)
             return knowledge if knowledge is not None else knowledge_payload()
-        return ToolRegistry((ToolDefinition(tools.WATER_DEFINITION,get_water),
-            ToolDefinition(tools.KNOWLEDGE_DEFINITION,get_knowledge,tools.validate_arguments)))
+        return ToolRegistry((ToolDefinition(current_water_quality.WATER_DEFINITION,get_water),
+            ToolDefinition(fishery_knowledge.KNOWLEDGE_DEFINITION,get_knowledge,fishery_knowledge.validate_arguments)))
 
     def send(self, responses, *, registry=None, requirement=sources.SourceRequirement.AUTO,
              mode=ToolExecutionMode.BOUNDED_MULTI_ROUND, history=(), handle=None, traces=None):

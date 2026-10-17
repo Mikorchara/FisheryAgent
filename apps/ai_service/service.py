@@ -20,7 +20,7 @@ from apps.ai_backend.tools.registry import ToolRegistry
 from apps.ai_backend.tool_conversation import ToolCallingService, ToolModelTransport
 from apps.ai_backend.history_projection import DEFAULT_HISTORY_PROJECTION
 
-from . import bindings
+from .business_tools.registry import bind_tools
 from .contracts import PreparedAssistantTurn
 from .execution import ManagementExecutionConfig, load_execution_config, resolve_execution
 from .streaming import ManagementStreamingConfig, load_streaming_config, resolve_streaming
@@ -48,7 +48,7 @@ class ManagementAssistantService:
             raise ValueError("NO_MONITORING_DEVICE")
         # Explicit business dependency only: no old Gateway/Registry/Executor.
         self.knowledge = KnowledgeService(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json"))
-        self.formal_registry = bindings.bind_tools(monitoring, devices[0]["id"], self.knowledge)
+        self.formal_registry = bind_tools(monitoring, devices[0]["id"], self.knowledge)
         self.policy_store = UserToolPolicyStore(policy_directory, self.formal_registry)
 
     @staticmethod
@@ -81,7 +81,7 @@ class ManagementAssistantService:
         if not isinstance(device_id, str):
             raise GatewayError("INVALID_ASSISTANT_REQUEST")
         self.monitoring.bind(device_id)  # Validate registered device, never page-global state.
-        registry = bindings.bind_tools(self.monitoring, device_id, self.knowledge, formal=self.formal_registry)
+        registry = bind_tools(self.monitoring, device_id, self.knowledge, formal=self.formal_registry)
         stored = self.policy_store.load()["modes"]["assistant"]["selected_tools"]
         selected = ToolPolicy("assistant", True, stored)
         bound = {definition.name for definition in registry.model_definitions()}

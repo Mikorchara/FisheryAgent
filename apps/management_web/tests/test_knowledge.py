@@ -10,8 +10,9 @@ from apps.ai_service.runtime.sources import SourceRequirement, requirement_satis
 from fishery_ai.contracts import KnowledgeEvidence
 from apps.ai_backend.execution import current_handle
 from apps.ai_backend.model_gateway import ModelResponse, ModelToolCall
-from apps.ai_service.runtime.tools import SEARCH_FISHERY_KNOWLEDGE as KNOWLEDGE, CURRENT_WATER_QUALITY as WATER
-from apps.ai_service.bindings import bind_tools
+from apps.ai_service.business_tools.fishery_knowledge import SEARCH_FISHERY_KNOWLEDGE as KNOWLEDGE
+from apps.ai_service.business_tools.current_water_quality import CURRENT_WATER_QUALITY as WATER
+from apps.ai_service.business_tools.registry import bind_tools
 from apps.ai_backend.tools.registry import ToolRegistry
 import apps.management_web.tests.test_assistant as fixture
 

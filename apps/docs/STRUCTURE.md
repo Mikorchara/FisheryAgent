@@ -39,6 +39,11 @@ apps/
 │  ├─ tool_argument_diagnostics.py                                       # 新侧独立参数拒因合同
 │  └─ tool_conversation.py                                               # 有序 Steps、预算与唯一 Tool 循环
 ├─ ai_service/                                                           # 独立 AI 业务包（同进程，无新端口）
+│  ├─ business_tools/                                                   # 业务 Tool 单模块与统一静态装配
+│  │  ├─ __init__.py                                                    # 包标记，无 re-export 或自动发现
+│  │  ├─ current_water_quality.py                                       # 水质 Definition、单次 capture 与有限 DTO
+│  │  ├─ fishery_knowledge.py                                           # Knowledge Definition、query 校验与有限 Evidence
+│  │  └─ registry.py                                                    # 唯一 bind_tools、已知 Policy 名称与逐 Turn 绑定
 │  ├─ development/                                                       # 显式开发入口，不由正式 Runtime 导入
 │  │  ├─ __init__.py                                                     # 无启动 I/O 的包标记
 │  │  ├─ qualification_adapter.py                                        # 新Backend资格Adapter，有限预算与安全观察
@@ -68,20 +73,20 @@ apps/
 │  │  ├─ release_contracts.py                                            # Normal 发布合同、Prompt/Tool 指纹与执行模式解析
 │  │  ├─ sources.py                                                      # 业务 Requirement/Receipt/Ledger
 │  │  ├─ streaming_contracts.py                                          # Streaming 发布合同、Scope 指纹与可用性解析
-│  │  └─ tools.py                                                        # 两工具 Definition/query 合同及已知评分名称
 │  ├─ tests/                                                             # 离线测试及Fake SDK
 │  │  ├─ fixtures/                                                       # 虚构/哈希测试基线
 │  │  │  ├─ r2c1d_http_baseline.json                                     # 迁移前六路径安全哈希基线
-│  │  │  └─ r2c1d_plan_baseline.json                                     # 旧计划安全指纹与新授权隔离
+│  │  │  ├─ r2c1d_plan_baseline.json                                     # 旧计划安全指纹与新授权隔离
+│  │  │  └─ r2c2b_business_tools.json                                    # 迁移前 Definition / DTO 哈希与有限状态基线
 │  │  ├─ __init__.py                                                     # 无启动 I/O 的包标记
 │  │  ├─ capture_migration.py                                            # 六条Fake HTTP/SSE哈希采集，无正文/凭据
 │  │  ├─ test_backend_migration.py                                       # HTTP前后指纹、旧模块阻断与双侧独立
+│  │  ├─ test_business_tools.py                                          # 定义/DTO parity、冻结装配、权限与无旧入口
 │  │  ├─ test_execution.py                                               # 管理配置校验、独立 Scope 与默认关闭
 │  │  ├─ test_service.py                                                 # 无 Web 的执行、冻结、取消、路径及依赖边界
 │  │  ├─ test_streaming_config.py                                        # Streaming 本地试用、类型/预算与独立范围
 │  │  └─ test_streaming_qualification.py                                 # 计划授权、正式管理链路、来源/报告与安全预览
 │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
-│  ├─ bindings.py                                                        # Monitoring 单次捕获与 Knowledge 绑定
 │  ├─ contracts.py                                                       # 进程内 PreparedAssistantTurn 与 AssistantBackend 合同
 │  ├─ execution.py                                                       # Normal 多轮发布、数据绑定、Scope 与确认 revision
 │  ├─ service.py                                                         # 唯一ManagementAssistantService业务装配
@@ -178,12 +183,14 @@ management_web HTTP/SSE/访问控制 + 新RequestRegistry
     → ai_service.service.ManagementAssistantService（唯一业务装配）
     → ai_service.runtime.assistant（Prompt/History/Source Gate/Commit Gate）
     → ai_backend.ToolCallingService → Gateway/Adapter/Assembler → 新Provider类型
-    → 新Registry/Policy/Executor → ai_service.bindings → Monitoring / Knowledge
+    → 新Registry/Policy/Executor → ai_service.business_tools → Monitoring / Knowledge
     → 新Steps / EventChannel / SafeTrace → Web临时Preview或唯一Final
 ```
 
 Backend无fishery_ai/Flask/SQLite/业务反向依赖。Monitoring/Knowledge及业务sources保留旧领域合同/资源，连带旧model_options；它们不调用旧LLM Runtime。旧Prototype独立，管理单个Turn只用新ContextVar/Handle/Registry/Adapter。
 
-Phase I的runtime/assembly、contracts、bindings、execution、streaming五个准备模块已合并回顶层实际实现，三份重复测试已移除；无alias/fallback。R2C-1E 已完成迁移收尾及用户基本网页验收；依赖核对、证据边界和回滚见 [收尾记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。
+Phase I 的五个 runtime 准备模块和三份重复测试已移除；当前 Service/合同/发布装配在顶层，业务 Tool 在 business_tools，无 alias/fallback。R2C-1E 迁移验收记录保留当时结构，见 [收尾记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。
 
 测试层级：FAST小集合；backend为新Backend及业务合同；FULL PRODUCT含backend一次；FULL QUALIFICATION额外包含管理资格17项；Web/Node按BUILD_RUN运行。Qualification只在显式开发入口加载，默认dry-run，无批次或自动Provider请求。
+
+业务 Tool：business_tools 下每个模块拥有自己的 Definition/validator/Handler/有限 DTO，registry.py 是唯一装配入口；runtime 的 Policy/来源/Activity 职责不变。旧 runtime/tools.py 与顶层 bindings.py 已删除，不设兼容转发；评分只为已知 Policy 名称，不装配 Handler。新增 Tool 参见 [开发指南](AI_BACKEND_DEVELOPMENT_GUIDE.md#2-新增业务-tool)。
