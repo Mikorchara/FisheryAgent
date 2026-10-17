@@ -27,7 +27,7 @@ class WebAIBoundaryTests(unittest.TestCase):
         with patch('apps.management_web.ai_adapter.ManagementAssistantService.local') as local:
             adapter=ManagementAssistant.local(None,'.',streaming_trial=True)
         self.assertIs(adapter.backend,local.return_value)
-        self.assertEqual(local.call_args.kwargs,{'multi_round_trial':False,'streaming_trial':True})
+        self.assertEqual(local.call_args.kwargs,{'multi_round_trial':False,'streaming_trial':True,'history_trial':False})
 
     def test_cli_streaming_opt_in_requires_assistant_and_preserves_local_startup(self):
         import io
@@ -37,8 +37,13 @@ class WebAIBoundaryTests(unittest.TestCase):
              patch('apps.management_web.ai_adapter.ManagementAssistant.local') as local:
             with self.assertRaises(SystemExit):main()
         local.assert_not_called()
-        for options in ([],['--assistant-streaming-trial'],
-                        ['--assistant-streaming-trial','--assistant-multi-round-trial']):
+        with patch('sys.argv',['management_web','--assistant-history-trial']), \
+             patch('sys.stderr',new_callable=io.StringIO), \
+             patch('apps.management_web.ai_adapter.ManagementAssistant.local') as local:
+            with self.assertRaises(SystemExit):main()
+        local.assert_not_called()
+        for options in ([],['--assistant-streaming-trial'],['--assistant-history-trial'],
+                        ['--assistant-streaming-trial','--assistant-multi-round-trial','--assistant-history-trial']):
             with patch('sys.argv',['management_web','--enable-assistant',*options]), \
                  patch('apps.monitoring.repository.MonitoringRepository'), \
                  patch('apps.monitoring.service.MonitoringService'), \
@@ -46,7 +51,8 @@ class WebAIBoundaryTests(unittest.TestCase):
                  patch('apps.management_web.__main__.create_app') as factory,patch('builtins.print'):
                 main()
             self.assertEqual(local.call_args.kwargs,{'multi_round_trial':'--assistant-multi-round-trial' in options,
-                'streaming_trial':'--assistant-streaming-trial' in options})
+                'streaming_trial':'--assistant-streaming-trial' in options,
+                'history_trial':'--assistant-history-trial' in options})
             self.assertEqual(factory.return_value.run.call_args.kwargs,
                 {'host':'127.0.0.1','port':8766,'debug':False,'load_dotenv':False})
 

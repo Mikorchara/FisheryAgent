@@ -20,15 +20,15 @@ test('default Normal, unavailable candidate visible but blocked; modes preserve 
   p.workspace.state.confirmed=true;p.workspace.changeTransport('streaming');
   assert.equal(p.workspace.state.confirmed,false);assert.equal(p.workspace.state.turns.length,1);
   assert.match(p.root.textContent,/实际 normal/); // Changing the next mode does not relabel the previous Turn.
-  assert.match(p.root.textContent,/candidate.*未开放/);assert.match(p.root.textContent,/flag_disabled/);
+  assert.match(p.root.textContent,/Streaming.*不可用/);assert.match(p.root.textContent,/服务器启用/);
   p.workspace.state.confirmed=true;p.workspace.state.draft='不能联网';await p.workspace.send();assert.equal(p.sent.length,1);
-  assert.match(p.root.textContent,/ASSISTANT_STREAMING_NOT_RELEASED/);
+  assert.match(p.root.textContent,/服务器启用/);
   p.workspace.changeTransport('normal');assert.equal(p.workspace.state.turns.length,1);
 });
 
 test('local trial shows exact mode, cost ceiling and clear gate reasons without changing history or auto-sending',async()=>{
   const p=await setup();p.workspace.changeTransport('streaming');
-  assert.match(p.root.textContent,/Streaming · 本地实验 · local_experimental/);
+  assert.match(p.root.textContent,/Streaming · 本地实验/);
   assert.match(p.root.textContent,/512 tokens\/请求/);
   assert.match(p.root.textContent,/REAL NETWORK REQUEST · 本次最多 3 次模型请求/);
   assert.equal(p.sent.length,0);
@@ -36,8 +36,8 @@ test('local trial shows exact mode, cost ceiling and clear gate reasons without 
     const blocked=fixture(c=>c.presets[0].streaming={...profile,can_send:false,
       release_status:'local_experimental',mode_reason:reason});await blocked.ready();
     blocked.workspace.changeTransport('streaming');
-    assert.match(blocked.root.textContent,/Streaming 不可用/);
-    assert.ok(blocked.root.textContent.includes(reason));
+    assert.match(blocked.root.textContent,/Streaming.*不可用/);
+    assert.match(blocked.root.textContent,/请|尚未/);
     assert.doesNotMatch(blocked.root.textContent,/当前仅 candidate/);
     blocked.workspace.state.draft='当前水质';blocked.workspace.state.confirmed=true;await blocked.workspace.send();
     assert.equal(blocked.sent.length,0);

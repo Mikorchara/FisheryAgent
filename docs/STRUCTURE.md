@@ -78,7 +78,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  ├─ presets.py                                                      # 新侧固定 Preset 资源加载
 │  │  │  ├─ release_contracts.py                                            # Normal 发布合同、Prompt/Tool 指纹与执行模式解析
 │  │  │  ├─ sources.py                                                      # 业务 Requirement/Receipt/Ledger
-│  │  │  ├─ streaming_contracts.py                                          # Streaming 发布合同、Scope 指纹与可用性解析
+│  │  │  └─ streaming_contracts.py                                          # Streaming 发布合同、Scope 指纹与可用性解析
 │  │  ├─ tests/                                                             # 离线测试及Fake SDK
 │  │  │  ├─ fixtures/                                                       # 虚构/哈希测试基线
 │  │  │  │  ├─ r2c1d_http_baseline.json                                     # 迁移前六路径安全哈希基线

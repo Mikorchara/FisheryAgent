@@ -150,6 +150,92 @@ Web 的 `snapshot()` 继续在同一读事务捕获 current + history，再使�
 
 设备 ID 在 context 中绑定，不跟随网页全局选择改变；它不是冻结旧观测，下次 Tool 查询仍可取得该设备的新数据。如后续需要视觉 Tool，可使用同服务的视觉读取。跨进程须共同受控服务/存储，不靠导入类共享内存。
 
+### 6.1 有界历史水质查询（R2D-1B）
+
+R2D-1B 提供 Monitoring 只读服务，没有新增 HTTP API。R2D-1C 的历史 Tool 仅为离线候选，见下节；正式网页仍未开放。设计依据见 [R2D-1A](deep-dive/research/R2D1A_WATER_HISTORY_TOOL_DESIGN.md)。
+
+```python
+result = monitoring.query_water_history(
+    device_id,
+    lookback_minutes=30,
+    metrics=["dissolved_oxygen_mg_l", "temperature_c"],
+)
+```
+
+- `lookback_minutes` 只接受真正的 int：10 / 30 / 60；不接受 bool、float、字符串或自动转换。metrics 接受 1–3 个不重复的已知指标组成的 list/tuple，省略时为三项，输出按固定指标顺序；不接受 null、空列表或字符串。device 必须来自 Monitoring 已登记设备。
+- Service 只取得一次时钟并归一化 UTC，范围为 `(evaluated_at-lookback, evaluated_at]`。Repository 使用参数化 SQL、既有时间索引及一次读事务，按 window.end 读取最多 721 条；超过 720 条明确拒绝，不缩短范围、不分页或自动重试。没有改动 SQLite schema / 保留配置或既有 `history()`。
+- `history.py` 是纯计算入口，复用上报的窗口/指标 Schema 校验及 `water_metric_facts()`；校验参照原 received_at，而非把旧观测按现在的新鲜度重评。不调用 DiagnosisService、EventService 或 Current 查询，不产生任何写入。查询时刻之后才接收的并发迟到记录不参与结果，数量另列。
+- 完整处于请求区间的窗口才进入样本计数/数值统计；跨起点窗口只贡献其实际交集的 received coverage，不能按时间比例估算均值。边界排除数单列。候选及存储 JSON 损坏均安全拒绝，不把损坏混同于合法 invalid 数据。
+
+返回独立、脱离存储对象的 dict，`projection_version=management-water-history@1`：
+
+| 字段 | 当前合同 |
+|---|---|
+| status / query_completed | NO_DATA：没有完整匹配窗口；PARTIAL：有匹配窗口但可靠覆盖、Session 或歧义存在限制；OK：请求区间的全部所选指标可靠覆盖完整、无歧义/未知 Session/Session 切换。合法返回的 query_completed 均为 true |
+| requested_range / evaluated_at | UTC 起止、`(start,end]` 和固定查询时刻；不是新采样时间 |
+| source_kind / aggregation | simulator / window_mean；历史未重新标为当前事实 |
+| counts | 候选、完整匹配、跨界排除、查询时刻后接收、歧义、重复观测时刻组/行、未知 Session 数。重复行数是歧义组中全部行数，不只是多出的行数 |
+| metrics | 每指标 valid / partial / invalid / missing 窗口数；声明的 valid/invalid/missing/总样本数；可靠窗口/有效样本数、首末窗口均值与差值、窗口均值极值及独立时间/批次引用。并列极值返回次数、首次与末次引用 |
+| coverage / metrics.*.reliable_window_s | received coverage 是候选窗口交集的区间并集；可靠覆盖仅由完整、非歧义且指标 valid 的窗口构成。分别返回秒数/比例，不用条数乘 10 秒，也不是样本覆盖率 |
+| gaps / metrics.*.gaps | 全局缺口为 NO_RETAINED_WINDOW；逐指标缺口为 NO_RELIABLE_METRIC（也包括全局缺口、跨界或歧义排除）。各自给出全量 count/total_s，最多 12 段及 omitted_count；不能相加当作不同缺口 |
+| sessions / continuity | 已知 Session 数、相邻观测记录的已知 Session 变化及省略数；连续段仅包含全部所选指标可靠、已知同 Session、窗口精确衔接的记录。unknown / 歧义 / 不可靠记录、时间缺口和 Session 切换截断连续段，最多展示 12 段；不推导异常持续时长 |
+| details / details_omitted | 最多 12 个等长时间桶各选末个实际窗口；是抽选，不是桶平均或完整轨迹。全量统计先于抽选；极值引用不依赖抽选结果。partial / invalid / missing 或歧义明细的 window_mean 为 null |
+| latest_observation_lag_s | 查询终点减候选中的最大观测时间；没有候选为 null。不是当前 freshness 或设备连接状态 |
+| retention_completeness / limitations | 因无裁剪水位，始终 UNKNOWN；保留 NOT_CURRENT_OBSERVATION 和 RETENTION_COMPLETENESS_UNKNOWN。若区间已被可靠记录完整覆盖，UNKNOWN 本身不阻止 OK，不声称区间之外留存完整 |
+| analysis | persistent_low_oxygen / recovery 均 NOT_EVALUATED；没有历史规则重评、回归趋势、预测或新阈值 |
+
+质量只按实际指标判断：partial / invalid / missing 不进入可靠数值统计；其他完整有效指标仍可用。所有样本数是匹配记录中的声明总数，歧义记录可能重复计数，不代表独立物理样本；`reliable_valid_samples` 单列排除歧义及不可靠指标后的计数。缺失值不补零，历史“最低值”专指最低有效**窗口均值**，不声称知道原始最低采样的确切时间。
+
+同时间或传递性重叠窗口整组标为歧义，排除可靠数值统计和可靠覆盖；received coverage 仍取并集，不重复累加。已知不同 Session 可参与分段的历史极值，但不能连接成持续状态。旧批次表被裁剪后 Session 保持 unknown，不猜回来源。没有留存记录不等于设备离线，也不能区分“从未上报”和“被裁剪”；NO_DATA / PARTIAL 都不证明环境正常或恢复。
+
+静态限额：720 条候选 / 单行 JSON 8 KiB / 明细 12 条 / 每组缺口与连续段 12 条 / 完整紧凑 UTF-8 JSON 24 KiB。超过输出上限拒绝整个结果，不裁断 JSON。SQLite 保持既有锁、短连接及 5 秒连接等待；本阶段不接入 AI Turn，后续 Handler 必须遵守原有 Stop / Deadline，不能据此宣称 SQL 已支持强制中断。
+
+安全拒绝使用 `HistoryQueryError.code`：`INVALID_WATER_HISTORY_QUERY`、`INVALID_HISTORY_QUERY_TIME`、`HISTORY_QUERY_BUDGET_EXCEEDED`、`HISTORY_RECORD_INVALID`、`HISTORY_RECORD_TOO_LARGE`、`HISTORY_RESULT_TOO_LARGE`、`HISTORY_STORAGE_ERROR`；不附 SQL、路径或记录内容。未知设备保持既有 `UNKNOWN_MONITORING_DEVICE` 行为。
+
+与设计的细化：边界窗口的时间交集只计实际 received coverage；retention UNKNOWN 与区间 OK 分开；增加单行 8 KiB 防护和 as-of 接收时间过滤。Monitoring 不负责 Receipt、Policy 或发布配置；这些边界见下节。
+
+离线验证入口：`python -m unittest discover -s apps/monitoring/tests -v`，其中 `test_water_history.py` 使用临时 SQLite 与固定时钟；不读取运行数据库或调用 Provider。
+
+R2D-1B 验收：Monitoring 106 项通过（新增历史查询 40 项，26.069s）；管理 Web app/Assistant 与业务 Tool 合同回归 35 项通过（4.210s）；FAST 164 项通过（1.739s）。前者包括旧 History API、Current、Events、只读事务、跨时区/亚秒边界、720/721 和真实超 24 KiB 结果拒绝。无 UI 修改，未运行 Browser 或历史真实资格实验。
+
+### 6.2 历史水质 Tool 离线候选（R2D-1C）
+
+[water_quality_history.py](../ai_service/business_tools/water_quality_history.py) 实现 `get_water_quality_history` 的 Definition、严格 Validator 和 Handler。必填 lookback_minutes=10/30/60；metrics 可省略，指定时必须是三个已知指标的非空、不重复 JSON 列表。拒绝 bool、float、数值字符串、额外字段及 device_id；复用 Monitoring 参数校验和 720 行 / 12 条明细 / 24 KiB 限额。
+
+Handler 签名为 `history_payload(arguments, *, monitoring, device_id)`，只调用一次 `monitoring.query_water_history(device_id, **arguments)`，原样返回上节 DTO；不查 SQLite、不重新计算统计/诊断、不添加当前水质字段。合法 NO_DATA 包括“只有跨界覆盖但没有完整匹配窗口”，PARTIAL 包括稀疏或全不可用窗口；可靠能力必须根据实际指标决定。
+
+唯一注册入口仍为 [registry.py](../ai_service/business_tools/registry.py)：
+
+- `bind_tools(...)` 默认不变：Current + Knowledge，定义/描述/Schema/顺序不变。
+- `bind_tools(..., include_history=True)` 仅供显式离线候选装配，历史定义附加在原两项之后。formal 与 per-Turn 都须带该选项，否则拒绝；重绑同一冻结设备的 Current / History Handler，Knowledge entry 与实例继续共享。
+- 候选由隔离内存 `ToolPolicy('assistant', True, (...,))` 控制，名称存在不等于授权。共享 `KNOWN_TOOL_NAMES` 和 Policy 资源不增加历史名称；临时 UserToolPolicyStore 也拒绝写入它，旧 Prototype Tool Manager 不变。评分仍只保留存储兼容名称，无 Handler。
+- ManagementAssistantService 不提供候选参数，普通 Web 请求仍只装配原两项；没有新增真实资格入口或发布记录。不能通过打开现有多轮/Streaming 试用开关取得历史 Tool。
+
+业务来源扩展在 [sources.py](../ai_service/runtime/sources.py)，未改通用 Backend / Prompt / Gate 算法：
+
+| 本轮真实历史执行结果 | history_query_completed | HISTORICAL_WATER_OBSERVATIONS | HISTORICAL_WATER_QUERY 满足 |
+|---|---|---|---|
+| OK 或 PARTIAL，至少一个可靠指标窗口 | true | 有 | 是 |
+| 合法 PARTIAL，全不可用指标 | true | 无 | 是 |
+| 合法 NO_DATA，包括只有跨界窗口 | true | 无 | 是 |
+| ERROR、无调用、未授权、非法参数、DTO 合同不一致 | false | 无 | 否 |
+
+Receipt 额外记录有限范围、evaluated_at、完整匹配窗口数与**逐指标**可靠窗口数，不把多个指标数量相加冒充独立窗口数。result_metadata() 校验版本、时间、质量/计数、范围和有限引用一致性，不重算统计；还必须来自匹配的 Model/Tool Step 且模型请求和 Handler 真正启动。历史文字、模仿调用、浏览器声明均不能构造 Receipt。
+
+历史 Receipt 不设当前 observation_query_completed、quality/freshness/observed_at，不能满足当前、评分或 Knowledge Requirement。每次执行仍是独立 Ledger entry；产品默认 AUTO 不变。旧工具的 Receipt.to_dict() 不增加默认历史字段，保持原两工具的序列化/提交指纹。Stop、Timeout 或 Trace 失败不提交成功回答，History 继续只包含成功 user/final 文本 pair。
+
+Catalog 为候选提供显示 metadata，不提供权限；候选 Trace 使用 `HISTORY_CANDIDATE_TOOL_NAMES`，正式 Trace 使用未改变的 `FORMAL_TOOL_NAMES`。通用 Backend 的 Activity 白名单未扩展：Steps/轮询复用有界 display_summary，显示历史来源、UTC 范围及逐指标可靠窗口数；候选单工具 tool_activity 还提供同样的有限结构。无原始参数、明细、均值、SQL、Prompt、凭据或完整 Tool Result。
+
+发布隔离证据：[r2d1c_two_tools.json](../ai_service/tests/fixtures/r2d1c_two_tools.json) 在修改前以临时 SQLite/Fake SDK 捕获原 Normal/Streaming 各 Direct/Single/Double 六路径的协议、结果、Steps、Usage、Ledger、安全 DTO、revision 和清理状态，以及三份管理 Streaming 计划指纹。修改后逐项相等，既有 Scope SHA256 仍为 `fc476b2e9ac19046b0127e65d70dc1488016c04f9dde29698d681c6047708e90`。这是离线等价证据，不是新 Provider 资格。
+
+候选定义即使未授权也会改变 assembled_definitions / revision；实际授权历史后，现有两工具 Normal/Streaming Scope 拒绝匹配。没有放宽 matcher 或伪造资格维持旧 hash。R2D-1C 的 Current → History → Final 仅为内部 Fake 2/2/3 案例，不能用于批准真实组合。
+
+后续正式开放前必须单独审核：管理端兼容且独立的 Policy opt-in/存储边界、设备与历史绑定版本、精确 Definition/模型/协议/Prompt/History/Transport Scope、确认 revision 与 epoch 生命周期、候选单案例真实授权及人工答案来源审查。先考虑仅 History、Normal、1/1/2；Current+History 和 Streaming 各自另审。当前无新模型配置或 release 记录，无 Provider/NPU 请求。
+
+离线入口：`python -m unittest apps.ai_service.tests.test_water_history_tool -v`；新测试也已纳入 `python scripts/dev/run_tests.py backend` 及 FULL PRODUCT 的 Backend 子集。
+
+R2D-1C 离线验收：历史候选 targeted 21 项通过（含六条旧 HTTP/SSE 路径、三计划指纹及内部 Current→History Fake）；Backend 146 项通过；管理 Assistant/Knowledge/Normal 多轮/Streaming 与管理资格 targeted 92 项通过；FAST 164 项通过。未运行真实 Provider/NPU、未开放历史 Web 试用；这些集合有交叉，不作为不同真实样本数统计。
+
 管理 Assistant 经薄 Adapter 绑定到此服务；原 Prototype Web 的内存 Snapshot 保持独立，不受新页面影响。复用 AssistantService、Gateway、CredentialSnapshot、RuntimeSnapshot、Policy、Ledger、Commit Gate、History Projection、Deadline 和 Stop；不复制 Tool 循环、不混合多次观测、不把模拟来源升级为真实事实。
 
 ## 7. 开发写入边界与真实替换
@@ -178,7 +264,7 @@ Web 的 `snapshot()` 继续在同一读事务捕获 current + history，再使�
 
 - 启用开关 --enable-assistant；默认关闭，与 --legacy-demo 互斥。不读取或继承旧 Web 的多轮/Streaming 开关。只提供 Qwen 3.8 Flash（默认）与 Ollama Qwen3.5 4B，正式 Preset Identity、协议、Capability、OFF/Normal 均由管理侧固定Preset资源提供；DeepSeek 不列入首版。页面“已启用/已装配”仅表示本地 Adapter 可用，不表示 Provider 已联网或凭据已验证；启动不发健康 Probe。
 - 默认 1 Tool Call / 1 Round / 最多 2 Model Requests；显式 Normal 多轮本地实验可为 2/2/3，retry=0；同一个 RequestHandle 的整 Turn Deadline 包含全部模型请求与 Tool，复用 Stop/Trace 提交门禁，无失败重跑。Qwen 精确两工具 Streaming 可由独立 trial 参数开启（下文）；新 RAG、评分、视觉 Tool 或固定 Analysis 未接入。
-- `business_tools.registry.bind_tools()` 返回新 Backend 的 ToolRegistry，使用各 business_tools 模块的 Definition / validator；水质绑定 Monitoring Handler，Knowledge 绑定业务检索映射。当前不存在名为 ManagementToolRegistry 的类。Tool Policy 从已有 outputs/tool-policies/tool_policies.json 读取；不存在时复用内置默认（只授权水质）。实际授权 = 用户 Assistant Policy ∩ 本应用装配集合（水质查询、项目知识检索）；不自动修改用户 Policy。评分只参与已知存储配置校验，不进入管理 Registry，不回退旧 Snapshot。
+- `business_tools.registry.bind_tools()` 返回新 Backend 的 ToolRegistry，使用各 business_tools 模块的 Definition / validator；水质绑定 Monitoring Handler，Knowledge 绑定业务检索映射。当前不存在名为 ManagementToolRegistry 的类。Tool Policy 优先使用管理端独立的 management_assistant_policy.json；不存在时只读继承已有 outputs/tool-policies/tool_policies.json（再缺省为内置只授权水质），不自动写入或迁移。实际授权 = 用户 Assistant Policy ∩ 服务器本次装配集合；默认 profile 仍为水质查询、项目知识检索，历史候选有独立门禁。评分只参与已知存储配置校验，不进入管理 Registry，不回退旧 Snapshot。
 - Tool Result 保留 canonical 水质与来源合同，使用精简 `management-current-water@1` 投影（下节）。这些数据只送入后续模型请求，不原样发给浏览器。存在窗口时 status=OK 表示读取完成，不表示有效或正常；NO_DATA 是未收到窗口。canonical quality 保守投影，独立 data_quality/coverage 保留实际覆盖；Findings 和 PROTOTYPE Rule Identity 与同批次网页一致，STALE/OFFLINE 不得证明恢复。
 - 设备按本次请求的服务器登记 ID 冻结，不跟随其他页面的选择变化。冻结的是设备而非旧读数；Tool 执行时读取该设备最新已接收数据，并保留时间/批次。因此不同时间的页面读取可能有不同批次，不能声称始终是同一时刻。
 - 凭据使用 ai_service.runtime.locations 的 private_project_location(仓库根) + ai_backend.credentials.CredentialStore；执行时一次 resolve 得到冻结 CredentialSnapshot。云端凭据缺失/私有文件权限错误安全失败，不复制、不迁移、不创建项目 .env。Ollama 按既有 Auth NONE；没有第二套凭据 UI。
@@ -305,3 +391,20 @@ Web 的 streaming.py 只投递现有 AssistantEventChannel，不另写 Tool 或�
 `ai_service.development.streaming_qualification` 只由单案例 CLI/离线测试导入。先按正式 definitions/绑定/Scope 计算无副作用计划；获批后创建临时 Monitoring SQLite 与 Policy，经正式 ManagementAssistantService 冻结设备、Credential/Runtime 和执行 2/2/3。它仅为单案例资格构造服务器内 PreparedAssistantTurn 的执行许可，保留当时的 Scope 发布状态；不更改配置或 Web prepare_turn 门禁，不提供浏览器可控的 bypass。
 
 执行观察复用既有 QualificationAdapter / Streaming observer / ExperimentGateway；Tool 循环、Source Ledger、Commit Gate 均来自原 Runtime。实际 SDK 分片/清理和 Result 上下文比较可成为管理业务链证据；CLI 不走 HTTP/SSE，报告明确该缺口。产品结果完成与实验路径合格分别记录；人工预览不写 JSON，也不作为发布批准。具体审批/回滚见 [资格说明](deep-dive/STREAMING_QUALIFICATION.md) 和 [本地启动](BUILD_RUN.md#r2b-5eqwen-streaming-本地实验)。
+
+## 历史 Tool 授权与候选边界（R2D-1D）
+
+- **独立存储**：[management_policy.py](../ai_service/management_policy.py) 固定使用 `outputs/tool-policies/management_assistant_policy.json`，schema_version=1、递增 generation、selected_tools。文件不存在时只读继承共享 Assistant 选择；首次明确保存完整选择才脱离继承。Analysis 与共享文件均不修改。历史缺省不授权；兼容评分选择可保留但无 Handler。
+- **安全保存**：8 KiB 有界读取、严格字段/类型/重复键校验；拒绝链接/重解析点/多硬链接目标。进程锁 + OS 文件锁覆盖读取/CAS/原子替换，临时文件 fsync 后 replace。并发旧 revision 返回 `TOOL_POLICY_REVISION_MISMATCH`，锁占用返回 `TOOL_POLICY_BUSY`；损坏配置启动/请求均关闭失败，不回退内置授权。此处不提供 reset 或自动迁移。
+- **HTTP/设置**：`GET/POST /api/ai/tool-policy` 与现有 AI API 共用 loopback、Host/Origin、浏览器令牌、JSON/大小边界。POST 仅接受 epoch/revision/selected_tools；设置 → Assistant Tool 授权只负责本机开发配置，并非生产账户/RBAC。
+- **撤销与确认**：bootstrap/prepare 使用单份 Policy snapshot。管理覆盖的 generation/revision 进入确认 revision；准备后、claim 前再校验，撤销/修改阻止旧确认联网。claim 后属于已开始 Turn，继续使用冻结授权/设备，不中途改变执行权限；下一 Turn 使用新配置。共享旧格式尚在继承时保留原有 prepare 冻结语义。设置保存清除页面确认，执行中则在结束后刷新配置，成功 History/draft 不清空。
+- **候选 Scope**：[history_execution.py](../ai_service/history_execution.py) + [固定资源](../ai_service/resources/water_history_candidate.json)：Qwen `dashscope-qwen38-flash-r1` / OFF / Normal / `get_water_quality_history` / 1 Call、1 Round、2 Requests / retry=0 / 120 秒。沿用单轮 `ASSISTANT_V2@1` 与当前 History Projection；绑定 Identity、ProtocolSpec、Prompt/History framing、Definition hash、默认 generation 参数、Monitoring `management-water-history@1` 及 720/12/24KiB、`historical-water-receipt@1`、设备和 Policy revision。
+- **发布不能由授权代替**：R2D-1G将固定`water_history_candidate@2`登记local_experimental、资源enabled=false；仅维护者`--assistant-history-trial`可进程内启用。candidate仍关闭，released与JSON enabled=true均拒绝。还需管理Policy显式授权及页面「历史查询」业务操作；原Normal/Streaming两工具Scope不变。每请求1024、1/1/2/retry=0/120秒进入Scope；配置/开关/Policy/设备/epoch进入revision。真实批次与操作见[历史资格记录](deep-dive/HISTORY_QUALIFICATION.md#9-r2d-1g真实批次通过与本地实验开放)。
+- **隔离执行与来源**：候选 formal 保留旧 Knowledge entry；逐 Turn 只重绑冻结设备 Handler。历史 profile 仅暴露已授权历史 Tool，服务端指定 HISTORICAL_WATER_QUERY；Receipt 仍由真实 Steps 推导，NO_DATA/合法 PARTIAL 完成操作，可靠观测另行认证，不能满足 CURRENT_OBSERVATION_QUERY。网页仅接收有限 Activity，不接收历史明细、SQL 或参数。
+
+R2D-1H：Web 请求仅接受受控业务 `action="history_query"`，由 `management_web/ai_adapter.py` 映射内部历史范围；浏览器提交 `execution_profile`、自选预算或任意 action 均拒绝。Bootstrap 对页面提供 `history_query` 可用性、原因及不透明 revision，不提供内部历史 Profile ID。普通请求不带 action，仍使用原 Current + Knowledge 范围；成功的历史快捷查询自动恢复普通提问，失败不自动换范围。模式、设备、模型、工具范围或 revision 变化时，页面清除确认，服务端继续精确复核。
+
+独立三工具候选位于 `normal_selection.py` / `resources/assistant_normal_candidate.json`，只支持服务端显式离线装配。它绑定正式多轮 Prompt、History、三项 Definition、Monitoring/Knowledge/历史来源版本、1024 token 上限和 2/2/3。没有产品启用开关，准入恒为 false；测试只能在离线网络阻断及 Fake SDK 下显式 stub 未发布准入，不能授予产品资格。现有两工具发布解析和用户Policy不变。
+- **离线证据边界**：旧candidate测试显式stub未发布准入；新的local_experimental HTTP测试使用真正开关/Scope/Policy，不stub门禁，通过正式Adapter验证max_tokens=1024。实际15样本Provider技术证据与用户发布批准单独记录，不等于回答质量审核或released。
+
+R2D-1E 已新增开发层的历史单案例计划（默认 dry-run，见 [操作说明](deep-dive/HISTORY_QUALIFICATION.md)），固定隔离 SQLite/seed/clock 与 10/30/60 参数、完整 Scope/计划 hash、HISTORICAL_WATER_QUERY、1/1/2/retry=0。先核对计划与本候选一致，再由用户逐案例批准一次网络请求范围；仅资格入口持有服务器执行许可，不改 Web 发布门禁。安全报告记录执行/来源/Usage，不写参数正文/观测明细/凭据。完成真实与人工审核后，再单独批准 exact local_experimental 配置及默认关闭的启动开关；不修改用户 Policy，不继承旧两工具资格。

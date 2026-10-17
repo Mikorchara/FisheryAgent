@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--enable-assistant", action="store_true", help="Enable Normal Assistant; each Send requires network confirmation")
     parser.add_argument("--assistant-multi-round-trial", action="store_true", help="Management-only Normal local trial; exact Scope/Policy required")
     parser.add_argument("--assistant-streaming-trial", action="store_true", help="Qwen two-tool Streaming local trial; exact Scope/Policy required")
+    parser.add_argument("--assistant-history-trial", action="store_true", help="Qwen Normal history-only local trial; exact Scope/Policy required")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error("port must be between 1 and 65535")
@@ -35,6 +36,8 @@ def main():
         parser.error("MULTI_ROUND_TRIAL_REQUIRES_ASSISTANT")
     if args.assistant_streaming_trial and not args.enable_assistant:
         parser.error("STREAMING_TRIAL_REQUIRES_ASSISTANT")
+    if args.assistant_history_trial and not args.enable_assistant:
+        parser.error("HISTORY_TRIAL_REQUIRES_ASSISTANT")
     data_service, token = None, None
     if not args.legacy_demo:
         try:
@@ -60,7 +63,8 @@ def main():
         try:
             ai_options["ai"] = ManagementAssistant.local(data_service, root,
                 multi_round_trial=args.assistant_multi_round_trial,
-                streaming_trial=args.assistant_streaming_trial)
+                streaming_trial=args.assistant_streaming_trial,
+                history_trial=args.assistant_history_trial)
         except (CredentialLocationError, CredentialFileError, ToolPolicyError, GatewayError):
             parser.error("AI_CONFIGURATION_UNAVAILABLE")
     app = create_app(allowed_hosts=(f"127.0.0.1:{args.port}", f"localhost:{args.port}"),

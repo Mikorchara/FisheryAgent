@@ -226,3 +226,85 @@ R2C-1E：用户已通过真实管理网页完成 Qwen Normal 水质 Tool / Final
 最终工程快速检查只运行 FAST、Backend 迁移/边界和管理前端离线测试；具体数量见 [收尾记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。本轮未请求 Provider/NPU。`a256569` 是已提交的 Phase II 切换基线；`0cf64f6` 是需要整体回退旧管理装配时的 Phase I 参考点，不能以重置工作树代替审阅和完整回滚。
 
 业务 Tool 组织与专项回归：Definition/Handler/validator 在 business_tools 的对应 Tool 模块，唯一装配入口为 registry.bind_tools；旧 runtime/tools.py 与 bindings.py 已移除。离线可运行 `python -m unittest apps.ai_service.tests.test_business_tools`；backend 测试层已包含该合同测试，前后 Definition/DTO 基线不因目录迁移重写。新增 Tool 操作见 [开发指南](AI_BACKEND_DEVELOPMENT_GUIDE.md#2-新增业务-tool)。
+
+## 管理端 Tool 授权与历史候选（R2D-1D）
+
+1. 按本页已有命令启动管理服务并显式启用 Assistant；原 Normal/Streaming 启动参数保持不变。
+2. 打开「系统设置 → Assistant Tool 授权」。首次读取只显示原有选择，不写文件。按需勾选/取消历史水质，再点「保存 Tool 授权」。保存前保留 Water/Knowledge 原选择，评分兼容项不可执行。
+3. 保存只写管理端的 `outputs/tool-policies/management_assistant_policy.json`，不写 Prototype 共用文件。其他窗口已修改时必须重新读取再保存；损坏配置不会自动清空或恢复默认。
+4. 保存使旧网络确认失效；下一条消息重新确认。已 claim 的 Turn 使用冻结授权，撤销对下一 Turn 生效；History/draft 保留。重新启动后读取同一管理配置，未存在覆盖时继续只读继承。
+5. **历史仍未开放真实试用**：界面授权不等于发布。candidate 只为 Qwen OFF / Normal / 历史单工具 / 1/1/2 准备；普通对话继续使用原两工具。不要编辑 JSON 的 status/enabled，也不要用旧 Prototype Tool Manager 写历史名称。
+
+离线验证（全部使用临时数据与 Fake SDK）：
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest apps.ai_service.tests.test_management_policy apps.ai_service.tests.test_history_candidate apps.ai_service.tests.test_water_history_tool
+node --test apps/management_web/tests/*.test.mjs
+```
+
+后续真实单案例的准备、批准及 Scope 发布必须分开，见 [集成合同](INTEGRATION.md#历史-tool-授权与候选边界r2d-1d)。R2D-1E 已提供独立的历史单案例资格 CLI（默认 Dry-run，见下节）；现有 Streaming 资格脚本仅验证原两工具，不能代替历史资格。设置功能不是生产权限中心，未来账户/RBAC 需在同一 API 前增加身份与服务端授权，不能只隐藏按钮。
+
+R2D-1D 验证：新增 Policy 7 项、历史候选 HTTP 10 项；Backend 整层 163 项、管理 HTTP/API 93 项、管理 Streaming 资格基础设施 17 项、FAST 164 项及前端 Node 55 项通过（测试层之间有覆盖重叠，不作唯一总数相加）。原六条 Normal/Streaming 路径和三个两工具资格计划 hash 基线不变；无真实 Provider/NPU 请求。历史 HTTP 成功路径仅在测试中 stub 未发布准入，真实 candidate 仍关闭。Markdown 本地链接/锚点、Python/JS/JSON 语法、diff 与改动文件敏感模式检查通过。
+
+## 历史 Tool 单案例资格准备（R2D-1E）
+
+```powershell
+.\.venv\Scripts\python.exe scripts/qualification/qualify_management_history.py --case valid-history --dry-run
+.\.venv\Scripts\python.exe scripts/qualification/qualify_management_history.py --case no-data --dry-run
+.\.venv\Scripts\python.exe scripts/qualification/qualify_management_history.py --case partial-history --dry-run
+```
+
+省略 `--dry-run` 同样不联网。每个进程只有一个案例；三个案例各自计划 hash，不能复用其他案例或旧两工具授权。真实实验需先审阅计划、逐案例获批，命令和终端人工预览见 [历史资格操作说明](deep-dive/HISTORY_QUALIFICATION.md)。本阶段不开放 Web candidate，也没有启动历史试用的参数。
+
+离线：`python -m unittest apps.ai_service.tests.test_history_qualification apps.ai_service.tests.test_streaming_qualification`；资格基础设施变更运行 `python scripts/dev/run_tests.py qualification`。Source/旧范围回归：`python -m unittest apps.ai_service.tests.test_water_history_tool apps.ai_service.tests.test_history_candidate`。这些测试均阻断真实模型网络，仅用隔离数据和 Fake SDK。
+
+R2D-1F准备阶段将候选升级为1024 tokens/请求的v2计划。当时仅Dry-run；固定15 Turns/最多30请求的授权现已由用户执行完毕，不能再次复用。完整hash与执行记录见[历史资格指南](deep-dive/HISTORY_QUALIFICATION.md#7-r2d-1f固定15样本批次)，当前开放操作见下节。
+
+## R2D-1G：历史水质单工具本地试用
+
+**当前状态：local_experimental，默认关闭，非released。** 用户已完成固定15样本（30请求），技术全部通过，并批准精确Qwen范围。回答质量未审核；本轮开放只用Fake SDK回归，不重跑真实资格。结果和限制见[历史资格记录](deep-dive/HISTORY_QUALIFICATION.md#9-r2d-1g真实批次通过与本地实验开放)。
+
+以下在同一个正常用户PowerShell终端执行。先停止自己已启动的8766服务器；不要关闭其他进程。使用既有私有Qwen凭据，无需读取、复制或打印Key：
+
+```powershell
+Set-Location -LiteralPath 'D:\CodexProject\Fishery_AI_Prototype'
+$env:FISHERY_SIM_INGEST_TOKEN = [Guid]::NewGuid().ToString('N') + [Guid]::NewGuid().ToString('N')
+$managementServer = Start-Process -FilePath .\.venv\Scripts\python.exe `
+  -ArgumentList '-m','apps.management_web','--enable-ingestion','--enable-assistant',`
+    '--assistant-multi-round-trial','--assistant-streaming-trial','--assistant-history-trial' `
+  -WorkingDirectory (Get-Location).Path -WindowStyle Hidden -PassThru
+.\.venv\Scripts\python.exe -m apps.simulator --scenario normal --seed 42 --interval 10
+```
+
+服务器与模拟器继承同一开发接入令牌；不打印/保存该令牌。模拟器默认每10秒上报，当前真实窗口仍是10秒均值。可换成`low_oxygen`等既有场景。原Prototype Web不受影响。若只试历史，可省略两个既有multi-round/streaming试用参数，历史仍为Normal 1/1/2。
+
+网页 `http://127.0.0.1:8766`：
+
+1. 「系统设置 → Assistant Tool 授权」：保持已有选择，显式勾选历史水质并保存。不会写旧Prototype Policy或自动勾选其他Tool。
+2. 「AI智能助手」：选择Qwen 3.8 Flash、监测设备及Normal，点击输入区的「历史查询」。页面显示「下一条：历史水质查询」及本地实验状态，预算仍为1/1/2、每请求最多1024 tokens。聊天页不再提供执行Profile选择器。
+3. 确认「本次可用工具」为「历史水质」，勾选本次联网确认，问「过去10分钟溶解氧有什么变化？请说明数据覆盖」。不必等待完整30分钟，稀疏历史应返回PARTIAL；区间没有数据返回NO_DATA。
+4. 核对历史Tool卡片、Source类型、唯一Final、Token/Steps。历史不能证明当前状态，不判断持续低氧或恢复；NO_DATA不是执行错误。Stop/超时/截断/失败不提交成功History，不自动重试或切换执行方式。
+5. 历史查询成功后恢复普通提问，也可点击「取消历史查询」。成功History保留；变更业务操作、响应模式、模型、设备或实际工具范围均清除联网勾选。历史查询失败保留该业务操作，须用户处理后再次确认；不会自动重跑。模型/设备切换仍按原规则清会话。普通提问由模型在已授权的当前水质/Knowledge中选择；历史不自动加入该组合。
+
+权限、Scope、版本或开关不匹配时发送被禁用/联网前拒绝，并显示原因。旧确认revision不能复用；启动开关随应用epoch冻结，运行中的设备/授权不随页面变化。
+
+**关闭与回滚**：先在模拟器终端按Ctrl+C，再停止自己启动的服务器，去掉历史开关重启（既有两工具参数可保留）：
+
+```powershell
+Stop-Process -Id $managementServer.Id
+.\.venv\Scripts\python.exe -m apps.management_web --enable-ingestion --enable-assistant `
+  --assistant-multi-round-trial --assistant-streaming-trial
+```
+
+这不会删除SQLite或用户授权。新epoch使旧页面确认失效；刷新后点击「历史查询」会显示服务器未启用的具体原因，确认框与发送均禁用。需要同时撤销授权时由用户在设置中取消历史。无需删除历史数据、资格报告或修改JSON。全部联调结束后可执行`Remove-Item Env:\FISHERY_SIM_INGEST_TOKEN`。
+
+产品Normal预算通过既有Adapter的内部`transport_output_token_limit`编码，严格Normal≤1024/Streaming≤512、retry=0；仅历史精确Scope装配Normal上限。没有使用development资格Adapter，也没有修改Tool循环、Prompt、统计或原两工具配置。
+
+### R2D-1H：可用状态与三工具候选
+
+- 「本地实验」是许可状态，启动开关和用户授权仍须分别满足。历史查询显示未启用时，重新勾选联网确认不能解决；按页面提示启用启动参数或到系统设置授权，再点「刷新可用状态」。禁止发送时确认框同时禁用且取消勾选。
+- 历史查询在 Streaming 或其他模型下会明确提示选择 Qwen / Normal；页面不会替用户切换模式。历史成功后恢复普通提问并清除确认；已成功的对话不丢失。
+- 三工具自主选择已建立独立 `management-normal-three-tools@1` candidate（当前水质、Knowledge、历史水质；Qwen OFF / Normal / 2/2/3 / 1024 tokens / retry=0 / 120秒），**未开放**。它不属于现有启动参数许可，也没有新增网络命令或模型资格。两个旧 Scope、历史单工具 Scope 和预算原样保留。
+- 开放三工具前，须另行批准该精确候选计划，逐案例验证三类选择、Current→History、History→Knowledge、提前Final、参数、Result传递、Ledger/提交及三来源需求的预算限制，再独立批准本地试用。三个可选工具不表示可执行三个；当前预算最多两个，不能宣称获得未执行的第三来源。离线 Fake 不能替代真实选择证据。
+
+R2D-1H 离线验收结果见[历史资格说明](deep-dive/HISTORY_QUALIFICATION.md#10-r2d-1h交互修复与独立三工具候选)。

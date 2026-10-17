@@ -43,15 +43,19 @@ apps/
 │  │  ├─ __init__.py                                                    # 包标记，无 re-export 或自动发现
 │  │  ├─ current_water_quality.py                                       # 水质 Definition、单次 capture 与有限 DTO
 │  │  ├─ fishery_knowledge.py                                           # Knowledge Definition、query 校验与有限 Evidence
-│  │  └─ registry.py                                                    # 唯一 bind_tools、已知 Policy 名称与逐 Turn 绑定
+│  │  ├─ registry.py                                                    # 默认两工具与显式离线历史候选装配
+│  │  └─ water_quality_history.py                                       # 历史 Schema/validator、委托 Handler 与有限来源元数据
 │  ├─ development/                                                       # 显式开发入口，不由正式 Runtime 导入
 │  │  ├─ __init__.py                                                     # 无启动 I/O 的包标记
+│  │  ├─ history_qualification.py                                        # 历史单案例计划、隔离夹具及受控候选执行
 │  │  ├─ qualification_adapter.py                                        # 新Backend资格Adapter，有限预算与安全观察
 │  │  ├─ qualification_support.py                                        # 新类型Observer/凭据定位/安全报告写入
 │  │  ├─ streaming_observation.py                                        # 有界流式统计/组装/清理观察
 │  │  └─ streaming_qualification.py                                      # 管理单案例资格、隔离 SQLite 与安全观察
 │  ├─ resources/                                                         # 固定包内业务资源
 │  │  ├─ assistant_execution.json                                        # Qwen/Ollama 独立本地实验 Scope，默认关闭
+│  │  ├─ assistant_normal_candidate.json                                 # Qwen Normal 三工具精确 candidate，未开放
+│  │  ├─ water_history_candidate.json                                    # 历史单工具local_experimental，默认关闭
 │  │  └─ assistant_streaming.json                                        # Qwen 两工具 local_experimental，默认关闭
 │  ├─ runtime/                                                           # 业务Assistant/来源/Policy/固定资源，已正式使用
 │  │  ├─ resources/                                                      # 固定包内业务资源
@@ -64,7 +68,7 @@ apps/
 │  │  │  └─ test_integration.py                                          # 新侧 Fake Normal/Streaming 全路径
 │  │  ├─ README.md                                                       # 快速入口
 │  │  ├─ __init__.py                                                     # 无启动 I/O 的包标记
-│  │  ├─ activity.py                                                     # 固定水质/Knowledge 安全摘要
+│  │  ├─ activity.py                                                     # 水质、Knowledge、历史候选的有限安全摘要
 │  │  ├─ assistant.py                                                    # 业务 Prompt、History 裁剪及最终提交
 │  │  ├─ catalog.py                                                      # 业务展示 metadata，不授予权限
 │  │  ├─ locations.py                                                    # 保留原私有目录身份算法
@@ -77,18 +81,28 @@ apps/
 │  │  ├─ fixtures/                                                       # 虚构/哈希测试基线
 │  │  │  ├─ r2c1d_http_baseline.json                                     # 迁移前六路径安全哈希基线
 │  │  │  ├─ r2c1d_plan_baseline.json                                     # 旧计划安全指纹与新授权隔离
-│  │  │  └─ r2c2b_business_tools.json                                    # 迁移前 Definition / DTO 哈希与有限状态基线
+│  │  │  ├─ r2c2b_business_tools.json                                    # 迁移前 Definition / DTO 哈希与有限状态基线
+│  │  │  └─ r2d1c_two_tools.json                                         # 历史候选接入前六路径与三计划指纹基线
 │  │  ├─ __init__.py                                                     # 无启动 I/O 的包标记
 │  │  ├─ capture_migration.py                                            # 六条Fake HTTP/SSE哈希采集，无正文/凭据
 │  │  ├─ test_backend_migration.py                                       # HTTP前后指纹、旧模块阻断与双侧独立
 │  │  ├─ test_business_tools.py                                          # 定义/DTO parity、冻结装配、权限与无旧入口
+│  │  ├─ test_history_qualification.py                                    # Dry-run/逐案授权、统计来源、预算与脱敏报告
+│  │  ├─ test_history_batch.py                                            # 固定15样本顺序、授权、计数和安全停止
+│  │  ├─ test_history_candidate.py                                       # 历史 HTTP 候选门禁、Fake SDK、来源及两工具隔离
+│  │  ├─ test_management_policy.py                                       # 独立配置、CAS/并发、恢复和安全写入
+│  │  ├─ test_normal_selection.py                                        # 三工具选择、预算、候选隔离与Web输入门禁
 │  │  ├─ test_execution.py                                               # 管理配置校验、独立 Scope 与默认关闭
 │  │  ├─ test_service.py                                                 # 无 Web 的执行、冻结、取消、路径及依赖边界
 │  │  ├─ test_streaming_config.py                                        # Streaming 本地试用、类型/预算与独立范围
-│  │  └─ test_streaming_qualification.py                                 # 计划授权、正式管理链路、来源/报告与安全预览
+│  │  ├─ test_streaming_qualification.py                                 # 计划授权、正式管理链路、来源/报告与安全预览
+│  │  └─ test_water_history_tool.py                                      # 历史候选、Receipt/Gate、Fake SDK 与原六路径指纹
 │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
 │  ├─ contracts.py                                                       # 进程内 PreparedAssistantTurn 与 AssistantBackend 合同
 │  ├─ execution.py                                                       # Normal 多轮发布、数据绑定、Scope 与确认 revision
+│  ├─ history_execution.py                                               # 历史单工具Scope、1024预算与独立试用门禁
+│  ├─ management_policy.py                                               # 管理端授权、只读继承、原子保存与 revision
+│  ├─ normal_selection.py                                                # 三工具Normal离线候选Scope，始终禁止产品准入
 │  ├─ service.py                                                         # 唯一ManagementAssistantService业务装配
 │  └─ streaming.py                                                       # Streaming 发布配置、精确 Scope 与确认 revision
 ├─ docs/                                                                 # 实际目录
@@ -99,7 +113,10 @@ apps/
 │  │  │  ├─ R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md           # Streaming 设计与实施状态
 │  │  │  ├─ R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md                    # R2B-0 评估基线，非实现现状
 │  │  │  ├─ R2C1A_LLM_BACKEND_AUDIT.md                                   # 独立化审计基线
-│  │  │  └─ R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md                      # 独立 Backend 迁移方案、实施与最终人工验收
+│  │  │  ├─ R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md                      # 独立 Backend 迁移方案、实施与最终人工验收
+│  │  │  ├─ R2D1A_WATER_HISTORY_TOOL_DESIGN.md                            # 历史查询、来源合同与分阶段分析设计
+│  │  │  └─ R2D1F_TOOL_INTEGRATION_COST_AUDIT.md                           # 历史Tool成本盘点、预算与批量准备
+│  │  ├─ HISTORY_QUALIFICATION.md                                         # 历史候选逐案例计划、审批与人工预览
 │  │  └─ STREAMING_QUALIFICATION.md                                      # 单案例批准、脱敏报告、人工预览及试用/回滚
 │  ├─ AI_BACKEND_DEVELOPMENT_GUIDE.md                                    # 请求链、Tool/Prompt 扩展与安全测试指南
 │  ├─ BUILD_RUN.md                                                       # 启动、联调与验证
@@ -114,6 +131,7 @@ apps/
 │  │  ├─ assistant.js                                                    # 双模式聊天、临时预览、History、Stop、滚动和问题导航
 │  │  ├─ components.js                                                   # 安全文本、卡片、表格、图表
 │  │  ├─ index.html                                                      # 布局、来源标识和弹窗
+│  │  ├─ tool-policy.js                                                  # 本机设置授权面板，不授予模型发布许可
 │  │  ├─ services.js                                                     # 同源监测与受控 Assistant API
 │  │  ├─ styles.css                                                      # 样式与响应式布局
 │  │  └─ view-model.js                                                   # 展示转换、来源和状态
@@ -135,6 +153,7 @@ apps/
 │  │  ├─ test_knowledge.py                                               # Knowledge HTTP 闭环、授权/来源隔离、拒绝与确认指纹
 │  │  ├─ test_multi_round.py                                             # HTTP 双 Tool、Scope/revision、预算、取消与回滚
 │  │  ├─ test_streaming.py                                               # Fake SDK HTTP/SSE、安全门禁及真实事件到前端的桥接
+│  │  ├─ tool-policy.test.mjs                                            # 设置保存、冲突提示与确认失效
 │  │  └─ view-model.test.mjs                                             # 纯展示合同
 │  ├─ README.md                                                          # 快速入口
 │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
@@ -152,11 +171,13 @@ apps/
 │  │  ├─ test_local_http.py                                              # 真实 loopback 上报及停止/重启
 │  │  ├─ test_pipeline.py                                                # 校验、时序、安全、状态与共享来源
 │  │  ├─ test_rule_governance.py                                         # 规则状态、证据范围、可靠恢复与兼容
-│  │  └─ test_water_capture.py                                           # 单次读取/诊断、双投影一致性、质量语义和 DTO 大小
+│  │  ├─ test_water_capture.py                                           # 单次读取/诊断、双投影一致性、质量语义和 DTO 大小
+│  │  └─ test_water_history.py                                           # 时间范围、质量/覆盖、歧义、来源与预算只读测试
 │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
 │  ├─ analysis.py                                                        # 纯领域求值、单次水质捕获与 canonical Reading 投影
 │  ├─ contracts.py                                                       # v1 上报校验、监测事实与分析 DTO
 │  ├─ events.py                                                          # 纯 EventService、事件变更及只读状态投影
+│  ├─ history.py                                                         # 有界历史窗口统计、覆盖/缺口与有限 DTO
 │  ├─ repository.py                                                      # SQLite、事务、历史与事件变更持久化
 │  ├─ rules.py                                                           # 纯评估函数、证据门禁与 PROTOTYPE 规则投影
 │  └─ service.py                                                         # 监测业务协调、统一查询与设备绑定
@@ -191,6 +212,12 @@ Backend无fishery_ai/Flask/SQLite/业务反向依赖。Monitoring/Knowledge及�
 
 Phase I 的五个 runtime 准备模块和三份重复测试已移除；当前 Service/合同/发布装配在顶层，业务 Tool 在 business_tools，无 alias/fallback。R2C-1E 迁移验收记录保留当时结构，见 [收尾记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。
 
-测试层级：FAST小集合；backend为新Backend及业务合同；FULL PRODUCT含backend一次；FULL QUALIFICATION额外包含管理资格17项；Web/Node按BUILD_RUN运行。Qualification只在显式开发入口加载，默认dry-run，无批次或自动Provider请求。
+测试层级：FAST小集合；backend为新Backend及业务合同；FULL PRODUCT含backend一次；FULL QUALIFICATION额外包含管理 Streaming、历史单案例及固定批次资格测试；Web/Node按BUILD_RUN运行。Qualification只在显式开发入口加载，默认dry-run，不自动请求Provider。
 
 业务 Tool：business_tools 下每个模块拥有自己的 Definition/validator/Handler/有限 DTO，registry.py 是唯一装配入口；runtime 的 Policy/来源/Activity 职责不变。旧 runtime/tools.py 与顶层 bindings.py 已删除，不设兼容转发；评分只为已知 Policy 名称，不装配 Handler。新增 Tool 参见 [开发指南](AI_BACKEND_DEVELOPMENT_GUIDE.md#2-新增业务-tool)。
+
+历史资格 CLI 位于 [scripts/qualification/qualify_management_history.py](../../scripts/qualification/qualify_management_history.py)；默认 Dry-run，只用新 Backend 和正式单轮业务 Assistant，不是 Web 发布开关。见 [逐案例操作](deep-dive/HISTORY_QUALIFICATION.md)。
+
+历史产品试用使用`python -m apps.management_web --enable-assistant --assistant-history-trial`，由Service/Scope/Policy/现有Adapter共同执行，未导入development资格代码。页面使用一次性的「历史查询」业务快捷操作，不暴露执行Profile；不将历史加入两工具组合。三工具统一Normal仅为独立candidate，不能由浏览器指定或启用。启动与回滚见[BUILD_RUN](BUILD_RUN.md#r2d-1g历史水质单工具本地试用)。
+
+[qualify_management_history_batch.py](../../scripts/qualification/qualify_management_history_batch.py) 是固定3案例×5的薄进程编排入口：每个子进程仍只运行一个案例，默认Dry-run，真实执行需三个新计划的一次性明确批准；无重试、补跑或自动恢复。

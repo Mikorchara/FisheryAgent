@@ -11,9 +11,13 @@ import math
 from fishery_ai.contracts import Freshness, Quality, WaterQualityReading, parse_time
 from apps.ai_backend.tool_conversation import ModelExecutionStep, ToolConversationResult, ToolExecutionStep
 from apps.ai_backend.tools.contracts import ToolStatus
+from apps.monitoring.history import MAX_HISTORY_ROWS, LOOKBACK_MINUTES
 from ..business_tools.current_water_quality import CURRENT_WATER_QUALITY
 from ..business_tools.fishery_knowledge import SEARCH_FISHERY_KNOWLEDGE
 from ..business_tools.registry import WATER_QUALITY_SCORE
+from ..business_tools.water_quality_history import WATER_QUALITY_HISTORY, result_metadata as history_metadata
+
+HISTORY_SOURCE_CONTRACT_VERSION = 'historical-water-receipt@1'
 
 
 class SourceRequirement(str, Enum):
@@ -21,12 +25,14 @@ class SourceRequirement(str, Enum):
     CURRENT_OBSERVATION_QUERY = "CURRENT_OBSERVATION_QUERY"
     CURRENT_SCORE_EVALUATION = "CURRENT_SCORE_EVALUATION"
     PROJECT_KNOWLEDGE_SEARCH = "PROJECT_KNOWLEDGE_SEARCH"
+    HISTORICAL_WATER_QUERY = "HISTORICAL_WATER_QUERY"
 
 
 class TurnSource(str, Enum):
     CURRENT_TOOL_OBSERVATION = "CURRENT_TOOL_OBSERVATION"
     CURRENT_TOOL_SCORE = "CURRENT_TOOL_SCORE"
     RETRIEVED_PROJECT_EVIDENCE = "RETRIEVED_PROJECT_EVIDENCE"
+    HISTORICAL_WATER_OBSERVATIONS = "HISTORICAL_WATER_OBSERVATIONS"
 
 
 @dataclass(frozen=True)
@@ -51,17 +57,43 @@ class TurnSourceReceipt:
     score_evaluation_completed: bool = False
     project_search_completed: bool = False
     evidence_count: int = 0
+    history_query_completed: bool = False
+    history_range_start: str | None = None
+    history_range_end: str | None = None
+    history_window_count: int = 0
+    history_reliable_windows: tuple[tuple[str, int], ...] = ()
 
     def __post_init__(self):
         object.__setattr__(self, "sources", frozenset(self.sources))
         object.__setattr__(self, "available_fields", tuple(self.available_fields))
+        object.__setattr__(self, "history_reliable_windows", tuple(tuple(item) for item in self.history_reliable_windows))
         if (any(not isinstance(source, TurnSource) for source in self.sources)
                 or any(key not in _WATER_FIELDS for key in self.available_fields)
                 or any(type(value) is not bool for value in (
                     self.observation_query_completed, self.score_evaluation_completed,
-                    self.project_search_completed))
+                    self.project_search_completed, self.history_query_completed))
                 or type(self.evidence_count) is not int or not 0 <= self.evidence_count <= 3):
             raise ValueError("invalid source receipt")
+        if (type(self.history_window_count) is not int or not 0 <= self.history_window_count <= MAX_HISTORY_ROWS
+                or len(self.history_reliable_windows) > 3
+                or any(len(item) != 2 or item[0] not in _WATER_FIELDS or type(item[1]) is not int
+                       or not 0 <= item[1] <= self.history_window_count for item in self.history_reliable_windows)
+                or len({item[0] for item in self.history_reliable_windows}) != len(self.history_reliable_windows)):
+            raise ValueError("invalid historical receipt")
+        if self.history_query_completed:
+            if (self.tool_name != WATER_QUALITY_HISTORY or self.observation_query_completed
+                    or self.score_evaluation_completed or self.project_search_completed
+                    or self.available_fields or self.quality is not None or self.freshness is not None
+                    or self.observed_at is not None or not self.history_reliable_windows
+                    or (parse_time(self.history_range_end) - parse_time(self.history_range_start)).total_seconds() not in tuple(m * 60 for m in LOOKBACK_MINUTES)
+                    or self.evaluated_at != self.history_range_end
+                    or self.sources != (frozenset({TurnSource.HISTORICAL_WATER_OBSERVATIONS})
+                        if any(n for _, n in self.history_reliable_windows) else frozenset())):
+                raise ValueError("invalid historical receipt")
+        elif (self.history_range_start is not None or self.history_range_end is not None
+                or self.history_window_count or self.history_reliable_windows
+                or TurnSource.HISTORICAL_WATER_OBSERVATIONS in self.sources):
+            raise ValueError("historical receipt requires completed query")
 
     @property
     def has_observation(self) -> bool:
@@ -75,9 +107,13 @@ class TurnSourceReceipt:
     def has_project_evidence(self) -> bool:
         return TurnSource.RETRIEVED_PROJECT_EVIDENCE in self.sources
 
+    @property
+    def has_historical_observations(self) -> bool:
+        return TurnSource.HISTORICAL_WATER_OBSERVATIONS in self.sources
+
     def to_dict(self) -> dict:
         """Safe internal/qualification summary; not added to the Web response."""
-        return {"sources": sorted(source.value for source in self.sources),
+        result = {"sources": sorted(source.value for source in self.sources),
                 "tool_name": self.tool_name, "tool_status": self.tool_status.value if self.tool_status else None,
                 "quality": self.quality.value if self.quality else None,
                 "freshness": self.freshness.value if self.freshness else None,
@@ -89,6 +125,15 @@ class TurnSourceReceipt:
                 "has_observation": self.has_observation, "has_score": self.has_score,
                 "has_project_evidence": self.has_project_evidence,
                 "evidence_count": self.evidence_count}
+        # Existing receipts retain byte-for-byte DTO compatibility. Historical
+        # fields are not a second payload and are never Web-controlled.
+        if self.tool_name == WATER_QUALITY_HISTORY:
+            result.update(history_query_completed=self.history_query_completed,
+                history_range={"start": self.history_range_start, "end": self.history_range_end},
+                history_window_count=self.history_window_count,
+                history_reliable_windows=dict(self.history_reliable_windows),
+                has_historical_observations=self.has_historical_observations)
+        return result
 
 
 _WATER_FIELDS = ("temperature_c", "ph", "dissolved_oxygen_mg_l")
@@ -166,7 +211,7 @@ def _receipt_from_step(run: ToolConversationResult, step: ToolExecutionStep) -> 
     model = next((item for item in run.steps if isinstance(item, ModelExecutionStep)
                   and item.request_index == step.model_request_index and item.seq < step.seq), None)
     if (tool is None or model is None or model.result.outcome != "tool_calls"
-            or step.tool_name not in (CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE, SEARCH_FISHERY_KNOWLEDGE)
+            or step.tool_name not in (CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE, SEARCH_FISHERY_KNOWLEDGE, WATER_QUALITY_HISTORY)
             or tool.tool_name != step.tool_name or tool.tool_call_id != step.tool_call_id):
         return TurnSourceReceipt()
     empty = TurnSourceReceipt(tool_name=step.tool_name, tool_status=tool.status)
@@ -178,6 +223,13 @@ def _receipt_from_step(run: ToolConversationResult, step: ToolExecutionStep) -> 
         return empty
     if not isinstance(payload, dict) or payload.get("status") != tool.status.value:
         return empty
+    if step.tool_name == WATER_QUALITY_HISTORY:
+        metadata = history_metadata(payload) if step.handler_started and model.request_started else None
+        if metadata is None:
+            return empty
+        sources = frozenset({TurnSource.HISTORICAL_WATER_OBSERVATIONS}) if any(
+            count for _, count in metadata["history_reliable_windows"]) else frozenset()
+        return TurnSourceReceipt(sources=sources, tool_name=step.tool_name, tool_status=tool.status, **metadata)
     if step.tool_name == SEARCH_FISHERY_KNOWLEDGE:
         items, count = payload.get("evidence"), payload.get("result_count")
         if not isinstance(items, list) or type(count) is not int or count != len(items) or not 0 <= count <= 3:
@@ -288,7 +340,9 @@ def requirement_satisfied(requirement: SourceRequirement, receipt: TurnSourceRec
         return receipt.observation_query_completed
     if requirement == SourceRequirement.CURRENT_SCORE_EVALUATION:
         return receipt.score_evaluation_completed
-    return receipt.project_search_completed
+    if requirement == SourceRequirement.PROJECT_KNOWLEDGE_SEARCH:
+        return receipt.project_search_completed
+    return receipt.history_query_completed
 
 
 def requirement_satisfied_by_ledger(requirement: SourceRequirement, ledger: TurnSourceLedger) -> bool:

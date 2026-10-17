@@ -9,6 +9,7 @@ from apps.ai_backend.tool_conversation import ToolModelTransport
 from apps.ai_service.contracts import AssistantBackend
 from apps.ai_service.runtime.activity import tool_summary
 from apps.ai_service.service import ManagementAssistantService
+from apps.ai_service.history_execution import HISTORY_PROFILE
 
 
 class ManagementAssistant:
@@ -20,9 +21,9 @@ class ManagementAssistant:
         self.requests = RequestRegistry(summarize_tool=tool_summary)
 
     @classmethod
-    def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False):
+    def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False, history_trial=False):
         return cls(ManagementAssistantService.local(monitoring, Path(project_root),
-            multi_round_trial=multi_round_trial, streaming_trial=streaming_trial))
+            multi_round_trial=multi_round_trial, streaming_trial=streaming_trial, history_trial=history_trial))
 
     @property
     def monitoring(self):
@@ -36,7 +37,19 @@ class ManagementAssistant:
         return self.backend.availability()
 
     def bootstrap(self, device_id):
-        return {**self.backend.bootstrap(device_id), "browser_token": self.browser_token}
+        value = dict(self.backend.bootstrap(device_id))
+        # Business capability only. Internal execution identifiers are not Web inputs.
+        history = value.pop('history_candidate', None)
+        if history is not None:
+            history = {key: item for key, item in history.items() if key != 'execution_profile'}
+        return {**value, **({'history_query': history} if history is not None else {}),
+                "browser_token": self.browser_token}
+
+    def tool_authorization(self):
+        return {**self.backend.tool_authorization(), 'browser_token':self.browser_token}
+
+    def save_tool_authorization(self, value):
+        return {**self.backend.save_tool_authorization(value), 'browser_token':self.browser_token}
 
     def prepare(self):
         handle = self.requests.create()
@@ -55,11 +68,15 @@ class ManagementAssistant:
 
     def _prepare(self,value,*,transport=ToolModelTransport.NORMAL):
         allowed = {"preset_id", "question", "history", "conversation_id", "epoch", "device_id",
-                   "revision", "confirm_network", "request_id", "control_token"}
+                   "revision", "confirm_network", "request_id", "control_token", "action"}
         if not isinstance(value, dict) or set(value) - allowed:
             raise GatewayError("INVALID_ASSISTANT_REQUEST")
         # Preserve preflight-before-handle-claim order and freeze just one plan.
         body={k:v for k,v in value.items() if k not in {"request_id", "control_token"}}
+        if 'action' in body:
+            if body.pop('action') != 'history_query':
+                raise GatewayError('INVALID_ASSISTANT_REQUEST')
+            body['execution_profile'] = HISTORY_PROFILE
         # Keep the Normal service call contract unchanged.
         prepared = (self.backend.prepare_turn(body) if transport == ToolModelTransport.NORMAL else
                     self.backend.prepare_turn(body,transport=transport))

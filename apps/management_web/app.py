@@ -198,6 +198,15 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
             return failure
         return jsonify(assistant.bootstrap(request.args.get("device")))
 
+    @app.get('/api/ai/tool-policy')
+    @app.post('/api/ai/tool-policy')
+    def ai_tool_policy():
+        failure = ai_gate(write=request.method == 'POST')
+        if failure is not None:
+            return failure
+        return jsonify(assistant.tool_authorization() if request.method == 'GET' else
+                       assistant.save_tool_authorization(request.get_json(silent=True)))
+
     @app.post("/api/ai/requests")
     def ai_prepare():
         failure = ai_gate()

@@ -18,7 +18,7 @@ STREAMING_MAX_OUTPUT_TOKENS = 512
 
 
 def validate_qualification_token_budget(value, *, streaming):
-    """One finite budget rule for plans/CLI and transport; bool is not an int here."""
+    """Default qualification ceilings; explicit candidate subclasses own their cap."""
     if type(streaming) is not bool:
         raise GatewayError("QUALIFICATION_INVALID_TRANSPORT")
     limit = STREAMING_MAX_OUTPUT_TOKENS if streaming else NORMAL_MAX_OUTPUT_TOKENS
@@ -50,7 +50,7 @@ def call_summary(call, registry, exposed_tools):
         row["arguments_valid"] = True
         if name == SEARCH_FISHERY_KNOWLEDGE:
             row["query_valid"] = True
-        else:
+        elif not registry.lookup(name).model_definition.parameters_dict().get("properties"):
             row["arguments"] = {}  # Parameterless tools; no arbitrary arguments copied.
     except (ValueError, TypeError, AttributeError, RecursionError, UnicodeError):
         pass
@@ -70,11 +70,13 @@ def response_summary(response, model, registry, exposed_tools):
 class QualificationAdapter(OpenAICompatibleAdapter):
     """Scoped to one qualification, not installed in Web or the ordinary Gateway."""
 
+    _validate_token_budget = staticmethod(validate_qualification_token_budget)
+
     def __init__(self, model, registry, exposed_tools, max_output_tokens, *, streaming=False, **factories):
         super().__init__(**factories)
         if type(streaming) is not bool:
             raise GatewayError("QUALIFICATION_INVALID_TRANSPORT")
-        validate_qualification_token_budget(max_output_tokens, streaming=streaming)
+        self._validate_token_budget(max_output_tokens, streaming=streaming)
         self.streaming = streaming
         self.model, self.registry = model, registry
         self.exposed_tools = tuple(exposed_tools)
@@ -90,7 +92,7 @@ class QualificationAdapter(OpenAICompatibleAdapter):
     def _kwargs(self, request, runtime, *, stream, _assemble_tools=False):
         if stream != self.streaming or runtime.max_retries != 0 or stream and not _assemble_tools:
             raise GatewayError("QUALIFICATION_INVALID_TRANSPORT")
-        validate_qualification_token_budget(self.max_output_tokens, streaming=self.streaming)
+        self._validate_token_budget(self.max_output_tokens, streaming=self.streaming)
         kwargs = super()._kwargs(request, runtime, stream=stream, _assemble_tools=_assemble_tools)
         # Mandatory cost budget is transport-scoped; do not manufacture model
         # capability evidence merely to send a maintainer-approved finite limit.

@@ -50,9 +50,9 @@ def _credentials(root):
 
 class _RunTrace(JsonlTraceSink):
     """Reuse existing record_* methods, retain only small run-local trace entries."""
-    def __init__(self):
+    def __init__(self, *, tool_names=("get_current_water_quality", "search_fishery_knowledge")):
         super().__init__(Path("unused-qualification-trace"),
-            tool_names=("get_current_water_quality", "search_fishery_knowledge"))
+            tool_names=tool_names)
         self.entries = []
 
     def _append(self, entry):

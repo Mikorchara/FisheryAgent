@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from ..business_tools.current_water_quality import CURRENT_WATER_QUALITY
 from ..business_tools.fishery_knowledge import SEARCH_FISHERY_KNOWLEDGE
 from ..business_tools.registry import WATER_QUALITY_SCORE
+from ..business_tools.water_quality_history import WATER_QUALITY_HISTORY
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,11 @@ CATALOG = (
         "只读检索项目内鳗鲡养殖背景知识；不代表当前水质，也不做现场诊断",
         "复用与 Analysis 相同的 KnowledgeService 与包内固定知识资源，来源标识为 legacy:eel_knowledge.json。结果是背景证据而非现场事实，无合格命中时返回NO_MATCH（不是错误）。检索基线尚未做评测，知识块也没有逐条文献出处，因此不得当作专业养殖或用药依据。",
         parameter_summary="query: string（必填，1–512 字符）"),
+    ToolCatalogEntry(WATER_QUALITY_HISTORY, "历史水质查询",
+        "查询有限历史窗口统计与数据覆盖；不是当前观测",
+        "独立本地实验：最近10/30/60分钟的窗口均值、质量、覆盖和缺口；不证明当前状态、持续低氧或恢复。"
+        "NO_DATA表示无完整匹配窗口，PARTIAL保留实际限制；需维护者启动开关及用户授权。",
+        parameter_summary="lookback_minutes: 10/30/60；metrics: 可选的水质指标列表"),
 )
 
 

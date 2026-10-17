@@ -12,6 +12,8 @@
 - [开发规则](../AGENTS.md)
 - [R2B 架构评估基线](deep-dive/research/R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md)（R2B-0 研究；当前实现以 INTEGRATION 为准）
 - [管理 Streaming 设计与实施状态](deep-dive/research/R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md)（默认关闭；Qwen 两工具可显式启用本地实验）
+- [管理历史Tool资格与试用](deep-dive/HISTORY_QUALIFICATION.md)（三个案例各5个真实样本技术通过；Qwen Normal单工具local_experimental、默认关闭）
+- [历史 Tool 工程成本审计](deep-dive/research/R2D1F_TOOL_INTEGRATION_COST_AUDIT.md)（实际文件/行数、可简化点与固定15样本准备）
 - [管理 Streaming 逐案例资格与试用流程](deep-dive/STREAMING_QUALIFICATION.md)（三个真实技术 PASS，回答质量待审；local_experimental 非正式发布）
 - [R2B-3 架构与 Tool 故障审查](deep-dive/research/R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md)（只读证据、修复建议与后续顺序）
 - [独立 Backend 迁移方案、实施与人工验收](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)
@@ -33,7 +35,7 @@ R2B-3.4：AI 业务已独立为 `apps/ai_service/`，Web 经明确的 AssistantB
 | 事件记录 | 模拟异常事件、去重、可靠恢复/待确认、真实严重程度及规则身份 | 人工处置/通知工作流 |
 | AI 助手 | Qwen/Ollama Normal、统一水质/Knowledge、可选本地多轮；Qwen 两工具 Streaming 显式本地实验；独立 Backend 基本网页验收通过 | 回答质量专项审核、其他 Streaming 范围、评分/视觉 Tool |
 | 资料与知识库 | Demo 元数据与分类/详情 | 文件上传下载、索引、检索桥接 |
-| 设置 | 分类、禁用操作、独立开发入口 | 账户权限、生产配置 |
+| 设置 | 分类、管理 Assistant 独立 Tool 授权与并发安全保存、独立开发入口 | 账户权限、生产配置 |
 
 Flask + 原生 ES Modules / CSS / SVG，无新依赖。默认 8766，读取 SQLite 模拟上报或明确 NO_DATA。页面每 5 秒查询，模拟器默认每 10 秒上报。AI 默认关闭，--enable-assistant 后逐次确认才执行 Normal；生产认证、真实设备与设备写控制未开放。
 

@@ -20,10 +20,16 @@ from apps.ai_backend.tools.registry import ToolRegistry
 from apps.ai_backend.tool_conversation import ToolCallingService, ToolModelTransport
 from apps.ai_backend.history_projection import DEFAULT_HISTORY_PROJECTION
 
-from .business_tools.registry import bind_tools
+from .business_tools.registry import bind_tools, FORMAL_TOOL_NAMES, HISTORY_CANDIDATE_TOOL_NAMES
+from .business_tools.water_quality_history import WATER_QUALITY_HISTORY
+from .management_policy import ManagementToolPolicyStore
+from .history_execution import HISTORY_PROFILE, HistoryCandidateConfig, load_history_config, resolve_history_candidate
+from .runtime.release_contracts import _hash
+from .runtime.sources import SourceRequirement
 from .contracts import PreparedAssistantTurn
 from .execution import ManagementExecutionConfig, load_execution_config, resolve_execution
 from .streaming import ManagementStreamingConfig, load_streaming_config, resolve_streaming
+from .normal_selection import NORMAL_SELECTION_CANDIDATE, resolve_normal_selection_candidate
 
 
 PRESETS = ("dashscope-qwen38-flash-r1", "ollama-qwen35-4b-r1")
@@ -33,7 +39,8 @@ class ManagementAssistantService:
     """One epoch and frozen device/policy/mode per turn; single-round by default."""
 
     def __init__(self, monitoring, *, credentials, traces, policy_directory,
-                 gateway_factory=OpenAICompatibleAdapter, execution_config=None, streaming_config=None):
+                 gateway_factory=OpenAICompatibleAdapter, execution_config=None, streaming_config=None,
+                 history_config=None):
         self.monitoring, self.credentials, self.traces = monitoring, credentials, traces
         self.gateway_factory = gateway_factory
         self.epoch = secrets.token_hex(16)
@@ -48,8 +55,13 @@ class ManagementAssistantService:
             raise ValueError("NO_MONITORING_DEVICE")
         # Explicit business dependency only: no old Gateway/Registry/Executor.
         self.knowledge = KnowledgeService(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json"))
-        self.formal_registry = bind_tools(monitoring, devices[0]["id"], self.knowledge)
+        self.history_registry = bind_tools(monitoring, devices[0]["id"], self.knowledge, include_history=True)
+        self.formal_registry = ToolRegistry([self.history_registry.lookup(name) for name in FORMAL_TOOL_NAMES])
         self.policy_store = UserToolPolicyStore(policy_directory, self.formal_registry)
+        self.management_policy = ManagementToolPolicyStore(policy_directory, self.policy_store)
+        self._history_config = load_history_config() if history_config is None else history_config
+        if not isinstance(self._history_config, HistoryCandidateConfig):
+            raise GatewayError('INVALID_HISTORY_CANDIDATE_CONFIG')
 
     @staticmethod
     def request_registry(**kwargs):
@@ -58,22 +70,44 @@ class ManagementAssistantService:
         return RequestRegistry(summarize_tool=tool_summary, **kwargs)
 
     @classmethod
-    def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False):
+    def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False, history_trial=False):
         from .runtime.locations import private_project_location
         root = Path(project_root).resolve()
         location = private_project_location(root)
         return cls(monitoring, credentials=CredentialStore(location.env_path, private_location=location),
             traces=JsonlTraceSink(root / "outputs/management_web/assistant-traces.jsonl",
-                tool_names=("get_current_water_quality", "search_fishery_knowledge")),
+                tool_names=HISTORY_CANDIDATE_TOOL_NAMES),
             policy_directory=root / "outputs/tool-policies",
             execution_config=load_execution_config(enable_trial=multi_round_trial),
-            streaming_config=load_streaming_config(enable_trial=streaming_trial))
+            streaming_config=load_streaming_config(enable_trial=streaming_trial),
+            history_config=load_history_config(enable_trial=history_trial))
 
     def availability(self):
         return {"connected": True, "mode": "normal", "thinking": "off",
                 "description": "Assistant Runtime · Normal · 水质查询 / 项目知识（按 Policy 授权）"}
 
-    def _configuration(self, preset_id, device_id, *, transport=ToolModelTransport.NORMAL):
+    def tool_authorization(self):
+        from .business_tools.registry import WATER_QUALITY_SCORE
+        return {**self.management_policy.public(), 'epoch':self.epoch,
+            'tools':[{'name':name, 'assembled':name in self.history_registry.registered_names(),
+                      'history_query_only':name == WATER_QUALITY_HISTORY,
+                      'candidate_only':name == WATER_QUALITY_HISTORY and self._history_config.status == 'candidate',
+                      'compatibility_only':name == WATER_QUALITY_SCORE}
+                     for name in (*FORMAL_TOOL_NAMES, WATER_QUALITY_HISTORY, WATER_QUALITY_SCORE)],
+            'history_candidate':{'status':self._history_config.status,
+                                 'enabled':self._history_config.enabled,
+                                 'max_tool_calls':1,'max_tool_rounds':1,'max_model_requests':2}}
+
+    def save_tool_authorization(self, value):
+        if (not isinstance(value,dict) or set(value) != {'epoch','revision','selected_tools'}):
+            raise GatewayError('INVALID_TOOL_POLICY')
+        if value['epoch'] != self.epoch:
+            raise GatewayError('ASSISTANT_SESSION_EXPIRED')
+        self.management_policy.save(value['selected_tools'],expected_revision=value['revision'])
+        return self.tool_authorization()
+
+    def _configuration(self, preset_id, device_id, *, transport=ToolModelTransport.NORMAL,
+                       policy_snapshot=None, execution_profile=None):
         if not isinstance(transport, ToolModelTransport):
             raise GatewayError('INVALID_ASSISTANT_REQUEST')
         if preset_id not in PRESETS:
@@ -81,38 +115,62 @@ class ManagementAssistantService:
         if not isinstance(device_id, str):
             raise GatewayError("INVALID_ASSISTANT_REQUEST")
         self.monitoring.bind(device_id)  # Validate registered device, never page-global state.
-        registry = bind_tools(self.monitoring, device_id, self.knowledge, formal=self.formal_registry)
-        stored = self.policy_store.load()["modes"]["assistant"]["selected_tools"]
-        selected = ToolPolicy("assistant", True, stored)
+        if execution_profile not in (None, HISTORY_PROFILE, NORMAL_SELECTION_CANDIDATE):
+            raise GatewayError('INVALID_ASSISTANT_REQUEST')
+        historical = execution_profile == HISTORY_PROFILE
+        candidate = execution_profile == NORMAL_SELECTION_CANDIDATE
+        registry = bind_tools(self.monitoring, device_id, self.knowledge,
+            formal=self.history_registry if historical or candidate else self.formal_registry,
+            include_history=historical or candidate)
+        snapshot = policy_snapshot or self.management_policy.snapshot()
+        selected = ToolPolicy("assistant", True, snapshot.selected_tools)
         bound = {definition.name for definition in registry.model_definitions()}
+        names = HISTORY_CANDIDATE_TOOL_NAMES if candidate else selected.exposed_tools
         policy = ToolPolicy("assistant", selected.llm_tool_calling,
-            tuple(name for name in selected.exposed_tools if name in bound))
+            tuple(name for name in names if name in bound and name in selected.exposed_tools
+                  and (not historical or name == WATER_QUALITY_HISTORY)))
         profile = assistant_profile(preset_id)
-        if transport == ToolModelTransport.STREAMING:
+        if candidate:
+            execution = resolve_normal_selection_candidate(profile,selected,registry,self.knowledge,
+                device_id=device_id,epoch=self.epoch,policy_revision=snapshot.revision,transport=transport)
+        elif historical:
+            execution = resolve_history_candidate(self._history_config,profile,selected,registry,
+                device_id=device_id,epoch=self.epoch,policy_revision=snapshot.revision,transport=transport)
+        elif transport == ToolModelTransport.STREAMING:
             execution = resolve_streaming(self._streaming_config,profile,selected,policy,registry,self.knowledge,
                                           device_id=device_id,epoch=self.epoch)
         else:
             execution = resolve_execution(self._execution_config,profile,selected,policy,registry,self.knowledge,
                                           device_id=device_id,epoch=self.epoch)
+        if not historical and not candidate and snapshot.source == 'MANAGEMENT_OVERRIDE':
+            execution = replace(execution,profile=replace(execution.profile, revision=_hash({
+                'execution_revision':execution.profile.revision,'management_policy_revision':snapshot.revision})))
         return profile, policy, execution, registry
 
     def bootstrap(self, device_id: str) -> dict:
         presets = []
+        snapshot = self.management_policy.snapshot()
         for identifier in PRESETS:
-            p, policy, execution, _registry = self._configuration(identifier, device_id)
-            _, _, streaming, _ = self._configuration(identifier, device_id,transport=ToolModelTransport.STREAMING)
+            p, policy, execution, _registry = self._configuration(identifier, device_id,policy_snapshot=snapshot)
+            _, _, streaming, _ = self._configuration(identifier, device_id,
+                transport=ToolModelTransport.STREAMING,policy_snapshot=snapshot)
             presets.append({"preset_id": identifier, "display_name": p.display_name.rsplit(" · ", 1)[0],
                 "runtime_type": p.provider_kind, "revision": execution.profile.revision,
                 "execution":execution.public(),"streaming":streaming.public()})
         default_execution = presets[0]['execution']
+        _, _, candidate, _ = self._configuration(PRESETS[0],device_id,
+            policy_snapshot=snapshot,execution_profile=HISTORY_PROFILE)
         return {**self.availability(), "epoch": self.epoch,
+                'history_candidate':{'execution_profile':HISTORY_PROFILE, 'preset_id':PRESETS[0],
+                    'enabled':self._history_config.enabled, 'tools':[WATER_QUALITY_HISTORY],**candidate.public()},
+                'policy_revision':snapshot.revision,
                 "device_id": device_id, "presets": presets, "default_preset_id": PRESETS[0],
                 "tools": list(policy.exposed_tools),
                 **{key:default_execution[key] for key in ('max_model_requests','max_tool_calls','max_tool_rounds')}}
 
     def prepare_turn(self, value: dict, *, transport=ToolModelTransport.NORMAL) -> PreparedAssistantTurn:
         allowed = {"preset_id", "question", "history", "conversation_id", "epoch", "device_id",
-                   "revision", "confirm_network"}
+                   "revision", "confirm_network", "execution_profile"}
         if not isinstance(value, dict) or set(value) - allowed:
             raise GatewayError("INVALID_ASSISTANT_REQUEST")
         if value.get("epoch") != self.epoch:
@@ -120,15 +178,23 @@ class ManagementAssistantService:
         turn = AssistantRequest.from_dict({k: v for k, v in value.items()
             if k in {"preset_id", "question", "history", "conversation_id"}})
         device_id = value.get("device_id")
-        profile, policy, execution, registry = self._configuration(turn.preset_id, device_id,transport=transport)
+        snapshot = self.management_policy.snapshot()
+        execution_profile = value.get('execution_profile')
+        profile, policy, execution, registry = self._configuration(turn.preset_id, device_id,transport=transport,
+            policy_snapshot=snapshot,execution_profile=execution_profile)
+        if execution_profile == HISTORY_PROFILE:
+            turn = replace(turn,source_requirement=SourceRequirement.HISTORICAL_WATER_QUERY)
         if value.get("confirm_network") is not True:
             raise GatewayError("NETWORK_CONFIRMATION_REQUIRED")
         if value.get("revision") != execution.profile.revision:
             raise GatewayError("ASSISTANT_EXECUTION_PROFILE_CHANGED")
         if not execution.can_send:
+            if execution_profile in (HISTORY_PROFILE, NORMAL_SELECTION_CANDIDATE):
+                raise GatewayError(execution.profile.mode_reason)
             raise GatewayError('ASSISTANT_STREAMING_NOT_RELEASED' if transport == ToolModelTransport.STREAMING
                                else 'ASSISTANT_MULTI_ROUND_SCOPE_MISMATCH')
-        return PreparedAssistantTurn(turn, device_id, self.epoch, profile, policy, registry, execution)
+        return PreparedAssistantTurn(turn, device_id, self.epoch, profile, policy, registry, execution,
+                                     snapshot.revision, snapshot.source)
 
     def execute_turn(self, prepared: PreparedAssistantTurn, handle: RequestHandle) -> dict:
         return self.claim_turn(prepared, handle)()
@@ -139,6 +205,10 @@ class ManagementAssistantService:
             raise GatewayError("INVALID_ASSISTANT_REQUEST")
         if prepared.epoch != self.epoch:
             raise GatewayError("ASSISTANT_SESSION_EXPIRED")
+        current = self.management_policy.snapshot()
+        if (current.source == 'MANAGEMENT_OVERRIDE' or prepared.policy_source == 'MANAGEMENT_OVERRIDE') \
+                and current.revision != prepared.policy_revision:
+            raise GatewayError('ASSISTANT_EXECUTION_PROFILE_CHANGED')
         if not prepared.execution.can_send:
             raise GatewayError('ASSISTANT_STREAMING_NOT_RELEASED' if
                 prepared.execution.model_transport == ToolModelTransport.STREAMING else 'ASSISTANT_MULTI_ROUND_SCOPE_MISMATCH')
@@ -167,7 +237,7 @@ class ManagementAssistantService:
                         and runtime.credential.status.availability != "PRESENT"):
                     raise GatewayError("SECRET_MISSING")
                 decision = prepared.execution
-                if decision.model_transport == ToolModelTransport.STREAMING:
+                if decision.max_output_tokens is not None:
                     runtime = replace(runtime,transport_output_token_limit=decision.max_output_tokens)
                 mode = decision.profile.mode
                 coordinator = ToolCallingService(self.gateway_factory(), registry, self.traces, policy=policy,

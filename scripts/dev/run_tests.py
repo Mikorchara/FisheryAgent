@@ -32,7 +32,8 @@ def build_suite(selection):
         suite = unittest.TestSuite(loader.discover(str(ROOT / group), top_level_dir=str(ROOT))
             for group in ("apps/ai_backend/tests", "apps/ai_service/runtime/tests"))
         suite.addTests(loader.loadTestsFromNames(tuple("apps.ai_service.tests." + name for name in (
-            "test_service", "test_execution", "test_streaming_config", "test_backend_migration", "test_business_tools"))))
+            "test_service", "test_execution", "test_streaming_config", "test_backend_migration", "test_business_tools",
+            "test_water_history_tool", "test_management_policy", "test_history_candidate", "test_normal_selection"))))
         return suite
     groups = PRODUCT_GROUPS if selection == "product" else (
         (*PRODUCT_GROUPS, "qualification") if selection == "all" else (selection,))
@@ -42,6 +43,8 @@ def build_suite(selection):
         suite.addTests(build_suite("backend"))
     if selection in ("qualification", "all"):
         suite.addTests(loader.loadTestsFromName("apps.ai_service.tests.test_streaming_qualification"))
+        suite.addTests(loader.loadTestsFromName("apps.ai_service.tests.test_history_qualification"))
+        suite.addTests(loader.loadTestsFromName("apps.ai_service.tests.test_history_batch"))
     return suite
 
 

@@ -5,7 +5,7 @@ R2C-1D后由正式ManagementAssistantService直接使用；通用执行由 [ai_b
 这里的 runtime 指业务 Assistant 合同，不是第二套通用 Runtime。Tool、Prompt、参数扩展步骤见 [开发指南](../../docs/AI_BACKEND_DEVELOPMENT_GUIDE.md)。不要在本目录添加 Gateway、Streaming Assembler 或新的执行循环。
 
 - `assistant.py`：原两版业务Prompt、History完整pair裁剪、Source/Trace Commit Gate。
-- `sources.py`：原Requirement/Receipt/Ledger，只从本轮新Backend执行步骤认证来源。
+- `sources.py`：Requirement/Receipt/Ledger，只从本轮新Backend执行步骤认证来源；历史操作及可靠历史观测独立于当前观测。
 - `activity.py`、`catalog.py`：固定安全摘要和显示metadata，委托Backend通用步骤投影。
 - `policy.py`：默认/用户 Tool 选择校验与安全存储，执行与实际绑定求交；评分项不丢失，不扩授权。参数 validator 由各 business_tools 模块声明，不在 Policy 中。
 - `presets.py`、`resources/`：固定Preset和默认Policy，自有资源，不读取Prototype发布合同。
@@ -16,6 +16,8 @@ R2C-1D后由正式ManagementAssistantService直接使用；通用执行由 [ai_b
 唯一业务 Service 装配位于 [service.py](../service.py)；PreparedTurn 在 [contracts.py](../contracts.py)，业务 Tool 统一由 [business_tools/registry.py](../business_tools/registry.py) 装配。水质 Definition / capture / DTO 在 [current_water_quality.py](../business_tools/current_water_quality.py)，Knowledge Definition / validator / Handler 在 [fishery_knowledge.py](../business_tools/fishery_knowledge.py)；评分只为 registry 中的已知 Policy 名称，无 Handler。管理发布文件由上一级 execution.py/streaming.py 加载。
 
 旧顶层 bindings.py 和本目录 tools.py 已移除，真实调用方迁到各 Tool owner / registry，不留 re-export/Alias；Policy、Receipt/Ledger、Activity/Catalog 和提交职责仍留本目录。
+
+R2D-1G 的 [历史 Tool](../business_tools/water_quality_history.py) 由 bind_tools(include_history=True) 显式装配，默认请求Registry仍仅两工具。history_execution.py 绑定Qwen OFF / Normal / 历史单工具 / 1024 / 1/1/2 / retry=0 / 120秒，local_experimental但默认关闭；`--assistant-history-trial`与管理Policy opt-in均必需。共享格式仍拒绝历史名称。管理HTTP只接受固定Profile及对应revision，不能指定预算；Service以同一Assistant/Executor和产品Adapter预算编码执行，不使用development Adapter。15个真实样本技术通过，回答质量未审、非released，见[资格与试用记录](../../docs/deep-dive/HISTORY_QUALIFICATION.md#9-r2d-1g真实批次通过与本地实验开放)。开发CLI保留独立关闭candidate计划，后续真实执行仍需新授权。
 
 同名文件要按层定位：顶层 execution.py 是 Normal 发布/Scope/revision，streaming.py 是 Streaming 发布/Scope；通用请求取消/Deadline 在 ai_backend/execution.py，HTTP SSE worker 在 management_web/streaming.py。顶层 contracts.py 是进程内 PreparedAssistantTurn / AssistantBackend 业务合同，不是 Web DTO。
 

@@ -2,11 +2,12 @@
 from apps.ai_backend.assistant_activity import _number, _timestamp, project_activity as _project_activity
 from apps.ai_backend.tool_argument_diagnostics import public_argument_diagnostic
 from .catalog import CATALOG, catalog_display
-from ..business_tools.registry import KNOWN_TOOL_NAMES
+from ..business_tools.registry import KNOWN_TOOL_NAMES, HISTORY_CANDIDATE_TOOL_NAMES
+from ..business_tools.water_quality_history import WATER_QUALITY_HISTORY, result_metadata as history_metadata
 
 def tool_summary(step):
     """Only labels and limited business metadata, never query, facts or evidence text."""
-    name = step.tool_name if step.tool_name in KNOWN_TOOL_NAMES else None
+    name = step.tool_name if step.tool_name in (*KNOWN_TOOL_NAMES, *HISTORY_CANDIDATE_TOOL_NAMES) else None
     result = step.result
     summary = {"used_tool": step.handler_started, "tool_name": name,
                "tool_status": result.status.value if result else None,
@@ -18,6 +19,20 @@ def tool_summary(step):
         if diagnostic is not None:
             summary["argument_diagnostic"] = diagnostic
         payload = result.payload
+        if name == WATER_QUALITY_HISTORY:
+            metadata = history_metadata(payload) if step.handler_started else None
+            if metadata is not None:
+                summary.update(source_type="historical_water", source_kind="simulator",
+                    history_range={"start": metadata["history_range_start"], "end": metadata["history_range_end"]},
+                    window_count=metadata["history_window_count"],
+                    reliable_windows=dict(metadata["history_reliable_windows"]),
+                    evaluated_at=metadata["evaluated_at"])
+                # Reuse the Backend's existing bounded display field. Generic
+                # Steps/polling need no new schema or raw history projection.
+                counts = ", ".join(f"{key}={count}" for key, count in metadata["history_reliable_windows"])
+                summary["display_summary"] = (f"历史水质 · simulator · {metadata['history_range_start']} → "
+                    f"{metadata['history_range_end']} · 可靠窗口 {counts}")
+            return summary
         water = payload.get("water_quality")
         water = water if isinstance(water, dict) else {}
         for key in ("quality", "freshness"):

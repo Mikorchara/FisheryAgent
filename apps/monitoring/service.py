@@ -10,6 +10,7 @@ from fishery_ai.telemetry.current import CurrentWaterQualityReader
 from .contracts import (METRICS, validate_batch, MetricObservation, MonitoringSnapshot, identifier,
                         water_metric_facts, FindingState, ChannelAnalysis, WaterCapture)
 from .analysis import DomainAnalysisService, reading_from_row
+from .history import validate_history_query, history_range, summarize_water_history
 
 
 def utcnow():
@@ -196,3 +197,11 @@ class MonitoringService:
             "source_kind": "simulator", "observed_at": row["observed_at"], "received_at": row["received_at"],
             "window": row["payload"]["window"], "summary": row["payload"]["data"]}
             for row in self.repository.history(device_id, channel)[-limit:]]
+
+    def query_water_history(self, device_id, *, lookback_minutes, metrics=tuple(METRICS)):
+        """Historical facts at one UTC query instant; never diagnose or update current."""
+        self._device(device_id)
+        keys = validate_history_query(lookback_minutes, metrics)
+        start, end = history_range(self.clock(), lookback_minutes)
+        rows = self.repository.query_water_history(device_id, start=start, end=end)
+        return summarize_water_history(rows, device_id=device_id, metrics=keys, start=start, end=end)

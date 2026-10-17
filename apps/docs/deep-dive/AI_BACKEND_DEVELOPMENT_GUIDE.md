@@ -1,6 +1,6 @@
 # AI Backend 与 Assistant 开发指南
 
-本指南用于管理平台的代码定位、扩展与验证。当前依赖为 `management_web → ai_service → ai_backend`。旧 `src/fishery_ai/` 是独立实验平台，不是管理 LLM 执行的底层。以下路径以仓库根目录为起点；代码示例仅为设计示例，本轮没有新增 Tool 或修改 Prompt。
+本指南用于管理平台的代码定位、扩展与验证。当前依赖为 `management_web → ai_service → ai_backend`。旧 `src/fishery_ai/` 是独立实验平台，不是管理 LLM 执行的底层。以下路径以仓库根目录为起点；示例不构成权限或真实请求授权。
 
 先读 [工程规则](../AGENTS.md)、[结构地图](STRUCTURE.md)；启动与数据接入见 [BUILD_RUN](BUILD_RUN.md)，数据合同见 [INTEGRATION](INTEGRATION.md)。迁移历史见 [R2C-1 记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。本指南不复制完整协议、Prompt 或发布 JSON。
 
@@ -78,84 +78,65 @@ flowchart TD
 | B：新增 Definition + Handler | 定义 Schema、严格 validator、绑定只读业务服务，并补来源/展示/测试 | 不自动默认授权，不自动取得某 Preset 的资格 |
 | C：纳入模型实验范围 | 维护者审核精确 Tool 集合、Identity、协议、Prompt、History、数据绑定与预算 | 不修改用户 Policy，不继承其他模型或旧组合的真实证据 |
 
-当前管理 Registry 只有水质查询与 Knowledge。评分名称只为旧 Policy 合法存储兼容保留，没有评分 Handler。内置默认只授权水质；Knowledge 必须 opt-in。用户现有文件优先于默认值，不应为了联调覆盖它。
+当前管理默认请求 Registry 只有水质查询与 Knowledge。评分名称只为旧 Policy 合法存储兼容保留，没有评分 Handler。内置默认只授权水质；Knowledge 必须 opt-in。用户现有文件优先于默认值，不应为了联调覆盖它。
 
-### 2.2 准确修改地图：假想“历史水质查询”
+历史水质Tool已完成15个真实样本技术验证，获用户批准为local_experimental、默认关闭。默认请求Registry仍只有上述两项；单独formal/per-Turn Registry包含历史定义，只有服务器绑定的Qwen Normal历史查询操作暴露它。共享Policy仍拒绝历史名称；管理设置opt-in与`--assistant-history-trial`分别必需，不能从旧Tool Manager写入或扩大两工具Scope。操作见[BUILD_RUN](BUILD_RUN.md#r2d-1g历史水质单工具本地试用)。
 
-假想名称 `get_water_quality_history`，**尚未实现**。建议按以下顺序审查/修改；不是要求每次都改全部文件。
+### 2.2 准确修改地图：历史候选与后续新 Tool
+
+`get_water_quality_history` 已有默认关闭的独立本地试用范围。以下地图也适用于后续新Tool；不是要求每次都改全部文件。
+
+普通聊天不选择技术性执行Profile。过渡期通过「历史查询」快捷操作，在下一条消息提交 `action="history_query"`，Web薄适配映射到服务器内部历史范围；成功后恢复普通提问，History保留。页面不能提交 `execution_profile` 或预算。历史在Streaming不可用时须由用户主动切Normal。三工具统一Normal候选见 [normal_selection.py](../ai_service/normal_selection.py) 与 [固定Scope](../ai_service/resources/assistant_normal_candidate.json)，始终candidate且产品禁止准入，不继承已有两工具/历史单工具的真实资格。后续新工具的“授权”“装配”“精确范围发布”仍分别校验。
 
 | 顺序 | 当前文件 / 入口 | 需要考虑的改动 |
 |---|---|---|
-| 1 | [monitoring/service.py](../monitoring/service.py) `MonitoringService.history(device_id, channel, limit=None)` | 已有历史读取可复用；若需要历史质量/Findings/趋势判断，先在 Monitoring 增加统一业务入口，不在 Handler/前端复制规则 |
-| 2 | 拟新增 `business_tools/water_quality_history.py`；参考 [水质模块](../ai_service/business_tools/current_water_quality.py)、[Knowledge 模块](../ai_service/business_tools/fishery_knowledge.py) | 同一模块放新名称、Definition/Schema、专用 validator、Handler、有限 DTO/绑定版本；Knowledge 的 validate_arguments 只校验 query，不复用为历史参数校验 |
-| 3 | [business_tools/registry.py](../ai_service/business_tools/registry.py) `bind_tools()`、`KNOWN_TOOL_NAMES` | 显式加入新 Tool；初始 formal Registry 与每 Turn Registry 定义一致。设备来自服务器冻结上下文，不来自模型参数 |
-| 4 | [runtime/policy.py](../ai_service/runtime/policy.py)、[tool_policies.json](../ai_service/runtime/resources/tool_policies.json) | 已知名称使配置可解析；新 Tool 默认关闭。确认配置大小/数量约束，不擅自写用户 Policy |
-| 5 | [runtime/sources.py](../ai_service/runtime/sources.py) | 决定是否需历史来源类型/Requirement；明确 schema/status 校验。当前只识别三种既有来源，未知 Tool 不自动取得正向 Receipt |
+| 1 | [monitoring/service.py](../monitoring/service.py) `query_water_history(device_id, *, lookback_minutes, metrics)` | 真实时间范围与统计已实现；旧 history(limit) 仍只返回最后 N 条，不作为该 Tool 的时间查询入口 |
+| 2 | [历史模块](../ai_service/business_tools/water_quality_history.py)；参考 [水质模块](../ai_service/business_tools/current_water_quality.py)、[Knowledge 模块](../ai_service/business_tools/fishery_knowledge.py) | Definition/Schema、strict validator、单次委托 Handler、有限结果元数据校验；不复制统计或检索逻辑 |
+| 3 | [business_tools/registry.py](../ai_service/business_tools/registry.py) `bind_tools(..., include_history=True)` | 默认两工具与单独历史候选分别装配；formal 与 per-Turn 必须一致。设备来自服务器冻结上下文，不来自模型参数 |
+| 4 | [management_policy.py](../ai_service/management_policy.py)、[runtime/policy.py](../ai_service/runtime/policy.py) | 管理独立文件支持历史 opt-in；缺省只读继承共享选择。旧 KNOWN_TOOL_NAMES/共享文件保持不变，不能把历史名称写入旧 Tool Manager |
+| 5 | [runtime/sources.py](../ai_service/runtime/sources.py) | HISTORICAL_WATER_QUERY 与 HISTORICAL_WATER_OBSERVATIONS 已独立实现；未知 Tool 不自动获得来源 |
 | 6 | [runtime/catalog.py](../ai_service/runtime/catalog.py)、[runtime/activity.py](../ai_service/runtime/activity.py) | 名称、短摘要、有限时间/状态/计数；不能把历史记录全文或参数放进 Activity |
 | 7 | [service.py](../ai_service/service.py) `local()`、`_configuration()` | `JsonlTraceSink(tool_names=...)` 的固定名单要同步；执行授权仍与实际装配求交 |
-| 8 | [execution.py](../ai_service/execution.py)、[streaming.py](../ai_service/streaming.py) 与各自资源 JSON | 检查是否需要新的数据绑定版本/精确组合。Streaming 当前还有固定 `STREAMING_TOOLS` 限制，不能只往 JSON 加名称 |
+| 8 | [execution.py](../ai_service/execution.py)、[streaming.py](../ai_service/streaming.py)、[history_execution.py](../ai_service/history_execution.py) 与资源 JSON | 历史Profile绑定独立Normal单工具Scope、local_experimental默认关闭；新工具仍从candidate开始，不得继承资格。检查数据绑定、预算与revision。Streaming仍有固定STREAMING_TOOLS限制，不能只往JSON加名称 |
 | 9 | [release_contracts.py](../ai_service/runtime/release_contracts.py)、[streaming_contracts.py](../ai_service/runtime/streaming_contracts.py) | 通常只使用已有 hash/Scope 计算，不为加 Tool 放宽匹配器；不同语义的 Scope 扩展须另审 |
 | 10 | [业务测试](../ai_service/runtime/tests/test_foundation.py)、[HTTP测试](../management_web/tests/test_knowledge.py)、[资格入口](../ai_service/development/streaming_qualification.py) | 补新增 Tool 的离线单元/API/来源测试；现有管理资格仅三固定案例，不是任意新 Tool 的通用授权器 |
 
-`business_tools/registry.py::bind_tools(..., formal=...)` 是唯一业务 Registry 装配入口：当前只重绑水质 Handler，Knowledge 保留 formal entry 和共享 KnowledgeService。新 Tool 不能只添加到启动时 Registry；每 Turn 的重绑也要保留它，并让 definitions 来自同一个 formal owner。否则可能“启动可见、实际不可执行”。
+`business_tools/registry.py::bind_tools(..., formal=...)` 是唯一业务 Registry 装配入口：默认只重绑水质 Handler，Knowledge 保留 formal entry 和共享 KnowledgeService。历史候选同时重绑该设备的历史 Handler，formal / per-Turn 都必须显式 include_history=True。不能只改启动时 Registry，也不能把候选 formal 传给默认装配；Definition 始终来自同一个 formal owner。
 
 `business_tools/__init__.py` 不 re-export 工具或工厂。旧 runtime/tools.py 与顶层 bindings.py 已移除，不提供 Alias/兼容入口；调用方直接导入工具 owner 或统一 registry。`WATER_QUALITY_SCORE` 和 `KNOWN_TOOL_NAMES` 位于 registry.py，评分只用于合法存储名称校验，没有 Definition/Handler。
 
-### 2.3 Definition 与校验的最小示例
+### 2.3 离线候选装配示例
 
-以下是未来可放入拟新增 `business_tools/water_quality_history.py` 的示意片段，不注册、不执行、不授予权限：
-
-```python
-from apps.ai_backend.model_gateway import ModelToolDefinition
-
-HISTORY_NAME = "get_water_quality_history"
-HISTORY_DEFINITION = ModelToolDefinition(
-    name=HISTORY_NAME,
-    description=("只读查询绑定设备的历史水质窗口；用于回顾过去记录。"
-                 "结果不是本轮当前观测，不能证明当前状态或恢复正常。"),
-    parameters={
-        "type": "object",
-        "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 12}},
-        "required": ["limit"],
-        "additionalProperties": False,
-    },
-)
-
-def validate_history_arguments(arguments):
-    if not isinstance(arguments, dict) or set(arguments) != {"limit"}:
-        raise ValueError("invalid history arguments")
-    limit = arguments["limit"]
-    if type(limit) is not int or not 1 <= limit <= 12:
-        raise ValueError("invalid history limit")
-    return {"limit": limit}
-```
-
-Schema 给模型说明参数；**Executor 没有运行通用 JSON Schema 引擎**，它校验有界 JSON/object，再调用 `ToolDefinition.validate_arguments`。因此必须有上述服务端 validator；`bool` 是 Python 的 int 子类，不能用 `isinstance(limit, int)` 接受它。
-
-有参数的 `ToolDefinition` 把规范化 dict 作为 Handler 的一个位置参数；无 validator 的现有水质 Tool 只允许 `{}`，执行零参数 Handler。以下片段用于未来 registry.py 的 bind_tools 内部：history 指拟新增模块，monitoring/device_id 都是服务器已冻结的对象，不是 Web/模型指定的可执行代码：
+历史 Tool 的真实 Schema / validator 位于 [water_quality_history.py](../ai_service/business_tools/water_quality_history.py)，不再使用旧指南的 limit 示例：时间范围必须是 lookback_minutes=10/30/60。metrics 可省略；模型 JSON 中指定时必须为不重复的已知指标列表。归一化复用 Monitoring 的参数校验，bool、float、数值字符串和额外字段拒绝。
 
 ```python
-from functools import partial
-from apps.ai_backend.tools import ToolDefinition
+from apps.ai_service.business_tools.registry import bind_tools, HISTORY_CANDIDATE_TOOL_NAMES
+from apps.ai_service.business_tools.water_quality_history import WATER_QUALITY_HISTORY
+from apps.ai_backend.tools.policy import ToolPolicy
+from apps.ai_backend.observability import JsonlTraceSink
 
-history_entry = ToolDefinition(
-    history.HISTORY_DEFINITION,
-    partial(history.history_payload, monitoring=monitoring, device_id=device_id),
-    validate_arguments=history.validate_history_arguments,
+# 仅使用测试的 Monitoring / Knowledge、临时 SQLite 与临时 Trace 路径。
+formal = bind_tools(monitoring, device_id, knowledge, include_history=True)
+turn_registry = bind_tools(
+    monitoring, device_id, knowledge, formal=formal, include_history=True,
 )
+policy = ToolPolicy("assistant", True, (WATER_QUALITY_HISTORY,))
+traces = JsonlTraceSink(test_trace_path, tool_names=HISTORY_CANDIDATE_TOOL_NAMES)
 ```
 
-拟新增 Handler 的签名可为 `history_payload(arguments, *, monitoring, device_id)`，调用现有 `monitoring.history(device_id, "water", limit=arguments["limit"])`；当前返回包含 batch/device/session、source_kind、observed_at/received_at、window、summary。必须显式投影需要的指标、单位、有效/无效样本数、窗口语义与时间；不要直接把全部 Web history DTO 交给 LLM。`limit` 也不得超过服务器现有 history_limit。示例模块/Handler 尚未实现。
+这段只创建内存对象，不运行模型、不修改用户 Policy、不获得发布资格。正式 ManagementAssistantService 没有真实候选执行开关，普通请求仍使用两工具装配；候选 Registry 独立保存。真实候选实验须另行批准。
 
-只是读取有限历史窗口时，不必新增领域框架；需要“趋势恶化”“恢复”等判断时，应先补 Monitoring 的确定性领域服务/测试，再绑定结果。历史中没有有效样本就返回缺失，不能填零；历史时间范围不能冒充当前 freshness。重复/跨 Session/缺口处理沿用 Monitoring，不在 AI 层另写 SQLite 查询。
+Schema 用于模型说明；Executor 校验有界 JSON/object 后调用 ToolDefinition.validate_arguments，不运行通用 JSON Schema 引擎。有参数 Handler 接收归一化 dict，再经服务器绑定的 device_id 调用 MonitoringService.query_water_history()，原样返回 Monitoring 的有界统计 DTO，不直接读库或重新诊断。
+
+历史范围、统计、质量、边界覆盖和 720/12/24 KiB 预算见 [集成合同](INTEGRATION.md)。result_metadata() 只校验用于 Receipt/Activity 的有限合同与一致性，不重算统计。持续低氧、恢复等仍为 NOT_EVALUATED。
 
 ### 2.4 来源、展示与实验授权
 
-- 历史查询不能满足 `CURRENT_OBSERVATION_QUERY`，也不能认证 `CURRENT_TOOL_OBSERVATION`。若未来需要历史查询 Requirement，先设计其语义和独立消费者，再扩展 Receipt/Gate；不能借现有 enum 偷换成当前来源。
-- `NO_DATA` / `NO_MATCH` 不是同一种结果：前者是没有观测，后者是检索完成无命中。operation completed 与 payload exists 分开判断。当前 water Tool 的 `OK` 仍可能是 INVALID/PARTIAL/STALE，须读取质量与时间。
+- `HISTORICAL_WATER_QUERY` 要求真实历史操作完成，合法 NO_DATA / PARTIAL 也可满足；`HISTORICAL_WATER_OBSERVATIONS` 另行认证实际可靠指标。历史不能满足 `CURRENT_OBSERVATION_QUERY`，也不能认证 `CURRENT_TOOL_OBSERVATION`。产品默认仍 AUTO，无自然语言路由。
+- `NO_DATA` / `NO_MATCH` 不是同一种结果：前者是当前查询无快照或历史查询无完整匹配窗口，后者是检索完成无命中。operation completed 与 payload exists 分开判断。当前 water Tool 的 `OK` 仍可能是 INVALID/PARTIAL/STALE，须读取质量与时间。
 - Ledger 从本轮真实 ToolExecutionStep 产生；History、模型正文中的“我查询了”不能产生 Receipt。新 Tool 未被来源解析器认可时，不应为显示好看伪造来源。
 - Catalog 是人类显示 metadata；真正发给模型的是 Registry 的 `ModelToolDefinition.description/parameters`。更新 Catalog 不会改变模型请求、注册或权限。
-- 当前管理页没有独立 Tool Policy 编辑器；既有 Tool 可由 Prototype Tool Manager 修改共享选择文件。新名称不会自动被旧编辑器接受，且可能影响它对共享文件的解析。新增 Tool 前须单独决定管理 Policy 编辑/存储边界，不能顺便扩展旧 Prototype 或覆盖用户文件。
+- 管理页「系统设置 → Assistant Tool 授权」通过独立 API 保存完整管理选择。未保存覆盖前只读继承共享选择；保存后旧 Prototype Tool Manager 继续只管理原共享文件。新名称只进入管理端已知名单，不扩展旧编辑器、不自动装配、不自动发布。
 - 加入已开放的模型范围是独立审批：Tool 名称/顺序/description/Schema、绑定版本都参与精确匹配。先形成 candidate 和离线证据；真实实验必须逐案例批准，技术 PASS、人工质量审核、local_experimental 与 released 分别记录。
 
 ## 3. 修改 Assistant Prompt
@@ -282,7 +263,7 @@ READ ONLY 是受审查的业务 Handler 合同；Executor 不会沙箱化任意 
 node --test apps/management_web/tests/*.test.mjs
 ```
 
-范围较大或执行合同改变时运行 `python scripts/dev/run_tests.py product`（正式产品测试，含 Backend）；管理 HTTP/前端仍应显式跑上述 apps 测试，不能假设根 product 覆盖全部管理页面。只有 qualification 基础设施受影响时再运行 `python scripts/dev/run_tests.py qualification`；单跑管理资格可用 `python -m unittest apps.ai_service.tests.test_streaming_qualification`。全部保持离线 Fake，使用临时数据和虚构凭据。
+范围较大或执行合同改变时运行 `python scripts/dev/run_tests.py product`（正式产品测试，含 Backend）；管理 HTTP/前端仍应显式跑上述 apps 测试，不能假设根 product 覆盖全部管理页面。只有 qualification 基础设施受影响时再运行 `python scripts/dev/run_tests.py qualification`；单跑管理资格可用 `python -m unittest apps.ai_service.tests.test_streaming_qualification apps.ai_service.tests.test_history_qualification`。全部保持离线 Fake，使用临时数据和虚构凭据。
 
 现有无网络计划检查命令：
 
@@ -308,3 +289,11 @@ node --test apps/management_web/tests/*.test.mjs
 - 单/多轮 System 的字符串替换耦合、共享 Policy 编辑边界、新 Tool 的来源类型，需要在相关扩展任务中明确处理，本轮不重构。
 - Monitoring/Knowledge 仍引用旧领域包；Backend 本身禁止反向导入这些业务。独立领域迁移另立任务。
 - 精确资格与历史差分测试各有版本基线；技术 PASS、基本网页人工验收、回答质量审核和产品发布是不同证据，不自动互相继承。
+
+## 管理端 Tool 授权与历史候选
+
+[management_policy.py](../ai_service/management_policy.py) 是管理 Assistant 的授权 owner；`runtime/policy.py` 保留共享旧格式与缺省选择。不存在管理覆盖文件时只读继承，不创建目录/文件；首次明确保存时才独立持有完整选择。设置入口、并发与撤销语义见 [运行说明](BUILD_RUN.md#管理端-tool-授权与历史候选r2d-1d)，合同见 [集成说明](INTEGRATION.md#历史-tool-授权与候选边界r2d-1d)。
+
+新增 Tool 必须分别完成：业务 Definition/Handler 装配、用户 Policy 授权、维护者精确 Scope 发布。历史候选仅允许 Qwen OFF / Normal / 历史单工具 / 1/1/2；Web 仍没有真实执行开关；已建立独立的历史单案例资格 CLI，默认 Dry-run，需逐案例新批准，不能复用 Streaming 三案例授权。既有两工具 Scope 和定义不变；管理授权保存会有意更新联网确认 revision。
+
+历史资格使用 [history_qualification.py](../ai_service/development/history_qualification.py) 与 [操作说明](deep-dive/HISTORY_QUALIFICATION.md)：只复用正式单轮 Assistant、冻结设备/Policy 和同一 Tool 循环。计划绑定数据集 hash、Source/Monitoring 版本、Schema、Prompt/History 与 1/1/2；真实技术结果、人工回答审核和 Web 发布分别审批。

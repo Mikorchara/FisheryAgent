@@ -2,11 +2,13 @@ import {el,icon,card,badge,empty,button,link,rows,metricCards,metadata,table,tre
 import {routes,routeFor,timeText,filterItems,validateBootstrap,qualityNames,freshnessNames,sourceName,connectionName,eventState,eventStateName,eventSeverityName} from './view-model.js';
 import {services} from './services.js';
 import {createAssistantWorkspace} from './assistant.js';
+import {createToolPolicySettings} from './tool-policy.js';
 
 const $=id=>document.getElementById(id);
 const state={data:null,device:'demo-a',view:'available',metric:'dissolved_oxygen_mg_l',trendRange:'1800',camera:'demo-camera-a',
   eventFilters:{q:'',severity:'',status:''},fileFilters:{q:'',category:''},settings:'devices',draft:'',revision:0};
 const assistantWorkspace=createAssistantWorkspace(services.ai,{onDevice:id=>{state.device=id;void changeMonitoring();}});
+const toolPolicySettings=createToolPolicySettings(services.ai,{onSaved:()=>assistantWorkspace.policyChanged()});
 const severity=item=>badge(eventSeverityName(item),item.severity==='critical'?'critical':item.severity==='warning'?'warning':'neutral');
 const status=item=>badge(item.source_kind==='simulator'?eventStateName(item):(item.status==='pending'?'待处理（演示）':'已处理（演示）'),eventState(item)==='RESOLVED'?'neutral':'warning');
 
@@ -98,11 +100,11 @@ function knowledge(){const filters=state.fileFilters;const list=()=>table(['文�
     el('div',{class:'filters'},[search('搜索资料',filters.q,v=>{filters.q=v;update();}),select('分类',[['','全部分类'],['养殖资料','养殖资料'],['设备说明','设备说明']],filters.category,v=>{filters.category=v;update();}),
       el('button',{class:'button secondary',disabled:'disabled',text:'上传文件 · 未实现'})]),card('资料列表','演示条目不对应可下载文件。',[body])];}
 
-function settings(){const sections=[['devices','设备与数据源','设备通信、数据库与来源映射由服务适配器提供。'],['models','AI 模型配置','模型、凭据和执行合同继续由现有 AI Runtime 负责。'],
+function settings(){const sections=[['devices','设备与数据源','设备通信、数据库与来源映射由服务适配器提供。'],['tools','Assistant Tool 授权','本机开发授权，与模型发布许可分别校验。'],['models','AI 模型配置','模型、凭据和执行合同继续由现有 AI Runtime 负责。'],
   ['rules','告警规则','尚未接入管理配置，不在网页中复制或修改诊断阈值。'],['users','用户与权限','未实现身份认证、账户或角色授权。'],['system','系统信息','R1 · Flask + 原生 ES Modules · 独立本地应用。']];
   const selected=sections.find(s=>s[0]===state.settings);
   return [el('div',{class:'settings-layout'},[el('div',{class:'card settings-nav'},sections.map(([id,label])=>button(label,()=>{state.settings=id;render();},state.settings===id?'selected':'text'))),
-    card(selected[1],'管理员配置区域',[el('p',{class:'settings-description',text:selected[2]}),badge('只读 / 尚未接入','neutral'),rows([['认证状态','未启用'],['配置保存','不可用'],['生产连接','未接入']]),
+    state.settings==='tools'?card(selected[1],'本机开发配置',[toolPolicySettings.mount()]):card(selected[1],'管理员配置区域',[el('p',{class:'settings-description',text:selected[2]}),badge('只读 / 尚未接入','neutral'),rows([['认证状态','未启用'],['配置保存','不可用'],['生产连接','未接入']]),
       el('button',{class:'button secondary',disabled:'disabled',text:'配置操作尚未开放'})])]),
     card('开发者功能','不属于管理员生产权限。',[el('p',{class:'muted',text:'当前只有独立 Demo 视图。原 Prototype 的模型验证、Tool Trace 和实验界面继续留在开发应用，不作为管理后台权限系统。'})])];}
 

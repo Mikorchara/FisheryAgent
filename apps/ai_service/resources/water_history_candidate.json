@@ -1,0 +1,60 @@
+{
+  "status": "local_experimental",
+  "enabled": false,
+  "scope": {
+    "runtime": {
+      "preset_id": "dashscope-qwen38-flash-r1",
+      "preset_variant": "off",
+      "contract_version": "1.0.2",
+      "identity": [
+        "dashscope",
+        "openai_chat",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "qwen3.8-flash"
+      ],
+      "protocol_spec": {
+        "spec_id": "dashscope_chat",
+        "version": "1",
+        "max_output_tokens_field": "max_tokens",
+        "thinking_encoding": "enable_thinking",
+        "effort_field": "reasoning_effort",
+        "stream_field": "stream",
+        "usage_options_field": "stream_options"
+      },
+      "thinking": "off",
+      "response_mode": "normal",
+      "prompt_id": "ASSISTANT_V2@1",
+      "prompt_sha256": "4452b6353dd3a20d34e0c2d741601ebdcfb155427e49245dcf48ac64ed8b60e8",
+      "history_projection": "UNTRUSTED_TRANSCRIPT_V1",
+      "history_version": "1",
+      "tools": [
+        "get_water_quality_history"
+      ],
+      "tool_definitions_sha256": "2276bc068095c9cf5b23d08bf5ccf4d7520e9d6b685be69a823408529e6533ad"
+    },
+    "transport": "NORMAL",
+    "history_framing_sha256": "4f81ca3cb5d86125435bb263fbd182b97ed4f7307855ba48687532281964259b",
+    "generation": {
+      "max_output_tokens": null,
+      "temperature": null,
+      "top_p": null
+    },
+    "data_binding": {
+      "version": "management-water-history@1",
+      "device": "FROZEN_PER_TURN",
+      "max_rows": 720,
+      "max_items": 12,
+      "max_result_bytes": 24576
+    },
+    "source_version": "historical-water-receipt@1",
+    "requirement": "HISTORICAL_WATER_QUERY",
+    "budget": {
+      "calls": 1,
+      "rounds": 1,
+      "requests": 2,
+      "retry": 0,
+      "deadline_s": 120,
+      "max_output_tokens": 1024
+    }
+  }
+}

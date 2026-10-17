@@ -33,3 +33,8 @@ main{max-width:1640px;margin:0 auto;padding:31px 36px 20px}.page-heading{display
 .latest-message{margin-right:auto}.latest-message[hidden]{display:none}
 .management-assistant .side-stack{min-width:0}.management-assistant .data-details{overflow-wrap:anywhere}
 @media(max-width:760px){.management-assistant .chat-shell{height:calc(100dvh - 120px);min-height:660px}.chat-lane{grid-template-columns:minmax(0,1fr) 36px}.assistant-controls .field{min-width:130px}}
+
+/* Keep admission reasons visible, including when narrow controls wrap. */
+.management-assistant .chat-shell{display:grid;grid-template-rows:auto minmax(160px,1fr) auto;min-height:min-content}
+.management-assistant .chat-composer .actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.management-assistant .chat-composer .notice{font-size:12px;line-height:1.75;overflow-wrap:anywhere;background:#fff8ed;color:#80501f;padding:8px 10px;border-radius:6px;margin:6px 0}

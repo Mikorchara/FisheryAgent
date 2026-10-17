@@ -11,6 +11,28 @@ from apps.ai_backend.protocol_specs import protocol_for
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_normal_transport_cost_ceiling_does_not_grant_capability_or_expand_streaming(self):
+        p = replace(self.profile('dashscope', 'qwen3.8-flash'), max_retries=0)
+        runtime = ProfileRegistry([p]).snapshot('test', {})
+        request = ModelRequest(Mode.CHAT, ())
+        bounded = replace(runtime, transport_output_token_limit=1024)
+        body = OpenAICompatibleAdapter._kwargs(request, bounded, stream=False)
+        self.assertEqual(body['max_tokens'], 1024)
+        self.assertNotIn('stream', body)
+        self.assertEqual(bounded.capabilities.max_output_tokens, Support.UNKNOWN)
+        self.assertNotIn('max_tokens', OpenAICompatibleAdapter._kwargs(request, runtime, stream=False))
+        for value in (True, False, 0, -1, 1025, 1024.0, '1024'):
+            with self.subTest(value=value), self.assertRaisesRegex(GatewayError, 'INVALID_NORMAL_OUTPUT_BUDGET'):
+                OpenAICompatibleAdapter._kwargs(request, replace(runtime, transport_output_token_limit=value), stream=False)
+        with self.assertRaisesRegex(GatewayError, 'INVALID_NORMAL_OUTPUT_BUDGET'):
+            OpenAICompatibleAdapter._kwargs(request, replace(bounded, max_retries=1), stream=False)
+        supported = replace(bounded, capabilities=replace(bounded.capabilities, streaming=Support.SUPPORTED))
+        with self.assertRaisesRegex(GatewayError, 'INVALID_STREAMING_OUTPUT_BUDGET'):
+            OpenAICompatibleAdapter._kwargs(request, supported, stream=True, _assemble_tools=True)
+        limited = replace(bounded, capabilities=replace(bounded.capabilities, max_output_tokens=Support.SUPPORTED))
+        self.assertEqual(OpenAICompatibleAdapter._kwargs(replace(request,
+            generation=GenerationOptions(max_output_tokens=128)), limited, stream=False)['max_tokens'], 128)
+
     def profile(self, service, model, adapter="openai_chat"):
         return ModelProfile("test", "Test", "local", "http://localhost:8000/v1", model,
             service_id=service, provider_id="custom", adapter_id=adapter)

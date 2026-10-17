@@ -7,8 +7,10 @@ from pathlib import Path
 import sqlite3
 from threading import RLock
 
-from .contracts import IngestionError, ChannelAnalysis
+from .contracts import IngestionError, ChannelAnalysis, strict_json
 from .events import EventService
+from .history import (HistoryQueryError, MAX_HISTORY_ROWS, MAX_HISTORY_ROW_BYTES,
+                      validate_history_range)
 
 
 class MonitoringRepository:
@@ -144,6 +146,38 @@ class MonitoringRepository:
     def history(self, device_id, channel):
         with self.connection() as db:
             return self._history(db, device_id, channel)
+
+    def query_water_history(self, device_id, *, start, end):
+        """One indexed read transaction, with a sentinel instead of silent truncation."""
+        start, end = validate_history_range(start, end)
+        try:
+            with self.connection() as db:
+                db.execute("BEGIN")
+                rows = db.execute("""SELECT h.batch_id,h.device_id,h.channel,h.observed_at,h.received_at,
+                    b.session_id,b.device_id AS session_device_id,length(CAST(h.payload AS BLOB)) AS payload_bytes,
+                    CASE WHEN length(CAST(h.payload AS BLOB))<=? THEN h.payload END AS payload
+                    FROM history h LEFT JOIN batches b ON h.batch_id=b.batch_id
+                    WHERE h.device_id=? AND h.channel='water' AND h.observed_at>? AND h.observed_at<=?
+                    ORDER BY h.observed_at,h.received_at,h.batch_id LIMIT ?""",
+                    (MAX_HISTORY_ROW_BYTES, device_id, start.isoformat(), end.isoformat(), MAX_HISTORY_ROWS + 1)).fetchall()
+                if len(rows) > MAX_HISTORY_ROWS:
+                    raise HistoryQueryError("HISTORY_QUERY_BUDGET_EXCEEDED")
+                result = []
+                for row in rows:
+                    item = dict(row)
+                    if item.pop("session_device_id") not in (None, device_id) or type(item["payload_bytes"]) is not int:
+                        raise HistoryQueryError("HISTORY_RECORD_INVALID")
+                    if item["payload_bytes"] > MAX_HISTORY_ROW_BYTES:
+                        raise HistoryQueryError("HISTORY_RECORD_TOO_LARGE")
+                    try:
+                        item["payload"] = strict_json(item["payload"])
+                    except (ValueError, TypeError):
+                        raise HistoryQueryError("HISTORY_RECORD_INVALID") from None
+                    item.pop("payload_bytes")
+                    result.append(item)
+                return result
+        except sqlite3.Error:
+            raise HistoryQueryError("HISTORY_STORAGE_ERROR") from None
 
     def _history(self, db, device_id, channel):
         # Session metadata is read-only and optional for legacy/pruned batch records.

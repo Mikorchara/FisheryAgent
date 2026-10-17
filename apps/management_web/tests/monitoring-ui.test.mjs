@@ -29,7 +29,7 @@ function page(data=fixture()){
     window:{addEventListener:(type,fn)=>events[type]=fn,scrollTo:()=>{}},
     setInterval:(fn,ms)=>{timers.push({fn,ms});return timers.length;},clearInterval:()=>{},
     fetch:async url=>{requests.push(url);if(current instanceof Error)throw current;return {ok:true,json:async()=>structuredClone(current)};}});
-  for(const file of ['view-model.js','components.js','assistant-events.js','services.js','assistant.js','app.js']){
+  for(const file of ['view-model.js','components.js','assistant-events.js','services.js','assistant.js','tool-policy.js','app.js']){
     let source=fs.readFileSync(new URL('../static/'+file,import.meta.url),'utf8');
     source=source.replace(/^import .*;\s*$/gm,'').replace(/\bexport /g,'');
     vm.runInContext(source,context,{filename:file});
@@ -105,6 +105,9 @@ test('seven pages remain navigable; only text renders and AI stays disabled',asy
   p.run("location.hash='#events';render()");assert.match(p.node('content').textContent,/<script>fake\(\)<\/script>/);
   assert.equal(p.context.fake,undefined);
   p.run("location.hash='#assistant';render()");assert.match(p.node('content').textContent,/发送 · 尚未接入/);
+  p.run("location.hash='#settings';state.settings='tools';render()");await p.ready();
+  assert.match(p.node('content').textContent,/勾选历史不将其加入原两工具组合/);
+  assert.match(p.node('content').textContent,/授权配置读取失败/);
 });
 
 test('event lifecycle and critical severity are distinct from data quality and human handling',async()=>{

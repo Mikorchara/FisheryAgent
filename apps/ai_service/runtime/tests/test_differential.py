@@ -72,7 +72,11 @@ class DifferentialTests(unittest.TestCase):
         profile=a.assistant_profile(fixture.QWEN)
         cred=load(side,'credentials').CredentialStore(process_env={profile.credential_ref:'fictional-diff-key'})
         runtime=g.ProfileRegistry([profile],cred).snapshot(profile.profile_id)
-        runtime=replace(runtime,transport_output_token_limit=512)
+        # The old product only applied this cost override to Tool Streaming.
+        # Normal migration parity must exercise its real, unbounded-default path,
+        # rather than comparing two INVALID_STREAMING_OUTPUT_BUDGET preflights.
+        if transport=='STREAMING':
+            runtime=replace(runtime,transport_output_token_limit=512)
         sdk=FakeSDK(plans,model=profile.model)
         adapter=load(side,'openai_compatible_adapter').OpenAICompatibleAdapter(async_client_factory=sdk.factory)
         traces=trace.JsonlTraceSink(self.root/(side+'.jsonl'),**({} if side=='old' else {'tool_names':(fixture.WATER,fixture.KNOWLEDGE)}))
@@ -82,6 +86,7 @@ class DifferentialTests(unittest.TestCase):
         request=a.AssistantRequest(fixture.QWEN,'固定迁移输入',(a.AssistantHistoryTurn('旧问题','旧答案',fixture.STAMP),))
         with execution.request_scope(h):
             result=a.AssistantService(coordinator,execution_mode=c.ToolExecutionMode(mode)).send(request,runtime)
+        self.assertGreaterEqual(len(sdk.bodies),1,'parity must exercise the SDK, not just matching preflight failures')
         return {'bodies':sdk.bodies,'dto':stable(result.to_dict()),'ledger':result.source_ledger.to_dict(),
             'steps':stable([asdict(s) for s in result.execution.steps]),'closed':[client.closed for client in sdk.clients],
             'handle':stable(h.public_info())}
