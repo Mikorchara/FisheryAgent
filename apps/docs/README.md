@@ -1,11 +1,12 @@
 # 智慧渔业管理平台文档
 
-`apps/docs/` 是管理平台主要入口。已实现统一监测 / Domain Analysis / Events、Normal Assistant 和可显式启用的 Qwen 两工具 Streaming 本地实验。管理 AI 依赖为 `management_web → ai_service → ai_backend`；R2C-1 主要迁移及基本真实网页人工验收已完成。旧 `src/fishery_ai/` 保留独立实验 Runtime；Monitoring/Knowledge 暂留的旧领域依赖另行处理。监测风险规则全部为 PROTOTYPE，未获得生产批准。
+`apps/docs/` 是管理平台主要入口。已实现统一监测 / Domain Analysis / Events、Normal Assistant 和可显式启用的 Qwen 三工具 Normal/Streaming 本地实验（保留原两工具范围）。管理 AI 依赖为 `management_web → ai_service → ai_backend`；R2C-1 主要迁移及基本真实网页人工验收已完成。旧 `src/fishery_ai/` 保留独立实验 Runtime；Monitoring/Knowledge 暂留的旧领域依赖另行处理。监测风险规则全部为 PROTOTYPE，未获得生产批准。
 
 ## 阅读入口
 
 - [目录与职责](STRUCTURE.md)
 - [R2D-2A 产品整理与验收](deep-dive/R2D2A_PRODUCT_INTEGRATION.md)（并发小修、一行启动、全屏/阅读、三工具候选）
+- [R2D-2B 三工具本地开放与操作栏修复](deep-dive/R2D2B_UNIFIED_TOOLS.md)（Qwen OFF、独立Normal/Streaming、权限求交、非released）
 - [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)（请求链、Tool/Prompt 扩展、Scope 与测试清单）
 - [启动、模拟器与验证](BUILD_RUN.md)
 - [上报 DTO、存储和集成边界](INTEGRATION.md)

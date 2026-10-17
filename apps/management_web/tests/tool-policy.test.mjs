@@ -25,9 +25,9 @@ function settingsFixture(){
   return {root:panel.mount(),writes,api,panel,get saved(){return saved;}};
 }
 
-test('settings load never saves; history opt-in preserves existing choices and stays candidate',async()=>{
+test('settings load never saves; history opt-in preserves choices and publication is separate',async()=>{
   const p=settingsFixture();await tick();
-  assert.equal(p.writes.length,0);assert.match(p.root.textContent,/candidate/);
+  assert.equal(p.writes.length,0);assert.match(p.root.textContent,/Normal：未启用 · Streaming：未启用/);
   let inputs=walk(p.root).filter(n=>n.tagName==='input');
   assert.equal(inputs[2].getAttribute('checked'),null);
   assert.equal(inputs[3].getAttribute('disabled'),'disabled');

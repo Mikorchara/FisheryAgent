@@ -62,6 +62,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ resources/                                                         # 固定包内业务资源
 │  │  │  ├─ assistant_execution.json                                        # Qwen/Ollama 独立本地实验 Scope，默认关闭
 │  │  │  ├─ assistant_normal_candidate.json                                 # Qwen Normal 三工具精确 candidate，未开放
+│  │  │  ├─ assistant_unified_tools.json                                    # 独立Normal/Streaming三工具本地许可与显式授权子集
 │  │  │  ├─ water_history_candidate.json                                    # 历史单工具local_experimental，默认关闭
 │  │  │  └─ assistant_streaming.json                                        # Qwen 两工具 local_experimental，默认关闭
 │  │  ├─ runtime/                                                           # 业务Assistant/来源/Policy/固定资源，已正式使用
@@ -99,6 +100,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  ├─ test_history_candidate.py                                       # 历史 HTTP 候选门禁、Fake SDK、来源及两工具隔离
 │  │  │  ├─ test_management_policy.py                                       # 独立配置、CAS/并发、恢复和安全写入
 │  │  │  ├─ test_normal_selection.py                                        # 三工具选择、预算、候选隔离与Web输入门禁
+│  │  │  ├─ test_unified_tools.py                                           # 正式HTTP/SSE三工具本地Scope、权限/预算/提交与前端桥接
 │  │  │  ├─ test_normal_selection_qualification.py                           # 四个候选计划、Fake SDK路径/来源/脱敏与拒绝
 │  │  │  ├─ test_execution.py                                               # 管理配置校验、独立 Scope 与默认关闭
 │  │  │  ├─ test_service.py                                                 # 无 Web 的执行、冻结、取消、路径及依赖边界
@@ -110,7 +112,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  ├─ execution.py                                                       # Normal 多轮发布、数据绑定、Scope 与确认 revision
 │  │  ├─ history_execution.py                                               # 历史单工具Scope、1024预算与独立试用门禁
 │  │  ├─ management_policy.py                                               # 管理端授权、只读继承、原子保存与 revision
-│  │  ├─ normal_selection.py                                                # 三工具Normal离线候选Scope，始终禁止产品准入
+│  │  ├─ normal_selection.py                                                # 冻结Normal候选与独立获批的Normal/Streaming本地试用
 │  │  ├─ service.py                                                         # 唯一ManagementAssistantService业务装配
 │  │  └─ streaming.py                                                       # Streaming 发布配置、精确 Scope 与确认 revision
 │  ├─ docs/                                                                 # 实际目录
@@ -127,6 +129,7 @@ Fishery_AI_Prototype/                                            # 项目工作�
 │  │  │  │  └─ R2D1F_TOOL_INTEGRATION_COST_AUDIT.md                           # 历史Tool成本盘点、预算与批量准备
 │  │  │  ├─ AI_BACKEND_DEVELOPMENT_GUIDE.md                                  # 请求链、Tool/Prompt 扩展与安全测试指南
 │  │  │  ├─ R2D2A_PRODUCT_INTEGRATION.md                                     # Policy修复、候选、启动器与聊天视图验收
+│  │  │  ├─ R2D2B_UNIFIED_TOOLS.md                                           # 操作栏根因、三工具本地范围与离线验收
 │  │  │  ├─ HISTORY_QUALIFICATION.md                                         # 历史候选逐案例计划、审批与人工预览
 │  │  │  └─ STREAMING_QUALIFICATION.md                                      # 单案例批准、脱敏报告、人工预览及试用/回滚
 │  │  ├─ BUILD_RUN.md                                                       # 启动、联调与验证

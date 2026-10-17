@@ -29,7 +29,8 @@ from .runtime.sources import SourceRequirement
 from .contracts import PreparedAssistantTurn
 from .execution import ManagementExecutionConfig, load_execution_config, resolve_execution
 from .streaming import ManagementStreamingConfig, load_streaming_config, resolve_streaming
-from .normal_selection import NORMAL_SELECTION_CANDIDATE, resolve_normal_selection_candidate
+from .normal_selection import (NORMAL_SELECTION_CANDIDATE, resolve_normal_selection_candidate,
+    UNIFIED_PRESET, UnifiedToolTrials, load_unified_tool_trials, resolve_unified_tools)
 
 
 PRESETS = ("dashscope-qwen38-flash-r1", "ollama-qwen35-4b-r1")
@@ -40,9 +41,12 @@ class ManagementAssistantService:
 
     def __init__(self, monitoring, *, credentials, traces, policy_directory,
                  gateway_factory=OpenAICompatibleAdapter, execution_config=None, streaming_config=None,
-                 history_config=None):
+                 history_config=None, unified_config=None):
         self.monitoring, self.credentials, self.traces = monitoring, credentials, traces
         self.gateway_factory = gateway_factory
+        self._unified_config=load_unified_tool_trials() if unified_config is None else unified_config
+        if not isinstance(self._unified_config,UnifiedToolTrials):
+            raise GatewayError('INVALID_UNIFIED_TOOL_TRIAL_CONFIG')
         self.epoch = secrets.token_hex(16)
         self._execution_config = load_execution_config() if execution_config is None else execution_config
         if not isinstance(self._execution_config, ManagementExecutionConfig):
@@ -70,7 +74,8 @@ class ManagementAssistantService:
         return RequestRegistry(summarize_tool=tool_summary, **kwargs)
 
     @classmethod
-    def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False, history_trial=False):
+    def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False, history_trial=False,
+              unified_tools_trial=False):
         from .runtime.locations import private_project_location
         root = Path(project_root).resolve()
         location = private_project_location(root)
@@ -80,7 +85,9 @@ class ManagementAssistantService:
             policy_directory=root / "outputs/tool-policies",
             execution_config=load_execution_config(enable_trial=multi_round_trial),
             streaming_config=load_streaming_config(enable_trial=streaming_trial),
-            history_config=load_history_config(enable_trial=history_trial))
+            history_config=load_history_config(enable_trial=history_trial),
+            unified_config=load_unified_tool_trials(normal=unified_tools_trial and multi_round_trial,
+                                                   streaming=unified_tools_trial and streaming_trial))
 
     def availability(self):
         return {"connected": True, "mode": "normal", "thinking": "off",
@@ -90,10 +97,13 @@ class ManagementAssistantService:
         from .business_tools.registry import WATER_QUALITY_SCORE
         return {**self.management_policy.public(), 'epoch':self.epoch,
             'tools':[{'name':name, 'assembled':name in self.history_registry.registered_names(),
-                      'history_query_only':name == WATER_QUALITY_HISTORY,
+                      'history_query_only':name == WATER_QUALITY_HISTORY and not (
+                          self._unified_config.normal_enabled or self._unified_config.streaming_enabled),
                       'candidate_only':name == WATER_QUALITY_HISTORY and self._history_config.status == 'candidate',
                       'compatibility_only':name == WATER_QUALITY_SCORE}
                      for name in (*FORMAL_TOOL_NAMES, WATER_QUALITY_HISTORY, WATER_QUALITY_SCORE)],
+            'tool_trials':{'status':'local_experimental','normal_enabled':self._unified_config.normal_enabled,
+                           'streaming_enabled':self._unified_config.streaming_enabled},
             'history_candidate':{'status':self._history_config.status,
                                  'enabled':self._history_config.enabled,
                                  'max_tool_calls':1,'max_tool_rounds':1,'max_model_requests':2}}
@@ -119,13 +129,17 @@ class ManagementAssistantService:
             raise GatewayError('INVALID_ASSISTANT_REQUEST')
         historical = execution_profile == HISTORY_PROFILE
         candidate = execution_profile == NORMAL_SELECTION_CANDIDATE
-        registry = bind_tools(self.monitoring, device_id, self.knowledge,
-            formal=self.history_registry if historical or candidate else self.formal_registry,
-            include_history=historical or candidate)
         snapshot = policy_snapshot or self.management_policy.snapshot()
+        unified=(not historical and not candidate and preset_id==UNIFIED_PRESET
+            and set(snapshot.selected_tools).intersection(HISTORY_CANDIDATE_TOOL_NAMES)!=set(FORMAL_TOOL_NAMES) and (
+                self._unified_config.streaming_enabled if transport==ToolModelTransport.STREAMING
+                else self._unified_config.normal_enabled))
+        registry = bind_tools(self.monitoring, device_id, self.knowledge,
+            formal=self.history_registry if historical or candidate or unified else self.formal_registry,
+            include_history=historical or candidate or unified)
         selected = ToolPolicy("assistant", True, snapshot.selected_tools)
         bound = {definition.name for definition in registry.model_definitions()}
-        names = HISTORY_CANDIDATE_TOOL_NAMES if candidate else selected.exposed_tools
+        names = HISTORY_CANDIDATE_TOOL_NAMES if candidate or unified else selected.exposed_tools
         policy = ToolPolicy("assistant", selected.llm_tool_calling,
             tuple(name for name in names if name in bound and name in selected.exposed_tools
                   and (not historical or name == WATER_QUALITY_HISTORY)))
@@ -135,6 +149,9 @@ class ManagementAssistantService:
                 device_id=device_id,epoch=self.epoch,policy_revision=snapshot.revision,transport=transport)
         elif historical:
             execution = resolve_history_candidate(self._history_config,profile,selected,registry,
+                device_id=device_id,epoch=self.epoch,policy_revision=snapshot.revision,transport=transport)
+        elif unified:
+            execution=resolve_unified_tools(self._unified_config,profile,policy,registry,self.knowledge,
                 device_id=device_id,epoch=self.epoch,policy_revision=snapshot.revision,transport=transport)
         elif transport == ToolModelTransport.STREAMING:
             execution = resolve_streaming(self._streaming_config,profile,selected,policy,registry,self.knowledge,
@@ -152,11 +169,12 @@ class ManagementAssistantService:
         snapshot = self.management_policy.snapshot()
         for identifier in PRESETS:
             p, policy, execution, _registry = self._configuration(identifier, device_id,policy_snapshot=snapshot)
-            _, _, streaming, _ = self._configuration(identifier, device_id,
+            _, streaming_policy, streaming, _ = self._configuration(identifier, device_id,
                 transport=ToolModelTransport.STREAMING,policy_snapshot=snapshot)
             presets.append({"preset_id": identifier, "display_name": p.display_name.rsplit(" · ", 1)[0],
                 "runtime_type": p.provider_kind, "revision": execution.profile.revision,
-                "execution":execution.public(),"streaming":streaming.public()})
+                "execution":{**execution.public(),'tools':list(policy.exposed_tools)},
+                "streaming":{**streaming.public(),'tools':list(streaming_policy.exposed_tools)}})
         default_execution = presets[0]['execution']
         _, _, candidate, _ = self._configuration(PRESETS[0],device_id,
             policy_snapshot=snapshot,execution_profile=HISTORY_PROFILE)
@@ -165,7 +183,7 @@ class ManagementAssistantService:
                     'enabled':self._history_config.enabled, 'tools':[WATER_QUALITY_HISTORY],**candidate.public()},
                 'policy_revision':snapshot.revision,
                 "device_id": device_id, "presets": presets, "default_preset_id": PRESETS[0],
-                "tools": list(policy.exposed_tools),
+                "tools": presets[0]['execution']['tools'],
                 **{key:default_execution[key] for key in ('max_model_requests','max_tool_calls','max_tool_rounds')}}
 
     def prepare_turn(self, value: dict, *, transport=ToolModelTransport.NORMAL) -> PreparedAssistantTurn:

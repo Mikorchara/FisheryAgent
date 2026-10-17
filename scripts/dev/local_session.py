@@ -34,6 +34,7 @@ def commands(python, scenario, port, seed, *, assistant=True, streaming=True, mu
         server += ['--enable-assistant']
         server += [flag for enabled,flag in ((multi_round,'--assistant-multi-round-trial'),
             (streaming,'--assistant-streaming-trial'),(history,'--assistant-history-trial')) if enabled]
+        if history and (multi_round or streaming):server += ['--assistant-tools-trial']
     return (server,[python,'-m','apps.simulator','--scenario',scenario,'--server',f'http://127.0.0.1:{port}',
                     '--seed',str(seed),'--interval','10'])
 
@@ -77,7 +78,7 @@ def run_local(scenario='normal', port=8766, seed=42, *, root=ROOT, python=None,
             raise RuntimeError('LOCAL_SERVER_START_FAILED')
         children.append(launch(simulator,**options))
         emit(f'本机服务 http://127.0.0.1:{port} · 场景 {scenario} · 每10秒上报。Ctrl+C 停止两进程。')
-        emit('已批准功能按启动参数启用；Tool 仍须用户授权。三工具候选未开放，启动不调用模型。')
+        emit('Qwen三工具本地实验按启动参数启用；Tool仍须用户授权。启动不调用模型。')
         while all(child.poll() is None for child in children):
             sleep(.2)
         raise RuntimeError('LOCAL_CHILD_EXITED')

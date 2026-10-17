@@ -6,7 +6,7 @@ Python 3.11+，使用根项目已有 Flask 依赖；SQLite、生成器和 HTTP t
 
 ## 一行式常用命令
 
-以下从仓库根目录、同一个正常用户PowerShell执行。先查看现有8766服务；若已运行，不另启第二个，也不强杀未知进程。以下只启动本地网页和模拟数据，不发送LLM请求、不修改用户Policy。三个已批准试用开关分别启用既有精确范围，不开放三工具统一candidate。
+以下从仓库根目录、正常用户PowerShell执行。先停止自己已启动的8766服务，不强杀未知进程。启动网页和模拟数据不会发送LLM请求或修改用户Policy。R2D-2B已获用户批准，启动器默认启用Qwen三工具Normal/Streaming本地实验，非正式released。
 
 推荐一行启动（默认场景 normal；以下为逐渐低氧）：
 
@@ -16,17 +16,20 @@ Python 3.11+，使用根项目已有 Flask 依赖；SQLite、生成器和 HTTP t
 
 访问 `http://127.0.0.1:8766`。前台启动器生成一次性接入令牌，仅传给自己创建的两个子进程，不打印/保存，也不改当前终端环境。模拟器每10秒上报；启动与刷新不会请求模型。端口占用时报 `LOCAL_PORT_IN_USE`，不杀外部进程。**在此终端按 Ctrl+C**，启动器终止并回收自己的模拟器和服务器。不要直接关闭终端或强杀启动器；这种退出方式无法保证执行清理。子进程意外退出时，启动器也会清理另一子进程并报告错误。
 
-默认启用已批准的 Normal 多轮、Qwen 两工具 Streaming 和历史单工具试用；网页仍默认 Normal，实际 Tool 必须在系统设置授权并满足精确 Scope。三工具统一仍为 candidate，不被此启动器开放。保留所有原 CLI；无需新建 `.env` 或读取/传递 API Key。服务器启动失败时回到原 CLI 检查安全错误，不重复启动。
+网页默认Normal。在「系统设置 → Assistant Tool 授权」按需授权当前水质、历史水质、项目知识；再到普通聊天选择Qwen、设备、Normal或Streaming，勾选本次联网确认。历史不再需要快捷按钮或Profile。模型自行选择已授权工具，最多2 Calls/2 Rounds/3 Requests，retry=0，120秒；统一范围Normal每请求1024、Streaming每请求512 tokens。真实选择稳定性和回答质量尚未取得新资格，local_experimental不等于技术或生产认证。未授权工具不会提供给模型；关闭历史后，恰好Current+Knowledge继续使用原两工具合同与预算。其他模型不继承三工具范围。
+
+原服务器CLI仍默认关闭试用；显式启用统一范围的等价AI参数为 `--enable-assistant --assistant-tools-trial --assistant-multi-round-trial --assistant-streaming-trial`。`--assistant-history-trial`只保留旧历史单工具API兼容，不控制新的普通聊天。启动只创建CredentialStore，CredentialSnapshot仍在用户确认后的Turn解析，不读取源码根.env或打印私有Key。
 
 按需关闭功能（先 Ctrl+C 停止旧实例，再执行一行）：
 
 ```powershell
 .\scripts\dev\run_local.ps1 -Scenario normal -NoStreaming
+.\scripts\dev\run_local.ps1 -Scenario normal -NoHistory
 .\scripts\dev\run_local.ps1 -Scenario normal -NoStreaming -NoMultiRound -NoHistory
 .\scripts\dev\run_local.ps1 -Scenario normal -NoAssistant
 ```
 
-`-Port 8767`、`-Seed 42` 可选；六个 Scenario 沿用模拟器。关闭不会删除 SQLite 或改用户 Policy；重启的新 epoch 使旧确认失效。高级手动服务器/模拟器命令保留在下文。
+`-NoStreaming`只关闭Streaming；`-NoHistory`关闭统一三工具和旧历史入口，保留原两工具Normal/Streaming试用；后三个关闭参数一起使用恢复默认Normal单轮。先Ctrl+C停止本次两进程，再重新启动并刷新。`-Port 8767`、`-Seed 42`可选；不删除SQLite或改Policy，新epoch使旧确认失效。高级原CLI命令保留在下文，旧阶段的“历史查询”操作已被普通聊天替代。
 
 聊天支持「进入全屏」「阅读 / 截图」「收起运行面板」。全屏隐藏主导航，输入区保留；阅读隐藏输入/选择控件，以正常文档流展开**当前全部聊天**，可使用浏览器整页截图，并手动展开消息内 Tool 记录。运行中阅读仍保留 Stop，临时预览始终标记未提交。退出阅读返回之前模式，ESC 再退出全屏，恢复滚动位置；布局切换不发送请求、不改变 History 或网络确认。向上阅读暂停自动跟随，「回到最新」恢复，右侧问题标记仍可跳转。
 
@@ -45,7 +48,7 @@ Python 3.11+，使用根项目已有 Flask 依赖；SQLite、生成器和 HTTP t
 node --test apps/management_web/tests/*.test.mjs
 ```
 
-`management` 包含 Backend/AI业务、Monitoring、Simulator、管理 HTTP/SSE，并自动运行管理前端 Node；403项 Python 无重复收集。`fast`、`product`、`qualification` 含义不变：`product`仍不含上述完整管理层；资格基础设施变更才跑离线 `qualification` 或受影响的资格模块，不把它解释成真实请求。`--list` 只列数量，不运行 Python/Node 测试。
+`management` 包含 Backend/AI业务、Monitoring、Simulator、管理 HTTP/SSE，并自动运行管理前端 Node；Python无重复收集。`fast`、`product`、`qualification` 含义不变：`product`仍不含上述完整管理层；资格基础设施变更才跑离线 `qualification` 或受影响的资格模块，不把它解释成真实请求。`--list` 只列数量，不运行 Python/Node 测试。
 
 真实外部连接由用户从[统一人工入口](../../scripts/manual_real_tests/README.md#5-三工具-normal-候选r2d-2a)亲自执行。R2D-2A 已在隔离 SQLite/Fake SDK 验证启动、10秒实际HTTP上报、占用拒绝、清理、聊天双模式和布局；未启动用户真实数据服务、读取私有凭据或调用 Provider。详见[实施记录](deep-dive/R2D2A_PRODUCT_INTEGRATION.md)。
 
@@ -306,6 +309,8 @@ R2D-1D 验证：新增 Policy 7 项、历史候选 HTTP 10 项；Backend 整层 
 R2D-1F准备阶段将候选升级为1024 tokens/请求的v2计划。当时仅Dry-run；固定15 Turns/最多30请求的授权现已由用户执行完毕，不能再次复用。完整hash与执行记录见[历史资格指南](deep-dive/HISTORY_QUALIFICATION.md#7-r2d-1f固定15样本批次)，当前开放操作见下节。
 
 ## R2D-1G：历史水质单工具本地试用
+
+> 以下保留1G阶段操作记录。R2D-2B普通聊天已统一三工具并移除历史快捷按钮；当前操作请使用本页顶部一行式命令，不再按旧按钮步骤操作。
 
 **当前状态：local_experimental，默认关闭，非released。** 用户已完成固定15样本（30请求），技术全部通过，并批准精确Qwen范围。回答质量未审核；本轮开放只用Fake SDK回归，不重跑真实资格。结果和限制见[历史资格记录](deep-dive/HISTORY_QUALIFICATION.md#9-r2d-1g真实批次通过与本地实验开放)。
 

@@ -10,7 +10,7 @@ export function historyForRequest(turns){
 
 export function createAssistantWorkspace(api,options={}){
   const confirm=options.confirm||((text)=>window.confirm(text));
-  const s={device:'',devices:[],preset:'',transport:'normal',nextAction:'',config:null,turns:[],entries:[],draft:'',pending:false,
+  const s={device:'',devices:[],preset:'',transport:'normal',config:null,turns:[],entries:[],draft:'',pending:false,
     confirmed:false,control:null,stopRequested:false,cancellation:null,cancelUnknown:false,stopRejected:false,
     status:'就绪',activity:null,lastRun:null,trimmed:false,generation:0,turnSequence:0,followLatest:true,
     viewMode:'normal',detailsVisible:true};
@@ -36,31 +36,16 @@ export function createAssistantWorkspace(api,options={}){
     event.preventDefault();exitView();}});
   const safeError=e=>/^[A-Z][A-Z0-9_]{0,63}$/.test(e?.message||'')?e.message:'AI_SERVICE_UNAVAILABLE';
   const preset=()=>s.config?.presets.find(p=>p.preset_id===s.preset);
-  const historical=()=>s.nextAction==='history_query';
-  const profile=()=>{
-    if(!historical())return s.transport==='streaming'?preset()?.streaming:preset()?.execution;
-    const h=s.config?.history_query;
-    return h&&h.preset_id===s.preset&&s.transport==='normal'?h:
-      {...h,can_send:false,mode_reason:'HISTORY_CANDIDATE_SCOPE_MISMATCH'};
-  };
-  const blocked=()=>!s.config||((s.transport==='streaming'||historical())?
-    profile()?.can_send!==true:profile()?.can_send===false);
-  const binding=()=>JSON.stringify([s.config?.epoch,s.preset,s.device,s.transport,s.nextAction,
-    profile()?.revision||preset()?.revision,profile()?.max_output_tokens,profile()?.max_model_requests,
-    s.config?.tools,blocked()]);
+  const profile=()=>s.transport==='streaming'?preset()?.streaming:preset()?.execution;
+  const tools=()=>profile()?.tools||s.config?.tools||[];
+  const blocked=()=>!s.config||(s.transport==='streaming'?profile()?.can_send!==true:profile()?.can_send===false);
+  const binding=()=>JSON.stringify([s.config?.epoch,s.preset,s.device,s.transport,
+    profile()?.revision||preset()?.revision,profile()?.max_output_tokens,profile()?.max_model_requests,tools(),blocked()]);
   function unavailable(){
     if(!s.config)return '正在读取可用能力，请稍候。';
-    if(historical()){
-      if(s.transport!=='normal')return '历史查询暂不支持 Streaming，请主动切换到 Normal，或取消本次历史查询。';
-      if(s.preset!==s.config?.history_query?.preset_id)return '历史查询仅支持 Qwen 3.8 Flash，请选择该模型，或取消本次历史查询。';
-      return {HISTORY_TRIAL_DISABLED:'历史查询尚未在服务器启用。请使用 --assistant-history-trial 重启，再刷新页面。',
-        HISTORY_TOOL_NOT_AUTHORIZED:'历史查询尚未授权。请到系统设置勾选历史水质并保存，再返回确认。',
-        HISTORY_CANDIDATE_NOT_RELEASED:'历史查询仍待试用批准，当前不能发送。',
-        HISTORY_CANDIDATE_SCOPE_MISMATCH:'历史查询运行配置不匹配，请联系维护者检查配置。'}[profile()?.mode_reason]||'历史查询当前不可用，请刷新可用状态。';
-    }
     if(s.transport==='streaming')return {flag_disabled:'Streaming 尚未在服务器启用，请启用本地试用参数后刷新，或主动切回 Normal。',
       candidate:'此模型的 Streaming 尚未开放，请主动切回 Normal。',
-      scope_not_published:'Streaming 仅开放 Qwen 与当前水质、项目知识两工具。请检查设置中的授权组合，或主动切回 Normal。',
+      scope_not_published:'当前模型或授权工具组合不在 Streaming 本地实验范围内，请检查设置或主动切回 Normal。',
       runtime_constraints_mismatch:'Streaming 执行配置不匹配，请联系维护者。'}[profile()?.mode_reason]||'当前模型或工具组合不支持 Streaming。请检查授权，或主动切回 Normal。';
     return '当前模型与工具授权组合不匹配，请检查系统设置并刷新。不会自动切换执行方式。';
   }
@@ -87,9 +72,7 @@ export function createAssistantWorkspace(api,options={}){
   function syncMessages(){
     const previous=messages.scrollTop;
     for(const [entry,value] of messageNodes)if(!s.entries.includes(entry)){value.node.remove();messageNodes.delete(entry);}
-    if(!s.entries.length){messages.replaceChildren(empty('让问题有依据，让建议可追溯。',historical()?
-      '下一条将查询过去10、30或60分钟水质及覆盖限制。取消历史查询可恢复普通提问。':
-      '可询问当前水质，也可直接讨论溶氧概念。查询不等于采样。','spark'));}
+    if(!s.entries.length){messages.replaceChildren(empty('让问题有依据，让建议可追溯。','可询问当前水质、历史变化或项目知识；模型按已授权工具自行选择。查询不等于采样。','spark'));}
     else if(!messageNodes.size)messages.replaceChildren();
     for(const entry of s.entries){
       let view=messageNodes.get(entry);
@@ -171,7 +154,7 @@ export function createAssistantWorkspace(api,options={}){
     if(cannotSend||key!==confirmationKey)s.confirmed=false;
     confirmationKey=key;
     const multi=execution?.mode==='BOUNDED_MULTI_ROUND';
-    const actual=s.lastRun||{transport:s.transport,multi,maxRequests,tokens:execution?.max_output_tokens,historical:historical()};
+    const actual=s.lastRun||{transport:s.transport,multi,maxRequests,tokens:execution?.max_output_tokens};
     const selectField=(label,choices,value,change,disabled=false)=>el('label',{class:'field'},[el('span',{text:label}),
       el('select',{...(s.pending||disabled?{disabled:'disabled'}:{}),onchange:e=>change(e.target.value)},choices.map(([id,name])=>
         el('option',{value:id,...(id===value?{selected:'selected'}:{})},[name])))]);
@@ -200,28 +183,28 @@ export function createAssistantWorkspace(api,options={}){
           selectField('监测设备',s.devices.map(d=>[d.id,d.name]),s.device,changeDevice),
           selectField('响应模式',[['normal','Normal'],['streaming','Streaming']],s.transport,changeTransport),
           badge(`Thinking OFF · ${streaming?'Streaming':'Normal'}`,'neutral'),
-          badge(historical()?`历史查询 · 本地实验${cannotSend?' · 不可用':''}`:
-            streaming?`Streaming · 本地实验${cannotSend?' · 不可用':''}`:
+          badge(streaming?`Streaming · 本地实验${cannotSend?' · 不可用':''}`:
             cannotSend?'当前配置不可用':multi?'多轮 · 本地实验':'单轮','neutral'),
           el('button',{class:'button text',text:'清空对话',...(s.pending?{disabled:'disabled'}:{}),onclick:clear})]),lane,
         el('div',{class:'chat-composer'},[
-          el('div',{class:'actions'},[el('button',{class:'button secondary',text:historical()?'取消历史查询':'历史查询',
-            ...(s.pending?{disabled:'disabled'}:{}),onclick:()=>historyQuery(!historical())}),
-            el('button',{class:'button text',text:'刷新可用状态',...(s.pending?{disabled:'disabled'}:{}),onclick:()=>void load()})]),
-          el('p',{class:'muted',text:historical()?'下一条：历史水质查询（10 / 30 / 60 分钟）。成功后恢复普通提问。':
-            '普通提问：模型自行选择已授权的当前水质或项目知识工具。历史水质请使用“历史查询”。'}),
+          el('div',{class:'actions'},[el('button',{class:'button text',text:'刷新可用状态',
+            ...(s.pending?{disabled:'disabled'}:{}),onclick:()=>void load()})]),
+          el('p',{class:'muted',text:`模型自行选择本次可用工具；本轮最多调用 ${multi?2:1} 个。需要三个来源时请分次提问。`}),
           ...(cannotSend?[el('p',{class:'notice warning',role:'alert',text:unavailable()})]:[]),composer,
           el('label',{class:'assistant-confirm'},[network,el('span',{text:model?.runtime_type==='local'?
-            `LOCAL MODEL REQUEST · 本次最多 ${maxRequests} 次本地模型请求`:`REAL NETWORK REQUEST · 本次最多 ${maxRequests} 次模型请求${historical()?' · 每请求最多 '+execution?.max_output_tokens+' output tokens':''}，Cloud 可能产生费用`})]),
-          el('div',{class:'composer-foot'},[latest,sendButton,stopButton]),statusNode,
+            `LOCAL MODEL REQUEST · 本次最多 ${maxRequests} 次本地模型请求`:`REAL NETWORK REQUEST · 本次最多 ${maxRequests} 次模型请求${execution?.max_output_tokens?' · 每请求最多 '+execution.max_output_tokens+' output tokens':''}，Cloud 可能产生费用`})]),
+          el('div',{class:'composer-foot'},[el('div',{class:'composer-navigation'},[latest]),
+            el('div',{class:'composer-actions','aria-label':'消息操作'},[sendButton,stopButton])]),statusNode,
           ...(s.trimmed?[el('p',{class:'muted',text:'较早对话未发送给模型。页面记录不代表模型记住全部历史。'})]:[])])]),
-      el('div',{class:'side-stack'},[card('本次运行',`${s.lastRun?'实际':'待运行'} ${actual.transport} · 冻结设备 · ${actual.multi?2:1}/${actual.multi?2:1}/${actual.maxRequests}${actual.tokens?' · '+actual.tokens+' tokens/请求':''}${actual.historical?' · 历史单工具':''}`,[activityNode]),
-        card('来源与权限',historical()?'Monitoring SQLite · 历史窗口基础统计。':'共用 Monitoring SQLite 与领域规则。',[rows([['本轮设备',s.device],['本次可用工具',cannotSend?'暂不可用':(historical()?execution?.tools:s.config?.tools)?.map(name=>({get_current_water_quality:'当前水质',search_fishery_knowledge:'项目养殖知识',get_water_quality_history:'历史水质'}[name]||name)).join('、')||'无（可直接回答）'],
-          ['监测来源','Simulator · 非真实传感器'],['规则状态',historical()?'未重评历史规则':'PROTOTYPE']]),el('p',{class:'muted',text:
-            cannotSend?unavailable():
-            historical()?'历史窗口均值不是当前观测。无匹配、缺口和无效窗口不能当作正常；不判断持续低氧或恢复。只有完整成功回答进入会话。':
-            '缺失、无效、过期或离线不表示环境正常。项目知识不是当前观测或疾病确诊。只有完整成功回答进入会话，刷新页面清空。'}),
-          el('p',{class:'muted',text:'历史查询仅在 Qwen / Normal 下单独试用，须由服务器启用并在系统设置授权。Streaming 暂不支持历史水质；三工具自主选择正在独立验证，尚未开放。'})])]) ]));
+      el('div',{class:'side-stack'},[card('本次运行',`${s.lastRun?'实际':'待运行'} ${actual.transport} · 冻结设备 · ${actual.multi?2:1}/${actual.multi?2:1}/${actual.maxRequests}${actual.tokens?' · '+actual.tokens+' tokens/请求':''}`,[activityNode]),
+        card('来源与权限','共用 Monitoring SQLite 与领域规则。',[rows([['本轮设备',s.device],
+          ['本次可用工具',cannotSend?'暂不可用':tools().map(name=>({get_current_water_quality:'当前水质',
+            search_fishery_knowledge:'项目养殖知识',get_water_quality_history:'历史水质'}[name]||name)).join('、')||'无（可直接回答）'],
+          ['监测来源','Simulator · 非真实传感器'],['规则状态','PROTOTYPE']]),
+          el('p',{class:'muted',text:cannotSend?unavailable():
+            '历史窗口统计不是当前观测；缺口和无效数据不能当作正常。项目知识不是现场事实或疾病确诊。只有完整成功回答进入会话。'}),
+          ...(!tools().includes('get_water_quality_history')?[el('p',{class:'muted',text:
+            '本模式未提供历史水质。请检查服务器试用开关、Qwen模型及系统设置中的工具授权；不会自动切换模式。'})]:[])])]) ]));
     messages.scrollTop=scrollPosition;syncMessages();
     updateProgress();
   }
@@ -253,12 +236,6 @@ export function createAssistantWorkspace(api,options={}){
     if(s.pending||!['normal','streaming'].includes(value)||s.transport===value)return;
     s.transport=value;s.confirmed=false;s.status='响应模式已更新，请重新确认下一条请求。';render();
   }
-  function historyQuery(enabled=true){
-    if(s.pending)return;
-    s.nextAction=enabled?'history_query':'';
-    s.confirmed=false;
-    s.status=enabled?'下一条将查询历史水质，请核对可用状态并重新确认。':'已取消历史查询，请重新确认下一条请求。';render();
-  }
   function withdrawPreview(reply){if(reply?.kind==='pending'){reply.text='';syncMessages();}}
   function receive(event,active,reply){
     if(run!==active||!s.pending||active.sequence!==s.turnSequence||s.stopRequested||s.cancelUnknown||active.detached)return;
@@ -282,12 +259,11 @@ export function createAssistantWorkspace(api,options={}){
     if(binding()!==confirmationKey){s.confirmed=false;s.status='模型、设备或可用工具已变化，请重新确认。';render();return;}
     if(!s.confirmed){s.status='请先确认本次模型请求。';updateProgress();return;}
     const config=s.config,model=preset(),history=historyForRequest(s.turns);
-    const captured={device_id:s.device,preset_id:s.preset,revision:execution?.revision||model.revision,epoch:config.epoch,question,history,
-      ...(historical()?{action:'history_query'}:{})};
+    const captured={device_id:s.device,preset_id:s.preset,revision:execution?.revision||model.revision,epoch:config.epoch,question,history};
     s.pending=true;s.stopRequested=false;s.cancellation=null;s.cancelUnknown=false;s.stopRejected=false;
     s.control=null;s.activity=null;s.status='Preparing';
     s.lastRun={transport:s.transport,multi:execution?.mode==='BOUNDED_MULTI_ROUND',
-      maxRequests:execution?.max_model_requests??config.max_model_requests??2,tokens:execution?.max_output_tokens,historical:historical()};
+      maxRequests:execution?.max_model_requests??config.max_model_requests??2,tokens:execution?.max_output_tokens};
     const sequence=++s.turnSequence;
     const active={sequence,transport:s.transport,epoch:config.epoch,config,controller:streaming?new AbortController():null,detached:false};
     run=active;
@@ -318,7 +294,6 @@ export function createAssistantWorkspace(api,options={}){
       Object.assign(reply,{kind:'assistant',text:result.final_text,activity:result.activity});s.draft='';
       s.status=s.stopRejected?'Completed · 已在 Stop 前完成':`Completed · ${streaming?'Streaming':'Normal'}`;
       s.trimmed=result.history_trimmed||history.length<s.turns.length-1;
-      if(captured.action==='history_query'){s.nextAction='';s.status='历史查询已完成 · 下一条恢复普通提问';}
     }catch(e){
       if(s.control&&!s.stopRequested&&!s.cancellation)try{await api.cancel(s.control,config);}catch(_){/* Bounded registry TTL handles an unreachable control API. */}
       const safe=safeError(e);
@@ -326,6 +301,7 @@ export function createAssistantWorkspace(api,options={}){
         streaming&&safe==='AI_SERVICE_UNAVAILABLE'?'ASSISTANT_STREAM_INTERRUPTED':safe;s.status=code;
       Object.assign(reply,{kind:'status',activity:s.activity,text:code==='USER_CANCELLED'?'USER_CANCELLED · 未提交半成品。远端计算/计费是否停止：UNKNOWN':
         code==='INVALID_TOOL_ARGUMENTS'?'INVALID_TOOL_ARGUMENTS · 工具参数未通过校验，被拒绝的 Tool 未执行；可展开本次运行详情查看原因。':
+        code==='TOOL_ROUND_LIMIT'?'TOOL_ROUND_LIMIT · 本轮最多执行两个工具，未取得的来源不能补造。请将问题分次提出；本轮未提交回答。':
         `${code} · 未提交回答；临时预览已撤销。`});
       if(['ASSISTANT_SESSION_EXPIRED','AI_ACCESS_DENIED'].includes(code)){
         reset();await load();s.status=code==='ASSISTANT_SESSION_EXPIRED'?
@@ -351,7 +327,7 @@ export function createAssistantWorkspace(api,options={}){
       if(!s.device){s.device=device;void load();}
       else if(device!==s.device&&!s.pending){reset();s.device=device;void load();}
       return root;},send,stop,clear,changePreset,changeDevice,
-    changeTransport,historyQuery,changeView,exitView,
+    changeTransport,changeView,exitView,
     policyChanged(){s.confirmed=false;if(s.pending){s.reloadPolicy=true;return;}if(s.device)void load();},
     suspend(){
       if(!s.pending)return;

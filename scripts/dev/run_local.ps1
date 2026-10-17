@@ -17,6 +17,7 @@ if ($NoAssistant) { $launchArgs += '--no-assistant' }
 if ($NoStreaming) { $launchArgs += '--no-streaming' }
 if ($NoMultiRound) { $launchArgs += '--no-multi-round' }
 if ($NoHistory) { $launchArgs += '--no-history' }
+# Approved Qwen unified trial follows History/transport switches in the supervisor.
 # Foreground supervisor owns only its two children; no Provider call on startup.
 & $pythonPath @launchArgs
 exit $LASTEXITCODE

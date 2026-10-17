@@ -18,9 +18,9 @@ export function createToolPolicySettings(api,{onSaved=()=>{}}={}){
   const root=el('div');let config=null,selected=new Set(),busy=false,loaded=false,message='';
   function render(){
     root.replaceChildren(el('p',{text:'本机开发授权，尚未实现生产账户权限。保存只影响管理 Assistant；不修改旧 Prototype 或 Analysis。'}),
-      el('p',{class:'muted',text:'授权、工具装配和模型发布分别校验。勾选历史不将其加入原两工具组合；服务器启用历史试用后，在聊天页使用“历史查询”。历史暂不支持 Streaming。'}),
+      el('p',{class:'muted',text:'授权、工具装配和模型发布分别校验。服务器启用Qwen三工具本地试用后，模型在已授权工具中自行选择；普通聊天不需要历史查询快捷操作。未启用该试用时，历史不会进入原两工具范围。'}),
       ...(config?[rows([['选择来源',config.source==='MANAGEMENT_OVERRIDE'?'管理端独立配置':'只读继承原有选择'],
-        ['历史实验',`${config.history_candidate?.status||'candidate'} · 1/1/2 · ${config.history_candidate?.enabled?'本机已启用':'启动开关未启用'}`]]),
+        ['三工具本地试用',`Normal：${config.tool_trials?.normal_enabled?'已启用':'未启用'} · Streaming：${config.tool_trials?.streaming_enabled?'已启用':'未启用'}`]]),
       ...config.tools.map(tool=>el('label',{class:'field'},[
         el('input',{type:'checkbox',...(selected.has(tool.name)?{checked:'checked'}:{}),
           ...(busy||tool.compatibility_only?{disabled:'disabled'}:{}),

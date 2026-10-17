@@ -106,7 +106,7 @@ test('seven pages remain navigable; only text renders and AI stays disabled',asy
   assert.equal(p.context.fake,undefined);
   p.run("location.hash='#assistant';render()");assert.match(p.node('content').textContent,/发送 · 尚未接入/);
   p.run("location.hash='#settings';state.settings='tools';render()");await p.ready();
-  assert.match(p.node('content').textContent,/勾选历史不将其加入原两工具组合/);
+  assert.match(p.node('content').textContent,/未启用该试用时，历史不会进入原两工具范围/);
   assert.match(p.node('content').textContent,/授权配置读取失败/);
 });
 

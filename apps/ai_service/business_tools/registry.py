@@ -9,7 +9,7 @@ WATER_QUALITY_SCORE = "score_current_water_quality"
 KNOWN_TOOL_NAMES = (current_water_quality.CURRENT_WATER_QUALITY, WATER_QUALITY_SCORE,
                     fishery_knowledge.SEARCH_FISHERY_KNOWLEDGE)
 # The shared user Policy file keeps its original names. Candidates use an
-# isolated in-memory ToolPolicy and an explicitly opted-in registry, never Web.
+# isolated Policy; product History assembly requires its own approved trial.
 FORMAL_TOOL_NAMES = (current_water_quality.CURRENT_WATER_QUALITY, fishery_knowledge.SEARCH_FISHERY_KNOWLEDGE)
 HISTORY_CANDIDATE_TOOL_NAMES = (*FORMAL_TOOL_NAMES, water_quality_history.WATER_QUALITY_HISTORY)
 

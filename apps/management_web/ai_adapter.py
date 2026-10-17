@@ -21,9 +21,11 @@ class ManagementAssistant:
         self.requests = RequestRegistry(summarize_tool=tool_summary)
 
     @classmethod
-    def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False, history_trial=False):
+    def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False, history_trial=False,
+              unified_tools_trial=False):
         return cls(ManagementAssistantService.local(monitoring, Path(project_root),
-            multi_round_trial=multi_round_trial, streaming_trial=streaming_trial, history_trial=history_trial))
+            multi_round_trial=multi_round_trial, streaming_trial=streaming_trial, history_trial=history_trial,
+            unified_tools_trial=unified_tools_trial))
 
     @property
     def monitoring(self):

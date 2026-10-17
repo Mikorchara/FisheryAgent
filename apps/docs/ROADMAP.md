@@ -27,9 +27,9 @@ R2B-3.4 已提取独立 apps/ai_service：业务协调、Runtime 装配、Monito
 
 1. 以已完成的 Backend 为基础完善管理业务；针对实际需求补充 History 跨模式、Stop、断线和异常来源的人工验收。现有离线覆盖不替代这些人工观察，新的真实请求需单独授权。
 2. 独立评估回答质量、Knowledge 相关性和来源表述；知识命中不能证明现场状态或疾病，评分 / 视觉 Tool 需单独合同与授权。
-3. 历史查询已实现并可单工具本地试用；下一步由用户人工验证独立Normal三工具candidate，再批准统一范围，随后移除历史快捷操作。视觉检测Tool、持续异常分析或固定上下文Analysis按实际需要另行开发，不复制Runtime、不提前扩大Streaming范围。新RAG保持独立研究任务。
+3. R2D-2B已获用户批准并开放Qwen三工具Normal/Streaming本地实验，移除历史快捷操作；下一步由用户真实网页验收选择与来源，技术资格和回答质量另行记录，不自动released。视觉检测Tool、持续异常分析或固定上下文Analysis按实际需要另行开发，不复制Runtime。新RAG保持独立研究任务。
 
-R2D-2A已补Policy锁初始化小修、管理离线测试入口、一行服务器/模拟器启动以及聊天全屏/阅读模式；三工具仍为candidate。参见[实施记录](deep-dive/R2D2A_PRODUCT_INTEGRATION.md)。
+R2D-2A已补Policy锁初始化、管理测试入口、一行启动和全屏/阅读模式；当时三工具为candidate。当前范围和按钮修复见[R2D-2B](deep-dive/R2D2B_UNIFIED_TOOLS.md)，原[2A记录](deep-dive/R2D2A_PRODUCT_INTEGRATION.md)保留历史。
 
 ## 后续独立工作
 

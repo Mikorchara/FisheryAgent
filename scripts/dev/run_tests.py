@@ -44,7 +44,7 @@ def build_suite(selection):
             for group in ("apps/ai_backend/tests", "apps/ai_service/runtime/tests"))
         suite.addTests(loader.loadTestsFromNames(tuple("apps.ai_service.tests." + name for name in (
             "test_service", "test_execution", "test_streaming_config", "test_backend_migration", "test_business_tools",
-            "test_water_history_tool", "test_management_policy", "test_history_candidate", "test_normal_selection"))))
+            "test_water_history_tool", "test_management_policy", "test_history_candidate", "test_normal_selection", "test_unified_tools"))))
         return suite
     groups = PRODUCT_GROUPS if selection == "product" else (
         (*PRODUCT_GROUPS, "qualification") if selection == "all" else (selection,))

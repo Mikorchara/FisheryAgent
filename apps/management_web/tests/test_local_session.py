@@ -19,6 +19,8 @@ class LocalSessionTests(unittest.TestCase):
         for flag in ('--enable-assistant','--assistant-streaming-trial','--assistant-multi-round-trial','--assistant-history-trial'):
             self.assertIn(flag,server)
         self.assertFalse(any('selection' in arg or 'candidate' in arg for arg in server))
+        self.assertIn('--assistant-tools-trial',server)
+        self.assertNotIn('--assistant-tools-trial',entry.commands('python','normal',8766,42,history=False)[0])
         self.assertEqual(simulator[-2:],['--interval','10'])
         self.assertNotIn('--assistant-streaming-trial',entry.commands('python','normal',8766,42,streaming=False)[0])
         self.assertFalse(any('assistant' in arg for arg in entry.commands('python','normal',8766,42,assistant=False)[0]))
