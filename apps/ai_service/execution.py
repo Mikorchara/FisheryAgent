@@ -108,10 +108,14 @@ class ExecutionDecision:
     can_send: bool
     model_transport: ToolModelTransport = ToolModelTransport.NORMAL
     max_output_tokens: int | None = None
+    output_budget_contract: str | None = None
+    output_budget_revision: int | None = None
+    output_budget_default: int | None = None
 
     def public(self):
         multi = self.profile.mode == ToolExecutionMode.BOUNDED_MULTI_ROUND
         return {**self.profile.public(), 'can_send':self.can_send,
+                **({'output_budget_contract':self.output_budget_contract} if self.output_budget_contract else {}),
                 'transport':self.model_transport.value.lower(),'max_output_tokens':self.max_output_tokens,
                 'max_tool_calls':2 if multi else 1,'max_tool_rounds':2 if multi else 1}
 

@@ -11,7 +11,8 @@ from apps.ai_backend.credentials import CredentialStore
 from apps.ai_backend.project_env import EnvWriteError, edit_env
 from apps.ai_backend.tool_conversation import ToolModelTransport
 from apps.ai_backend.model_gateway import ProfileRegistry
-from apps.ai_backend.tests.support import FakeSDK
+from apps.ai_backend.tests.support import FakeSDK, sdk_final
+from apps.ai_backend.openai_compatible_adapter import OpenAICompatibleAdapter
 from apps.ai_service.runtime.locations import private_project_location
 from apps.ai_service.settings import ManagementSettingsService, SettingsError
 from apps.ai_service.tests import test_unified_tools as fixture
@@ -28,7 +29,9 @@ class ManagementSettingsTests(unittest.TestCase):
         secure_files.private_directory(base)
         location = private_project_location(self.root/'workspace',{'LOCALAPPDATA':str(base)})
         self.f.backend.credentials = CredentialStore(location.env_path,{},private_location=location)
-        self.service = ManagementSettingsService(self.f.backend,self.root/'settings.json')
+        self.probe_sdk=FakeSDK(lambda *_:sdk_final(model=self.f.profile.model),model=self.f.profile.model)
+        self.service = ManagementSettingsService(self.f.backend,self.root/'settings.json',
+            probe_gateway_factory=lambda:OpenAICompatibleAdapter(async_client_factory=self.probe_sdk.factory))
         self.client = create_app(data_service=self.f.monitoring,ai=self.f.web,settings_service=self.service).test_client()
         self.headers = self.f.headers
         self.ref = self.f.profile.credential_ref
@@ -46,9 +49,16 @@ class ManagementSettingsTests(unittest.TestCase):
 
     def change(self, *, provider='dashscope',secret='fictional-settings-key-A',action='save',revision=None,confirm_clear=False):
         status = next(v for v in self.read()['credentials'] if v['provider']==provider)
+        test_token=None
+        if action=='save':
+            probe=self.client.post('/api/settings/credentials/test',headers=self.headers,json={
+                'epoch':self.f.web.epoch,'provider':provider,'source':'input','secret':secret,
+                'revision':revision or status['revision'],'confirm_network':True})
+            if probe.status_code!=200:return probe
+            test_token=probe.get_json()['test']['test_token']
         return self.client.post('/api/settings/credentials',headers=self.headers,json={
             'epoch':self.f.web.epoch,'provider':provider,'action':action,'revision':revision or status['revision'],
-            'secret':secret,'confirm_clear':confirm_clear})
+            'secret':secret,'confirm_clear':confirm_clear,'test_token':test_token})
 
     def test_defaults_persist_restart_and_bootstrap_without_model_request(self):
         value=self.read(); prefs={**value['preferences'],'device_id':'pond-b','transport':'streaming','show_details':False}
@@ -73,8 +83,8 @@ class ManagementSettingsTests(unittest.TestCase):
         budgets=value['models'][0]['modes']
         self.assertEqual(budgets['normal']['max_output_tokens'],1024)
         self.assertEqual(budgets['streaming']['max_output_tokens'],512)
-        self.assertEqual(budgets['streaming']['approved_token_options'],[512])
-        self.assertFalse(budgets['normal']['editable'])
+        self.assertEqual(budgets['streaming']['approved_token_options'],[512,1024,2048,4096])
+        self.assertTrue(budgets['normal']['editable'])
 
     def test_stale_revision_epoch_policy_and_concurrent_save(self):
         value=self.read();prefs={**value['preferences'],'show_details':False}
@@ -171,8 +181,11 @@ class ManagementSettingsTests(unittest.TestCase):
             self.service.save({'epoch':current['epoch'],'revision':current['revision'],
                 'preferences':{**current['preferences'],'device_id':'pond-b','show_details':False}})
             credential=self.service.credential_status('dashscope')
+            proof=self.service.connection_tests.run({'epoch':self.f.web.epoch,'provider':'dashscope',
+                'source':'input','secret':'fictional-midturn-key','revision':credential['revision'],'confirm_network':True})
             self.service.change_credential({'epoch':self.f.web.epoch,'provider':'dashscope',
-                'action':'save','revision':credential['revision'],'secret':'fictional-midturn-key','confirm_clear':False})
+                'action':'save','revision':credential['revision'],'secret':'fictional-midturn-key','confirm_clear':False,
+                'test_token':proof['test_token']})
         self.f.sdk=FakeSDK(self.f.plans((fixture.WATER,fixture.KNOWLEDGE)),model=self.f.profile.model,on_close=update)
         original=self.f.sdk.factory
         def factory(runtime,remaining):
@@ -194,7 +207,7 @@ class ManagementSettingsTests(unittest.TestCase):
 
     def test_storage_error_is_bounded_and_previous_preferences_remain(self):
         current=self.read();self.save(current['preferences']);before=self.service.store.path.read_bytes()
-        with patch('apps.ai_service.settings.os.replace',side_effect=OSError('private details')):
+        with patch('apps.ai_service.settings_store.os.replace',side_effect=OSError('private details')):
             result=self.save({**current['preferences'],'show_details':False})
         self.assertEqual(result.get_json()['error_code'],'SETTINGS_STORAGE_ERROR')
         self.assertEqual(before,self.service.store.path.read_bytes())

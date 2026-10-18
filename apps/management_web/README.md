@@ -18,7 +18,7 @@ Normal Assistant：`python -m apps.management_web --enable-assistant`；配合�
 
 AI 业务位于 `apps/ai_service/`；本目录的 ai_adapter.py 仅保留浏览器令牌、请求控制和业务合同委托，不包含 Tool/模型执行循环。它是同进程模块划分，无需增加启动服务或端口。
 
-「系统设置」已接通默认偏好、模型状态、私有 API 密钥与原 Tool 授权；预算和RAG为真实能力只读展示。操作、存储和限制见[设置中心](../docs/BUILD_RUN.md#r2d-4a系统设置中心)，不自动探测或请求模型。
+「系统设置」已接通默认偏好、模型状态、私有 API 密钥与原 Tool 授权；新 Key 先显式测试再保存，Qwen 本地双模式支持 1–4096 输出预算，RAG 仍只读。操作、存储和限制见[设置中心](../docs/BUILD_RUN.md#r2d-4b连接测试与可调输出预算)，不自动探测或请求模型。
 
 管理平台主要说明已集中在 `apps/docs/`：
 

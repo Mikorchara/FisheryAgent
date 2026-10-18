@@ -6,9 +6,13 @@ const settingErrors={SETTINGS_CHANGED:'配置已被修改。请重新读取后�
   SETTINGS_DEVICE_UNAVAILABLE:'该监测设备已不可用。',INVALID_SETTINGS:'配置格式不正确。',ENV_REVISION_CONFLICT:'密钥配置已变化，请重新读取后再操作。',
   PROCESS_ENV_READ_ONLY:'此密钥由启动环境提供，网页不能修改。',CREDENTIAL_READ_ONLY:'密钥由启动环境提供或私有存储不可用，网页不能修改。',
   INVALID_CREDENTIAL_VALUE:'密钥不能为空，不能包含换行或控制字符，最长 4096 字节。',ENV_PERMISSION_ERROR:'私有凭据目录权限不安全，未执行写入。',
-  ENV_LOCK_UNAVAILABLE:'凭据正在被其他窗口修改，请稍后重新读取。',ENV_RECOVERY_REQUIRED:'凭据保存需人工恢复，请联系维护者。'};
+  ENV_LOCK_UNAVAILABLE:'凭据正在被其他窗口修改，请稍后重新读取。',ENV_RECOVERY_REQUIRED:'凭据保存需人工恢复，请联系维护者。',
+  CREDENTIAL_TEST_REQUIRED:'请先测试当前输入的新密钥；成功结果已失效或不匹配。',CREDENTIAL_TEST_BUSY:'正在测试连接，请稍后再试。',
+  CREDENTIAL_TEST_STALE:'测试期间凭据已变化，请重新读取并测试。',INVALID_ASSISTANT_OUTPUT_BUDGET:'输出预算必须是服务器允许范围内的整数。'};
+const connectionResults={CONNECTED:'连接成功',AUTHENTICATION_FAILED:'认证失败，请检查密钥与服务权限',TIMEOUT:'连接超时',
+  NETWORK_ERROR:'网络连接失败，请检查网络或代理',RATE_LIMITED:'服务限流，请稍后手动测试',PROVIDER_ERROR:'Provider 故障或响应异常'};
 
-export function createSettingsWorkspace(api,toolPolicy){
+export function createSettingsWorkspace(api,toolPolicy,options={}){
   const root=el('div',{class:'settings-center'}),notice=el('p',{role:'status','aria-live':'polite'});
   let config=null,loaded=false,selected='general',draft=null,busy=false;
   const panels=new Map(),tabs=new Map();
@@ -52,7 +56,7 @@ export function createSettingsWorkspace(api,toolPolicy){
         catch(e){feedback.textContent=error(e);}finally{busy=false;}
       },'primary'),feedback,unavailableDefault]);
     panels.set('general',general);
-    panels.set('models',card('AI 模型管理','连接地址和模型身份由维护者固定；本页不发起连接测试。',[
+    panels.set('models',card('AI 模型管理','连接地址和模型身份由维护者固定；连接测试在 API 密钥区主动发起。',[
       ...config.models.map(m=>card(m.name,`${m.provider} · ${m.kind==='local'?'本机服务':'模型服务'}`,([
         rows([['模型 ID',m.model_id],['连接地址',m.connection],['Thinking','OFF'],
           ['Tool Calling 能力',m.capabilities.tool_calling],['Streaming 协议能力',m.capabilities.streaming],
@@ -62,36 +66,76 @@ export function createSettingsWorkspace(api,toolPolicy){
         ...(m.kind==='cloud'?[button('管理 API 密钥',()=>show('credentials'),'text')]:[])]))),
       el('p',{class:'muted',text:'添加、修改地址或禁用模型暂未开放。管理 Assistant 仅装配固定 Qwen/Ollama 预设；自定义模型尚需独立能力与工具发布验证。DeepSeek Backend 适配保留，但未接入本页可执行模型列表。'})]));
     const credentialCards=config.credentials.map(item=>{
-      let current=item,working=false,clearPending=false;
+      let current=item,working=false,clearPending=false,testToken=null,recent='尚未测试';
       const status=el('p'),feedback=el('p',{role:'status'}),actions=el('div',{class:'settings-actions'});
       const input=el('input',{type:'password',autocomplete:'new-password',spellcheck:'false','aria-label':`${item.provider} API Key`,maxlength:4096,
-        ...(!item.editable?{disabled:'disabled'}:{})});
+        ...(!item.editable?{disabled:'disabled'}:{}),oninput:()=>{testToken=null;recent='新密钥已改变，需重新测试';update();}});
+      async function testConnection(source){
+        if(working||busy)return;working=true;busy=true;testToken=null;input.disabled=true;update();
+        feedback.textContent='正在测试连接（最多 1 次模型请求）…';
+        const secret=source==='input'?input.value:null;
+        try{const {test}=await api.testCredential({epoch:config.epoch,provider:current.provider,source,secret,
+          revision:source==='input'?current.revision:current.credential_revision,confirm_network:true},config);
+          recent=(source==='input'?'新密钥':'已保存密钥')+'：'+(connectionResults[test.code]||'测试未完成');
+          if(source==='input'&&test.success&&input.value===secret)testToken=test.test_token;
+          feedback.textContent=recent+(testToken?'；5 分钟内可保存。':'；原凭据保持不变。');}
+        catch(e){recent='测试未完成';feedback.textContent=error(e);}
+        finally{working=false;busy=false;input.disabled=!current.editable;update();}
+      }
       async function change(action){
         if(working||busy)return;working=true;busy=true;input.disabled=true;feedback.textContent='正在保存…';
         // Only this explicit handler reads the field; never localStorage, URL or a log.
         const secret=action==='remove'?null:input.value;
         input.value='';
         try{const result=await api.credential({epoch:config.epoch,provider:current.provider,action,
-          revision:current.revision,secret,confirm_clear:action==='remove'},config);
-          current=result.credential;feedback.textContent=action==='remove'?'密钥已清除。':'密钥已安全保存，下一次请求使用新凭据。';}
-        catch(e){feedback.textContent=error(e);}finally{working=false;busy=false;clearPending=false;input.disabled=!current.editable;update();}
+          revision:current.revision,secret,confirm_clear:action==='remove',test_token:testToken},config);
+          current=result.credential;recent=action==='remove'?'密钥已清除':'新密钥已测试并保存';feedback.textContent=action==='remove'?'密钥已清除。':'密钥已安全保存，下一次请求使用新凭据。';}
+        catch(e){feedback.textContent=error(e);}finally{working=false;busy=false;clearPending=false;testToken=null;input.disabled=!current.editable;update();}
       }
-      function update(){status.textContent=`${current.availability==='PRESENT'?'已配置':current.availability==='MISSING'?'未配置':'存储不可用'} · ${current.source==='PROCESS_ENV'?'启动环境（只读）':current.editable?'用户私有文件':'只读'}；未测试连接`;
-        const save=button('保存 / 替换密钥',()=>{if(!working)void change('save');},'primary');save.disabled=!current.editable||working;
+      function update(){status.textContent=`${current.availability==='PRESENT'?'已配置':current.availability==='MISSING'?'未配置':'存储不可用'} · ${current.source==='PROCESS_ENV'?'启动环境（只读）':current.editable?'用户私有文件':'只读'}；${recent}`;
+        const test=button('测试新密钥（1次请求）',()=>void testConnection('input'));test.disabled=!current.editable||working;
+        const saved=button('测试已保存密钥',()=>void testConnection('saved'),'text');saved.disabled=current.availability!=='PRESENT'||working;
+        const save=button('保存 / 替换密钥',()=>{if(!working&&testToken)void change('save');},'primary');save.disabled=!current.editable||working||!testToken;
         const clear=button('清除密钥',()=>{clearPending=true;update();});clear.disabled=!current.editable||!current.exists||working;
-        actions.replaceChildren(save,clear,...(clearPending?[el('span',{text:'确认清除该 Provider 的私有密钥？'}),
+        actions.replaceChildren(test,saved,save,clear,...(clearPending?[el('span',{text:'确认清除该 Provider 的私有密钥？'}),
           button('确认清除',()=>{if(!working)void change('remove');}),button('取消',()=>{clearPending=false;update();},'text')]:[]));}
       update();
       return card(item.provider==='dashscope'?'Qwen / DashScope':'DeepSeek（保留的 Provider 配置）','仅显示状态，不回显、下载或缓存完整密钥。',[
         status,el('label',{class:'field'},[el('span',{text:'新 API Key'}),input]),actions,feedback]);
     });
-    panels.set('credentials',card('API 密钥','PROCESS_ENV 优先于私有 PROJECT_ENV；环境变量由启动方管理。已启动请求保留原凭据快照。',[
+    panels.set('credentials',card('API 密钥','先测试新密钥，再保存。主动测试最多 1 次请求 / 8 输出 tokens / 20 秒，可能计费；只验证连接，不授予 Tool 或 Streaming 资格。PROCESS_ENV 优先且只读。',[
       ...credentialCards,el('p',{class:'muted',text:'Ollama 无需 API Key。此入口仅供本机受控开发使用，不是生产账户权限系统。'})]));
-    panels.set('budgets',card('回答与执行预算','每请求输出上限与整个对话轮次的执行上限是不同限制。',[
-      ...config.models.flatMap(m=>['normal','streaming'].map(mode=>{const b=m.modes[mode];return card(`${m.name} · ${mode==='normal'?'Normal':'Streaming'}`,b.can_send?'当前有效配置':'当前不可用；不会因查看预算而开放',[
-        rows([['最大输出 Tokens / 请求',b.max_output_tokens??'Provider 默认（未显式设置）'],['最大模型请求 / Turn',b.max_model_requests],
-          ['Tool Calls / Rounds',`${b.max_tool_calls} / ${b.max_tool_rounds}`],['整 Turn Deadline',`${b.deadline_s} 秒`],['自动重试',b.retry]]),
-        el('p',{class:'muted',text:'当前精确发布范围只批准固定输出预算，暂无其他可编辑选项。调整数值需维护者新增验证范围；本页不会改写已有资格。'})]);}))]));
+    panels.set('budgets',card('回答与执行预算','仅对已开放的本地 Qwen 范围调整每请求输出，不改变 Tool、请求数和期限。',[
+      ...config.models.flatMap(m=>['normal','streaming'].map(mode=>{
+        let current=m.modes[mode];const summary=el('div'),feedback=el('p',{role:'status'});
+        function summarize(){summary.replaceChildren(rows([['当前 Tokens / 请求',current.max_output_tokens??'Provider 默认（未显式设置）'],
+          ['默认值',current.default_output_tokens??'Provider 默认（未显式设置）'],['最大模型请求 / Turn',current.max_model_requests],
+          ['Tool Calls / Rounds',`${current.max_tool_calls} / ${current.max_tool_rounds}`],['整 Turn Deadline',`${current.deadline_s} 秒`],['自动重试',current.retry]]));}
+        summarize();const controls=[];
+        if(current.editable){
+          const input=el('input',{type:'number',step:1,min:current.min_output_tokens,max:current.max_allowed_output_tokens,
+            value:current.max_output_tokens??'','aria-label':`${m.name} ${mode} 自定义 Tokens`,oninput:()=>{choice.value='custom';feedback.textContent='有未保存更改。';}});
+          const choices=selectField('推荐档位',[['custom','自定义'],...current.approved_token_options.map(n=>[String(n),String(n)])],String(current.max_output_tokens),v=>{
+            if(v!=='custom')input.value=v;feedback.textContent='有未保存更改。';});
+          const choice=choices.children[1];
+          async function saveBudget(action){
+            if(busy)return;
+            const text=input.value||'',value=Number(text);
+            if(action==='save'&&(!/^\d+$/.test(text)||!Number.isSafeInteger(value)||value<current.min_output_tokens||value>current.max_allowed_output_tokens)){
+              feedback.textContent=`请输入 ${current.min_output_tokens}–${current.max_allowed_output_tokens} 的整数，不会自动截断。`;return;}
+            busy=true;input.disabled=true;choice.disabled=true;feedback.textContent='正在保存…';
+            try{config=await api.budget({epoch:config.epoch,revision:config.revision,preset_id:m.preset_id,transport:mode,
+                action,max_output_tokens:action==='reset'?null:value},config);
+              current=config.models.find(x=>x.preset_id===m.preset_id).modes[mode];summarize();input.value=current.max_output_tokens??'';
+              choice.value=current.approved_token_options.includes(current.max_output_tokens)?String(current.max_output_tokens):'custom';
+              feedback.textContent='已保存，仅影响后续请求；进行中的回答保留原预算。';options.onBudgetSaved?.();}
+            catch(e){feedback.textContent=error(e);}finally{busy=false;input.disabled=false;choice.disabled=false;}
+          }
+          controls.push(el('div',{class:'settings-fields'},[choices,el('label',{class:'field'},[el('span',{text:`自定义整数（${current.min_output_tokens}–${current.max_allowed_output_tokens}）`}),input])]),
+            el('div',{class:'settings-actions'},[button('保存预算',()=>void saveBudget('save'),'primary'),button('恢复默认值',()=>void saveBudget('reset'))]),feedback);
+        }else controls.push(el('p',{class:'muted',text:'该模型/模式当前未开放可调预算，请检查模型、试用开关和工具授权。'}));
+        return card(`${m.name} · ${mode==='normal'?'Normal':'Streaming'}`,current.can_send?'当前有效配置':'当前不可用；不会因查看预算而开放',[summary,...controls]);
+      }))]));
     panels.set('tools',card('Assistant Tool 授权','沿用已有管理端授权；修改只影响后续请求。',[toolPolicy.mount()]));
     panels.set('rag',card('RAG 检索设置','只展示实际能力；知识内容请到“资料与知识库”管理。',[
       rows([['检索方式',config.rag.method],['Top-K',config.rag.top_k],['单 Evidence 文本上限',`${config.rag.max_evidence_chars} 字符`],['索引','启用内容的不可变快照，按内容版本更新']]),
@@ -101,7 +145,7 @@ export function createSettingsWorkspace(api,toolPolicy){
   async function load(){
     if(busy)return;
     notice.textContent='正在读取设置…';
-    try{config=await api.read();build();notice.textContent='本机设置 · 修改不会自动调用模型。';}
+    try{config=await api.read();build();notice.textContent='本机设置 · 只有主动测试连接或发送消息才请求模型。';}
     catch(e){notice.textContent=error(e);panels.clear();body.replaceChildren();
       for(const [id,name] of settingSections){const panel=card(name,'请确认服务器已启用 Assistant。',[
         ...(id==='tools'?[toolPolicy.mount()]:[empty('设置暂不可用','请检查本机服务配置。'),button('重新读取',load)])]);

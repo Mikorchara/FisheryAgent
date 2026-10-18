@@ -30,6 +30,18 @@ def register_settings_api(app, service, assistant, gate):
             return failure
         return jsonify(credential=service.change_credential(request.get_json(silent=True)))
 
+    @app.post('/api/settings/credentials/test')
+    def credential_test():
+        failure=checked()
+        if failure is not None:return failure
+        return jsonify(test=service.connection_tests.run(request.get_json(silent=True)))
+
+    @app.post('/api/settings/budgets')
+    def output_budget():
+        failure=checked()
+        if failure is not None:return failure
+        return response(service.save_budget(request.get_json(silent=True)))
+
     @app.errorhandler(SettingsError)
     @app.errorhandler(EnvWriteError)
     def settings_error(error):

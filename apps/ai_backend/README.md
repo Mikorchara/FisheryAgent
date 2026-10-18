@@ -26,6 +26,8 @@ R2C-1C Phase I 已建立新侧闭包。起点为 `d88dbf34f6f20f7dcfe62f828bbf78
 
 Backend 不导入 `fishery_ai`、业务、Flask、Monitoring、Knowledge、SQLite。不通过延迟导入绕过边界。SDK、httpx、dotenv 仍为原有依赖；导入不读取凭据或配置、不建立网络连接。
 
+R2D-4B：`RuntimeSnapshot.transport_output_token_ceiling` 为服务器内部有界成本授权（最大4096），默认不设置，仍使用原 Normal 1024 / Tool Streaming 512 的传输 ceiling。它只影响既有 ProtocolSpec 输出字段编码，不是能力证据或模型发布；业务服务必须先通过自己的精确 Scope。连接测试沿用普通 Normal Adapter，无新 Gateway 或循环。
+
 调用方提供新 `ModelProfile` / `CredentialStore`、静态 `ToolDefinition` 和显式 `ToolPolicy`，构造唯一 `ToolCallingService`，调用 `run_request(ModelRequest, RuntimeSnapshot)`。水质 Mock、默认业务 Prompt、`converse`、Managed Evidence JSON loader 和 Analysis Trace 未迁入；本包没有这些发布入口。
 
 ## 服务层装配

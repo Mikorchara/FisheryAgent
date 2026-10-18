@@ -714,13 +714,16 @@ class OpenAICompatibleAdapter:
             kwargs.update(runtime.protocol_spec.encode(generation, reasoning, streaming=stream,
                 include_usage=runtime.capabilities.streaming_usage == Support.SUPPORTED))
             limit = runtime.transport_output_token_limit
+            ceiling = runtime.transport_output_token_ceiling
+            if ceiling is not None and (type(ceiling) is not int or not 1<=ceiling<=4096 or limit is None):
+                raise GatewayError('INVALID_TRANSPORT_OUTPUT_CEILING')
             if limit is not None:
                 if stream:
                     if (not _assemble_tools or runtime.max_retries != 0
-                            or type(limit) is not int or not 1 <= limit <= 512):
+                            or type(limit) is not int or not 1 <= limit <= (ceiling or 512)):
                         raise GatewayError("INVALID_STREAMING_OUTPUT_BUDGET")
                 elif (_assemble_tools or runtime.max_retries != 0
-                        or type(limit) is not int or not 1 <= limit <= 1024):
+                        or type(limit) is not int or not 1 <= limit <= (ceiling or 1024)):
                     raise GatewayError("INVALID_NORMAL_OUTPUT_BUDGET")
                 # Approved cost ceiling, encoded by ProtocolSpec, not Capability evidence.
                 encoded = runtime.protocol_spec.encode(GenerationOptions(max_output_tokens=limit),

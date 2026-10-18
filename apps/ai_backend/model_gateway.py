@@ -276,6 +276,8 @@ class RuntimeSnapshot:
     preset_protocol_spec: ProtocolSpec | None = field(default=None, repr=False)
     # Internal transport cost ceiling; not a Profile field or capability grant.
     transport_output_token_limit: int | None = field(default=None, repr=False)
+    # Server-only range approval; absent preserves the legacy transport ceilings.
+    transport_output_token_ceiling: int | None = field(default=None, repr=False)
 
     @property
     def protocol_spec(self):

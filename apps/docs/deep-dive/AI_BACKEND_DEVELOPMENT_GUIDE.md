@@ -306,4 +306,6 @@ node --test apps/management_web/tests/*.test.mjs
 
 ## 设置与凭据操作（R2D-4A）
 
-[settings.py](../../ai_service/settings.py)负责非敏感默认偏好、固定 Preset 能力/预算展示和固定 Provider 凭据操作；[settings_api.py](../../management_web/settings_api.py)负责本机 HTTP。底层[project_env.py](../../ai_backend/project_env.py)沿用既有 Writer 实现，不是第二个 CredentialStore。默认偏好仅在新页面初始化使用，不重配进行中的 Turn。Token 仍受精确 Scope 约束，目前没有可任意保存的滑块或自定义模型发布入口；新增模型不能通过设置绕过管理白名单或资格。见[运行说明](../BUILD_RUN.md#r2d-4a系统设置中心)。
+[settings.py](../../ai_service/settings.py)负责默认偏好、固定 Preset 展示与 Provider 凭据操作；[settings_api.py](../../management_web/settings_api.py)负责本机 HTTP。底层[project_env.py](../../ai_backend/project_env.py)沿用既有 Writer，不是第二个 CredentialStore。R2D-4B 的[credential_test.py](../../ai_service/credential_test.py)只做用户主动的单请求连接测试，临时 Snapshot 不写正式 Store；成功保存需短期绑定凭证。
+
+[settings_store.py](../../ai_service/settings_store.py)延续同一 JSON/CAS，v1 兼容、明确保存时写 v2；[output_budget.py](../../ai_service/output_budget.py)仅在原精确门禁通过后应用 Qwen 本地 1–4096 输出合同。范围、选定值、预算版本及基础 Scope 绑定 revision；通用 Adapter 的新内部 ceiling 不授予模型能力，不放宽默认限制或 2/2/3。默认偏好与预算均不重配进行中的 Turn。自定义模型发布入口仍未开放。见[运行说明](../BUILD_RUN.md#r2d-4b连接测试与可调输出预算)。

@@ -1,85 +1,34 @@
-"""Local management preferences and fixed-provider credential operations; no model I/O."""
+"""Management defaults, approved output options and explicitly requested credential checks."""
 import hashlib
 import json
-import os
-from pathlib import Path
-import threading
-import uuid
 
 from apps.ai_backend.credentials import CredentialFileError
 from apps.ai_backend.project_env import EnvWriteError, ProjectEnvWriter
-from apps.ai_backend.tools.policy import ToolPolicyError
-from .management_policy import _check_path, _writer_lock, _unique_object
+from apps.ai_backend.tool_conversation import ToolModelTransport
 from .runtime.assistant import assistant_profile
 from .service import PRESETS
+from .settings_store import SettingsError, PreferencesStore
 from .business_tools.fishery_knowledge import TOP_K, MAX_TEXT_CHARS
-
-
-class SettingsError(Exception):
-    def __init__(self, code):
-        self.code = code
-        super().__init__(code)
-
-
-class PreferencesStore:
-    """Small non-secret JSON/CAS file in existing ignored management output storage."""
-    def __init__(self, path):
-        self.path = Path(path).absolute()
-        self.lock = threading.RLock()
-
-    def read(self):
-        try:
-            _check_path(self.path)
-            try:
-                with self.path.open('rb') as stream:
-                    raw = stream.read(8193)
-            except FileNotFoundError:
-                return None
-            value = json.loads(raw, object_pairs_hook=_unique_object)
-            if len(raw) > 8192 or not isinstance(value, dict) or set(value) != {'schema_version','preferences'} or type(value['schema_version']) is not int or value['schema_version'] != 1:
-                raise ValueError()
-            return value['preferences']
-        except (OSError, ValueError, TypeError, RecursionError, ToolPolicyError):
-            raise SettingsError('SETTINGS_STORAGE_ERROR') from None
-
-    def save(self, preferences, *, check):
-        with self.lock:
-            temporary = self.path.with_name('.settings-' + uuid.uuid4().hex + '.tmp')
-            created = False
-            try:
-                _check_path(self.path)
-                self.path.parent.mkdir(parents=True, exist_ok=True)
-                with _writer_lock(self.path.with_suffix('.lock')):
-                    check()
-                    with temporary.open('x', encoding='utf-8', newline='\n') as stream:
-                        created = True
-                        json.dump({'schema_version':1,'preferences':preferences}, stream, ensure_ascii=False, allow_nan=False)
-                        stream.flush(); os.fsync(stream.fileno())
-                    os.replace(temporary, self.path)
-            except SettingsError:
-                raise
-            except ToolPolicyError as error:
-                raise SettingsError('SETTINGS_BUSY' if error.code=='TOOL_POLICY_BUSY' else 'SETTINGS_STORAGE_ERROR') from None
-            except (OSError, ValueError):
-                raise SettingsError('SETTINGS_STORAGE_ERROR') from None
-            finally:
-                if created:
-                    try:
-                        temporary.unlink(missing_ok=True)
-                    except OSError:
-                        pass
+from . import output_budget
+from .credential_test import CredentialConnectionTests
 
 
 class ManagementSettingsService:
     # Client chooses a fixed service identifier, never a filename or environment name.
     CLOUDS = {'dashscope':'dashscope-qwen38-flash-r1', 'deepseek':'deepseek-flash-r1'}
 
-    def __init__(self, backend, preferences_path):
+    def __init__(self, backend, preferences_path, *, probe_gateway_factory=None):
         self.backend = backend
         self.store = PreferencesStore(preferences_path)
+        if backend.settings_store is not None:
+            if backend.settings_store.path!=self.store.path:
+                raise ValueError('SETTINGS_PATH_MISMATCH')
+            self.store=backend.settings_store
+        backend.settings_store=self.store
         credential = backend.credentials
         self.writer = (ProjectEnvWriter(credential.project_env_path.parent, credential,
                        require_git_ignored=False) if credential.private_location is not None else None)
+        self.connection_tests=CredentialConnectionTests(self,probe_gateway_factory or backend.gateway_factory)
 
     @staticmethod
     def validate(value):
@@ -115,6 +64,13 @@ class ManagementSettingsService:
                     'editable':False, 'approved_token_options':[]}
                 if execution['can_send'] and type(modes[transport]['max_output_tokens']) is int:
                     modes[transport]['approved_token_options'] = [modes[transport]['max_output_tokens']]
+                _,_,decision,_=self.backend._configuration(entry['preset_id'],device,
+                    transport=ToolModelTransport(transport.upper()))
+                if output_budget.eligible(profile,decision):
+                    modes[transport].update(editable=True,min_output_tokens=output_budget.MIN_TOKENS,
+                        max_allowed_output_tokens=output_budget.MAX_TOKENS,approved_token_options=list(output_budget.RECOMMENDED),
+                        default_output_tokens=decision.output_budget_default if decision.output_budget_default is not None else profile.default_generation.max_output_tokens,
+                        output_budget_contract=output_budget.CONTRACT)
             models.append({'preset_id':entry['preset_id'], 'name':entry['display_name'],
                 'provider':profile.service_id,'model_id':profile.model, 'connection':profile.base_url,
                 'kind':profile.provider_kind,'thinking':'off',
@@ -152,17 +108,41 @@ class ManagementSettingsService:
             raise SettingsError('INVALID_CREDENTIAL_PROVIDER')
         profile = assistant_profile(self.CLOUDS[provider])
         try:
-            status = self.backend.credentials.status(profile.credential_ref,profile.auth_spec).public_info()
+            snapshot=self.backend.credentials.resolve(profile.credential_ref,profile.auth_spec)
+            status = snapshot.status.public_info()
+            status['credential_revision']=snapshot.revision
             if self.writer is not None and status['editable']:
                 state = self.writer.inspect(profile.credential_ref,profile.auth_spec)
                 return {'provider':provider, **status, **state}
             return {'provider':provider, **status, 'editable':False, 'revision':None, 'exists':status['availability']=='PRESENT'}
-        except (CredentialFileError, EnvWriteError):
+        except (CredentialFileError, EnvWriteError, UnicodeError):
             return {'provider':provider,'availability':'UNAVAILABLE','source':'UNAVAILABLE',
-                    'editable':False,'revision':None,'exists':False,'error_code':'CREDENTIAL_STORAGE_UNAVAILABLE'}
+                    'editable':False,'revision':None,'credential_revision':None,'exists':False,'error_code':'CREDENTIAL_STORAGE_UNAVAILABLE'}
+
+    def save_budget(self,value):
+        if (not isinstance(value,dict) or set(value)!={'epoch','revision','preset_id','transport','action','max_output_tokens'}
+                or value['preset_id']!=output_budget.PRESET or value['transport'] not in ('normal','streaming')
+                or value['action'] not in ('save','reset')):
+            raise SettingsError('INVALID_ASSISTANT_OUTPUT_BUDGET')
+        if value['action']=='save':output_budget.validate_tokens(value['max_output_tokens'])
+        elif value['max_output_tokens'] is not None:raise SettingsError('INVALID_ASSISTANT_OUTPUT_BUDGET')
+        current=self.public(credentials=False)
+        selected=next(m for m in current['models'] if m['preset_id']==value['preset_id'])['modes'][value['transport']]
+        if not selected['editable']:raise SettingsError('SETTINGS_MODE_UNAVAILABLE')
+        overrides=dict(self.store.document()['output_budgets'])
+        name=output_budget.key(value['preset_id'],value['transport'])
+        if value['action']=='reset':overrides.pop(name,None)
+        else:overrides[name]=value['max_output_tokens']
+        def check():
+            latest=self.public(credentials=False)
+            if value['epoch']!=latest['epoch'] or value['revision']!=latest['revision']:
+                raise SettingsError('SETTINGS_CHANGED')
+        self.store.save(current['preferences'],check=check,output_budgets=overrides)
+        return self.public()
 
     def change_credential(self, value):
-        if (not isinstance(value,dict) or set(value) != {'epoch','provider','action','revision','secret','confirm_clear'}
+        if (not isinstance(value,dict) or set(value)-{'epoch','provider','action','revision','secret','confirm_clear','test_token'}
+                or not {'epoch','provider','action','revision','secret','confirm_clear'}<=set(value)
                 or value['epoch'] != self.backend.epoch or not isinstance(value['provider'],str) or value['provider'] not in self.CLOUDS
                 or value['action'] not in ('save','remove') or type(value['confirm_clear']) is not bool):
             raise SettingsError('INVALID_CREDENTIAL_REQUEST')
@@ -174,6 +154,8 @@ class ManagementSettingsService:
             raise SettingsError('CREDENTIAL_READ_ONLY')
         if value['action']=='remove' and (value['confirm_clear'] is not True or value['secret'] is not None):
             raise SettingsError('CREDENTIAL_CLEAR_CONFIRMATION_REQUIRED')
+        if value['action']=='save':
+            self.connection_tests.authorize_save(value)
         profile = assistant_profile(self.CLOUDS[provider])
         self.writer.mutate(profile.credential_ref,profile.auth_spec,
             action='remove' if value['action']=='remove' else 'replace' if current['exists'] else 'create',

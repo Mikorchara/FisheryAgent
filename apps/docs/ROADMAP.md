@@ -4,7 +4,8 @@
 
 ## 已实现
 
-- R2D-4A：六区设置中心、默认模型/设备/模式/详情偏好持久化，固定云Provider私有密钥保存/替换/确认清除，真实预算与RAG能力展示；不改Scope、Policy或执行合同。Token无获批替代值故只读。后续R2D-4B再研究自定义模型的Profile/能力/发布入口与显式连接测试，不自动授权Tool或Streaming。
+- R2D-4A：六区设置中心、默认偏好、固定云Provider私有密钥与原 Tool 授权。
+- R2D-4B：Qwen/DeepSeek 主动连接测试后保存，Qwen 本地 Normal/Streaming 的版本化 1–4096 输出范围；不新增模型或 RAG 配置。自定义模型、地址编辑、其他 Provider 可调预算与高级检索仍待后续批准，不自动授权 Tool/Streaming。
 
 - R2D-3B：统一SQLite文本知识库、旧资源显式迁移/备份、内置导入可编辑、状态恢复、JSON/Markdown导出；管理Knowledge已脱离旧代码，保持TF-IDF算法与现有Tool权限。[迁移合同](deep-dive/KNOWLEDGE_CONTENT.md)。实际用户库迁移待批准。
 

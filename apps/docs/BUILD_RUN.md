@@ -4,7 +4,40 @@
 
 Python 3.11+，使用根项目已有 Flask 依赖；SQLite、生成器和 HTTP transport 使用标准库。Node 用于前端测试，无需 npm install 或构建。所有命令在 `D:\CodexProject\Fishery_AI_Prototype` 执行；首次环境配置见根 [BUILD_RUN](../../docs/BUILD_RUN.md#环境与启动)。
 
+## R2D-4B：连接测试与可调输出预算
+
+启动仍为 `.\scripts\dev\run_local.ps1 -Scenario low_oxygen`，打开 `http://127.0.0.1:8766/#settings`。启动、读取设置及保存预算不请求模型；只有用户主动点击“测试连接”或聊天“发送”才联网。
+
+### API Key：先测试，再保存
+
+1. 在 Qwen 或 DeepSeek 密钥框输入新值，点击“测试新密钥（1次请求）”。本次只用输入值，不用已有环境或旧 Key，不写正式凭据文件。
+2. 测试使用维护者固定 Normal / Thinking OFF 的 Provider 连接，最多 **1 次请求、8 output tokens、20 秒、retry=0**，不提供任何 Tool。认证失败、超时、网络故障、限流和 Provider 异常分别提示；失败不修改旧凭据。
+3. 成功后 5 分钟内可点击“保存 / 替换密钥”。服务端单次保存凭证绑定 Key 的有盐摘要、Provider、epoch 和凭据文件 revision；改值、并发覆盖、过期或重复使用均拒绝。输入值只在本次请求与密码框中存在，不写浏览器持久化存储，成功保存后清空输入。
+4. “测试已保存密钥”使用正式 Snapshot，可测试 PROCESS_ENV 来源，但不产生新值保存许可。PROCESS_ENV 仍优先且网页只读；环境值需在启动环境修改。清除 Key 沿用二次确认和私有文件 CAS/原子写入。
+
+连接成功只证明固定 API 请求可完成，不证明 Tool Calling / Streaming、回答质量或模型发布资格。8-token 连接响应允许 `finish_reason=length`，正文不返回、不保存；Assistant 的截断与 Commit Gate 合同不变。保存凭证仅短期保留在服务器内存，重启后失效；最近测试提示为本页状态，不伪造长期资格记录。
+
+### 输出预算
+
+当前仅向**已通过原精确发布门禁的本地 Qwen OFF / Normal 或 Streaming / 2/2/3 范围**开放可调输出：推荐 **512 / 1024 / 2048 / 4096**，自定义支持 **1–4096 整数**。不接受 bool、浮点、字符串或越界值，不静默截断。Ollama、DeepSeek、不匹配 Scope、未启用 trial、单轮或候选范围不因此获得编辑权限。
+
+在相应模型/模式卡片选择推荐值或填写自定义整数，点击“保存预算”；Normal/Streaming 分开保存。“恢复默认值”移除该模式覆盖，回到原 Scope 的预算（三工具 Normal 1024、Streaming 512；某些旧 Normal 范围原本未显式设置，则显示 Provider 默认）。**1–4096 是本轮批准的本地安全上限，非新增真实 Provider 资格结论；值太低仍可能截断，较高值仍受 120 秒 deadline 和现有响应限额约束。**
+
+版本为 `management-qwen-output-range@1`：先匹配原模型/协议/Prompt/History/Tool/数据绑定精确 Scope，再将基础执行 revision、范围、选定值、预算版本绑定到新 revision；不删除旧 matcher、不复用旧固定预算真实资格。未配置覆盖时保留原请求编码与资格指纹，恢复默认也更新预算版本，使旧确认失效。浏览器聊天请求不能直接指定预算、范围或 Scope。
+
+继续使用同一 `outputs/management_web/settings.json`；旧 v1 只读兼容，用户首次明确保存时原子写入 v2（偏好 + 独立双模式覆盖 + budget revision），不动真实 Policy/业务 SQLite。配置在准备/claim 时校验，执行中持有冻结 Runtime；设置保存只刷新下一 Turn 配置，不自动发请求/重试、不撤销成功 History。
+
+Preset 对任意生成参数的能力仍可能为 UNKNOWN；本地预算沿用现有 ProtocolSpec 传输成本上限编码，不伪造能力证据。仅内部范围校验成功后赋予最多 4096 的 transport ceiling；默认仍保留 Adapter 原 Normal 1024 / Tool Streaming 512 ceiling。SDK 的 `max_tokens` 必须与选择值一致。Tool Call / Round / Request 仍为 **2 / 2 / 3，retry=0，整 Turn 120 秒**。
+
+最少人工验收：输入新 Key → 主动测试 → 保存；改动输入应立即禁用保存。分别设置 Normal 1537、Streaming 2048，保存后主动发一条问题，核对运行面板与结果；恢复默认。真实测试可能计费，由用户亲自执行，Codex 离线验证不替代实际 Provider 兼容性。
+
+专项：`.\.venv\Scripts\python.exe -m unittest apps.management_web.tests.test_settings apps.management_web.tests.test_settings_connection_budget -q`；完整入口仍为 `scripts/dev/run_tests.py management` 与 `fast`。
+
+R2D-4B 离线验收：管理回归 **458 项 Python（102.480 秒）/ 87 项 Node**，FAST **165 项（1.438 秒）**通过。Fake SDK 经管理 HTTP/SSE 验证 Direct Final、单/双 Tool、1537/2048/4096 实际 `max_tokens`、资源关闭、Preview→Final 与 History；虚构密钥覆盖认证/网络/超时/限流、测试后改值、并发保存及 PROCESS_ENV。隔离浏览器验证预算保存、桌面/390px布局，无控制台错误；未请求真实 Provider，未修改实际凭据/Policy/数据库。
+
 ## R2D-4A：系统设置中心
+
+以下保留初版说明；密钥保存流程与可调预算以本页 R2D-4B 为准。
 
 仍使用一行命令 `.\scripts\dev\run_local.ps1 -Scenario low_oxygen`，访问 `http://127.0.0.1:8766/#settings`。无需新启动器，不执行连接探测。
 
@@ -21,7 +54,7 @@ Python 3.11+，使用根项目已有 Flask 依赖；SQLite、生成器和 HTTP t
 
 离线验证入口：`.\.venv\Scripts\python.exe -m unittest apps.management_web.tests.test_settings -q`、`node --test apps/management_web/tests/settings-ui.test.mjs`、`.\.venv\Scripts\python.exe scripts/dev/run_tests.py management`、`.\.venv\Scripts\python.exe scripts/dev/run_tests.py fast`。所有凭据写入测试仅使用临时目录和虚构值。
 
-本轮验收：management 447 项 Python / 85 项 Node 通过；随后补充的最终专项 50 项 Python / 14 项 Node 通过（其中设置后端 10 项）；FAST 165 项通过。隔离浏览器验证默认恢复、桌面/390px布局，无页面错误；未调用真实 Provider，未操作实际凭据/Policy/数据库。自定义模型的具体阻碍：当前 ProfileRegistry 是进程内固定集合，管理 Service 与业务 Assistant 都校验 Preset 身份；尚无管理端 Custom Profile 持久化、能力证据与精确 Tool 发布装配。R2D-4B 应先完成这些入口，再考虑新增/编辑/禁用与用户主动连接测试。
+R2D-4A 历史验收：management 447 项 Python / 85 项 Node 通过；随后补充的最终专项 50 项 Python / 14 项 Node 通过（其中设置后端 10 项）；FAST 165 项通过。隔离浏览器验证默认恢复、桌面/390px布局，无页面错误；未调用真实 Provider，未操作实际凭据/Policy/数据库。自定义模型的具体阻碍：当前 ProfileRegistry 是进程内固定集合，管理 Service 与业务 Assistant 都校验 Preset 身份；尚无管理端 Custom Profile 持久化、能力证据与精确 Tool 发布装配。这些能力继续暂缓；现有 Qwen/DeepSeek 密钥连接测试已在 R2D-4B 实现。
 
 ## 一行式常用命令
 

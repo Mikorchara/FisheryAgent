@@ -3,7 +3,9 @@ import {readAssistantEvents} from './assistant-events.js';
 async function read(path){const response=await fetch(path,{credentials:'same-origin'});if(!response.ok)throw new Error('MANAGEMENT_SERVICE_UNAVAILABLE');return response.json();}
 export const services={
   settings:{read:()=>read('/api/settings'),save:(value,config)=>aiWrite('/api/settings',value,config),
-    credential:(value,config)=>aiWrite('/api/settings/credentials',value,config)},
+    credential:(value,config)=>aiWrite('/api/settings/credentials',value,config),
+    testCredential:(value,config)=>aiWrite('/api/settings/credentials/test',value,config),
+    budget:(value,config)=>aiWrite('/api/settings/budgets',value,config)},
   knowledge:{
     exportUrl:(format,status)=>'/api/knowledge/export?'+new URLSearchParams({format,status}),
     list:filters=>read('/api/knowledge?'+new URLSearchParams(filters)),

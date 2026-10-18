@@ -10,6 +10,7 @@
 - [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)（请求链、Tool/Prompt 扩展、Scope 与测试清单）
 - [启动、模拟器与验证](BUILD_RUN.md)
 - [系统设置与 API 密钥操作](BUILD_RUN.md#r2d-4a系统设置中心)（默认偏好、私有凭据、真实预算展示与限制）
+- [连接测试与可调输出预算](BUILD_RUN.md#r2d-4b连接测试与可调输出预算)（先测试后保存、Qwen 双模式 1–4096 本地范围）
 - [上报 DTO、存储和集成边界](INTEGRATION.md)
 - [路线](ROADMAP.md)
 - [开发规则](../AGENTS.md)

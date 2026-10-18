@@ -111,6 +111,9 @@ apps/
 │  ├─ normal_selection.py                                                # 冻结Normal候选与独立获批的Normal/Streaming本地试用
 │  ├─ service.py                                                         # 唯一ManagementAssistantService业务装配
 │  ├─ settings.py                                                        # 默认偏好持久化、真实模型/预算投影及固定Provider凭据操作
+│  ├─ settings_store.py                                                  # 同一设置JSON的原子CAS、v1兼容与双模式预算持久化
+│  ├─ credential_test.py                                                 # 显式单请求连接测试、脱敏错误、短期绑定保存凭证
+│  ├─ output_budget.py                                                   # 原精确Scope之后的Qwen有界输出合同，不增加模型资格
 │  └─ streaming.py                                                       # Streaming 发布配置、精确 Scope 与确认 revision
 ├─ knowledge/                                                            # 统一文本内容业务，Web/AI共享
 │  ├─ tests/                                                            # 内容/迁移/导出/检索 parity，隔离SQLite
@@ -171,6 +174,7 @@ apps/
 │  │  ├─ test_ai_boundary.py                                             # Web 访问控制、令牌隔离、同一 Handle 与显式装配门禁
 │  │  ├─ test_app.py                                                     # R1 兼容、API 和安全
 │  │  ├─ test_settings.py                                                # 临时私有凭据/配置、HTTP/CAS、实际Turn快照隔离
+│  │  ├─ test_settings_connection_budget.py                              # Fake SDK连接测试/保存门禁、预算编码、SSE前端与冻结
 │  │  ├─ settings-ui.test.mjs                                            # 设置草稿、显式保存/清除、默认恢复和无自动联网
 │  │  ├─ test_assistant.py                                               # Fake Provider HTTP 闭环、同源数据、Ledger 与取消
 │  │  ├─ test_knowledge.py                                               # Knowledge HTTP 闭环、授权/来源隔离、拒绝与确认指纹

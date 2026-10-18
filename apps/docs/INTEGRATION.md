@@ -421,4 +421,6 @@ R2D-1E 已新增开发层的历史单案例计划（默认 dry-run，见 [操作
 
 非敏感默认偏好保存到已有 `outputs/management_web/` 下的 `settings.json`。路径由启动装配决定，格式/大小受限、原子写入及 CAS；复用管理端既有文件路径与进程锁函数，不复用或改写 Policy 数据。设置 HTTP 沿用 Host/Origin、loopback、浏览器 token；写请求有 epoch/revision，过期或不支持组合拒绝。前端仅在首次挂载聊天前应用默认值，不重建现有会话或 RequestHandle。
 
-预算投影只读既有 execution 决策及 Preset 默认值，不改 Scope 资源。无获批替代输出值时保持只读；HTTP 拒绝客户端注入 Token、Tool 预算、Prompt 或连接地址。自定义模型需另行完成管理白名单、Protocol/能力证据、Tool Scope 与资格装配，Backend 能描述 Custom Profile 不等于管理 Assistant 允许执行。RAG 只展示实际固定能力。操作见[设置说明](BUILD_RUN.md#r2d-4a系统设置中心)。
+R2D-4B 在原精确 execution 准入之后叠加 `management-qwen-output-range@1`，仅对本地 Qwen OFF / 2/2/3 允许 1–4096 输出上限；原 Scope、Policy、Prompt/History/Tool/数据绑定 matcher 不变。预算在同一设置文件 v2 中分模式保存，版本与基础 Scope/选定值一起进入 execution revision；prepare/claim 防过期，运行中使用原冻结 Runtime。未配置覆盖时保持旧编码和资格计划。聊天 HTTP 仍拒绝客户端直接注入 Token/ceiling、Tool 预算、Prompt 或连接地址。Generic Adapter 仅新增服务器内部 ceiling 校验，默认 1024/512 限制保留，不改变循环或能力证据。
+
+显式连接测试复用固定 Provider、ProfileRegistry 的临时 environ Snapshot、已有 Adapter 和 RequestHandle，只有 1 次 Normal 请求 / 8 output tokens / 20秒 / retry=0，无 Tool、History 或领域 Receipt。成功且清理完成后发放短期一次性保存凭证，仅保留有盐摘要/Provider/文件版本；正常保存仍由既有私有 Writer 原子执行，PROCESS_ENV 只读。测试成功不授予产品资格。操作见[设置说明](BUILD_RUN.md#r2d-4b连接测试与可调输出预算)。自定义模型与 RAG 高级配置继续暂缓。

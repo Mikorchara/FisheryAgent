@@ -42,6 +42,7 @@ class ManagementAssistantService:
                  history_config=None, unified_config=None, knowledge=None):
         self.monitoring, self.credentials, self.traces = monitoring, credentials, traces
         self.gateway_factory = gateway_factory
+        self.settings_store = None  # Bound once by management settings startup composition.
         self._unified_config=load_unified_tool_trials() if unified_config is None else unified_config
         if not isinstance(self._unified_config,UnifiedToolTrials):
             raise GatewayError('INVALID_UNIFIED_TOOL_TRIAL_CONFIG')
@@ -167,6 +168,9 @@ class ManagementAssistantService:
         if not historical and not candidate and snapshot.source == 'MANAGEMENT_OVERRIDE':
             execution = replace(execution,profile=replace(execution.profile, revision=_hash({
                 'execution_revision':execution.profile.revision,'management_policy_revision':snapshot.revision})))
+        if not historical and not candidate:
+            from .output_budget import apply
+            execution=apply(profile,execution,self.settings_store)
         return profile, policy, execution, registry
 
     def bootstrap(self, device_id: str) -> dict:
@@ -235,6 +239,9 @@ class ManagementAssistantService:
         if not prepared.execution.can_send:
             raise GatewayError('ASSISTANT_STREAMING_NOT_RELEASED' if
                 prepared.execution.model_transport == ToolModelTransport.STREAMING else 'ASSISTANT_MULTI_ROUND_SCOPE_MISMATCH')
+        if (prepared.execution.output_budget_revision is not None and self.settings_store is not None
+                and prepared.execution.output_budget_revision!=self.settings_store.document()['budget_revision']):
+            raise GatewayError('ASSISTANT_EXECUTION_PROFILE_CHANGED')
         handle.start()  # Replay/cancellation gate before credentials or model I/O.
         handle.limit_turn(prepared.profile.total_timeout_s)
         lock, used = threading.Lock(), False
@@ -260,7 +267,14 @@ class ManagementAssistantService:
                         and runtime.credential.status.availability != "PRESENT"):
                     raise GatewayError("SECRET_MISSING")
                 decision = prepared.execution
-                if decision.max_output_tokens is not None:
+                if decision.output_budget_contract is not None:
+                    from .output_budget import CONTRACT, MAX_TOKENS, eligible, validate_tokens
+                    if decision.output_budget_contract!=CONTRACT or not eligible(profile,decision):
+                        raise GatewayError('INVALID_ASSISTANT_OUTPUT_BUDGET')
+                    validate_tokens(decision.max_output_tokens)
+                    runtime=replace(runtime,transport_output_token_limit=decision.max_output_tokens,
+                        transport_output_token_ceiling=MAX_TOKENS)
+                elif decision.max_output_tokens is not None:
                     runtime = replace(runtime,transport_output_token_limit=decision.max_output_tokens)
                 mode = decision.profile.mode
                 coordinator = ToolCallingService(self.gateway_factory(), registry, self.traces, policy=policy,
