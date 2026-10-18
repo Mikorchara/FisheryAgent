@@ -1,6 +1,5 @@
 """Knowledge Tool definition, strict query contract and bounded Evidence mapping."""
 from apps.ai_backend.model_gateway import ModelToolDefinition
-from fishery_ai.knowledge import KnowledgeService
 
 
 SEARCH_FISHERY_KNOWLEDGE = "search_fishery_knowledge"
@@ -65,7 +64,7 @@ def validate_arguments(arguments: dict) -> dict:
     return {"query": query}
 
 
-def search_fishery_knowledge(arguments: dict, *, service: KnowledgeService) -> dict:
+def search_fishery_knowledge(arguments: dict, *, service) -> dict:
     """Map one validated query to bounded background evidence.
 
     ``arguments`` is already normalized by the tool's declared argument contract:

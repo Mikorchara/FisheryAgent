@@ -1,63 +1,108 @@
-# R2D-3A：知识内容管理 MVP
+# 统一文本知识库与内容管理（R2D-3B）
 
-## 当前链路
+## 当前实现
 
 ```text
-管理网页 → 本机内容 API → KnowledgeContentService → 独立 SQLite
-                                      ↓ 单次搜索的完整索引快照
-AI Service → 原 Knowledge Handler → 原 KnowledgeService / TF-IDF
+一次性迁移：旧用户 SQLite + 旧 eel_knowledge.json → 备份 / 校验 → 新 SQLite
+正常运行：管理网页 → KnowledgeContentService → apps/knowledge_data/knowledge.sqlite3
+                           ↓ 一个不可变索引快照
+AI Knowledge Handler → apps.knowledge.retrieval → 本地 KnowledgeEvidence
 ```
 
-不新增模型请求、Tool、Executor 或 RAG 配置系统。Water/History Tool、Prompt、参数 Schema、来源 Gate 和 Runtime 循环不变。
+SQLite 是管理端唯一权威文本来源。`apps/knowledge/` 只放程序；运行数据、备份位于 Git 忽略的 `apps/knowledge_data/`，不进入 wheel。管理端正常启动、CRUD、检索均不加载旧 JSON 或 `fishery_ai.knowledge` / 旧 Evidence。旧 Prototype 原实现与资源完全不动。旧 JSON 转换只在显式迁移与历史资格的隔离固定夹具中使用；后者不读取用户知识。
 
-## 存储与内容
+**本轮只验证隔离迁移，未读取或迁移用户现有库。新库未准备时启动返回 `KNOWLEDGE_MIGRATION_REQUIRED`，不静默建立空库、跳过用户数据或回退旧双来源。实际迁移须另获用户批准。**
 
-- 内置：`src/fishery_ai/resources/knowledge/eel_knowledge.json`，仍用原 `chunk_knowledge` 分块，正文只读。
-- 用户知识及内置停用状态：`outputs/management_web/knowledge.sqlite3`，独立于监测数据库，受 Git 忽略。启动时创建，重启继续读取。
-- 用户 ID 由服务器生成；内置 ID 是原 chunk ID 的稳定摘要。客户端不能提供文件路径或创建 ID。
-- 标题最多120字、分类40字、正文6000字；拒绝空内容、非法控制字符和孤立 surrogate。用户最多200条（含软删除），总正文最多256 Ki字符；列表每页50条，不返回正文。API 请求最多32KiB。
-- 每次编辑或状态变更增加记录版本；使用旧版本写入返回 `KNOWLEDGE_CONFLICT`，不会覆盖另一窗口的修改。SQLite 事务保存内容和集合修订号，写入失败回滚。
-- ACTIVE 参与检索；DISABLED 停用；DELETED 软删除，均可恢复。内置资源不写回，停用仅保存覆盖状态。不是正式账户/RBAC。
+## SQLite 格式与版本
 
-## 检索与版本
+Schema `PRAGMA user_version=2`：
 
-仍用原 portable TF-IDF、查询扩展、排名和阈值。用户标题作为现有关键词字段，标题和正文一起索引；不增加向量库、Embedding、Reranker 或新的评分算法。原固定库在未修改内容时，检索 ID、文本、评分和来源保持 parity。
+| 表 | 作用 |
+|---|---|
+| `knowledge_records` | 当前知识块：ID、标题、分类、正文、记录版本、状态、更新时间、原始来源、当前内容来源、Evidence ID、原分类/关键词/稳定排序信息 |
+| `knowledge_revision` | 整库修订号，在同一写事务内增加，驱动索引重建 |
+| `knowledge_metadata` | 迁移来源摘要、迁移版本、原排名使用的病名词表；不再需要运行时 JSON |
 
-每次搜索先在只读事务中取得完整内容与修订号。修订号变化时构造新 `KnowledgeService.from_chunks`，然后发布引用；正在执行的搜索继续持有旧对象。后续搜索使用新快照，多个服务实例也会察觉数据库更新。不原地改索引，不在失败时回退旧内容。
+- 内置导入共 **31 块**，稳定 ID 仍是 `builtin-` + 原 chunk ID 的 SHA-256 前24位；Evidence ID 与原资源一致。用户 ID 原样保留。
+- `origin=builtin/user` 描述创建来源；导入后两种内容都可编辑、停用、软删除、恢复。
+- `original_source_id/version` 永远保留原出处。未编辑导入文本的 Evidence 仍标识 `legacy:eel_knowledge.json / 1.0`，表示出处，不表示运行时仍读该文件。编辑后当前来源变为 `management:knowledge/<id>`，来源版本为实际编辑版本；原始出处不变。
+- `version` 是 CAS 记录版本，编辑/状态变更都会增加；导入旧库的版本、状态、更新时间原样保留。原内置无更新时间时保留 NULL，页面不编造时间。
+- 不保存完整版本正文历史；软删除可恢复当前正文，不等于恢复任意旧版本。
+- 标题120字、分类40字、正文6000字；拒绝空文本/非法控制字符/surrogate。最多200条用户知识、512条导入知识（均含软删除），**全库**正文最多256 Ki字符；列表每页50条，写请求32 KiB，导出最多2 MiB。范围有限，不是文件仓库。
 
-- 内置 Evidence：保留 `legacy:eel_knowledge.json` 和原资源版本（当前1.0）。停用状态的记录版本不伪装成新的内置正文版本。
-- 用户 Evidence：`management:knowledge/user-…` 和该记录版本。编辑、停用及恢复后按实际版本返回。
-- 集合修订号仅用于缓存失效；不是每条 Evidence 的内容版本，也不是模型资格。
-- Tool 与网页检索测试复用原 validator/Handler：Top-K=3、每条最多800字加省略号、NO_MATCH 仍表示搜索完成但无合格命中。正文始终是不可信背景数据，不能成为 System Prompt、当前观测或疾病确诊。
-- TF-IDF 保留2000词项上限，罕见词可能无命中，长正文的命中也不保证前800字就是最相关片段。第一版不承诺语义检索或完整文档问答；可用明确、简洁的标题和正文改善录入质量。正文精确关键词查找使用列表搜索。
+## 检索、并发与模型范围
 
-## Scope 与资格影响
+唯一管理检索实现在 `apps/knowledge/retrieval.py`，选择性迁入已验证 TF-IDF 算法；扩展词、char_wb 2–4、2000词项、排名加权、0.04阈值及 tie ordering 不变。旧分块转换单独放 `legacy_import.py`，不是第二套检索算法。业务 Tool 名称、Description、Schema、top_k=3、800字+省略号、NO_MATCH、Policy、Ledger、Commit Gate 均不变。
 
-管理生产装配显式注入内容服务；网页与 AI 必须共享同一对象，否则拒绝启动。旧 Prototype、隔离资格夹具仍可使用原固定库，不自动读取用户内容。
+检索事务一次捕获完整启用集合与修订号。构造新索引后发布引用，进行中的检索持有原完整对象；不原地替换一半内容。不把原条目与修改后的替代条目同时加入索引。停用/删除后，下次检索排除；重启继续读同一库。
 
-`ai_service/content_binding.py` 为现有本地配置构造**精确的新知识源变体**：只将 `knowledge_source` 改为 `management:knowledge-content`、`knowledge_version` 改为 `managed-content@1`。旧源必须精确匹配固定的 legacy/1.0/portable 身份，否则拒绝。匹配器仍比较完整 Scope，没有通配或绕过。
+三个版本彼此独立：
 
-因此新管理装配的 Scope/确认 revision 与固定库不同；Prompt、History、Tool Definition hash、模型身份、授权工具集合、Transport、预算、开关及 local_experimental 状态均不变。资格字段仍为 null，未标记 released，**旧真实资格报告不证明动态知识源的新运行结果**。现有资格 CLI/固定数据计划保持原路径与旧指纹；本轮只有新源的离线证据。
+1. **内容来源版本**：逐 Evidence 证明采用哪个知识版本。
+2. **索引快照 revision**：整库内容或状态变更后缓存失效，不是模型资格。
+3. **模型 Scope**：仍是 R2D-3A 的精确 `management:knowledge-content / managed-content@1 / portable` 动态集合合同。SQLite schema 升级为2，不表示 Tool DTO 或动态内容合同改变。Prompt/History/Definitions/预算/发布状态和匹配器未修改，旧固定数据资格计划以隔离夹具保留，不将它们伪装为新动态库真实资格。
 
-内容编辑不会修改源合同版本或工具权限；索引和逐条 Evidence 版本跟随内容修订。浏览器不能指定源身份、Scope、预算或 Tool 集合。需回滚用户内容影响时，可停用用户条目；禁用 Knowledge Tool 仍由原管理 Policy 控制。
+未编辑原始集合的36个固定查询比较 Evidence ID、正文、分数、来源和版本；管理 HTTP/Fake SDK 验证实际新库 Tool Result 进入 Normal/Streaming 下一请求，Gate/清理正常。它们是离线证据，非新增真实模型资格。编辑内容自然可能改变命中，不保证语言质量、事实正确性或养殖/用药建议。
 
-## 本机 HTTP 边界
+## 迁移操作（须先批准，关闭管理服务器）
 
-- GET `/api/knowledge`、`/api/knowledge/<id>`：有界列表与详情。
-- POST `/api/knowledge`：新增；PATCH `/api/knowledge/<id>`：编辑（携带记录 version）。
-- POST `/api/knowledge/<id>/status`：停用/软删除/恢复。
-- POST `/api/knowledge/search`：同源检索测试，无 LLM。
+在仓库根目录执行。保留现有库与原 JSON，不做移动、删除或覆盖。
 
-复用全局 Host、Origin、CSP、响应 no-store；内容 API 另检查 loopback，写入及 POST 检索测试要求 application/json 和页面启动随机令牌 `X-Management-Knowledge`。令牌由本机列表读取取得，重启失效；不是 API Key，不存浏览器持久存储。拒绝重复 JSON 字段、非法类型/ID/版本、额外字段和超长请求；错误不含路径、SQL 或凭据。AI 不能取得内容写接口作为 Tool。
+```powershell
+$knowledgePlan = .\.venv\Scripts\python.exe -m apps.knowledge --dry-run | ConvertFrom-Json; $knowledgePlan
+```
 
-## 页面验收与未实现
+默认来源 `outputs/management_web/knowledge.sqlite3`，默认目标 `apps/knowledge_data/knowledge.sqlite3`。Dry-run 只输出数量、状态分布、摘要与计划 hash，不输出正文或用户记录；不会创建目标或备份。来源不存在会拒绝，不自动忽略。
 
-沿用 [一行启动](../BUILD_RUN.md#一行式常用命令)。进入「资料与知识库」新增标题/分类/正文，保存后查看详情与版本；搜索内容或执行检索测试。编辑后重新测试；停用/删除前确认，恢复后再次参与检索。无需重启服务器。真实 AI 验收由用户主动发送，并在设置中授权既有 Knowledge Tool。
+人工核对数量并批准该计划后：
 
-尚未实现：TXT/Markdown/PDF 导入、上传/下载、批量处理、版本内容回溯、审计用户、生产认证、技术检索参数 UI。不会把旧 Demo 文件当成已上传资料。
+```powershell
+.\.venv\Scripts\python.exe -m apps.knowledge --apply --plan-sha256 $knowledgePlan.plan_sha256
+```
+
+步骤：只读事务捕获来源 → 校验条目/版本/状态/容量 → SQLite online backup（含已提交 WAL）和原 JSON 备份 → 临时新库单事务导入 → 全字段逐条比较、数量/摘要及 `integrity_check` → 再核对来源计划未变 → 同目录原子 no-replace 发布。
+
+备份位于 `apps/knowledge_data/backups/<UTC时间-随机ID>/previous-knowledge.sqlite3` 和 `eel_knowledge.json`。迁移中的错误回滚临时事务并清除本次暂存文件，保留备份和原文件；目标未发布。已有目标绝不覆盖：相同来源迁移返回 `ALREADY_MIGRATED`，也不会重置新库的后续编辑；来源变了或目标不匹配则拒绝，需人工处理，不能追加导入导致重复。
+
+仅全新安装、确实没有旧用户库时，可显式 `--without-user-db --dry-run`，批准后带相同参数及 `--apply --plan-sha256 ...`。若默认旧库存在，此参数拒绝。自定义 `--source/--target/--legacy-json` 仅为维护者本地迁移与隔离测试，不是 HTTP 参数。
+
+迁移后仍沿用：
+
+```powershell
+.\scripts\dev\run_local.ps1 -Scenario low_oxygen
+```
+
+## 查看、导出与备份
+
+- 网页「资料与知识库」按标题/正文/分类/状态查询，打开详情查看完整正文、当前来源、原始来源、版本、状态和北京时间。导入内容与用户内容使用相同编辑与确认操作，修改不回写 Prototype。
+- 「导出知识库」选择 JSON / Markdown，以及**当前启用** / **全部（含停用、删除）**。服务端同一只读快照生成下载，包含标题、正文、分类、ID、来源、版本、更新时间、状态及原始出处；固定安全文件名、UTF-8、attachment/nosniff，不接收保存路径。下载不写库、不请求模型、不作为自动同步/导入源。
+- `GET /api/knowledge/export?format=json&status=active`（或 markdown/all）继续受本机 Host/Origin/loopback 访问控制。CRUD 还需页面随机 `X-Management-Knowledge`；无账户/RBAC 生产保障。AI 只有只读搜索 Tool。
+- 维护者只读查看 schema/数量（不打印正文）：
+
+```powershell
+.\.venv\Scripts\python.exe -c "import sqlite3; from pathlib import Path; from contextlib import closing; p=Path('apps/knowledge_data/knowledge.sqlite3').resolve(); c=sqlite3.connect(p.as_uri()+'?mode=ro',uri=True); print(c.execute('PRAGMA user_version').fetchone()); print(c.execute('SELECT origin,status,count(*) FROM knowledge_records GROUP BY origin,status').fetchall()); c.close()"
+```
+
+定期 SQLite 完整备份使用唯一新文件名，示例失败时不会覆盖已有文件：
+
+```powershell
+.\.venv\Scripts\python.exe -m apps.knowledge --backup-to ("outputs/knowledge-backups/knowledge-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".sqlite3") --apply
+```
+
+使用 SQLite backup API 而非运行中直接复制主文件，避免遗漏 WAL。JSON/Markdown 是内容交换文件，不包含完整 SQLite 元数据，不能代替数据库灾备。
+
+## 回滚与限制
+
+- 本轮未改真实库，部署前可保留当前服务器进程，审核通过后再迁移并重启。
+- 迁移本身从不修改旧库/JSON。若需回旧版程序，先停服、备份/导出新库，再切回审核确认的 R2D-3A 代码基线读取原库；新库后续修改不会自动回灌旧库，不得声称无损自动双向回滚。
+- 如需恢复新库备份，先停服、另外备份现库，经人工批准后再置换，不能覆盖未备份的新增内容。
+- Monitoring 旧领域依赖留存；本轮不迁移、不读取真实监测 SQLite、Policy、凭据或调用 Provider/NPU。
+- 未实现：导出文件再导入、任意文件上传、PDF/Embedding/向量库、历史正文回滚、生产身份权限、全量审计日志、跨进程索引服务器。知识库仍有限容量，TF-IDF相关性及800字片段限制不变。
 
 ## 离线验证
 
-专项覆盖 CRUD、内置 parity/只读、恢复/重启、并发 CAS、完整快照、输入/记录/总容量/写失败、实际 HTTP、Normal/Streaming Knowledge Tool、来源 Ledger、有限 Evidence、Scope 差分。前端覆盖草稿、显式保存、页面内二次确认、冲突、不执行 HTML、筛选、检索测试和 NO_MATCH。
+专项：`python -m unittest apps.knowledge.tests.test_content apps.knowledge.tests.test_unified_store apps.management_web.tests.test_knowledge_content`；前端：`node --test apps/management_web/tests/knowledge-ui.test.mjs`；管理回归：`python scripts/dev/run_tests.py management`；FAST：`python scripts/dev/run_tests.py fast`。
 
-本轮结果：management 424 Python / 68 Node通过；FAST 165通过；旧知识/Tool相关60项回归通过。收尾补充无AI启动/重启和新知识源下Current→History两模式回归，知识专项13项、前端68项复验通过；不重复整套回归。浏览器以隔离 SQLite/Fake SDK 验证录入、编辑、来源版本、停用排除、软删除恢复、Normal/Streaming Final和390px布局。自动化均无真实模型请求；原生浏览器确认框曾阻塞内嵌浏览器自动化，最终采用可见、可取消的页面内确认并在独立浏览器完成验证。
+R2D-3B 验证结果见本轮交付；实际用户知识迁移数量必须在批准后的只读计划中核对，不能把隔离夹具的2条当作真实用户数量。R2D-3A 原只读内置/双来源描述已被本页当前合同替代，Git 历史保留旧实现。
+
+本轮已执行：管理完整回归 **437 Python / 69 Node** 通过（103秒 / 0.87秒）；FAST **165** 通过；旧Prototype知识/Tool **60** 通过；管理资格入口 **44** 离线测试通过。收尾新增未初始化库拒绝测试后，知识专项 **25 Python / 6 Node** 通过，未再重复整套管理回归。浏览器在隔离库验证导入编辑、来源版本、实际新内容检索、软删除/恢复及导出选择；390px无页面横向溢出，未见控制台错误。真实网络请求为0，真实用户库数量尚未读取。备份测试覆盖提交WAL，迁移测试覆盖并发目标抢占和中途失败。

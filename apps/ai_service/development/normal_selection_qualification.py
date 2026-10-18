@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import logging
 import uuid
 
-from fishery_ai.knowledge import KnowledgeService
+from apps.knowledge.migration import legacy_reference
 from apps.ai_backend.contracts import utcnow
 from apps.ai_backend.credentials import CredentialFileError
 from apps.ai_backend.credential_paths import CredentialLocationError
@@ -59,7 +59,7 @@ def get_case(case_id):
 def plan(case_id):
     case = get_case(case_id)
     profile = assistant_profile(history.PRESET)
-    knowledge = KnowledgeService(files('fishery_ai').joinpath('resources/knowledge/eel_knowledge.json'))
+    knowledge = legacy_reference(files('fishery_ai').joinpath('resources/knowledge/eel_knowledge.json'))
     registry = bind_tools(_NoDataAccess(), history.DEVICE, knowledge, include_history=True)
     scope = normal_selection_scope(profile, registry, knowledge)
     if _json(scope) != load_normal_selection_candidate():
@@ -110,6 +110,7 @@ def run(case_id, root, *, confirm_network=False, approved_plan_sha256=None,
             folder = Path(temporary)
             monitoring = history._monitoring(folder, history.get_case('valid-history'))
             service = ManagementAssistantService(monitoring,
+                knowledge=legacy_reference(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json")),
                 credentials=credential_store if credential_store is not None else _credentials(Path(root)),
                 traces=trace, policy_directory=folder/'policies', gateway_factory=lambda: gateway)
             selected = service.management_policy.snapshot()

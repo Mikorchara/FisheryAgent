@@ -1,6 +1,6 @@
 # 智慧渔业管理平台文档
 
-`apps/docs/` 是管理平台主要入口。已实现统一监测 / Domain Analysis / Events、Normal Assistant 和可显式启用的 Qwen 三工具 Normal/Streaming 本地实验（保留原两工具范围）。管理 AI 依赖为 `management_web → ai_service → ai_backend`；R2C-1 主要迁移及基本真实网页人工验收已完成。旧 `src/fishery_ai/` 保留独立实验 Runtime；Monitoring/Knowledge 暂留的旧领域依赖另行处理。监测风险规则全部为 PROTOTYPE，未获得生产批准。
+`apps/docs/` 是管理平台主要入口。已实现统一监测 / Domain Analysis / Events、Normal Assistant 和可显式启用的 Qwen 三工具 Normal/Streaming 本地实验（保留原两工具范围）。管理 AI 依赖为 `management_web → ai_service → ai_backend`；R2C-1 主要迁移及基本真实网页人工验收已完成。旧 `src/fishery_ai/` 保留独立实验 Runtime；Monitoring 暂留的旧领域依赖另行处理；管理知识已独立为 apps.knowledge。监测风险规则全部为 PROTOTYPE，未获得生产批准。
 
 ## 阅读入口
 
@@ -31,7 +31,7 @@ R2B-3.4：AI 业务已独立为 `apps/ai_service/`，Web 经明确的 AssistantB
 
 ## 当前状态
 
-R2D-3A：[知识内容管理](deep-dive/KNOWLEDGE_CONTENT.md)已接入网页与既有 Knowledge Tool。用户内容独立持久化，内置正文只读；不新增 RAG 算法或生产权限。
+R2D-3B：[统一知识库](deep-dive/KNOWLEDGE_CONTENT.md)使用单一SQLite权威文本源，导入内置/用户内容均可管理；提供显式备份迁移、Markdown/JSON导出与独立的原TF-IDF检索。实际旧用户库迁移待批准，不自动覆盖。
 
 | 模块 | 已实现 | 尚未接入 |
 |---|---|---|
@@ -40,7 +40,7 @@ R2D-3A：[知识内容管理](deep-dive/KNOWLEDGE_CONTENT.md)已接入网页与�
 | 视频监控 | 视觉窗口汇总、行为比例、疑似异常、标定状态 | 视频流、真实 NPU、截图/片段 |
 | 事件记录 | 模拟异常事件、去重、可靠恢复/待确认、真实严重程度及规则身份 | 人工处置/通知工作流 |
 | AI 助手 | Qwen/Ollama Normal、统一水质/Knowledge、可选本地多轮；Qwen 两工具 Streaming 显式本地实验；独立 Backend 基本网页验收通过 | 回答质量专项审核、其他 Streaming 范围、评分/视觉 Tool |
-| 资料与知识库 | 内置/用户知识列表、录入编辑、停用/软删除恢复、来源版本、原 TF-IDF 检索测试及 AI 桥接 | 文件导入上传下载、检索技术参数、生产账户权限 |
+| 资料与知识库 | 内置/用户知识列表、录入编辑、停用/软删除恢复、来源版本、原 TF-IDF 检索测试及 AI 桥接 | 文件导入上传、检索技术参数、生产账户权限 |
 | 设置 | 分类、管理 Assistant 独立 Tool 授权与并发安全保存、独立开发入口 | 账户权限、生产配置 |
 
 Flask + 原生 ES Modules / CSS / SVG，无新依赖。默认 8766，读取 SQLite 模拟上报或明确 NO_DATA。页面每 5 秒查询，模拟器默认每 10 秒上报。AI 默认关闭，--enable-assistant 后逐次确认才执行 Normal；生产认证、真实设备与设备写控制未开放。

@@ -16,7 +16,7 @@
 | `apps/ai_service/runtime/` | 渔业 Assistant、Prompt、Preset/Policy、领域 Receipt/Ledger、Source/Commit Gate | 通用 Provider 传输、Flask、数据库存储 |
 | `apps/ai_backend/` | 通用模型合同、Gateway/Adapter、Streaming Assembler、Tool 循环、执行上下文、安全事件/Trace | 渔业规则、Knowledge 实现、业务 Prompt、默认 Tool |
 | `apps/monitoring/` | 权威监测事实、SQLite、历史、确定性 Findings/Events、设备绑定查询 | LLM 解释与模型路由 |
-| Knowledge | 当前复用 `fishery_ai.knowledge.KnowledgeService` 与固定知识资源 | 当前现场观测、现场疾病确诊 |
+| Knowledge | `apps.knowledge` 统一SQLite文本/来源管理与独立TF-IDF检索；旧JSON仅作显式迁移/隔离资格夹具 | 当前现场观测、现场疾病确诊 |
 | `src/fishery_ai/` | 独立 Prototype、原有 Analysis/Assistant 与技术实验 | 管理端的新旧 Runtime 自动切换或同步 |
 
 `ai_service/runtime` 的名称容易误解：这里是“业务 Assistant 的运行合同”，不是第二个通用 LLM Runtime。目录暂不改名；新增 Gateway、Assembler、Handle、执行循环应放 Backend，业务来源与 Prompt 应留服务层。
@@ -287,7 +287,7 @@ node --test apps/management_web/tests/*.test.mjs
 
 - `ai_service/runtime` 名称与 Backend 的“Runtime”容易混淆，当前通过职责说明解决，暂无改名计划。
 - 单/多轮 System 的字符串替换耦合、共享 Policy 编辑边界、新 Tool 的来源类型，需要在相关扩展任务中明确处理，本轮不重构。
-- Monitoring/Knowledge 仍引用旧领域包；Backend 本身禁止反向导入这些业务。独立领域迁移另立任务。
+- Monitoring 仍引用旧领域包；Knowledge在R2D-3B已独立；Backend 本身禁止反向导入这些业务。独立领域迁移另立任务。
 - 精确资格与历史差分测试各有版本基线；技术 PASS、基本网页人工验收、回答质量审核和产品发布是不同证据，不自动互相继承。
 
 ## 管理端 Tool 授权与历史候选
@@ -297,3 +297,9 @@ node --test apps/management_web/tests/*.test.mjs
 新增 Tool 必须分别完成：业务 Definition/Handler 装配、用户 Policy 授权、维护者精确 Scope 发布。历史候选仅允许 Qwen OFF / Normal / 历史单工具 / 1/1/2；Web 仍没有真实执行开关；已建立独立的历史单案例资格 CLI，默认 Dry-run，需逐案例新批准，不能复用 Streaming 三案例授权。既有两工具 Scope 和定义不变；管理授权保存会有意更新联网确认 revision。
 
 历史资格使用 [history_qualification.py](../../ai_service/development/history_qualification.py) 与 [操作说明](HISTORY_QUALIFICATION.md)：只复用正式单轮 Assistant、冻结设备/Policy 和同一 Tool 循环。计划绑定数据集 hash、Source/Monitoring 版本、Schema、Prompt/History 与 1/1/2；真实技术结果、人工回答审核和 Web 发布分别审批。
+
+## 统一知识内容源（R2D-3B）
+
+管理Web启动在 `management_web.__main__.knowledge_content` 打开 `apps/knowledge_data/knowledge.sqlite3`，显式注入 `ManagementAssistantService(knowledge=...)`；业务Service没有旧JSON默认库。新增知识/编辑/停用/恢复通过 `apps.knowledge.service`，只读Tool仍经 `business_tools/fishery_knowledge.py` 使用同一服务。修改检索算法才涉及 `apps/knowledge/retrieval.py`；日常录入不改算法、Prompt或Scope。
+
+`apps.knowledge.evidence.KnowledgeEvidence` 取代管理检索旧Evidence，通用Backend不依赖知识业务。`legacy_import.py` / `migration.py` 仅显式迁移及历史资格固定夹具使用，正常运行不读资源。迁移版本、每条内容来源版本、索引revision与模型发布合同分别管理；详见[统一文本合同与回滚](KNOWLEDGE_CONTENT.md)。Monitoring旧领域依赖仍是单独后续任务。

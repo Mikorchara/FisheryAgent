@@ -102,3 +102,5 @@ body:has(.management-assistant.view-reading) main{padding:18px;max-width:1300px;
  .view-reading .assistant-view-toolbar,.view-reading .question-navigation{display:none}
  .view-reading .management-message{break-inside:auto}
 }
+
+.knowledge-management .knowledge-export{align-items:flex-end}.knowledge-management .knowledge-export .field{flex:0 1 230px;margin:0}

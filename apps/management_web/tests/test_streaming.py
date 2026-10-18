@@ -78,7 +78,7 @@ class ManagementStreamingTests(unittest.TestCase):
             self.service_handles.append(current_handle())
             return OpenAICompatibleAdapter(async_client_factory=factory)
         old=self.backend
-        self.backend=ManagementAssistantService(self.monitoring,credentials=old.credentials,traces=old.traces,
+        self.backend=ManagementAssistantService(self.monitoring,knowledge=old.knowledge,credentials=old.credentials,traces=old.traces,
             policy_directory=self.root/'policies',gateway_factory=gateway,
             streaming_config=config if config is not None else trial_config())
         policy=self.backend.policy_store.default_selections()

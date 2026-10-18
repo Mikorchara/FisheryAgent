@@ -1,12 +1,14 @@
 # 统一监测协议与集成边界
 
-AI 的扩展操作见 [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)；本文件维护当前数据/应用边界。带 R 阶段编号的章节保留来源脉络，下述执行类均为管理独立 Backend，只有明确说明的领域/Knowledge 代码仍来自旧包。
+AI 的扩展操作见 [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)；本文件维护当前数据/应用边界。带 R 阶段编号的章节保留来源脉络，下述执行类均为管理独立 Backend，只有明确说明的Monitoring领域代码仍来自旧包。
 
 R2D-2C 本机聊天确认方式：主动点击「发送」或 Ctrl+Enter 授权一个 Turn，前端随冻结的设备、epoch/revision 提交 `confirm_network=true`，不再保存勾选状态。底层确认合同及 Host/Origin、浏览器令牌、Tool Policy、Scope、预算、唯一 claim、取消和提交校验不变；缺少确认或配置过期仍在凭据/模型 I/O 前拒绝。刷新可用状态、切换模式与 History 恢复只读，不自动重发。此规则不扩展到远程生产接口或人工资格 CLI；下文旧阶段关于勾选确认的操作以此为准。[当前网页操作](BUILD_RUN.md#一行式常用命令)。
 
+R2D-3B：管理知识只读写统一SQLite，导入内置与用户知识均可管理；不再导入旧 KnowledgeService/Evidence，也不运行时读取旧JSON。下列R阶段对旧固定资源/共享Policy的描述保留历史脉络，当前知识入口以[统一知识库](deep-dive/KNOWLEDGE_CONTENT.md)为准。迁移须单独批准，旧文件不移动或覆盖。
+
 ## 1. 当前运行链路
 
-知识内容的独立链路为 Web → `apps.knowledge` → 内容 SQLite / 原 TF-IDF；管理 AI 装配注入同一服务供只读 Knowledge Tool 查询，不依赖 Monitoring 数据库，也不增加 LLM 写能力。版本快照、精确新源 Scope 和本机写入合同见[知识内容管理](deep-dive/KNOWLEDGE_CONTENT.md)。
+知识内容的独立链路为 Web → `apps.knowledge` → `apps/knowledge_data/knowledge.sqlite3` / 原算法的独立 TF-IDF；管理 AI 装配注入同一服务供只读 Knowledge Tool 查询，不依赖 Monitoring 数据库，也不增加 LLM 写能力。原始来源/编辑版本、显式迁移、导出备份、快照、精确源 Scope 和本机写入合同见[知识内容管理](deep-dive/KNOWLEDGE_CONTENT.md)。
 
 ```text
 Simulator：Scenario → 逻辑采样 → 10 秒窗口 → HTTP
@@ -293,7 +295,7 @@ R2D-1C 离线验收：历史候选 targeted 21 项通过（含六条旧 HTTP/SSE
 
 ### R2B-3.3：Knowledge Tool 装配与来源隔离
 
-- 每个 ManagementAssistantService 只创建一个 `KnowledgeService`，数据固定为包内 `src/fishery_ai/resources/knowledge/eel_knowledge.json`，使用原 portable 检索实现；不是资料页面 Demo 文件，不接入新上传/索引/RAG。
+- 当前生产装配显式注入同一个 `KnowledgeContentService`，只读统一文本SQLite；AI Service没有旧固定库默认回退。历史资格夹具通过 `apps.knowledge.migration.legacy_reference` 显式载入隔离固定JSON，保留原计划，不读取用户内容。
 - `business_tools/fishery_knowledge.py` 定义唯一 Knowledge model definition、validator 和检索结果映射；`business_tools.registry.bind_tools()` 用 Backend ToolDefinition 绑定共享 KnowledgeService，并在逐 Turn 装配时保留 formal Registry 中的 Knowledge entry。实际执行仍走 Backend ToolCallingService / ToolExecutor，不复制检索逻辑或执行循环。Policy 的已知名称包含评分以兼容存储，不表示管理应用装配了评分 Handler。
 - Knowledge 只接受现有 `{"query":"..."}` 合同，固定 top_k=3、每条正文最多 800 字符加省略号；参数、结果大小限制和异常映射均由原合同执行。非法参数不会检索，未授权返回 TOOL_NOT_ALLOWED；检索异常是 TOOL_EXECUTION_ERROR，不能伪装成 NO_MATCH，不继续模型请求。
 - OK 的合法 Evidence 只能授予 RETRIEVED_PROJECT_EVIDENCE；NO_MATCH 只表示本轮检索完成，不授予命中或当前观测来源。二者都不能满足 CURRENT_OBSERVATION_QUERY / CURRENT_SCORE_EVALUATION。History、模型正文和来源声明不生成 Receipt。
@@ -329,7 +331,7 @@ R2D-1C 离线验收：历史候选 targeted 21 项通过（含六条旧 HTTP/SSE
 
 ## 8. 其他业务边界
 
-文件管理与索引/检索仍分开，资料页面只展示 Demo 元数据；本轮没有新增 RAG。未来 Knowledge Evidence 不能认证现场事实；Analysis 自动 RAG 与 Assistant Knowledge Tool 保持原边界。
+文件管理与索引/检索仍分开，资料页面已管理统一文本知识并提供内容导出；文件上传/导入和RAG技术配置尚未实现。未来 Knowledge Evidence 不能认证现场事实；Analysis 自动 RAG 与 Assistant Knowledge Tool 保持原边界。
 
 Video/NPU 将通信、推理、事实归一化和网页播放分离；不迁移桌面 GPU 项目。Events 人工处理、附件授权和通知待独立设计。管理员权限与开发设备接入开关分离。
 

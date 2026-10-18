@@ -3,6 +3,7 @@ import {readAssistantEvents} from './assistant-events.js';
 async function read(path){const response=await fetch(path,{credentials:'same-origin'});if(!response.ok)throw new Error('MANAGEMENT_SERVICE_UNAVAILABLE');return response.json();}
 export const services={
   knowledge:{
+    exportUrl:(format,status)=>'/api/knowledge/export?'+new URLSearchParams({format,status}),
     list:filters=>read('/api/knowledge?'+new URLSearchParams(filters)),
     get:id=>read('/api/knowledge/'+encodeURIComponent(id)),
     create:(value,token)=>knowledgeWrite('/api/knowledge','POST',value,token),

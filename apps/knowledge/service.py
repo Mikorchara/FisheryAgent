@@ -1,10 +1,9 @@
 """Content CRUD and immutable corpus snapshots over the shared TF-IDF implementation."""
 from datetime import datetime, timezone
-from importlib.resources import files
-import hashlib
 import threading
+import json
 
-from fishery_ai.knowledge import KnowledgeService
+from .retrieval import KnowledgeService
 from .repository import KnowledgeError, identifier
 
 CONTENT_SOURCE = 'management:knowledge-content'
@@ -39,34 +38,19 @@ class KnowledgeContentService:
     """Shared by management HTTP and its read-only AI Tool; no LLM write access."""
     source_id, source_version, backend = CONTENT_SOURCE, CONTENT_VERSION, 'portable'
 
-    def __init__(self, repository, *, reference=None, clock=None):
+    def __init__(self, repository, *, clock=None):
         self.repository = repository
-        self.reference = reference or KnowledgeService(files('fishery_ai').joinpath('resources/knowledge/eel_knowledge.json'))
-        self.backend = self.reference.backend
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self._lock = threading.RLock()
         self._index_revision, self._index = None, None
-        self._builtins = {}
-        for chunk in self.reference.chunks:
-            key = 'builtin-' + hashlib.sha256(chunk['id'].encode()).hexdigest()[:24]
-            title = chunk['text'].split('。')[0][:120]
-            self._builtins[key] = {'id':key,'title':title,'category':CATEGORIES.get(chunk['type'],'养殖知识'),
-                'body':chunk['text'],'version':1,'status':'ACTIVE','updated_at':None,
-                'origin':'builtin','source_id':self.reference.source_id,'source_version':self.reference.source_version,
-                'evidence_id':chunk['id'],'chunk_type':chunk['type'],'keywords':chunk.get('keywords',[])}
 
     def _records(self):
-        revision, users, states = self.repository.snapshot()
-        builtins = [{**item, **{k:v for k,v in states.get(key,{}).items() if k in ('version','status','updated_at')}}
-                    for key,item in self._builtins.items()]
-        records = builtins + [{**row,'origin':'user','source_id':'management:knowledge/'+row['id'],
-            'source_version':str(row['version']),'evidence_id':row['id'],'chunk_type':row['category'],'keywords':[row['title']]}
-            for row in users]
-        return revision, records
+        return self.repository.snapshot()
 
     @staticmethod
     def public(item, *, detail=False):
-        keys = ('id','title','category','version','status','updated_at','origin','source_id','source_version')
+        keys = ('id','title','category','version','status','updated_at','origin','source_id','source_version',
+                'original_source_id','original_source_version')
         return {**{key:item[key] for key in keys}, **({'body':item['body']} if detail else {})}
 
     def list(self, *, query='', category='', status='', offset=0):
@@ -74,7 +58,7 @@ class KnowledgeContentService:
             raise KnowledgeError('INVALID_KNOWLEDGE_FILTER')
         if status not in ('','ACTIVE','DISABLED','DELETED') or type(offset) is not int or not 0<=offset<=1000:
             raise KnowledgeError('INVALID_KNOWLEDGE_FILTER')
-        revision, records = self._records()
+        revision, records, _ = self._records()
         categories = sorted({item['category'] for item in records})
         selected = [item for item in records if (not category or item['category']==category)
             and (not status or item['status']==status)
@@ -84,7 +68,7 @@ class KnowledgeContentService:
 
     def get(self, key):
         identifier(key)
-        _, records = self._records()
+        _, records, _ = self._records()
         for item in records:
             if item['id']==key: return self.public(item,detail=True)
         raise KnowledgeError('KNOWLEDGE_NOT_FOUND')
@@ -98,7 +82,6 @@ class KnowledgeContentService:
         identifier(key)
         if not isinstance(value,dict) or set(value)!={'version','title','category','body'}:
             raise KnowledgeError('INVALID_KNOWLEDGE_CONTENT')
-        if self.get(key)['origin']=='builtin': raise KnowledgeError('BUILTIN_KNOWLEDGE_READ_ONLY')
         changes=content({k:v for k,v in value.items() if k!='version'})
         self.repository.update(key,version(value['version']),changes,self.clock().astimezone(timezone.utc).isoformat())
         return self.get(key)
@@ -107,21 +90,47 @@ class KnowledgeContentService:
         identifier(key)
         if not isinstance(value,dict) or set(value)!={'version','status'} or value['status'] not in ('ACTIVE','DISABLED','DELETED'):
             raise KnowledgeError('INVALID_KNOWLEDGE_STATUS')
-        item=self.get(key)
         self.repository.update(key,version(value['version']),{'status':value['status']},
-            self.clock().astimezone(timezone.utc).isoformat(),builtin=item['origin']=='builtin')
+            self.clock().astimezone(timezone.utc).isoformat())
         return self.get(key)
 
     def search(self, query, *, top_k=5, retrieved_at=None, intent_text=None):
         with self._lock:
-            revision, records=self._records()
+            revision, records, metadata=self._records()
             if self._index_revision!=revision:
                 chunks=[{'id':item['evidence_id'],'type':item['chunk_type'],
-                    'text':item['body'] if item['origin']=='builtin' else item['title']+'。\n'+item['body'],
+                    'text':item['body'] if item['text_style']=='body' else item['title']+'。\n'+item['body'],
                     'keywords':item['keywords'],'source_id':item['source_id'],'source_version':item['source_version'],
                     'source_title':item['title']} for item in records if item['status']=='ACTIVE']
-                index=KnowledgeService.from_chunks(self.reference,chunks,source_id=self.source_id,source_version=str(revision))
+                index=KnowledgeService(chunks,disease_names=metadata['disease_names'],
+                    source_id=self.source_id,source_version=str(revision),backend=self.backend)
                 self._index,self._index_revision=index,revision
             snapshot=self._index
         # A concurrent edit publishes a different object, never mutates this search.
         return snapshot.search(query,top_k=top_k,retrieved_at=retrieved_at,intent_text=intent_text)
+
+    def export(self, *, format='json', status='active'):
+        """One consistent snapshot; downloads are never automatic import sources."""
+        if format not in ('json','markdown') or status not in ('active','all'):
+            raise KnowledgeError('INVALID_KNOWLEDGE_EXPORT')
+        revision, records, _ = self._records()
+        items=[self.public(item,detail=True) for item in records
+               if status=='all' or item['status']=='ACTIVE']
+        data={'format_version':'knowledge-export@1','selection':status,'index_revision':revision,
+              'count':len(items),'items':items}
+        if format=='json':
+            body=json.dumps(data,ensure_ascii=False,indent=2,allow_nan=False)+'\n'
+            mime,extension='application/json','json'
+        else:
+            lines=['# 文本知识库',f'范围：{status} · 索引快照：{revision} · 条目数：{len(items)}','']
+            for item in items:
+                lines += ['## '+item['title'],'']
+                # JSON-quoted metadata is unambiguous even with Markdown punctuation.
+                lines += [f'- {key}: '+json.dumps(value,ensure_ascii=False) for key,value in item.items()
+                          if key not in ('body','title')]
+                lines += ['','### 正文','',item['body'],'','---','']
+            body='\n'.join(lines)
+            mime,extension='text/markdown','md'
+        payload=body.encode('utf-8')
+        if len(payload)>2*1024*1024:raise KnowledgeError('KNOWLEDGE_EXPORT_LIMIT')
+        return payload,mime,f'fishery-knowledge-{status}.{extension}'

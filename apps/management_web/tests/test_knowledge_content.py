@@ -8,6 +8,7 @@ from apps.ai_backend.tests.support import FakeSDK,sdk_tool,sdk_final,tool_chunks
 from apps.ai_backend.openai_compatible_adapter import OpenAICompatibleAdapter
 import apps.ai_service.tests.test_unified_tools as fixture
 from apps.ai_service.service import ManagementAssistantService
+from apps.knowledge.tests.support import seed
 from apps.knowledge.repository import KnowledgeRepository
 from apps.knowledge.service import KnowledgeContentService,CONTENT_SOURCE
 from apps.management_web.ai_adapter import ManagementAssistant
@@ -20,7 +21,7 @@ WATER,KNOWLEDGE,HISTORY=fixture.WATER,fixture.KNOWLEDGE,fixture.HISTORY
 class KnowledgeHTTPTests(unittest.TestCase):
     def setUp(self):
         self.fixture=fixture.UnifiedToolsTests();self.fixture.setUp();self.addCleanup(self.fixture.doCleanups)
-        f=self.fixture;self.content=KnowledgeContentService(KnowledgeRepository(f.root/'knowledge.sqlite3'))
+        f=self.fixture;seed(f.root/'knowledge.sqlite3');self.content=KnowledgeContentService(KnowledgeRepository(f.root/'knowledge.sqlite3'))
         old=f.backend
         f.backend=ManagementAssistantService(f.monitoring,credentials=old.credentials,traces=old.traces,
             policy_directory=old.policy_store.directory,knowledge=self.content,
@@ -57,6 +58,7 @@ class KnowledgeHTTPTests(unittest.TestCase):
 
     def test_content_without_ai_and_restart_through_actual_startup_factory(self):
         from apps.management_web.__main__ import knowledge_content
+        seed(self.fixture.root/'apps/knowledge_data/knowledge.sqlite3')
         service=knowledge_content(self.fixture.root)
         app=create_app(knowledge_service=service);client=app.test_client()
         token=client.get('/api/knowledge').get_json()['write_token']
@@ -80,9 +82,10 @@ class KnowledgeHTTPTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/knowledge?q='+'x'*129).status_code,400)
         self.assertFalse(self.fixture.sdk.bodies)
 
-    def test_builtins_readonly_no_match_and_bounded_test_evidence(self):
+    def test_imported_builtins_editable_no_match_and_bounded_test_evidence(self):
         item=self.client.get('/api/knowledge').get_json()['items'][0]
-        self.assertEqual(self.client.patch('/api/knowledge/'+item['id'],json={**VALUE,'version':1},headers=self.headers).get_json()['error_code'],'BUILTIN_KNOWLEDGE_READ_ONLY')
+        edited=self.client.patch('/api/knowledge/'+item['id'],json={**VALUE,'version':1},headers=self.headers)
+        self.assertEqual(edited.status_code,200);self.assertEqual(edited.get_json()['original_source_id'],item['source_id'])
         created=self.client.post('/api/knowledge',json={**VALUE,'body':'蓝莓浮岛'*1400},headers=self.headers).get_json()
         result=self.client.post('/api/knowledge/search',json={'query':'蓝莓浮岛'},headers=self.headers).get_json()
         self.assertLessEqual(result['result_count'],3)
@@ -136,3 +139,31 @@ class KnowledgeHTTPTests(unittest.TestCase):
             self.assertTrue(result['successful_turn'],result)
             f.assert_delivery_and_sources((WATER,HISTORY))
             self.assertEqual(len(f.sdk.bodies),3)
+
+    def test_imported_builtin_edit_status_restore_and_safe_export_downloads(self):
+        item=self.client.get('/api/knowledge').get_json()['items'][0]
+        path='/api/knowledge/'+item['id']
+        edited=self.client.patch(path,json={**VALUE,'version':item['version']},headers=self.headers).get_json()
+        self.assertEqual(edited['origin'],'builtin');self.assertEqual(edited['original_source_id'],item['source_id'])
+        self.assertNotEqual(edited['source_id'],item['source_id'])
+        for status in ('DISABLED','DELETED','ACTIVE'):
+            edited=self.client.post(path+'/status',json={'version':edited['version'],'status':status},headers=self.headers).get_json()
+            hits=self.client.post('/api/knowledge/search',json={'query':'蓝莓浮岛'},headers=self.headers).get_json()['evidence']
+            self.assertEqual(any(h['source']==edited['source_id'] for h in hits),status=='ACTIVE')
+        before=self.content.repository.path.read_bytes()
+        for selection in ('active','all'):
+            exported=self.client.get('/api/knowledge/export?format=json&status='+selection)
+            self.assertEqual(exported.status_code,200)
+            self.assertEqual(exported.headers['Content-Type'],'application/json; charset=utf-8')
+            self.assertIn('attachment; filename="fishery-knowledge-',exported.headers['Content-Disposition'])
+            value=exported.get_json();self.assertEqual(value['count'],31)
+            self.assertIn(edited,value['items'])
+            markdown=self.client.get('/api/knowledge/export?format=markdown&status='+selection)
+            self.assertEqual(markdown.status_code,200);self.assertIn(VALUE['body'],markdown.get_data(as_text=True))
+        for query in ('format=../../private','format=sqlite','status=DELETED','path=C:/private','format=json&format=markdown'):
+            self.assertEqual(self.client.get('/api/knowledge/export?'+query).status_code,400)
+        for options in ({'base_url':'http://evil.invalid'}, {'environ_overrides':{'REMOTE_ADDR':'10.1.1.1'}},
+                        {'headers':{'Origin':'http://evil.invalid'}}):
+            self.assertEqual(self.client.get('/api/knowledge/export',**options).status_code,403)
+        self.assertFalse(self.fixture.sdk.bodies)
+        self.assertEqual(before,self.content.repository.path.read_bytes())

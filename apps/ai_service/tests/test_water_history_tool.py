@@ -314,10 +314,10 @@ class WaterHistoryToolTests(unittest.TestCase):
 
     def test_old_normal_streaming_scopes_reject_history_and_assembled_revision_changes(self):
         from importlib.resources import files
-        from fishery_ai.knowledge import KnowledgeService
+        from apps.knowledge.migration import legacy_reference
         from apps.ai_service.execution import load_execution_config, resolve_execution
         from apps.ai_service.streaming import load_streaming_config, resolve_streaming
-        knowledge = KnowledgeService(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json"))
+        knowledge = legacy_reference(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json"))
         formal = bind_tools(self.monitoring, "pond-a", knowledge)
         candidate = bind_tools(self.monitoring, "pond-a", knowledge, include_history=True)
         old_policy = ToolPolicy("assistant", True, FORMAL_TOOL_NAMES)

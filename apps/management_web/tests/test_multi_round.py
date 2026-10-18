@@ -42,7 +42,7 @@ class ManagementMultiRoundTests(unittest.TestCase):
 
     def start_trial(self,*,config=None,names=(WATER,KNOWLEDGE)):
         previous=self.backend
-        self.backend=ManagementAssistantService(self.monitoring,credentials=previous.credentials,
+        self.backend=ManagementAssistantService(self.monitoring,knowledge=previous.knowledge,credentials=previous.credentials,
             traces=previous.traces,policy_directory=self.root/'policies',gateway_factory=lambda:self.gateway,
             execution_config=config or load_execution_config(enable_trial=True))
         selections=self.backend.policy_store.default_selections()

@@ -1,6 +1,8 @@
 # 管理系统 Web
 
-独立管理应用：Flask + 原生 ES Modules / CSS / SVG，复用现有依赖。水质、视觉与事件来自统一 SQLite 存储的模拟器上报；可显式启用 Normal Assistant，共用该监测来源。「资料与知识库」管理独立持久化的用户内容与内置状态，和 AI 共用原 TF-IDF 检索；文件导入、真实传感器/NPU/视频和生产权限未接入。
+独立管理应用：Flask + 原生 ES Modules / CSS / SVG，复用现有依赖。水质、视觉与事件来自统一 SQLite 存储的模拟器上报；可显式启用 Normal Assistant，共用该监测来源。「资料与知识库」管理单一SQLite中的用户与内置导入文本，并支持Markdown/JSON导出，和 AI 共用原 TF-IDF 检索；文件导入、真实传感器/NPU/视频和生产权限未接入。
+
+首次升级须按[统一知识库迁移](../docs/deep-dive/KNOWLEDGE_CONTENT.md)先显式备份迁移；未准备新库会安全拒绝启动，不自动动用户数据。
 
 在仓库根目录执行：
 

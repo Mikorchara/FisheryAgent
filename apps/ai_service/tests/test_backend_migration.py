@@ -49,7 +49,7 @@ assert run.wasSuccessful()
 ''')
 
     def test_management_source_imports_only_explicit_legacy_domain_contracts(self):
-        allowed={'fishery_ai.knowledge','fishery_ai.contracts'}
+        allowed={'fishery_ai.contracts'}
         for directory in (ROOT/'apps/ai_service',ROOT/'apps/management_web'):
             for path in directory.rglob('*.py'):
                 if 'tests' in path.parts:continue

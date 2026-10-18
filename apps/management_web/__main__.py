@@ -8,7 +8,7 @@ from .app import create_app
 def knowledge_content(root):
     from apps.knowledge.repository import KnowledgeRepository
     from apps.knowledge.service import KnowledgeContentService
-    return KnowledgeContentService(KnowledgeRepository(root/'outputs/management_web/knowledge.sqlite3'))
+    return KnowledgeContentService(KnowledgeRepository(root/'apps/knowledge_data/knowledge.sqlite3',require_existing=True))
 
 
 def project_root(*, module_file=None, working_directory=None):
@@ -63,7 +63,11 @@ def main():
                 parser.error("INGESTION_TOKEN_REQUIRED: set a 32-128 character alphanumeric development token")
         path = root/"outputs"/"management_web"/"monitoring.sqlite3"
         data_service = MonitoringService(MonitoringRepository(path))
-    knowledge = knowledge_content(project_root())
+    from apps.knowledge.repository import KnowledgeError
+    try:
+        knowledge = knowledge_content(project_root())
+    except KnowledgeError as error:
+        parser.error(error.code+': 请先按 apps/docs/deep-dive/KNOWLEDGE_CONTENT.md 完成显式知识库迁移。')
     ai_options = {}
     if args.enable_assistant:
         from .ai_adapter import ManagementAssistant

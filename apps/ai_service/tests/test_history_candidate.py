@@ -1,4 +1,7 @@
 """Closed publication gate + offline admission stub over actual management HTTP."""
+
+from apps.knowledge.migration import legacy_reference
+from importlib.resources import files
 from dataclasses import replace
 from datetime import datetime, timezone
 import json
@@ -41,6 +44,7 @@ class HistoryCandidateTests(unittest.TestCase):
         self.profile=assistant.assistant_profile(assistant.ALLOWED_PRESET_IDS[0])
         self.sdk=FakeSDK([sdk_tool(HISTORY,arguments=fixtures.ARGS),sdk_final()],model=self.profile.model)
         self.backend=composition.ManagementAssistantService(self.monitoring,
+            knowledge=legacy_reference(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json")),
             credentials=CredentialStore(process_env={self.profile.credential_ref:'fictional-history-http-key'}),
             traces=JsonlTraceSink(self.root/'trace.jsonl',tool_names=HISTORY_CANDIDATE_TOOL_NAMES),
             policy_directory=self.root/('policy-'+str(self.monitoring_index)),

@@ -31,7 +31,7 @@ class UnifiedToolsTests(unittest.TestCase):
     def configure(self,case='sparse',*,normal=True,streaming=True):
         fixture.HistoryCandidateTests.configure(self,case)
         old=self.backend
-        self.backend=ManagementAssistantService(self.monitoring,credentials=old.credentials,traces=old.traces,
+        self.backend=ManagementAssistantService(self.monitoring,knowledge=old.knowledge,credentials=old.credentials,traces=old.traces,
             policy_directory=old.policy_store.directory,
             gateway_factory=lambda:OpenAICompatibleAdapter(async_client_factory=self.sdk.factory),
             execution_config=load_execution_config(enable_trial=True),streaming_config=load_streaming_config(enable_trial=True),

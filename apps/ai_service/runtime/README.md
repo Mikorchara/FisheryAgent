@@ -2,7 +2,7 @@
 
 R2C-1D后由正式ManagementAssistantService直接使用；通用执行由 [ai_backend](../../ai_backend/README.md) 负责，业务层不复制循环。
 
-这里的 runtime 指业务 Assistant 合同，不是第二套通用 Runtime。Tool、Prompt、参数扩展步骤见 [开发指南](../../docs/AI_BACKEND_DEVELOPMENT_GUIDE.md)。不要在本目录添加 Gateway、Streaming Assembler 或新的执行循环。
+这里的 runtime 指业务 Assistant 合同，不是第二套通用 Runtime。Tool、Prompt、参数扩展步骤见 [开发指南](../../docs/deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)。不要在本目录添加 Gateway、Streaming Assembler 或新的执行循环。
 
 - `assistant.py`：原两版业务Prompt、History完整pair裁剪、Source/Trace Commit Gate。
 - `sources.py`：Requirement/Receipt/Ledger，只从本轮新Backend执行步骤认证来源；历史操作及可靠历史观测独立于当前观测。
@@ -21,10 +21,10 @@ R2D-1G 的 [历史 Tool](../business_tools/water_quality_history.py) 由 bind_to
 
 同名文件要按层定位：顶层 execution.py 是 Normal 发布/Scope/revision，streaming.py 是 Streaming 发布/Scope；通用请求取消/Deadline 在 ai_backend/execution.py，HTTP SSE worker 在 management_web/streaming.py。顶层 contracts.py 是进程内 PreparedAssistantTurn / AssistantBackend 业务合同，不是 Web DTO。
 
-依赖为Web → AI Service → Backend；Handler → Monitoring / 原KnowledgeService。暂留旧领域依赖仅包括Diagnosis/telemetry/Reading、Knowledge/Evidence/资源、sources中的Quality/Freshness，连带旧model_options；不调用旧Assistant/Gateway/Adapter/Executor/Handle/ContextVar。阻断这些旧执行模块后，实际HTTP/SSE及管理资格Fake测试仍通过。
+依赖为Web → AI Service → Backend；Handler → Monitoring / apps.knowledge统一SQLite与独立TF-IDF。暂留旧领域依赖仅包括Diagnosis/telemetry/Reading、sources中的Quality/Freshness，连带旧model_options；不调用旧Assistant/Gateway/Adapter/Executor/Handle/ContextVar。阻断这些旧执行模块后，实际HTTP/SSE及管理资格Fake测试仍通过。
 
 资格观察器在上一级development，使用新Backend，正式启动不加载它。既有真实资格记录仍属于旧Runtime；新计划@2改变授权hash，不改Scope或既有记录，不自动联网。
 
-R2C-1E：用户已报告新 Backend 的 Qwen Normal 水质查询、Streaming 水质 + Knowledge 与最终提交基本网页验收通过。迁移主线已结束；这不替代回答质量专项审核，不增加 Provider 资格或发布范围。Monitoring/Knowledge 领域独立化留待后续任务。
+R2C-1E：用户已报告新 Backend 的 Qwen Normal 水质查询、Streaming 水质 + Knowledge 与最终提交基本网页验收通过。迁移主线已结束；这不替代回答质量专项审核，不增加 Provider 资格或发布范围。Monitoring领域独立化留待后续任务；Knowledge已在R2D-3B脱离旧实现，旧JSON仅作显式迁移/历史资格夹具。
 
 验证：`python scripts/dev/run_tests.py backend`。当前执行路径、指纹与回滚见 [实施记录](../../docs/deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#14-r2c-1d-phase-ii-管理端整体切换)。

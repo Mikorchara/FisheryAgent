@@ -196,7 +196,7 @@ class StreamingQualificationTests(unittest.TestCase):
         self.assertFalse(any((self.root/'outputs/assistant-qualification/.management-work').iterdir()))
 
     def test_no_match_is_a_completed_search_and_does_not_forge_evidence(self):
-        with patch.object(q.KnowledgeService,'search',return_value=()):
+        with patch('apps.knowledge.retrieval.KnowledgeService.search',return_value=()):
             report=self.run_case('low-oxygen',[tool(),tool(q.KNOWLEDGE,'second','{"query":"x"}'),final()])
         self.assertTrue(report['success'],report['error_code'])
         receipt=report['ledger']['entries'][1]['receipt']

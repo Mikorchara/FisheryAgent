@@ -23,7 +23,7 @@ from apps.ai_backend.credential_paths import CredentialLocationError
 from apps.ai_backend.credentials import CredentialFileError
 from apps.ai_backend.execution import RequestHandle
 from apps.ai_backend.history_projection import DEFAULT_HISTORY_PROJECTION, TRANSCRIPT_KIND, TRANSCRIPT_NOTICE
-from fishery_ai.knowledge import KnowledgeService
+from apps.knowledge.migration import legacy_reference
 from apps.ai_backend.model_gateway import GatewayError
 from apps.ai_backend.model_options import Support
 from apps.ai_backend.tool_conversation import ToolModelTransport, ToolExecutionStep
@@ -100,7 +100,7 @@ def plan(case_id):
     """No CredentialStore, SQLite, user Policy, SDK client or filesystem writes."""
     case = get_case(case_id)
     profile = assistant_profile(STREAMING_PRESET)
-    knowledge = KnowledgeService(files('fishery_ai').joinpath('resources/knowledge/eel_knowledge.json'))
+    knowledge = legacy_reference(files('fishery_ai').joinpath('resources/knowledge/eel_knowledge.json'))
     registry = bind_tools(_NoDataAccess(), DEVICE, knowledge)
     policy = ToolPolicy('assistant', True, STREAMING_TOOLS)
     scope = _scope(profile, policy, registry, knowledge)
@@ -238,7 +238,8 @@ def run(case_id, root, *, confirm_network=False, approved_plan_sha256=None,
             monitoring = _monitoring(folder, case)
             baseline = monitoring.repository.read(DEVICE, 'water')
             credentials = credential_store if credential_store is not None else _credentials(Path(root))
-            service = ManagementAssistantService(monitoring, credentials=credentials, traces=trace,
+            service = ManagementAssistantService(monitoring,
+                knowledge=legacy_reference(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json")), credentials=credentials, traces=trace,
                 policy_directory=folder/'policies', gateway_factory=lambda: gateway)
             selected = service.policy_store.default_selections()
             selected['modes']['assistant']['selected_tools'] = list(STREAMING_TOOLS)

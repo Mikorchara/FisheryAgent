@@ -1,6 +1,5 @@
 """Management AI composition using only the independent Backend execution types."""
 
-from importlib.resources import files
 from dataclasses import replace
 from pathlib import Path
 import secrets
@@ -10,7 +9,6 @@ from .runtime.assistant import AssistantRequest, AssistantService, assistant_pro
 from apps.ai_backend.assistant_activity import safe_code
 from apps.ai_backend.credentials import CredentialStore
 from apps.ai_backend.execution import RequestHandle, request_scope, turn_deadline_scope
-from fishery_ai.knowledge import KnowledgeService
 from apps.ai_backend.model_gateway import GatewayError, ProfileRegistry
 from apps.ai_backend.observability import JsonlTraceSink
 from apps.ai_backend.openai_compatible_adapter import OpenAICompatibleAdapter
@@ -58,7 +56,9 @@ class ManagementAssistantService:
         if not devices:
             raise ValueError("NO_MONITORING_DEVICE")
         # Explicit business dependency only: no old Gateway/Registry/Executor.
-        self.knowledge = knowledge if knowledge is not None else KnowledgeService(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json"))
+        if knowledge is None:
+            raise ValueError("KNOWLEDGE_SERVICE_REQUIRED")
+        self.knowledge = knowledge
         from apps.knowledge.service import KnowledgeContentService
         if isinstance(self.knowledge,KnowledgeContentService):
             from .content_binding import content_scope_configs

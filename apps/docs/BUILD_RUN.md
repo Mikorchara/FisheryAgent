@@ -54,13 +54,21 @@ node --test apps/management_web/tests/*.test.mjs
 
 真实外部连接由用户从[统一人工入口](../../scripts/manual_real_tests/README.md#5-三工具-normal-候选r2d-2a)亲自执行。R2D-2A 已在隔离 SQLite/Fake SDK 验证启动、10秒实际HTTP上报、占用拒绝、清理、聊天双模式和布局；未启动用户真实数据服务、读取私有凭据或调用 Provider。详见[实施记录](deep-dive/R2D2A_PRODUCT_INTEGRATION.md)。
 
-## 知识内容管理（R2D-3A）
+## 统一知识库（R2D-3B）
 
-沿用顶部 `run_local.ps1 -Scenario low_oxygen`，无需新增参数或重启索引。在「资料与知识库」添加标题、分类、正文，保存后可查看/编辑；停用与删除均需确认，软删除可恢复。按关键词/分类/状态筛选，或使用「检索测试」查看实际片段和来源，不调用模型。内置正文只读，支持独立停用。
+**升级前须先关闭管理服务器并完成显式数据迁移，实际用户库迁移另需批准。** 新程序只读取 `apps/knowledge_data/knowledge.sqlite3`，不自动创建空库或回退旧 JSON。先核对安全计划：
 
-内容保存于 Git 忽略的 `outputs/management_web/knowledge.sqlite3`，重启保留，不写监测数据库或固定资源。管理网页与 Knowledge Tool 使用同一服务；模型只有既有只读搜索，仍须原 Tool Policy 授权。新增动态知识源使管理 Scope/revision 与旧固定库不同，但模型、工具集合、预算、开关和 local_experimental 状态不扩大；旧真实记录不作为新源资格。详见[内容、版本及安全合同](deep-dive/KNOWLEDGE_CONTENT.md)。
+```powershell
+$knowledgePlan = .\.venv\Scripts\python.exe -m apps.knowledge --dry-run | ConvertFrom-Json; $knowledgePlan
+```
 
-离线专项：`.\.venv\Scripts\python.exe -m unittest apps.knowledge.tests.test_content apps.management_web.tests.test_knowledge_content`；前端：`node --test apps/management_web/tests/knowledge-ui.test.mjs`。`management` 现也包含知识内容服务测试，不重复收集。
+批准数量和 hash 后：`.\.venv\Scripts\python.exe -m apps.knowledge --apply --plan-sha256 $knowledgePlan.plan_sha256`。自动备份旧库与 JSON，不移动、不覆盖原文件；新目标已存在不会覆盖。完整步骤、全新安装与回滚见[知识迁移与备份](deep-dive/KNOWLEDGE_CONTENT.md#迁移操作须先批准关闭管理服务器)。
+
+之后继续用顶部 `run_local.ps1 -Scenario low_oxygen`。在「资料与知识库」管理所有导入/用户文本，支持查看、编辑、停用、软删除及恢复；版本冲突会拒绝覆盖。导入原始来源保留，编辑不回写 Prototype。检索测试不调用模型；AI Knowledge Tool 仍需原 Tool Policy 授权。下载选择 Markdown/JSON 和当前启用/全部，UTF-8内容导出不构成自动同步源。
+
+运行数据与备份受 Git 忽略、排除打包；Monitoring SQLite、用户 Policy、凭据与原 Prototype 不变。源合同仍为 R2D-3A 的动态内容 Scope，不修改 Prompt/Schema/模型预算或发布范围，不将历史真实资格冒充为新动态内容验证。
+
+离线专项：`.\.venv\Scripts\python.exe -m unittest apps.knowledge.tests.test_content apps.knowledge.tests.test_unified_store apps.management_web.tests.test_knowledge_content`；前端：`node --test apps/management_web/tests/knowledge-ui.test.mjs`。`management` 入口包含这些业务测试。
 
 ## 只读启动
 

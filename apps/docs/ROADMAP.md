@@ -4,7 +4,7 @@
 
 ## 已实现
 
-- R2D-3A：知识内容管理 MVP，用户内容持久化、内置只读/状态覆盖、版本/CAS、可恢复停用删除、原 TF-IDF 快照与 Knowledge Tool 同源；不包含文件导入、RAG 技术参数或生产鉴权。见[内容合同](deep-dive/KNOWLEDGE_CONTENT.md)。
+- R2D-3B：统一SQLite文本知识库、旧资源显式迁移/备份、内置导入可编辑、状态恢复、JSON/Markdown导出；管理Knowledge已脱离旧代码，保持TF-IDF算法与现有Tool权限。[迁移合同](deep-dive/KNOWLEDGE_CONTENT.md)。实际用户库迁移待批准。
 
 - R1：独立管理布局、七业务页面、Demo/空状态、只读应用 API 和测试。
 - R1.1：工程规则与管理平台文档入口。
@@ -35,7 +35,7 @@ R2D-2A已补Policy锁初始化、管理测试入口、一行启动和全屏/阅�
 
 ## 后续独立工作
 
-- R2C-1E 已完成迁移收尾与基本真实网页人工验收；不再继续零散 Runtime 迁移。Monitoring 的 Diagnosis / telemetry / Reading，以及 KnowledgeService / Evidence / 固定资源仍依赖旧领域包，应另立领域 / Knowledge 独立化任务，不迁入通用 Backend。旧 Prototype 继续独立实验。见 [收尾记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。
+- R2C-1E 已完成迁移收尾与基本真实网页人工验收；不再继续零散 Runtime 迁移。Monitoring 的 Diagnosis / telemetry / Reading，仍依赖旧领域包，应另立领域独立化任务；Knowledge的旧代码依赖已由R2D-3B移除，旧JSON仅作迁移/隔离资格来源，不迁入通用 Backend。旧 Prototype 继续独立实验。见 [收尾记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。
 - 真实 Monitoring：设备登记/认证、物理采集 Adapter、持久历史与运维策略；不由客户端自报真实来源。
 - Video/NPU：实际视频传输、校准、推理结果归一化、受控截图/片段；不迁移旧 GPU 桌面项目。
 - Events：生产告警策略、通知、人工处理和审计；当前 RESOLVED 需可靠新观测确认规则恢复，不表示人工处置或生产告警闭环。

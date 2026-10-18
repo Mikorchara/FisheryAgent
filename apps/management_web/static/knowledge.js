@@ -5,7 +5,7 @@ import {timeText} from './view-model.js';
 export function createKnowledgeWorkspace(api){
   const root=el('div',{class:'knowledge-management'});
   const s={data:null,token:null,q:'',category:'',status:'',offset:0,selected:null,form:null,
-    busy:false,loaded:false,message:'',testQuery:'',hits:null,confirmation:null};
+    busy:false,loaded:false,message:'',testQuery:'',hits:null,confirmation:null,exportFormat:'json',exportStatus:'active'};
   let loading=0;
   const statusName=value=>({ACTIVE:'启用',DISABLED:'已停用',DELETED:'已删除（可恢复）'}[value]||'未知');
   const describeError=error=>({KNOWLEDGE_CONFLICT:'内容已被其他窗口修改。请刷新并重新打开编辑，当前草稿已保留。',
@@ -14,7 +14,6 @@ export function createKnowledgeWorkspace(api){
     KNOWLEDGE_ACCESS_DENIED:'页面授权已过期，请刷新知识列表后重试。',
     INVALID_KNOWLEDGE_CONTENT:'请检查标题、分类和正文；正文最多 6000 字，不能包含非法字符。',
     KNOWLEDGE_LIMIT:'知识条目已达上限（200 条，含可恢复删除），请联系维护者。',
-    BUILTIN_KNOWLEDGE_READ_ONLY:'内置知识正文只读，可以停用。',
     INVALID_KNOWLEDGE_QUERY:'检索关键词无效，请使用 1–512 字的单行文字。'}[error?.message]||'知识操作失败，请刷新后重试。');
   const field=(label,value,change,maximum,multiline=false)=>el('label',{class:'field'},[
     el('span',{text:label}),el(multiline?'textarea':'input',{'aria-label':label,maxlength:maximum,
@@ -47,7 +46,7 @@ export function createKnowledgeWorkspace(api){
     s.confirmation=null;
     s.busy=true;render();
     try{s.selected=await api.status(item.id,{version:item.version,status},s.token);s.hits=null;
-      s.message=`知识已${statusName(status)}。`;await load();
+      s.message=`知识状态：${statusName(status)}。`;await load();
     }catch(e){s.message=describeError(e);}finally{s.busy=false;render();}
   }
   async function searchTest(){
@@ -61,8 +60,11 @@ export function createKnowledgeWorkspace(api){
     const filter=(label,choices,value,change)=>el('label',{class:'field'},[el('span',{text:label}),
       el('select',{'aria-label':label,...disabled,onchange:e=>{change(e.target.value);s.offset=0;void load();}},
         choices.map(([id,name])=>el('option',{value:id,...(id===value?{selected:'selected'}:{})},[name]))) ]);
+    const exportChoice=(label,choices,key)=>el('label',{class:'field'},[el('span',{text:label}),
+      el('select',{'aria-label':label,...disabled,onchange:e=>{s[key]=e.target.value;render();}},
+        choices.map(([id,name])=>el('option',{value:id,...(id===s[key]?{selected:'selected'}:{})},[name]))) ]);
     const list=s.data?table(['标题','分类','来源','状态','更新时间','操作'],s.data.items,item=>[
-      el('strong',{text:item.title}),item.category,item.origin==='builtin'?'内置项目知识':'用户创建',
+      el('strong',{text:item.title}),item.category,item.origin==='builtin'?'内置导入':'用户创建',
       badge(statusName(item.status),item.status==='ACTIVE'?'success':'neutral'),
       item.updated_at?timeText(item.updated_at):'随项目发布'],item=>void detail(item)):
       empty(s.busy?'正在加载知识':'知识列表暂不可用','请刷新重试；不会显示假知识内容。','book');
@@ -71,13 +73,13 @@ export function createKnowledgeWorkspace(api){
       field('知识正文',s.form.body,v=>s.form.body=v,6000,true),
       el('div',{class:'actions'},[action('保存知识',()=>void save(),'primary'),action('取消编辑',()=>{s.form=null;render();})])]):null;
     const item=s.selected;
-    const details=item&&!s.form?card(item.title,item.origin==='builtin'?'内置项目知识 · 正文只读':'用户创建的知识',[
+    const details=item&&!s.form?card(item.title,item.origin==='builtin'?'内置导入 · 修改不回写原始文件':'用户创建的知识',[
       rows([['分类',item.category],['状态',statusName(item.status)],['内容来源',item.source_id],['来源版本',item.source_version],
-        ['记录版本',item.version],['更新时间',item.updated_at?timeText(item.updated_at):'随项目发布']]),
+        ['原始来源',item.original_source_id||item.source_id],['原始来源版本',item.original_source_version||item.source_version],['记录版本',item.version],['更新时间',item.updated_at?timeText(item.updated_at):'随项目发布']]),
       el('pre',{class:'knowledge-body',text:item.body}),el('div',{class:'actions'},[
-        ...(item.origin==='user'?[action('编辑知识',()=>{s.form={...item};s.message='';s.confirmation=null;render();})]:[]),
+        action('编辑知识',()=>{s.form={...item};s.message='';s.confirmation=null;render();}),
         action(item.status==='ACTIVE'?'停用知识':'恢复启用',()=>{s.confirmation={item,status:item.status==='ACTIVE'?'DISABLED':'ACTIVE'};render();}),
-        ...(item.origin==='user'&&item.status!=='DELETED'?[action('删除知识',()=>{s.confirmation={item,status:'DELETED'};render();},'text')]:[])])]):null;
+        ...(item.status!=='DELETED'?[action('删除知识',()=>{s.confirmation={item,status:'DELETED'};render();},'text')]:[])])]):null;
     const confirmation=s.confirmation?el('div',{class:'notice warning knowledge-confirm',role:'alert'},[
       el('p',{text:`确认${{DELETED:'删除（可恢复）',DISABLED:'停用',ACTIVE:'恢复启用'}[s.confirmation.status]}“${s.confirmation.item.title}”？停用或删除后不再参与后续检索。`}),
       el('div',{class:'actions'},[action('确认'+{DELETED:'删除',DISABLED:'停用',ACTIVE:'恢复'}[s.confirmation.status],()=>void setStatus(s.confirmation.item,s.confirmation.status),'primary'),
@@ -85,6 +87,10 @@ export function createKnowledgeWorkspace(api){
     root.replaceChildren(card('知识内容','内置资料与用户知识统一检索。删除可恢复；本机编辑权限不等于生产权限。',[
       el('div',{class:'knowledge-toolbar actions'},[action('新增知识',()=>{s.form={title:'',category:'养殖知识',body:''};s.selected=null;s.confirmation=null;s.message='';render();},'primary'),
         action('刷新知识',()=>void load())]),
+      el('div',{class:'actions knowledge-export'},[
+        exportChoice('导出格式',[['json','JSON'],['markdown','Markdown']],'exportFormat'),
+        exportChoice('导出范围',[['active','当前启用知识'],['all','全部知识（含停用和删除）']],'exportStatus'),
+        el('a',{class:'button secondary',href:api.exportUrl(s.exportFormat,s.exportStatus),download:'',text:'导出知识库'})]),
       el('div',{class:'filters'},[field('搜索知识内容',s.q,v=>s.q=v,128),action('查询内容',()=>{s.offset=0;void load();}),
         filter('知识分类筛选',[['','全部分类'],...(s.data?.categories||[]).map(v=>[v,v])],s.category,v=>s.category=v),
         filter('知识状态',[['','全部状态'],['ACTIVE','启用'],['DISABLED','已停用'],['DELETED','已删除（可恢复）']],s.status,v=>s.status=v)]),

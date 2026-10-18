@@ -110,12 +110,15 @@ apps/
 │  ├─ normal_selection.py                                                # 冻结Normal候选与独立获批的Normal/Streaming本地试用
 │  ├─ service.py                                                         # 唯一ManagementAssistantService业务装配
 │  └─ streaming.py                                                       # Streaming 发布配置、精确 Scope 与确认 revision
-├─ knowledge/                                                            # 知识内容业务，Web/AI 共享，无新检索算法
-│  ├─ repository.py                                                     # 独立SQLite、事务/CAS、状态与容量
-│  ├─ service.py                                                        # 内容校验、有限投影与按修订号发布索引快照
-│  ├─ tests/test_content.py                                             # 持久化、来源、并发、失败与原检索parity
-│  └─ README.md                                                         # 内容边界与文档入口
-├─ docs/                                                                 # 实际目录
+├─ knowledge/                                                            # 统一文本内容业务，Web/AI共享
+│  ├─ tests/                                                            # 内容/迁移/导出/检索 parity，隔离SQLite
+│  ├─ README.md                                                         # 业务入口与迁移说明
+│  ├─ __init__.py                                                       # 包标记
+│  ├─ __main__.py                                                       # 显式迁移/备份CLI，默认dry-run
+│  ├─ evidence.py                                                       # 独立检索Evidence
+│  ├─ legacy_import.py                                                  # 仅迁移/历史资格夹具的旧JSON分块
+│  ├─ migration.py                                                      # 备份/幂等/校验/原子不覆盖发布
+│  ├─ docs/                                                                 # 实际目录
 │  ├─ deep-dive/                                                         # 实际目录
 │  │  ├─ model/                                                          # 实际目录
 │  │  ├─ research/                                                       # 实际目录

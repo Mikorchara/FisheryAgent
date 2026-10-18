@@ -8,7 +8,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from fishery_ai.knowledge import KnowledgeService
+from fishery_ai.knowledge import KnowledgeService as LegacyKnowledgeService
+from apps.knowledge.retrieval import KnowledgeService
+from apps.knowledge.tests.support import seed
 from apps.knowledge.repository import KnowledgeError, KnowledgeRepository
 from apps.knowledge.service import KnowledgeContentService, MAX_BODY_CHARS
 
@@ -19,6 +21,7 @@ class KnowledgeContentTests(unittest.TestCase):
     def setUp(self):
         temporary=TemporaryDirectory();self.addCleanup(temporary.cleanup)
         self.path=Path(temporary.name)/'knowledge.sqlite3'
+        seed(self.path)
         self.service=KnowledgeContentService(KnowledgeRepository(self.path))
 
     def test_create_edit_disable_delete_restore_and_restart(self):
@@ -38,17 +41,19 @@ class KnowledgeContentTests(unittest.TestCase):
         edited=restarted.set_status(item['id'],{'version':edited['version'],'status':'ACTIVE'})
         self.assertTrue(any(h.evidence_id==item['id'] for h in restarted.search('银鳞玫瑰温棚')))
 
-    def test_builtin_read_only_overlay_and_original_retrieval_parity(self):
+    def test_builtin_editable_and_original_retrieval_parity(self):
         resource=files('fishery_ai').joinpath('resources/knowledge/eel_knowledge.json')
-        before=resource.read_bytes();original=KnowledgeService(resource)
+        before=resource.read_bytes();original=LegacyKnowledgeService(resource)
         expected=original.search('鳗鲡低氧表现',top_k=3)
         actual=self.service.search('鳗鲡低氧表现',top_k=3)
         self.assertEqual([(h.evidence_id,h.text,h.score,h.source_id,h.source_version) for h in actual],
                          [(h.evidence_id,h.text,h.score,h.source_id,h.source_version) for h in expected])
         item=self.service.list()['items'][0]
-        with self.assertRaisesRegex(KnowledgeError,'READ_ONLY'):
-            self.service.edit(item['id'],{**VALUE,'version':1})
-        self.service.set_status(item['id'],{'version':1,'status':'DISABLED'})
+        edited=self.service.edit(item['id'],{**VALUE,'version':1})
+        self.assertEqual(edited['source_version'],'2')
+        self.assertEqual(edited['original_source_id'],item['source_id'])
+        self.assertNotEqual(edited['source_id'],item['source_id'])
+        self.service.set_status(item['id'],{'version':2,'status':'DISABLED'})
         self.assertEqual(resource.read_bytes(),before)
         self.assertEqual(KnowledgeContentService(KnowledgeRepository(self.path)).get(item['id'])['status'],'DISABLED')
 

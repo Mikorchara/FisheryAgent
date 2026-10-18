@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from apps.ai_service.runtime.assistant import AssistantService
 from apps.ai_service.runtime.sources import SourceRequirement, requirement_satisfied_by_ledger
-from fishery_ai.contracts import KnowledgeEvidence
+from apps.knowledge.evidence import KnowledgeEvidence
 from apps.ai_backend.execution import current_handle
 from apps.ai_backend.model_gateway import ModelResponse, ModelToolCall
 from apps.ai_service.business_tools.fishery_knowledge import SEARCH_FISHERY_KNOWLEDGE as KNOWLEDGE
@@ -87,7 +87,7 @@ class ManagementKnowledgeTests(unittest.TestCase):
         self.assertEqual(self.config['tools'], [WATER, KNOWLEDGE])
         before = self.backend.policy_store.path.read_bytes()
         self.gateway = fixture.RecordingGateway(fixture.final())
-        with patch('apps.ai_service.service.KnowledgeService', side_effect=AssertionError('no second service')):
+        with patch('apps.knowledge.migration.legacy_reference', side_effect=AssertionError('no second service')):
             self.ai.bootstrap('pond-a'); self.send()
         self.assertEqual(before, self.backend.policy_store.path.read_bytes())
 

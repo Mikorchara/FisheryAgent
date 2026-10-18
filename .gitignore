@@ -6,6 +6,7 @@ __pycache__/
 .env.*
 !.env.example
 outputs/
+apps/knowledge_data/
 *.egg-info/
 build/
 dist/

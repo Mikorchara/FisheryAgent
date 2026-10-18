@@ -1,5 +1,8 @@
 """Management HTTP → formal Assistant → Executor → same SQLite; all sockets blocked."""
 
+from apps.knowledge.migration import legacy_reference
+from importlib.resources import files
+
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
@@ -88,6 +91,7 @@ class ManagementAssistantTests(unittest.TestCase):
         self.traces = self.root/'assistant.jsonl'
         ref = assistant_profile(PRESETS[0]).credential_ref
         self.backend = ManagementAssistantService(self.monitoring,
+            knowledge=legacy_reference(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json")),
             credentials=CredentialStore(process_env={ref: 'fictional-management-test-value'}),
             traces=JsonlTraceSink(self.traces,tool_names=(QUERY,'search_fishery_knowledge')), policy_directory=self.root/'policies',
             gateway_factory=lambda: self.gateway)

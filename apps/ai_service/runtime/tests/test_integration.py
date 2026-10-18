@@ -1,4 +1,7 @@
 """Independent Assistant + Fake SDK + authoritative Monitoring/Knowledge assembly."""
+
+from apps.knowledge.migration import legacy_reference
+from importlib.resources import files
 from datetime import datetime, timezone
 from dataclasses import replace
 import json
@@ -73,6 +76,7 @@ class IntegrationTests(unittest.TestCase):
                 sdk_tool(KNOWLEDGE,'call_2','{"query":"鳗鲡低氧表现"}') if kind=='knowledge' else sdk_final())
         self.sdk=FakeSDK(plan,model=self.profile.model,on_close=close)
         self.backend=ManagementAssistantService(self.monitoring,
+            knowledge=legacy_reference(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json")),
             credentials=CredentialStore(process_env={self.profile.credential_ref:'fictional-fixture-credential'}),
             traces=self.traces,policy_directory=self.root/'policies',
             gateway_factory=lambda:OpenAICompatibleAdapter(async_client_factory=self.sdk.factory),

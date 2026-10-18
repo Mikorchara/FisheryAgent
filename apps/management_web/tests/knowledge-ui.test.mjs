@@ -9,7 +9,7 @@ const value={id:'user-'+'a'.repeat(32),title:'蓝莓浮岛',category:'用户资�
   version:1,status:'ACTIVE',updated_at:'2026-10-18T01:00:00Z',origin:'user',source_id:'management:knowledge/example',source_version:'1'};
 function fixture(){
   const records=[structuredClone(value)],calls=[];
-  const api={list:async filters=>{calls.push(['list',filters]);return {items:structuredClone(records),total:records.length,categories:['用户资料'],write_token:'fictional-token',limit:50,offset:0};},
+  const api={exportUrl:(format,status)=>'/api/knowledge/export?'+new URLSearchParams({format,status}),list:async filters=>{calls.push(['list',filters]);return {items:structuredClone(records),total:records.length,categories:['用户资料'],write_token:'fictional-token',limit:50,offset:0};},
     get:async id=>{calls.push(['get',id]);return structuredClone(records.find(r=>r.id===id));},
     create:async(body,token)=>{calls.push(['create',body,token]);const item={...value,...body};records.push(item);return structuredClone(item);},
     edit:async(id,body,token)=>{calls.push(['edit',id,body,token]);const item=records.find(r=>r.id===id);Object.assign(item,body,{version:item.version+1});return structuredClone(item);},
@@ -42,7 +42,7 @@ test('create then edit sends explicit content and version; drafts are not auto-s
   const edit=p.calls.find(c=>c[0]==='edit');assert.equal(edit[2].version,1);assert.equal(edit[2].body,'更新正文');
   assert.equal(p.workspace.state.selected.version,2);
 });
-test('disable/delete confirmation and recovery preserve records; builtins have no edit/delete action',async()=>{
+test('disable/delete confirmation and recovery preserve records; imported builtins allow editing and deletion',async()=>{
   const p=fixture();await p.ready();p.click('查看详情');await p.ready();
   p.click('停用知识');await p.ready();assert.equal(p.calls.some(c=>c[0]==='status'),false);
   p.click('取消操作');assert.equal(p.workspace.state.confirmation,null);
@@ -50,8 +50,8 @@ test('disable/delete confirmation and recovery preserve records; builtins have n
   p.click('恢复启用');p.click('确认恢复');await p.ready();p.click('删除知识');p.click('确认删除');await p.ready();assert.equal(p.workspace.state.selected.status,'DELETED');
   p.click('恢复启用');p.click('确认恢复');await p.ready();assert.equal(p.workspace.state.selected.status,'ACTIVE');
   p.api.get=async()=>({...value,origin:'builtin'});p.click('查看详情');await p.ready();
-  assert.match(p.root.textContent,/正文只读/);assert.equal(walk(p.root).some(n=>n.tagName==='button'&&n.textContent==='编辑知识'),false);
-  assert.equal(walk(p.root).some(n=>n.tagName==='button'&&n.textContent==='删除知识'),false);
+  assert.match(p.root.textContent,/修改不回写/);assert.equal(walk(p.root).some(n=>n.tagName==='button'&&n.textContent==='编辑知识'),true);
+  assert.equal(walk(p.root).some(n=>n.tagName==='button'&&n.textContent==='删除知识'),true);
 });
 test('conflict/error keeps draft, shows bounded error without raw private messages, and never retries',async()=>{
   const p=fixture();await p.ready();p.click('查看详情');await p.ready();p.click('编辑知识');p.fill('知识正文','保留草稿');
@@ -65,4 +65,13 @@ test('test retrieval displays actual bounded evidence as text, source version an
   assert.equal(p.calls.at(-1)[0],'search');assert.equal(p.calls.at(-1)[1].query,'蓝莓浮岛');
   assert.match(p.root.textContent,/正文 <script>|版本 1|未调用模型/);assert.equal(walk(p.root).some(n=>n.tagName==='script'),false);
   p.api.search=async()=>({status:'NO_MATCH',evidence:[]});p.click('测试检索');await p.ready();assert.match(p.root.textContent,/没有合格命中/);
+});
+
+test('export controls select format and explicit status without writes or model calls',async()=>{
+  const p=fixture();await p.ready();
+  const choose=(label,value)=>walk(p.root).find(n=>n.getAttribute('aria-label')===label).events.change({target:{value}});
+  choose('导出格式','markdown');choose('导出范围','all');
+  const link=walk(p.root).find(n=>n.tagName==='a'&&n.textContent==='导出知识库');
+  assert.equal(link.getAttribute('href'),'/api/knowledge/export?format=markdown&status=all');
+  assert.ok(p.calls.every(c=>c[0]==='list'));
 });

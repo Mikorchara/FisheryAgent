@@ -1,5 +1,8 @@
 """Headless AI application tests: no Flask/HTTP client, no external network."""
 
+from apps.knowledge.migration import legacy_reference
+from importlib.resources import files
+
 import ast
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timezone
@@ -51,6 +54,7 @@ class AIServiceTests(unittest.TestCase):
         ref = assistant_profile(PRESETS[0]).credential_ref
         self.gateway = RecordingGateway(ModelResponse('headless final', finish_reason='stop'))
         self.backend = ManagementAssistantService(self.monitoring,
+            knowledge=legacy_reference(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json")),
             credentials=CredentialStore(process_env={ref:'fictional-headless-value'}),
             traces=JsonlTraceSink(self.root/'trace.jsonl',tool_names=(
                 'get_current_water_quality','search_fishery_knowledge')), policy_directory=self.root/'policy',
@@ -155,7 +159,7 @@ class AIServiceTests(unittest.TestCase):
         location = SimpleNamespace(env_path=self.root/'not-read.env')
         with patch('apps.ai_service.runtime.locations.private_project_location',return_value=location) as locate, \
              patch('apps.ai_service.service.CredentialStore') as credentials:
-            backend = ManagementAssistantService.local(self.monitoring,self.root)
+            backend = ManagementAssistantService.local(self.monitoring,self.root,knowledge=self.backend.knowledge)
         locate.assert_called_once_with(self.root.resolve())
         credentials.assert_called_once_with(location.env_path,private_location=location)
         self.assertIs(backend.monitoring,self.monitoring)
@@ -166,8 +170,8 @@ class AIServiceTests(unittest.TestCase):
         location=SimpleNamespace(env_path=self.root/'not-read.env')
         with patch('apps.ai_service.runtime.locations.private_project_location',return_value=location), \
              patch('apps.ai_service.service.CredentialStore'):
-            trial=ManagementAssistantService.local(self.monitoring,self.root,streaming_trial=True)
-            rollback=ManagementAssistantService.local(self.monitoring,self.root)
+            trial=ManagementAssistantService.local(self.monitoring,self.root,streaming_trial=True,knowledge=self.backend.knowledge)
+            rollback=ManagementAssistantService.local(self.monitoring,self.root,knowledge=self.backend.knowledge)
         self.assertTrue(trial._streaming_config.enabled)
         self.assertFalse(trial._execution_config.multi_round_enabled)
         self.assertFalse(rollback._streaming_config.enabled)

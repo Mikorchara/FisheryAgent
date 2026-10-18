@@ -1,4 +1,7 @@
 """One consent-bound history candidate probe; no Web publication or new Tool loop."""
+
+from apps.knowledge.migration import legacy_reference
+from importlib.resources import files
 from dataclasses import dataclass, field, asdict, replace
 from datetime import datetime, timedelta, timezone
 from importlib.metadata import version
@@ -291,7 +294,8 @@ def run(case_id, root, *, confirm_network=False, approved_plan_sha256=None,
             folder = Path(temporary)
             monitoring = _monitoring(folder,case)
             credentials = credential_store if credential_store is not None else _credentials(Path(root))
-            service = ManagementAssistantService(monitoring,credentials=credentials,traces=trace,
+            service = ManagementAssistantService(monitoring,
+                knowledge=legacy_reference(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json")),credentials=credentials,traces=trace,
                 policy_directory=folder/'policies',gateway_factory=lambda:gateway,
                 history_config=HistoryCandidateConfig(load_history_config().scope_json))
             selected = service.management_policy.snapshot()

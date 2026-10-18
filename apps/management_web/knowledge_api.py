@@ -4,7 +4,7 @@ from ipaddress import ip_address
 import json
 import secrets
 
-from flask import jsonify, request
+from flask import jsonify, request, Response
 from apps.knowledge.repository import KnowledgeError
 
 
@@ -54,6 +54,16 @@ def register_knowledge_api(app, service):
     def knowledge_detail(key):
         failure=gate()
         return failure if failure is not None else jsonify(service.get(key))
+
+    @app.get('/api/knowledge/export')
+    def knowledge_export():
+        failure=gate()
+        if failure is not None:return failure
+        if set(request.args)-{'format','status'} or any(len(request.args.getlist(k))!=1 for k in request.args):
+            raise KnowledgeError('INVALID_KNOWLEDGE_EXPORT')
+        payload,mime,filename=service.export(format=request.args.get('format','json'),status=request.args.get('status','active'))
+        return Response(payload,content_type=mime+'; charset=utf-8',headers={
+            'Content-Disposition':f'attachment; filename="{filename}"','X-Content-Type-Options':'nosniff'})
 
     @app.post('/api/knowledge')
     def knowledge_create():

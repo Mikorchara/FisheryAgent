@@ -1,1 +1,1 @@
-"""Managed knowledge content; retrieval reuses the existing KnowledgeService."""
+"""Management-owned text content, SQLite storage and verified TF-IDF retrieval."""

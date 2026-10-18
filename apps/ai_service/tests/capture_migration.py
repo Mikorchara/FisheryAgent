@@ -3,6 +3,9 @@
 Run in a separate process before/after the atomic migration. Retain hashes only,
 never prompts, parameters, result bodies or credentials. All inputs are fictional.
 """
+
+from apps.knowledge.migration import legacy_reference
+from importlib.resources import files
 from dataclasses import asdict
 from datetime import datetime, timezone
 import importlib
@@ -71,7 +74,8 @@ def capture():
                     profile=assistant.assistant_profile(PRESET)
                     sdk=FakeSDK(plans,model=profile.model)
                     sink=traces(root/'trace',tool_names=(WATER,KNOWLEDGE))
-                    service=ManagementAssistantService(monitoring,credentials=credentials(process_env={
+                    service=ManagementAssistantService(monitoring,
+            knowledge=legacy_reference(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json")),credentials=credentials(process_env={
                         profile.credential_ref:'fictional-migration-credential'}),traces=sink,
                         policy_directory=root/'policy',gateway_factory=lambda:adapter(async_client_factory=sdk.factory),
                         execution_config=load_execution_config(enable_trial=True),

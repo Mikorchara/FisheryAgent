@@ -17,7 +17,10 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["src", "."]
 include = ["fishery_ai", "fishery_ai.*", "apps", "apps.ai_backend", "apps.ai_backend.*", "apps.ai_service", "apps.ai_service.*", "apps.knowledge", "apps.knowledge.*", "apps.monitoring", "apps.monitoring.*", "apps.simulator", "apps.simulator.*", "apps.management_web", "apps.management_web.*"]
-exclude = ["apps.ai_backend.tests*", "apps.ai_service.tests*", "apps.ai_service.runtime.tests*", "apps.knowledge.tests*", "apps.monitoring.tests*", "apps.simulator.tests*", "apps.management_web.tests*"]
+exclude = ["apps.ai_backend.tests*", "apps.ai_service.tests*", "apps.ai_service.runtime.tests*", "apps.knowledge.tests*", "apps.knowledge_data*", "apps.monitoring.tests*", "apps.simulator.tests*", "apps.management_web.tests*"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.sqlite3", "*.sqlite3-*", "*.sqlite3-journal"]
 
 [tool.setuptools.package-dir]
 fishery_ai = "src/fishery_ai"
