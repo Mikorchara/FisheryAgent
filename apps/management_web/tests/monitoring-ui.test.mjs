@@ -28,8 +28,10 @@ function page(data=fixture()){
   const context=vm.createContext({document,Node:Element,URLSearchParams,Intl,Date,console,location:{hash:'#dashboard'},
     window:{addEventListener:(type,fn)=>events[type]=fn,scrollTo:()=>{}},
     setInterval:(fn,ms)=>{timers.push({fn,ms});return timers.length;},clearInterval:()=>{},
-    fetch:async url=>{requests.push(url);if(current instanceof Error)throw current;return {ok:true,json:async()=>structuredClone(current)};}});
-  for(const file of ['view-model.js','components.js','assistant-events.js','services.js','assistant.js','tool-policy.js','app.js']){
+    fetch:async url=>{requests.push(url);if(current instanceof Error)throw current;
+      return {ok:true,json:async()=>url.startsWith('/api/knowledge')?
+        {items:[],total:0,categories:[],offset:0,limit:50,write_token:'fictional-knowledge-token'}:structuredClone(current)};}});
+  for(const file of ['view-model.js','components.js','assistant-events.js','services.js','assistant.js','tool-policy.js','knowledge.js','app.js']){
     let source=fs.readFileSync(new URL('../static/'+file,import.meta.url),'utf8');
     source=source.replace(/^import .*;\s*$/gm,'').replace(/\bexport /g,'');
     vm.runInContext(source,context,{filename:file});

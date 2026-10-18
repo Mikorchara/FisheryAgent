@@ -5,6 +5,12 @@ from pathlib import Path
 from .app import create_app
 
 
+def knowledge_content(root):
+    from apps.knowledge.repository import KnowledgeRepository
+    from apps.knowledge.service import KnowledgeContentService
+    return KnowledgeContentService(KnowledgeRepository(root/'outputs/management_web/knowledge.sqlite3'))
+
+
 def project_root(*, module_file=None, working_directory=None):
     """Preserve repository identity when imported from a wheel installation."""
     source = Path(module_file or __file__).resolve().parents[2]
@@ -57,6 +63,7 @@ def main():
                 parser.error("INGESTION_TOKEN_REQUIRED: set a 32-128 character alphanumeric development token")
         path = root/"outputs"/"management_web"/"monitoring.sqlite3"
         data_service = MonitoringService(MonitoringRepository(path))
+    knowledge = knowledge_content(project_root())
     ai_options = {}
     if args.enable_assistant:
         from .ai_adapter import ManagementAssistant
@@ -68,11 +75,11 @@ def main():
             ai_options["ai"] = ManagementAssistant.local(data_service, root,
                 multi_round_trial=args.assistant_multi_round_trial,
                 streaming_trial=args.assistant_streaming_trial,
-                history_trial=args.assistant_history_trial,unified_tools_trial=args.assistant_tools_trial)
+                history_trial=args.assistant_history_trial,unified_tools_trial=args.assistant_tools_trial,knowledge=knowledge)
         except (CredentialLocationError, CredentialFileError, ToolPolicyError, GatewayError):
             parser.error("AI_CONFIGURATION_UNAVAILABLE")
     app = create_app(allowed_hosts=(f"127.0.0.1:{args.port}", f"localhost:{args.port}"),
-                     data_service=data_service, ingestion_token=token, **ai_options)
+                     data_service=data_service, ingestion_token=token, knowledge_service=knowledge, **ai_options)
     print(f"Management Web · Local: http://127.0.0.1:{args.port}", flush=True)
     app.run(host="127.0.0.1", port=args.port, debug=False, load_dotenv=False)
 

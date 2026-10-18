@@ -71,6 +71,8 @@ class ManagementAssistantTests(unittest.TestCase):
         self.assertNotIn('device_id', public)
 
     def setUp(self):
+        knowledge=patch('apps.management_web.__main__.knowledge_content')
+        self.knowledge_factory=knowledge.start();self.addCleanup(knowledge.stop)
         for name in ('socket.socket.connect', 'socket.socket.connect_ex', 'socket.socket.sendto', 'socket.getaddrinfo'):
             guard = patch(name, side_effect=AssertionError('No Provider requests in integration tests'))
             guard.start(); self.addCleanup(guard.stop)

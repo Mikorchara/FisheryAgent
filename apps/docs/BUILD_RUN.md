@@ -54,6 +54,14 @@ node --test apps/management_web/tests/*.test.mjs
 
 真实外部连接由用户从[统一人工入口](../../scripts/manual_real_tests/README.md#5-三工具-normal-候选r2d-2a)亲自执行。R2D-2A 已在隔离 SQLite/Fake SDK 验证启动、10秒实际HTTP上报、占用拒绝、清理、聊天双模式和布局；未启动用户真实数据服务、读取私有凭据或调用 Provider。详见[实施记录](deep-dive/R2D2A_PRODUCT_INTEGRATION.md)。
 
+## 知识内容管理（R2D-3A）
+
+沿用顶部 `run_local.ps1 -Scenario low_oxygen`，无需新增参数或重启索引。在「资料与知识库」添加标题、分类、正文，保存后可查看/编辑；停用与删除均需确认，软删除可恢复。按关键词/分类/状态筛选，或使用「检索测试」查看实际片段和来源，不调用模型。内置正文只读，支持独立停用。
+
+内容保存于 Git 忽略的 `outputs/management_web/knowledge.sqlite3`，重启保留，不写监测数据库或固定资源。管理网页与 Knowledge Tool 使用同一服务；模型只有既有只读搜索，仍须原 Tool Policy 授权。新增动态知识源使管理 Scope/revision 与旧固定库不同，但模型、工具集合、预算、开关和 local_experimental 状态不扩大；旧真实记录不作为新源资格。详见[内容、版本及安全合同](deep-dive/KNOWLEDGE_CONTENT.md)。
+
+离线专项：`.\.venv\Scripts\python.exe -m unittest apps.knowledge.tests.test_content apps.management_web.tests.test_knowledge_content`；前端：`node --test apps/management_web/tests/knowledge-ui.test.mjs`。`management` 现也包含知识内容服务测试，不重复收集。
+
 ## 只读启动
 
 ```powershell

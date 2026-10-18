@@ -12,7 +12,7 @@ from apps.monitoring.contracts import IngestionError, strict_json, valid_token
 
 def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
                allowed_hosts=("127.0.0.1:8766", "localhost:8766", "localhost"),
-               data_service=None, ingestion_token=None):
+               data_service=None, ingestion_token=None, knowledge_service=None):
     app = Flask(__name__, static_folder="static", static_url_path="/static")
     app.config["MAX_CONTENT_LENGTH"] = 8 * 1024
     if ingestion_token is not None and (data_service is None or not valid_token(ingestion_token)):
@@ -30,7 +30,9 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
     assistant = ai if isinstance(ai, ManagementAssistant) else None
     if assistant is not None and assistant.monitoring is not data_service:
         raise ValueError("AI_MONITORING_SOURCE_MISMATCH")
-    app.config["MAX_CONTENT_LENGTH"] = (32 if assistant else 8) * 1024
+    if knowledge_service is not None and assistant is not None and assistant.backend.knowledge is not knowledge_service:
+        raise ValueError('AI_KNOWLEDGE_SOURCE_MISMATCH')
+    app.config["MAX_CONTENT_LENGTH"] = (32 if assistant or knowledge_service is not None else 8) * 1024
 
     @app.before_request
     def local_boundary():
@@ -39,12 +41,13 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
         origin = request.headers.get("Origin")
         if origin and origin != f"{request.scheme}://{request.host}":
             return jsonify(error_code="ORIGIN_REJECTED"), 403
-        limit = 32 * 1024 if assistant is not None and request.path.startswith("/api/ai/") else 8 * 1024
+        limit = 32 * 1024 if ((assistant is not None and request.path.startswith("/api/ai/")) or
+                            (knowledge_service is not None and request.path.startswith('/api/knowledge'))) else 8 * 1024
         if request.content_length is not None and request.content_length > limit:
             return jsonify(error_code="REQUEST_TOO_LARGE"), 413
         # Preserve the 8 KiB ingestion boundary even for chunked/unknown-length bodies.
         # Avoid Flask 3.1-only per-request setters; the project also supports Flask 3.0.
-        if request.method == "POST" and request.content_length is None and len(request.get_data(cache=True)) > limit:
+        if request.method in ("POST","PATCH") and request.content_length is None and len(request.get_data(cache=True)) > limit:
             return jsonify(error_code="REQUEST_TOO_LARGE"), 413
 
     @app.after_request
@@ -260,4 +263,6 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
     def internal_error(_error):
         return jsonify(error_code="SERVICE_UNAVAILABLE"), 500
 
+    from .knowledge_api import register_knowledge_api
+    register_knowledge_api(app,knowledge_service)
     return app

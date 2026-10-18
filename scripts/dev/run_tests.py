@@ -35,7 +35,7 @@ def build_suite(selection):
         # These existing test directories are namespace packages (no __init__).
         # Use the same unittest loader without changing their package structure.
         names = tuple('.'.join(path.relative_to(ROOT).with_suffix('').parts)
-            for group in ("apps/monitoring/tests", "apps/simulator/tests", "apps/management_web/tests")
+            for group in ("apps/monitoring/tests", "apps/simulator/tests", "apps/knowledge/tests", "apps/management_web/tests")
             for path in sorted((ROOT / group).glob('test_*.py')))
         suite.addTests(loader.loadTestsFromNames(names))
         return suite

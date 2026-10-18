@@ -1,6 +1,6 @@
 # 管理系统 Web
 
-独立管理应用：Flask + 原生 ES Modules / CSS / SVG，复用现有依赖。水质、视觉与事件来自统一 SQLite 存储的模拟器上报；可显式启用 Normal Assistant，共用该监测来源。文件仍为 Demo，真实传感器/NPU/视频和生产权限未接入。
+独立管理应用：Flask + 原生 ES Modules / CSS / SVG，复用现有依赖。水质、视觉与事件来自统一 SQLite 存储的模拟器上报；可显式启用 Normal Assistant，共用该监测来源。「资料与知识库」管理独立持久化的用户内容与内置状态，和 AI 共用原 TF-IDF 检索；文件导入、真实传感器/NPU/视频和生产权限未接入。
 
 在仓库根目录执行：
 
@@ -12,7 +12,7 @@ python -m apps.management_web
 
 Normal Assistant：`python -m apps.management_web --enable-assistant`；配合模拟器可再加 --enable-ingestion（须先设置开发令牌）。Qwen/Ollama 复用正式私有凭据与 Runtime；启动和页面切换不发模型请求，每次 Send 须显式确认。
 
-支持统一 Monitoring 水质查询，以及原 KnowledgeService 的项目资料检索。Knowledge 默认不授权；使用原 Prototype Tool Manager 的 Assistant 标签开启，刷新管理页面后重新确认。默认 OFF / Normal / 1 Tool / 1 Round / 2 Requests，项目知识不表示当前观测或疾病确诊。可显式开启管理独立的 2/2/3 Normal 本地实验；Qwen 精确两工具 Streaming 用 `--enable-assistant --assistant-streaming-trial` 开启 local_experimental，本机进程内生效、默认关闭，不继承旧网页资格或开放其他模型。详见下方 BUILD_RUN。
+支持统一 Monitoring 水质查询和原 KnowledgeService 算法的项目资料检索。Knowledge 经管理平台「系统设置 → Assistant Tool 授权」显式授权；网页内容编辑不等于授予模型 Tool 权限。默认 OFF / Normal / 1 Tool / 1 Round / 2 Requests，项目知识不表示当前观测或疾病确诊。沿用 `scripts/dev/run_local.ps1` 可开启已批准的 Qwen 三工具 Normal/Streaming 本地实验；原服务器 CLI 开关默认关闭。动态内容源的精确 Scope 与固定知识库不同，不继承旧真实资格。详见下方 BUILD_RUN。
 
 AI 业务位于 `apps/ai_service/`；本目录的 ai_adapter.py 仅保留浏览器令牌、请求控制和业务合同委托，不包含 Tool/模型执行循环。它是同进程模块划分，无需增加启动服务或端口。
 

@@ -3,12 +3,14 @@ import {routes,routeFor,timeText,filterItems,validateBootstrap,qualityNames,fres
 import {services} from './services.js';
 import {createAssistantWorkspace} from './assistant.js';
 import {createToolPolicySettings} from './tool-policy.js';
+import {createKnowledgeWorkspace} from './knowledge.js';
 
 const $=id=>document.getElementById(id);
 const state={data:null,device:'demo-a',view:'available',metric:'dissolved_oxygen_mg_l',trendRange:'1800',camera:'demo-camera-a',
-  eventFilters:{q:'',severity:'',status:''},fileFilters:{q:'',category:''},settings:'devices',draft:'',revision:0};
+  eventFilters:{q:'',severity:'',status:''},settings:'devices',draft:'',revision:0};
 const assistantWorkspace=createAssistantWorkspace(services.ai,{onDevice:id=>{state.device=id;void changeMonitoring();}});
 const toolPolicySettings=createToolPolicySettings(services.ai,{onSaved:()=>assistantWorkspace.policyChanged()});
+const knowledgeWorkspace=createKnowledgeWorkspace(services.knowledge);
 const severity=item=>badge(eventSeverityName(item),item.severity==='critical'?'critical':item.severity==='warning'?'warning':'neutral');
 const status=item=>badge(item.source_kind==='simulator'?eventStateName(item):(item.status==='pending'?'待处理（演示）':'已处理（演示）'),eventState(item)==='RESOLVED'?'neutral':'warning');
 
@@ -18,7 +20,6 @@ function search(label,value,oninput){return el('label',{class:'field search-fiel
 function details(title,content){$('dialog-title').textContent=title;$('dialog-body').replaceChildren(...content);$('details-dialog').showModal();}
 function eventDetail(item){details(item.title,[badge(sourceName(item.source_kind),'demo'),rows([['记录编号',item.id],['时间',timeText(item.occurred_at)],['设备',item.device],['类型',item.type],['等级',eventSeverityName(item)],['状态',item.source_kind==='simulator'?eventStateName(item):'演示处理状态'],['状态原因',item.state_reason],['规则发布',item.publication_status||'PROTOTYPE'],['关联批次',item.batch_id],['接收时间',timeText(item.received_at)],['最近信号',timeText(item.last_observed_at)],['规则版本',item.rule_version],['规则范围',item.rule_identity?.scope?.join(' / ')||'旧记录未记录']]),el('p',{text:item.description}),
   empty('暂无关联媒体','这里将展示关联截图与视频片段；R1 未生成或保存媒体。','camera')]);}
-function fileDetail(item){details(item.name,[badge('DEMO','demo'),rows([['分类',item.category],['格式',item.format],['来源',item.source],['索引状态','未建立'],['文件大小','未上传'],['检索能力','未接入']]),el('p',{text:item.description}),el('button',{class:'button secondary',disabled:'disabled',text:'下载不可用 · 演示元数据'})]);}
 function eventsTable(items){return table(['事件 / 类型','设备','时间','等级','状态','操作'],items,item=>[
   el('div',{class:'table-title'},[el('strong',{text:item.title}),el('small',{text:`${item.id} · ${item.type} · ${sourceName(item.source_kind)}`})]),item.device,timeText(item.occurred_at),severity(item),status(item)],eventDetail);}
 
@@ -93,12 +94,7 @@ function events(){const filters=state.eventFilters;const body=el('div',{id:'even
     card('事件列表',`${state.data.events.length} 条记录 · PROTOTYPE 模拟信号，不具备生产处理工作流`,[body]),
     el('p',{class:'footnote',text:'R1 仅提供查询与详情。事件处理、截图和视频片段存储尚未实现。'})];}
 
-function knowledge(){const filters=state.fileFilters;const list=()=>table(['文件','分类','来源','索引状态','操作'],filterItems(state.data.files,filters),item=>[
-  el('div',{class:'table-title'},[el('strong',{text:item.name}),el('small',{text:`${item.format} · DEMO 元数据`})]),item.category,'独立 Demo',badge('未建立','neutral')],fileDetail);
-  const body=el('div',{},[list()]);const update=()=>body.replaceChildren(list());
-  return [el('div',{class:'knowledge-banner'},[icon('book'),el('div',{},[el('h2',{text:'资料管理 ≠ 知识检索'}),el('p',{text:'原始文件、文件元数据、索引任务和 AI 检索分别管理。R1 没有上传或建立新 RAG。'})])]),
-    el('div',{class:'filters'},[search('搜索资料',filters.q,v=>{filters.q=v;update();}),select('分类',[['','全部分类'],['养殖资料','养殖资料'],['设备说明','设备说明']],filters.category,v=>{filters.category=v;update();}),
-      el('button',{class:'button secondary',disabled:'disabled',text:'上传文件 · 未实现'})]),card('资料列表','演示条目不对应可下载文件。',[body])];}
+function knowledge(){return [knowledgeWorkspace.mount()];}
 
 function settings(){const sections=[['devices','设备与数据源','设备通信、数据库与来源映射由服务适配器提供。'],['tools','Assistant Tool 授权','本机开发授权，与模型发布许可分别校验。'],['models','AI 模型配置','模型、凭据和执行合同继续由现有 AI Runtime 负责。'],
   ['rules','告警规则','尚未接入管理配置，不在网页中复制或修改诊断阈值。'],['users','用户与权限','未实现身份认证、账户或角色授权。'],['system','系统信息','R1 · Flask + 原生 ES Modules · 独立本地应用。']];

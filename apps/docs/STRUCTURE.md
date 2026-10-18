@@ -103,12 +103,18 @@ apps/
 │  │  └─ test_water_history_tool.py                                      # 历史候选、Receipt/Gate、Fake SDK 与原六路径指纹
 │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
 │  ├─ contracts.py                                                       # 进程内 PreparedAssistantTurn 与 AssistantBackend 合同
+│  ├─ content_binding.py                                                 # 动态知识源的精确本地 Scope 变体，不继承旧真实资格
 │  ├─ execution.py                                                       # Normal 多轮发布、数据绑定、Scope 与确认 revision
 │  ├─ history_execution.py                                               # 历史单工具Scope、1024预算与独立试用门禁
 │  ├─ management_policy.py                                               # 管理端授权、只读继承、原子保存与 revision
 │  ├─ normal_selection.py                                                # 冻结Normal候选与独立获批的Normal/Streaming本地试用
 │  ├─ service.py                                                         # 唯一ManagementAssistantService业务装配
 │  └─ streaming.py                                                       # Streaming 发布配置、精确 Scope 与确认 revision
+├─ knowledge/                                                            # 知识内容业务，Web/AI 共享，无新检索算法
+│  ├─ repository.py                                                     # 独立SQLite、事务/CAS、状态与容量
+│  ├─ service.py                                                        # 内容校验、有限投影与按修订号发布索引快照
+│  ├─ tests/test_content.py                                             # 持久化、来源、并发、失败与原检索parity
+│  └─ README.md                                                         # 内容边界与文档入口
 ├─ docs/                                                                 # 实际目录
 │  ├─ deep-dive/                                                         # 实际目录
 │  │  ├─ model/                                                          # 实际目录

@@ -2,6 +2,13 @@ import {readAssistantEvents} from './assistant-events.js';
 // Pages consume application DTOs. Provider SDKs / Prompts / Tool internals stay server-side.
 async function read(path){const response=await fetch(path,{credentials:'same-origin'});if(!response.ok)throw new Error('MANAGEMENT_SERVICE_UNAVAILABLE');return response.json();}
 export const services={
+  knowledge:{
+    list:filters=>read('/api/knowledge?'+new URLSearchParams(filters)),
+    get:id=>read('/api/knowledge/'+encodeURIComponent(id)),
+    create:(value,token)=>knowledgeWrite('/api/knowledge','POST',value,token),
+    edit:(id,value,token)=>knowledgeWrite('/api/knowledge/'+encodeURIComponent(id),'PATCH',value,token),
+    status:(id,value,token)=>knowledgeWrite('/api/knowledge/'+encodeURIComponent(id)+'/status','POST',value,token),
+    search:(value,token)=>knowledgeWrite('/api/knowledge/search','POST',value,token)},
   bootstrap:device=>read('/api/bootstrap'+(device?'?'+new URLSearchParams({device}):'')),
   monitoring:(device,view)=>read(`/api/monitoring?${new URLSearchParams({device,view})}`),
   events:filters=>read(`/api/events?${new URLSearchParams(filters)}`),
@@ -22,6 +29,13 @@ export const services={
     state:(value,config)=>aiWrite('/api/ai/request-state',value,config),
     cancel:(value,config)=>aiWrite('/api/ai/cancel',value,config)},
 };
+
+async function knowledgeWrite(path,method,value,token){
+  const response=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',
+    'X-Management-Knowledge':token},body:JSON.stringify(value)});
+  const data=await response.json();if(!response.ok)throw new Error(data.error_code||'KNOWLEDGE_SERVICE_UNAVAILABLE');
+  return data;
+}
 
 async function aiWrite(path,value,config){
   const response=await fetch(path,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',

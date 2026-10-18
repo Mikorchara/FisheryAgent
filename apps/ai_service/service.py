@@ -41,7 +41,7 @@ class ManagementAssistantService:
 
     def __init__(self, monitoring, *, credentials, traces, policy_directory,
                  gateway_factory=OpenAICompatibleAdapter, execution_config=None, streaming_config=None,
-                 history_config=None, unified_config=None):
+                 history_config=None, unified_config=None, knowledge=None):
         self.monitoring, self.credentials, self.traces = monitoring, credentials, traces
         self.gateway_factory = gateway_factory
         self._unified_config=load_unified_tool_trials() if unified_config is None else unified_config
@@ -58,7 +58,12 @@ class ManagementAssistantService:
         if not devices:
             raise ValueError("NO_MONITORING_DEVICE")
         # Explicit business dependency only: no old Gateway/Registry/Executor.
-        self.knowledge = KnowledgeService(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json"))
+        self.knowledge = knowledge if knowledge is not None else KnowledgeService(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json"))
+        from apps.knowledge.service import KnowledgeContentService
+        if isinstance(self.knowledge,KnowledgeContentService):
+            from .content_binding import content_scope_configs
+            self._execution_config,self._streaming_config,self._unified_config=content_scope_configs(
+                self._execution_config,self._streaming_config,self._unified_config)
         self.history_registry = bind_tools(monitoring, devices[0]["id"], self.knowledge, include_history=True)
         self.formal_registry = ToolRegistry([self.history_registry.lookup(name) for name in FORMAL_TOOL_NAMES])
         self.policy_store = UserToolPolicyStore(policy_directory, self.formal_registry)
@@ -75,11 +80,11 @@ class ManagementAssistantService:
 
     @classmethod
     def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False, history_trial=False,
-              unified_tools_trial=False):
+              unified_tools_trial=False, knowledge=None):
         from .runtime.locations import private_project_location
         root = Path(project_root).resolve()
         location = private_project_location(root)
-        return cls(monitoring, credentials=CredentialStore(location.env_path, private_location=location),
+        return cls(monitoring, knowledge=knowledge, credentials=CredentialStore(location.env_path, private_location=location),
             traces=JsonlTraceSink(root / "outputs/management_web/assistant-traces.jsonl",
                 tool_names=HISTORY_CANDIDATE_TOOL_NAMES),
             policy_directory=root / "outputs/tool-policies",

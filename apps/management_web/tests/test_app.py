@@ -10,6 +10,8 @@ from apps.management_web.services import DemoMonitoring
 
 class ManagementTests(unittest.TestCase):
     def setUp(self):
+        knowledge=patch('apps.management_web.__main__.knowledge_content')
+        self.knowledge_factory=knowledge.start();self.addCleanup(knowledge.stop)
         for name in ("connect", "connect_ex", "sendto"):
             guard=patch.object(socket.socket,name,side_effect=AssertionError("network disabled"))
             guard.start();self.addCleanup(guard.stop)

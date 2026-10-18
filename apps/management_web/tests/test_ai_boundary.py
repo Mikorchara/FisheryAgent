@@ -54,11 +54,14 @@ class WebAIBoundaryTests(unittest.TestCase):
             self.assertEqual(local.call_args.kwargs,{'multi_round_trial':'--assistant-multi-round-trial' in options,
                 'streaming_trial':'--assistant-streaming-trial' in options,
                 'history_trial':'--assistant-history-trial' in options,
-                'unified_tools_trial':'--assistant-tools-trial' in options})
+                'unified_tools_trial':'--assistant-tools-trial' in options,
+                'knowledge':self.knowledge_factory.return_value})
             self.assertEqual(factory.return_value.run.call_args.kwargs,
                 {'host':'127.0.0.1','port':8766,'debug':False,'load_dotenv':False})
 
     def setUp(self):
+        knowledge=patch('apps.management_web.__main__.knowledge_content')
+        self.knowledge_factory=knowledge.start();self.addCleanup(knowledge.stop)
         self.monitoring = SimpleNamespace()
         self.backend = Mock(spec=AssistantBackend)
         self.backend.monitoring = self.monitoring

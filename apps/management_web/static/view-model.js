@@ -5,7 +5,7 @@ export const routes = [
   {id:'assistant',title:'AI 智能助手',label:'AI 智能助手',eyebrow:'AI ASSISTANT',icon:'spark',description:'围绕监测事实与项目知识对话；当前数据来自统一监测服务。'},
   {id:'video',title:'视频监控',label:'视频监控',eyebrow:'VIDEO MONITORING',icon:'camera',description:'统一查看监控设备、视频接入及检测服务状态。'},
   {id:'events',title:'事件记录',label:'事件记录',eyebrow:'EVENT RECORDS',icon:'bell',description:'按时间、来源与等级查看事件；演示记录不代表真实告警。'},
-  {id:'knowledge',title:'资料与知识库',label:'资料与知识库',eyebrow:'KNOWLEDGE & FILES',icon:'book',description:'管理资料元数据与索引状态，文件管理与 AI 检索保持分离。'},
+  {id:'knowledge',title:'资料与知识库',label:'资料与知识库',eyebrow:'KNOWLEDGE & FILES',icon:'book',description:'维护项目知识内容、版本与来源，供 AI 只读检索。'},
   {id:'settings',title:'系统设置',label:'系统设置',eyebrow:'SYSTEM SETTINGS',icon:'settings',description:'了解设备、模型、规则及权限的配置边界。'},
 ];
 export function routeFor(hash) { return routes.find(r=>r.id===hash.replace(/^#/,'')) || routes[0]; }

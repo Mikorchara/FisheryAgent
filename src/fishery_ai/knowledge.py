@@ -129,6 +129,24 @@ class KnowledgeService:
         self.chunks = chunk_knowledge(self.kg)
         self.source_id = "legacy:eel_knowledge.json"
         self.source_version = str(self.kg.get("version", "unknown"))
+        self._build_index(backend)
+
+    @classmethod
+    def from_chunks(cls, reference: KnowledgeService, chunks: list[dict], *,
+                    source_id: str, source_version: str) -> KnowledgeService:
+        """Build an independent index with the existing algorithm and explicit provenance.
+
+        The caller owns bounded content validation. Neither the reference nor an
+        already published index is mutated; each search uses one complete corpus.
+        """
+        service = cls.__new__(cls)
+        service.kg = reference.kg
+        service.chunks = [dict(item) for item in chunks]
+        service.source_id, service.source_version = source_id, source_version
+        service._build_index(reference.backend)
+        return service
+
+    def _build_index(self, backend: str):
         self.backend = backend
         self._index = None
         if backend == "portable":
@@ -208,8 +226,9 @@ class KnowledgeService:
         return tuple(KnowledgeEvidence(
             evidence_id=self.chunks[i]["id"], text=self.chunks[i]["text"],
             category=self.chunks[i]["type"], score=float(score),
-            source_id=self.source_id, source_title=None,
-            source_version=self.source_version, retrieved_at=timestamp,
+            source_id=self.chunks[i].get("source_id", self.source_id),
+            source_title=self.chunks[i].get("source_title"),
+            source_version=self.chunks[i].get("source_version", self.source_version), retrieved_at=timestamp,
         ) for i, score in ranked)
 
     def _keyword_scores(self, query: str, top_k: int, *, disease_intent: bool,

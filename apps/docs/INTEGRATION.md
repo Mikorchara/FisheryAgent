@@ -6,6 +6,8 @@ R2D-2C 本机聊天确认方式：主动点击「发送」或 Ctrl+Enter 授权�
 
 ## 1. 当前运行链路
 
+知识内容的独立链路为 Web → `apps.knowledge` → 内容 SQLite / 原 TF-IDF；管理 AI 装配注入同一服务供只读 Knowledge Tool 查询，不依赖 Monitoring 数据库，也不增加 LLM 写能力。版本快照、精确新源 Scope 和本机写入合同见[知识内容管理](deep-dive/KNOWLEDGE_CONTENT.md)。
+
 ```text
 Simulator：Scenario → 逻辑采样 → 10 秒窗口 → HTTP
     → management_web Ingestion：本机与令牌检查
