@@ -4,6 +4,8 @@
 
 ## 已实现
 
+- R2D-4A：六区设置中心、默认模型/设备/模式/详情偏好持久化，固定云Provider私有密钥保存/替换/确认清除，真实预算与RAG能力展示；不改Scope、Policy或执行合同。Token无获批替代值故只读。后续R2D-4B再研究自定义模型的Profile/能力/发布入口与显式连接测试，不自动授权Tool或Streaming。
+
 - R2D-3B：统一SQLite文本知识库、旧资源显式迁移/备份、内置导入可编辑、状态恢复、JSON/Markdown导出；管理Knowledge已脱离旧代码，保持TF-IDF算法与现有Tool权限。[迁移合同](deep-dive/KNOWLEDGE_CONTENT.md)。实际用户库迁移待批准。
 
 - R1：独立管理布局、七业务页面、Demo/空状态、只读应用 API 和测试。

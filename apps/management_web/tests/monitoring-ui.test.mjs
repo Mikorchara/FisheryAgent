@@ -31,7 +31,7 @@ function page(data=fixture()){
     fetch:async url=>{requests.push(url);if(current instanceof Error)throw current;
       return {ok:true,json:async()=>url.startsWith('/api/knowledge')?
         {items:[],total:0,categories:[],offset:0,limit:50,write_token:'fictional-knowledge-token'}:structuredClone(current)};}});
-  for(const file of ['view-model.js','components.js','assistant-events.js','services.js','assistant.js','tool-policy.js','knowledge.js','app.js']){
+  for(const file of ['view-model.js','components.js','assistant-events.js','services.js','assistant.js','tool-policy.js','knowledge.js','settings.js','app.js']){
     let source=fs.readFileSync(new URL('../static/'+file,import.meta.url),'utf8');
     source=source.replace(/^import .*;\s*$/gm,'').replace(/\bexport /g,'');
     vm.runInContext(source,context,{filename:file});
@@ -107,7 +107,7 @@ test('seven pages remain navigable; only text renders and AI stays disabled',asy
   p.run("location.hash='#events';render()");assert.match(p.node('content').textContent,/<script>fake\(\)<\/script>/);
   assert.equal(p.context.fake,undefined);
   p.run("location.hash='#assistant';render()");assert.match(p.node('content').textContent,/发送 · 尚未接入/);
-  p.run("location.hash='#settings';state.settings='tools';render()");await p.ready();
+  p.run("location.hash='#settings';render();settingsWorkspace.show('tools')");await p.ready();
   assert.match(p.node('content').textContent,/未启用该试用时，历史不会进入原两工具范围/);
   assert.match(p.node('content').textContent,/授权配置读取失败/);
 });

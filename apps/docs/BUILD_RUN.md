@@ -4,6 +4,25 @@
 
 Python 3.11+，使用根项目已有 Flask 依赖；SQLite、生成器和 HTTP transport 使用标准库。Node 用于前端测试，无需 npm install 或构建。所有命令在 `D:\CodexProject\Fishery_AI_Prototype` 执行；首次环境配置见根 [BUILD_RUN](../../docs/BUILD_RUN.md#环境与启动)。
 
+## R2D-4A：系统设置中心
+
+仍使用一行命令 `.\scripts\dev\run_local.ps1 -Scenario low_oxygen`，访问 `http://127.0.0.1:8766/#settings`。无需新启动器，不执行连接探测。
+
+- **常规设置**：默认 Qwen/Ollama、监测设备、Normal/Streaming、聊天详情面板偏好。点击保存后，下次重新打开页面恢复；当前聊天和已启动 Turn 不变。文件为 Git 忽略的 `outputs/management_web/settings.json`，不存密钥，不修改 Tool Policy 或 SQLite。保存校验当前设备与实际发布条件；关闭 Streaming 试用后，已有 Streaming 默认值会显示不可用，不自动降级或联网。
+- **模型管理**：展示维护者固定的模型 ID、连接地址、能力与当前 Normal/Streaming 可用性；“选择为默认”进入常规草稿，仍须保存。协议支持不等于产品已开放，凭据已配置不等于连接已通过。当前不编辑 Preset 身份或增加模型，DeepSeek 不因此进入管理 Assistant 列表。
+- **API 密钥**：Qwen/DashScope 与 DeepSeek 使用固定 Provider 入口，输入新密钥后明确保存/替换；清除需第二次确认。只返回状态与不透明并发版本，不回显完整值。Windows 仍使用 `%LOCALAPPDATA%\Fishery_AI_Prototype\project-<项目身份哈希>\credentials\.env`；由既有私有目录安全机制创建，原子替换时保持权限、无源码根 `.env` 回退。同项目 Prototype 使用该相同正式凭据位置，后续请求会看到用户明确保存的更新；已运行 Turn 保留原 Snapshot。PROCESS_ENV 优先且只读（包括空变量），须在启动环境中修改；Ollama 无需 Key。不要把密钥复制到聊天、URL、Git 或浏览器持久化存储。
+- **回答与执行预算**：展示服务器实际输出上限、请求数、Calls/Rounds、整 Turn Deadline 与 retry。当前精确 Scope 没有获批的替代 Token 数值，因此仅展示、不提供任意滑块。三工具 Qwen Normal 为 1024、Streaming 为 512 tokens/请求；其他授权集合按实际配置展示，不擅自修改默认值。请求次数/Tool 预算和期限也不可在网页放宽。
+- **Tool 授权**：继续使用唯一管理端 Policy，三个工具可独立启停；变更影响后续请求并使旧执行确认版本失效。
+- **RAG**：只展示 TF-IDF、Top-K=3、Evidence 800 字符上限与内容索引快照。内容到知识库页管理，不开放 Embedding、Chunk 或高级检索参数。
+
+分类切换保留草稿；“重新读取设置”需要明确放弃未保存输入。保存冲突、权限不安全、存储故障仅显示安全错误。所有写操作沿用本机 Host/Origin、loopback、JSON 和浏览器令牌；默认值另有 epoch/revision，密钥另有文件 CAS。此权限边界仅适用于本机开发，尚非远程生产账户管理。
+
+验收：保存默认设备/模式 → 重新打开网页 → 确认选择恢复；在 API 密钥页由用户本人保存密钥并查看状态（不自动请求模型）；查看预算 → 按需调整 Tool 授权 → 主动发送 Normal/Streaming。设置变化不触发模型、不重试失败 Turn，不改变成功 History。
+
+离线验证入口：`.\.venv\Scripts\python.exe -m unittest apps.management_web.tests.test_settings -q`、`node --test apps/management_web/tests/settings-ui.test.mjs`、`.\.venv\Scripts\python.exe scripts/dev/run_tests.py management`、`.\.venv\Scripts\python.exe scripts/dev/run_tests.py fast`。所有凭据写入测试仅使用临时目录和虚构值。
+
+本轮验收：management 447 项 Python / 85 项 Node 通过；随后补充的最终专项 50 项 Python / 14 项 Node 通过（其中设置后端 10 项）；FAST 165 项通过。隔离浏览器验证默认恢复、桌面/390px布局，无页面错误；未调用真实 Provider，未操作实际凭据/Policy/数据库。自定义模型的具体阻碍：当前 ProfileRegistry 是进程内固定集合，管理 Service 与业务 Assistant 都校验 Preset 身份；尚无管理端 Custom Profile 持久化、能力证据与精确 Tool 发布装配。R2D-4B 应先完成这些入口，再考虑新增/编辑/禁用与用户主动连接测试。
+
 ## 一行式常用命令
 
 以下从仓库根目录、正常用户PowerShell执行。先停止自己已启动的8766服务，不强杀未知进程。启动网页和模拟数据不会发送LLM请求或修改用户Policy。R2D-2B已获用户批准，启动器默认启用Qwen三工具Normal/Streaming本地实验，非正式released。

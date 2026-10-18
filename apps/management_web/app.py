@@ -12,7 +12,7 @@ from apps.monitoring.contracts import IngestionError, strict_json, valid_token
 
 def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
                allowed_hosts=("127.0.0.1:8766", "localhost:8766", "localhost"),
-               data_service=None, ingestion_token=None, knowledge_service=None):
+               data_service=None, ingestion_token=None, knowledge_service=None, settings_service=None):
     app = Flask(__name__, static_folder="static", static_url_path="/static")
     app.config["MAX_CONTENT_LENGTH"] = 8 * 1024
     if ingestion_token is not None and (data_service is None or not valid_token(ingestion_token)):
@@ -32,6 +32,8 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
         raise ValueError("AI_MONITORING_SOURCE_MISMATCH")
     if knowledge_service is not None and assistant is not None and assistant.backend.knowledge is not knowledge_service:
         raise ValueError('AI_KNOWLEDGE_SOURCE_MISMATCH')
+    if settings_service is not None and (assistant is None or settings_service.backend is not assistant.backend):
+        raise ValueError('SETTINGS_AI_SOURCE_MISMATCH')
     app.config["MAX_CONTENT_LENGTH"] = (32 if assistant or knowledge_service is not None else 8) * 1024
 
     @app.before_request
@@ -41,7 +43,7 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
         origin = request.headers.get("Origin")
         if origin and origin != f"{request.scheme}://{request.host}":
             return jsonify(error_code="ORIGIN_REJECTED"), 403
-        limit = 32 * 1024 if ((assistant is not None and request.path.startswith("/api/ai/")) or
+        limit = 32 * 1024 if ((assistant is not None and request.path.startswith(("/api/ai/","/api/settings"))) or
                             (knowledge_service is not None and request.path.startswith('/api/knowledge'))) else 8 * 1024
         if request.content_length is not None and request.content_length > limit:
             return jsonify(error_code="REQUEST_TOO_LARGE"), 413
@@ -69,7 +71,14 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
         snapshot = asdict(monitoring.snapshot(selected)) if selected else None
         mode = getattr(monitoring, "data_mode", "demo")
         connection = (snapshot.get("connectivity", "never_received") if snapshot else "never_received") if mode != "demo" else "demo"
-        return jsonify(schema_version=1, application="management-web-r1", data_mode=mode,
+        preferences = None
+        if settings_service is not None:
+            from apps.ai_service.settings import SettingsError
+            try:
+                preferences = settings_service.preferences()
+            except SettingsError:
+                pass  # Monitoring remains usable; Settings exposes the bounded storage error.
+        return jsonify(schema_version=1, application="management-web-r1", data_mode=mode, preferences=preferences,
             devices=devices, monitoring=snapshot, cameras=video.cameras(),
             events=events.events(), files=files.files(), ai=ai.availability(),
             connections=[{"name": "监测数据", "status": connection, "description": "模拟器 HTTP 上报" if mode == "simulator" else "独立演示适配器"},
@@ -265,4 +274,6 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
 
     from .knowledge_api import register_knowledge_api
     register_knowledge_api(app,knowledge_service)
+    from .settings_api import register_settings_api
+    register_settings_api(app,settings_service,assistant,ai_gate)
     return app

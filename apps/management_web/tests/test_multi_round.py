@@ -269,6 +269,7 @@ class ManagementMultiRoundTests(unittest.TestCase):
              patch('apps.monitoring.service.MonitoringService'), \
              patch('apps.management_web.ai_adapter.ManagementAssistant.local') as adapter, \
              patch('apps.management_web.__main__.create_app') as factory,patch('builtins.print'):
-            main()
+            with patch('apps.ai_service.settings.ManagementSettingsService'):
+                main()
         self.assertTrue(adapter.call_args.kwargs['multi_round_trial'])
         self.assertFalse(factory.return_value.run.call_args.kwargs['load_dotenv'])

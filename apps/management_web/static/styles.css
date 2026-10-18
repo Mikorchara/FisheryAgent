@@ -135,3 +135,13 @@ body:has(.management-assistant.view-reading) main{padding:18px;max-width:1300px;
  .knowledge-list-results th:first-child{width:45%}.knowledge-list-results th:nth-child(4){width:20%}.knowledge-list-results th:last-child{width:35%}
  .knowledge-list-results th,.knowledge-list-results td{padding:10px 8px}
 }
+/* Settings keep section DOM/drafts mounted; only the active section is visible. */
+.settings-center{min-width:0}.settings-center [hidden]{display:none!important}
+.settings-body{min-width:0}.settings-body>.card{margin:0}
+.settings-body .card .card{margin-top:16px;box-shadow:none;border:1px solid var(--line,#dce5ec)}
+.settings-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:16px 0}
+.settings-check{display:flex;align-items:center;gap:8px;margin:16px 0}
+.settings-check input{width:auto}.settings-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px}
+.settings-body .field input{width:100%;min-width:0;box-sizing:border-box}
+.settings-body dd{overflow-wrap:anywhere}.settings-body .details-grid{min-width:0}
+@media(max-width:600px){.settings-fields{grid-template-columns:minmax(0,1fr)}.settings-actions .button{max-width:100%}}

@@ -402,10 +402,12 @@ class ManagementAssistantTests(unittest.TestCase):
             patch('apps.monitoring.repository.MonitoringRepository'), \
             patch('apps.monitoring.service.MonitoringService') as monitoring, \
             patch('apps.management_web.ai_adapter.ManagementAssistant.local') as adapter, \
+            patch('apps.ai_service.settings.ManagementSettingsService') as settings, \
             patch('apps.management_web.__main__.create_app') as factory, patch('builtins.print'):
             main()
         self.assertIs(adapter.call_args.args[0], monitoring.return_value)
         self.assertIs(factory.call_args.kwargs['ai'], adapter.return_value)
+        self.assertIs(factory.call_args.kwargs['settings_service'],settings.return_value)
         self.assertFalse(factory.return_value.run.call_args.kwargs['load_dotenv'])
         import io
         with patch('sys.argv', ['management_web', '--legacy-demo', '--enable-assistant']), \

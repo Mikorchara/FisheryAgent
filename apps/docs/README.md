@@ -9,6 +9,7 @@
 - [R2D-2B 三工具本地开放与操作栏修复](deep-dive/R2D2B_UNIFIED_TOOLS.md)（Qwen OFF、独立Normal/Streaming、权限求交、非released）
 - [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)（请求链、Tool/Prompt 扩展、Scope 与测试清单）
 - [启动、模拟器与验证](BUILD_RUN.md)
+- [系统设置与 API 密钥操作](BUILD_RUN.md#r2d-4a系统设置中心)（默认偏好、私有凭据、真实预算展示与限制）
 - [上报 DTO、存储和集成边界](INTEGRATION.md)
 - [路线](ROADMAP.md)
 - [开发规则](../AGENTS.md)

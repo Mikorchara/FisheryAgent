@@ -82,8 +82,13 @@ def main():
                 history_trial=args.assistant_history_trial,unified_tools_trial=args.assistant_tools_trial,knowledge=knowledge)
         except (CredentialLocationError, CredentialFileError, ToolPolicyError, GatewayError):
             parser.error("AI_CONFIGURATION_UNAVAILABLE")
+    settings = None
+    if args.enable_assistant:
+        from apps.ai_service.settings import ManagementSettingsService
+        settings = ManagementSettingsService(ai_options['ai'].backend, root/'outputs/management_web/settings.json')
     app = create_app(allowed_hosts=(f"127.0.0.1:{args.port}", f"localhost:{args.port}"),
-                     data_service=data_service, ingestion_token=token, knowledge_service=knowledge, **ai_options)
+                     data_service=data_service, ingestion_token=token, knowledge_service=knowledge,
+                     settings_service=settings, **ai_options)
     print(f"Management Web · Local: http://127.0.0.1:{args.port}", flush=True)
     app.run(host="127.0.0.1", port=args.port, debug=False, load_dotenv=False)
 

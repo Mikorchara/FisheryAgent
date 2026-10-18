@@ -79,7 +79,8 @@ class ManagementTests(unittest.TestCase):
         with patch('apps.management_web.services.UnavailableAI.send',side_effect=AssertionError('must not run')):
             self.assertEqual(self.client.post('/api/ai/messages',json={'question':'test'}).status_code,503)
             self.assertEqual(self.client.post('/api/ai/messages',data='x'*9000).status_code,413)
-        for path in ('/api/events','/api/files','/api/settings','/api/scenario/apply'):
+        self.assertEqual(self.client.post('/api/settings',json={}).status_code,503)
+        for path in ('/api/events','/api/files','/api/scenario/apply'):
             self.assertIn(self.client.post(path,json={}).status_code,(404,405))
         response=self.client.get('/')
         self.assertNotIn('Access-Control-Allow-Origin',response.headers)

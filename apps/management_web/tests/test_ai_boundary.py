@@ -50,7 +50,8 @@ class WebAIBoundaryTests(unittest.TestCase):
                  patch('apps.monitoring.service.MonitoringService'), \
                  patch('apps.management_web.ai_adapter.ManagementAssistant.local') as local, \
                  patch('apps.management_web.__main__.create_app') as factory,patch('builtins.print'):
-                main()
+                with patch('apps.ai_service.settings.ManagementSettingsService'):
+                    main()
             self.assertEqual(local.call_args.kwargs,{'multi_round_trial':'--assistant-multi-round-trial' in options,
                 'streaming_trial':'--assistant-streaming-trial' in options,
                 'history_trial':'--assistant-history-trial' in options,

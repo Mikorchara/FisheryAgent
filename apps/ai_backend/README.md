@@ -2,7 +2,7 @@
 
 R2C-1C Phase I 已建立新侧闭包。起点为 `d88dbf34f6f20f7dcfe62f828bbf78970acfc7c2` 的既有实现，选择性分叉，不重写执行算法。旧 Prototype 保留自身实现；参数诊断已撤销共享 Alias。R2C-1D Phase II 已将管理 Web / ManagementAssistantService / SSE / 资格入口统一切到这里；旧 Prototype 仍独立。
 
-扩展 Tool、Prompt 与执行配置先看 [AI Backend 与 Assistant 开发指南](../docs/AI_BACKEND_DEVELOPMENT_GUIDE.md)。本 README 只定位通用实现；业务 Assistant 在 ai_service/runtime，HTTP SSE worker 在 management_web。
+扩展 Tool、Prompt 与执行配置先看 [AI Backend 与 Assistant 开发指南](../docs/deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)。本 README 只定位通用实现；业务 Assistant 在 ai_service/runtime，HTTP SSE worker 在 management_web。
 
 ## 模块与公共边界
 
@@ -20,6 +20,7 @@ R2C-1C Phase I 已建立新侧闭包。起点为 `d88dbf34f6f20f7dcfe62f828bbf78
 | `assistant_activity.py`、`assistant_events.py` | 有界安全 Steps、固定业务摘要回调、原有序事件与临时预览；不含发布配置或 HTTP |
 | `observability.py` | Tool/Assistant 安全 JSONL，Tool 名单显式提供，不含 Analysis 专用入口 |
 | `credentials.py`、`credential_paths.py`、`secure_files.py` | 原 Store/Snapshot、底层私有位置检查及文件安全；应用路径组合留服务层 |
+| `project_env.py` | 沿用既有固定路径凭据写入算法：格式保留、CAS、互斥、私有 ACL、原子替换与失败恢复；不包含 HTTP 或业务 Provider 授权 |
 | `tool_argument_diagnostics.py` | 独立的参数阶段/拒因及安全字段 |
 | `tests/` | 独立 Fake SDK、协议/Assembler、取消/凭据、闭包与类型隔离测试；不打包 |
 

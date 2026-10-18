@@ -319,7 +319,13 @@ export function createAssistantWorkspace(api,options={}){
       await s.cancellation;
     }
   }
-  return {mount(devices,device){s.devices=devices;
+  return {setDefaults(value){
+      // Called once before first mount, never a live session/Turn reconfiguration.
+      if(s.device||s.pending||s.config)return;
+      if(typeof value?.preset_id==='string')s.preset=value.preset_id;
+      if(['normal','streaming'].includes(value?.transport))s.transport=value.transport;
+      if(typeof value?.show_details==='boolean')s.detailsVisible=value.show_details;
+    },mount(devices,device){s.devices=devices;
       if(!s.device){s.device=device;void load();}
       else if(device!==s.device&&!s.pending){reset();s.device=device;void load();}
       return root;},send,stop,clear,changePreset,changeDevice,

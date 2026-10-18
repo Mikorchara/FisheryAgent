@@ -414,3 +414,11 @@ R2D-1H：Web 请求仅接受受控业务 `action="history_query"`，由 `managem
 - **离线证据边界**：旧candidate测试显式stub未发布准入；新的local_experimental HTTP测试使用真正开关/Scope/Policy，不stub门禁，通过正式Adapter验证max_tokens=1024。实际15样本Provider技术证据与用户发布批准单独记录，不等于回答质量审核或released。
 
 R2D-1E 已新增开发层的历史单案例计划（默认 dry-run，见 [操作说明](deep-dive/HISTORY_QUALIFICATION.md)），固定隔离 SQLite/seed/clock 与 10/30/60 参数、完整 Scope/计划 hash、HISTORICAL_WATER_QUERY、1/1/2/retry=0。先核对计划与本候选一致，再由用户逐案例批准一次网络请求范围；仅资格入口持有服务器执行许可，不改 Web 发布门禁。安全报告记录执行/来源/Usage，不写参数正文/观测明细/凭据。完成真实与人工审核后，再单独批准 exact local_experimental 配置及默认关闭的启动开关；不修改用户 Policy，不继承旧两工具资格。
+
+## 系统设置中心（R2D-4A）
+
+`management_web/settings_api.py → ai_service/settings.py → ai_backend/project_env.py / CredentialStore`。固定 Provider 的密钥写入复用既有 Writer 算法；无新凭据 Store、模型循环、Policy 或发布配置。Writer 不接受 Web 路径/环境变量名，沿用私有位置、PROCESS_ENV 优先、文件 CAS、锁、ACL 与原子替换。保存不会探测模型；当前 Turn 使用原冻结 Snapshot，后续请求才解析更新。
+
+非敏感默认偏好保存到已有 `outputs/management_web/` 下的 `settings.json`。路径由启动装配决定，格式/大小受限、原子写入及 CAS；复用管理端既有文件路径与进程锁函数，不复用或改写 Policy 数据。设置 HTTP 沿用 Host/Origin、loopback、浏览器 token；写请求有 epoch/revision，过期或不支持组合拒绝。前端仅在首次挂载聊天前应用默认值，不重建现有会话或 RequestHandle。
+
+预算投影只读既有 execution 决策及 Preset 默认值，不改 Scope 资源。无获批替代输出值时保持只读；HTTP 拒绝客户端注入 Token、Tool 预算、Prompt 或连接地址。自定义模型需另行完成管理白名单、Protocol/能力证据、Tool Scope 与资格装配，Backend 能描述 Custom Profile 不等于管理 Assistant 允许执行。RAG 只展示实际固定能力。操作见[设置说明](BUILD_RUN.md#r2d-4a系统设置中心)。

@@ -303,3 +303,7 @@ node --test apps/management_web/tests/*.test.mjs
 管理Web启动在 `management_web.__main__.knowledge_content` 打开 `apps/knowledge_data/knowledge.sqlite3`，显式注入 `ManagementAssistantService(knowledge=...)`；业务Service没有旧JSON默认库。新增知识/编辑/停用/恢复通过 `apps.knowledge.service`，只读Tool仍经 `business_tools/fishery_knowledge.py` 使用同一服务。修改检索算法才涉及 `apps/knowledge/retrieval.py`；日常录入不改算法、Prompt或Scope。
 
 `apps.knowledge.evidence.KnowledgeEvidence` 取代管理检索旧Evidence，通用Backend不依赖知识业务。`legacy_import.py` / `migration.py` 仅显式迁移及历史资格固定夹具使用，正常运行不读资源。迁移版本、每条内容来源版本、索引revision与模型发布合同分别管理；详见[统一文本合同与回滚](KNOWLEDGE_CONTENT.md)。Monitoring旧领域依赖仍是单独后续任务。
+
+## 设置与凭据操作（R2D-4A）
+
+[settings.py](../../ai_service/settings.py)负责非敏感默认偏好、固定 Preset 能力/预算展示和固定 Provider 凭据操作；[settings_api.py](../../management_web/settings_api.py)负责本机 HTTP。底层[project_env.py](../../ai_backend/project_env.py)沿用既有 Writer 实现，不是第二个 CredentialStore。默认偏好仅在新页面初始化使用，不重配进行中的 Turn。Token 仍受精确 Scope 约束，目前没有可任意保存的滑块或自定义模型发布入口；新增模型不能通过设置绕过管理白名单或资格。见[运行说明](../BUILD_RUN.md#r2d-4a系统设置中心)。

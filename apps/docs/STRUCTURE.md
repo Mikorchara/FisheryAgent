@@ -26,6 +26,7 @@ apps/
 │  ├─ contracts.py                                                       # 执行状态、Usage 聚合、RuntimeInfo 与 UTC 辅助
 │  ├─ credential_paths.py                                                # 底层私有位置检查合同
 │  ├─ credentials.py                                                     # 私有 Store/Snapshot 与来源优先级
+│  ├─ project_env.py                                                     # 既有固定路径凭据写入器的独立实现；CAS/私有权限/原子保存
 │  ├─ execution.py                                                       # 请求上下文、取消及 Deadline
 │  ├─ history_projection.py                                              # 已保留完整 pair 的 B 默认投影与 A 回滚
 │  ├─ manual.py                                                          # 原 Raw 传输合同，无管理 UI 入口
@@ -109,6 +110,7 @@ apps/
 │  ├─ management_policy.py                                               # 管理端授权、只读继承、原子保存与 revision
 │  ├─ normal_selection.py                                                # 冻结Normal候选与独立获批的Normal/Streaming本地试用
 │  ├─ service.py                                                         # 唯一ManagementAssistantService业务装配
+│  ├─ settings.py                                                        # 默认偏好持久化、真实模型/预算投影及固定Provider凭据操作
 │  └─ streaming.py                                                       # Streaming 发布配置、精确 Scope 与确认 revision
 ├─ knowledge/                                                            # 统一文本内容业务，Web/AI共享
 │  ├─ tests/                                                            # 内容/迁移/导出/检索 parity，隔离SQLite
@@ -149,6 +151,7 @@ apps/
 │  │  ├─ index.html                                                      # 布局、来源标识和弹窗
 │  │  ├─ tool-policy.js                                                  # 本机设置授权面板，不授予模型发布许可
 │  │  ├─ services.js                                                     # 同源监测与受控 Assistant API
+│  │  ├─ settings.js                                                     # 六区设置中心、稳定草稿、默认偏好与密钥显式操作
 │  │  ├─ styles.css                                                      # 样式与响应式布局
 │  │  └─ view-model.js                                                   # 展示转换、来源和状态
 │  ├─ tests/                                                             # 离线测试及Fake SDK
@@ -167,6 +170,8 @@ apps/
 │  │  ├─ stream-browser-bridge.mjs                                       # 实际管理 SSE 到前端解析/提交的 Node 桥
 │  │  ├─ test_ai_boundary.py                                             # Web 访问控制、令牌隔离、同一 Handle 与显式装配门禁
 │  │  ├─ test_app.py                                                     # R1 兼容、API 和安全
+│  │  ├─ test_settings.py                                                # 临时私有凭据/配置、HTTP/CAS、实际Turn快照隔离
+│  │  ├─ settings-ui.test.mjs                                            # 设置草稿、显式保存/清除、默认恢复和无自动联网
 │  │  ├─ test_assistant.py                                               # Fake Provider HTTP 闭环、同源数据、Ledger 与取消
 │  │  ├─ test_knowledge.py                                               # Knowledge HTTP 闭环、授权/来源隔离、拒绝与确认指纹
 │  │  ├─ test_local_session.py                                           # 双子进程、10秒上报、占用拒绝和清理
@@ -182,6 +187,7 @@ apps/
 │  ├─ contracts.py                                                       # Web Protocol、共享 DTO 导出
 │  ├─ package.json                                                       # Node 原生测试，无依赖
 │  ├─ services.py                                                        # R1 兼容 Demo、未接入 AI/文件服务
+│  ├─ settings_api.py                                                    # 设置/凭据HTTP，沿用Assistant本机访问门禁
 │  └─ streaming.py                                                       # 请求内 SSE 投递、worker 生命周期与断线清理
 ├─ monitoring/                                                           # Web 与未来 Tool 共享的数据基础
 │  ├─ tests/                                                             # 离线测试及Fake SDK
