@@ -22,10 +22,11 @@ class ManagementAssistant:
 
     @classmethod
     def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False, history_trial=False,
-              unified_tools_trial=False, knowledge=None):
+              unified_tools_trial=False, knowledge=None, data_paths=None):
         return cls(ManagementAssistantService.local(monitoring, Path(project_root),
             multi_round_trial=multi_round_trial, streaming_trial=streaming_trial, history_trial=history_trial,
-            unified_tools_trial=unified_tools_trial, **({'knowledge':knowledge} if knowledge is not None else {})))
+            unified_tools_trial=unified_tools_trial, **({'knowledge':knowledge} if knowledge is not None else {}),
+            **({'data_paths':data_paths} if data_paths is not None else {})))
 
     @property
     def monitoring(self):

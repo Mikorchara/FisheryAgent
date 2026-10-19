@@ -1,5 +1,7 @@
 # 管理平台开发规则
 
+MIG-2：业务数据位置统一由 `apps/management_paths.py` 装配。默认旧工作区路径不变；显式独立实例缺库不得自动建库或回退，初始化必须明确操作。Credentials 仍使用独立私有 Store，不进入业务数据根。下文固定知识路径指兼容默认；独立实例使用其 knowledge.sqlite3。
+
 本文件适用于 `apps/`，同时遵守根目录 AGENTS.md。[主要文档入口](docs/README.md)。
 
 - `apps/monitoring/` 是共享数据合同、存储与读取服务；`apps/simulator/` 是独立生产端，只经受控 HTTP 上报，不直接写服务器状态。模拟源不可由客户端声明为真实设备。

@@ -1,9 +1,12 @@
 # 管理平台目录与职责
 
+MIG-2：新增 `apps/management_paths.py`（统一业务数据位置）与 `management_web/instance.py`（显式初始化/只读预检）；独立发行和测试入口见 [独立运行准备](deep-dive/MANAGEMENT_STANDALONE.md)。默认工作区路径及根混合发行合同不变。
+
 当前实际结构；缓存不展开。完整仓库见根 [地图](../../docs/STRUCTURE.md)。Tool/Prompt/Scope 的开发步骤见 [开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)。
 
 ```text
 apps/
+├─ management_paths.py                                                  # 统一数据路径；默认旧路径、显式独立实例
 ├─ ai_backend/                                                           # 管理正式通用LLM Backend，无旧Runtime依赖
 │  ├─ tests/                                                             # 离线测试及Fake SDK
 │  │  ├─ __init__.py                                                     # 无启动 I/O 的包标记

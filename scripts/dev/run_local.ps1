@@ -6,13 +6,18 @@ param(
     [switch]$NoAssistant,
     [switch]$NoStreaming,
     [switch]$NoMultiRound,
-    [switch]$NoHistory
+    [switch]$NoHistory,
+    [string]$DataRoot,
+    [switch]$UserData
 )
 $ErrorActionPreference = 'Stop'
 $workspaceRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $pythonPath = Join-Path $workspaceRoot '.venv/Scripts/python.exe'
 if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) { throw 'LOCAL_VENV_REQUIRED' }
 $launchArgs = @((Join-Path $PSScriptRoot 'local_session.py'),'--scenario',$Scenario,'--port',"$Port",'--seed',"$Seed")
+if ($DataRoot -and $UserData) { throw 'DATA_ROOT_OPTIONS_CONFLICT' }
+if ($DataRoot) { $launchArgs += @('--data-root',$DataRoot) }
+if ($UserData) { $launchArgs += '--user-data' }
 if ($NoAssistant) { $launchArgs += '--no-assistant' }
 if ($NoStreaming) { $launchArgs += '--no-streaming' }
 if ($NoMultiRound) { $launchArgs += '--no-multi-round' }

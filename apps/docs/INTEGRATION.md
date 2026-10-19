@@ -8,6 +8,8 @@ R2D-3B：管理知识只读写统一SQLite，导入内置与用户知识均可�
 
 ## 1. 当前运行链路
 
+MIG-2：数据路径由 `apps.management_paths.ManagementPaths` 在启动时统一选择；未提供参数仍用原工作区。显式 `--data-root` / `--user-data` 使用独立实例，两个数据库先只读预检，全部成功才装配；`--init-data` 仅创建空白新实例并退出，绝不隐式迁移。Settings、管理 Policy/同实例共享兼容 Policy 和 Trace 同根，Credential Store 保持独立。详见[实例生命周期与发行边界](deep-dive/MANAGEMENT_STANDALONE.md)。
+
 知识内容的独立链路为 Web → `apps.knowledge` → `apps/knowledge_data/knowledge.sqlite3` / 原算法的独立 TF-IDF；管理 AI 装配注入同一服务供只读 Knowledge Tool 查询，不依赖 Monitoring 数据库，也不增加 LLM 写能力。原始来源/编辑版本、显式迁移、导出备份、快照、精确源 Scope 和本机写入合同见[知识内容管理](deep-dive/KNOWLEDGE_CONTENT.md)。
 
 ```text

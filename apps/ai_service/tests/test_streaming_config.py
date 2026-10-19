@@ -12,7 +12,7 @@ class StreamingConfigTests(unittest.TestCase):
     def data(self):return json.loads((Path(__file__).parents[1]/'resources/assistant_streaming.json').read_text(encoding='utf-8'))
 
     def test_only_qwen_local_trial_default_disabled_no_prototype_loader_or_fake_qualification(self):
-        with patch('fishery_ai.assistant_streaming.load_assistant_streaming_config',side_effect=AssertionError('not Prototype')):
+        with patch.dict('sys.modules', {'fishery_ai': None}):
             config=load_streaming_config()
         self.assertFalse(config.enabled);self.assertEqual(len(config.releases),1)
         record=config.releases[0].runtime;scope=json.loads(record.scope_json)

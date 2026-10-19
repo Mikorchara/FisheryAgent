@@ -27,11 +27,13 @@ def identifier(value):
 class KnowledgeRepository:
     def __init__(self, path, *, require_existing=False):
         self.path = Path(path)
+        self.require_existing = require_existing
         if require_existing and not self.path.is_file():
             raise KnowledgeError('KNOWLEDGE_MIGRATION_REQUIRED')
         if require_existing:
             # Startup must not initialize/rewrite an empty, legacy or partially
-            # prepared target. Only the explicit migration publishes this marker.
+            # prepared target. Only explicit migration/new-instance initialization
+            # publishes the unified-format marker.
             try:
                 with closing(sqlite3.connect(self.path.resolve().as_uri()+'?mode=ro',uri=True)) as db:
                     schema=db.execute('PRAGMA user_version').fetchone()[0]
@@ -68,7 +70,8 @@ class KnowledgeRepository:
     def connection(self, *, write=False):
         db = None
         try:
-            db = sqlite3.connect(self.path, timeout=2, isolation_level=None)
+            db = (sqlite3.connect(self.path.resolve().as_uri()+'?mode=rw', uri=True, timeout=2, isolation_level=None)
+                  if self.require_existing else sqlite3.connect(self.path, timeout=2, isolation_level=None))
             db.row_factory = sqlite3.Row
             db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
             yield db

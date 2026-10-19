@@ -28,8 +28,13 @@ def require_free_port(port):
             raise RuntimeError('LOCAL_PORT_IN_USE') from None
 
 
-def commands(python, scenario, port, seed, *, assistant=True, streaming=True, multi_round=True, history=True):
+def commands(python, scenario, port, seed, *, assistant=True, streaming=True, multi_round=True, history=True,
+             data_root=None, user_data=False):
     server = [python,'-m','apps.management_web','--port',str(port),'--enable-ingestion']
+    if data_root is not None:
+        server += ['--data-root',str(data_root)]
+    if user_data:
+        server += ['--user-data']
     if assistant:
         server += ['--enable-assistant']
         server += [flag for enabled,flag in ((multi_round,'--assistant-multi-round-trial'),
@@ -53,14 +58,19 @@ def ready(port):
 
 def run_local(scenario='normal', port=8766, seed=42, *, root=ROOT, python=None,
               assistant=True, streaming=True, multi_round=True, history=True,
+              data_root=None, user_data=False,
               launch=subprocess.Popen, is_ready=ready, sleep=time.sleep, emit=print):
     require_free_port(port)
     child_env = os.environ.copy()
+    # Installed/source management startup must not inherit an old repository path.
+    child_env.pop('PYTHONPATH', None)
+    child_env.pop('PYTHONHOME', None)
     child_env['FISHERY_SIM_INGEST_TOKEN'] = secrets.token_hex(32)
     children = []
     try:
         server,simulator = commands(python or sys.executable,scenario,port,seed,
-            assistant=assistant,streaming=streaming,multi_round=multi_round,history=history)
+            assistant=assistant,streaming=streaming,multi_round=multi_round,history=history,
+            data_root=data_root,user_data=user_data)
         options = dict(cwd=root,env=child_env)
         if os.name == 'nt':
             options['creationflags'] = subprocess.CREATE_NO_WINDOW
@@ -106,6 +116,9 @@ def main(argv=None):
     parser.add_argument('--scenario',choices=('normal','low_oxygen','suspected_disease','reduced_feeding','combined_anomaly','device_offline'),default='normal')
     parser.add_argument('--port',type=int,default=8766)
     parser.add_argument('--seed',type=int,default=42)
+    locations=parser.add_mutually_exclusive_group()
+    locations.add_argument('--data-root',type=Path)
+    locations.add_argument('--user-data',action='store_true')
     for name in ('assistant','streaming','multi-round','history'):
         parser.add_argument('--no-'+name,action='store_true')
     args=parser.parse_args(argv)
@@ -113,7 +126,8 @@ def main(argv=None):
         parser.error('INVALID_LOCAL_PORT')
     try:
         return run_local(args.scenario,args.port,args.seed,assistant=not args.no_assistant,
-            streaming=not args.no_streaming,multi_round=not args.no_multi_round,history=not args.no_history)
+            streaming=not args.no_streaming,multi_round=not args.no_multi_round,history=not args.no_history,
+            data_root=args.data_root,user_data=args.user_data)
     except RuntimeError as error:
         print(str(error)+' · 未关闭任何外部进程；请检查端口或手动使用原CLI。',file=sys.stderr)
         return 1

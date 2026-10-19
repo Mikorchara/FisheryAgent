@@ -14,17 +14,24 @@ from .history import (HistoryQueryError, MAX_HISTORY_ROWS, MAX_HISTORY_ROW_BYTES
 
 
 class MonitoringRepository:
-    def __init__(self, path, *, history_limit=360, batch_limit=1440, event_limit=300, event_service=None):
+    def __init__(self, path, *, history_limit=360, batch_limit=1440, event_limit=300, event_service=None,
+                 require_existing=False):
         for limit in (history_limit, batch_limit, event_limit):
             if type(limit) is not int or not 1 <= limit <= 10000:
                 raise ValueError("INVALID_STORAGE_LIMIT")
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.require_existing = require_existing
+        if not require_existing:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
         self.history_limit, self.batch_limit, self.event_limit = history_limit, batch_limit, event_limit
         self.event_service = event_service if event_service is not None else EventService()
         self.lock = RLock()
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
+            if require_existing:
+                if version != 1:
+                    raise ValueError("UNSUPPORTED_MONITORING_STORAGE_SCHEMA")
+                return
             if version not in (0, 1):
                 raise ValueError("UNSUPPORTED_MONITORING_STORAGE_SCHEMA")
             db.executescript('''
@@ -57,7 +64,8 @@ class MonitoringRepository:
     def connection(self):
         # One short-lived connection per operation, so Flask threads never share a connection.
         with self.lock:
-            db = sqlite3.connect(self.path, timeout=5)
+            db = (sqlite3.connect(self.path.resolve().as_uri()+'?mode=rw', uri=True, timeout=5)
+                  if self.require_existing else sqlite3.connect(self.path, timeout=5))
             db.row_factory = sqlite3.Row
             try:
                 with db:

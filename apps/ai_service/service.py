@@ -81,14 +81,16 @@ class ManagementAssistantService:
 
     @classmethod
     def local(cls, monitoring, project_root, *, multi_round_trial=False, streaming_trial=False, history_trial=False,
-              unified_tools_trial=False, knowledge=None):
+              unified_tools_trial=False, knowledge=None, data_paths=None):
         from .runtime.locations import private_project_location
+        from apps.management_paths import ManagementPaths
         root = Path(project_root).resolve()
+        paths = data_paths if data_paths is not None else ManagementPaths.resolve(root)
         location = private_project_location(root)
         return cls(monitoring, knowledge=knowledge, credentials=CredentialStore(location.env_path, private_location=location),
-            traces=JsonlTraceSink(root / "outputs/management_web/assistant-traces.jsonl",
+            traces=JsonlTraceSink(paths.traces,
                 tool_names=HISTORY_CANDIDATE_TOOL_NAMES),
-            policy_directory=root / "outputs/tool-policies",
+            policy_directory=paths.policy_directory,
             execution_config=load_execution_config(enable_trial=multi_round_trial),
             streaming_config=load_streaming_config(enable_trial=streaming_trial),
             history_config=load_history_config(enable_trial=history_trial),

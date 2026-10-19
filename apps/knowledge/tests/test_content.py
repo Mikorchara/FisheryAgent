@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from fishery_ai.knowledge import KnowledgeService as LegacyKnowledgeService
 from apps.knowledge.retrieval import KnowledgeService
 from apps.knowledge.tests.support import seed
 from apps.knowledge.repository import KnowledgeError, KnowledgeRepository
@@ -42,6 +41,7 @@ class KnowledgeContentTests(unittest.TestCase):
         self.assertTrue(any(h.evidence_id==item['id'] for h in restarted.search('银鳞玫瑰温棚')))
 
     def test_builtin_editable_and_original_retrieval_parity(self):
+        from fishery_ai.knowledge import KnowledgeService as LegacyKnowledgeService
         resource=files('fishery_ai').joinpath('resources/knowledge/eel_knowledge.json')
         before=resource.read_bytes();original=LegacyKnowledgeService(resource)
         expected=original.search('鳗鲡低氧表现',top_k=3)

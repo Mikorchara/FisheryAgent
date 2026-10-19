@@ -15,7 +15,7 @@ class ManagementExecutionTests(unittest.TestCase):
         return json.loads((Path(__file__).parents[1]/'resources/assistant_execution.json').read_text(encoding='utf-8'))
 
     def test_default_off_and_independent_explicit_scopes_no_qualification_claim(self):
-        with patch('fishery_ai.assistant_execution.load_assistant_execution_config',side_effect=AssertionError('not Prototype')):
+        with patch.dict('sys.modules', {'fishery_ai': None}):
             config = load_execution_config()
         self.assertFalse(config.multi_round_enabled)
         self.assertTrue(load_execution_config(enable_trial=True).multi_round_enabled)

@@ -2,6 +2,14 @@
 
 ## 环境
 
+MIG-2 独立发行模板、严格实例初始化、数据路径与 MIG-3 清单见 [独立运行准备](deep-dive/MANAGEMENT_STANDALONE.md)。当前原启动与数据默认不变；本轮未迁移真实数据。
+
+- 独立离线入口：`.\.venv\Scripts\python.exe -I scripts/dev/run_management_tests.py`，阻断旧包并复用管理 Python/Node 测试。
+- 未来明确创建空白实例：`.\.venv\Scripts\python.exe -m apps.management_web --user-data --init-data`；不是迁移命令，已有目标拒绝。
+- 未来使用已有独立实例：`.\scripts\dev\run_local.ps1 -Scenario low_oxygen -UserData`，或 `-DataRoot '绝对路径'`；默认用户根 `%LOCALAPPDATA%\FisheryManagement`，缺库/损坏/Schema不兼容则拒绝，不建空库、不回退。Ctrl+C 停止自己的进程。
+
+Credentials 保留独立私有位置，改项目路径可能改变凭据身份，MIG-3 须单独决定，不自动复制密钥。
+
 Python 3.11+，使用根项目已有 Flask 依赖；SQLite、生成器和 HTTP transport 使用标准库。Node 用于前端测试，无需 npm install 或构建。所有命令在 `D:\CodexProject\Fishery_AI_Prototype` 执行；首次环境配置见根 [BUILD_RUN](../../docs/BUILD_RUN.md#环境与启动)。
 
 ## R2D-4B：连接测试与可调输出预算
