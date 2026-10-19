@@ -6,8 +6,8 @@ Inputs are validated server facts. CLEAR is explicit evidence, never absence.
 
 from datetime import datetime
 
-from fishery_ai.contracts import WaterQualityReading, Quality, Freshness
-from fishery_ai.domain import DiagnosisService
+from .water_contracts import WaterQualityReading, Quality, Freshness
+from .diagnosis import DiagnosisService
 
 from .contracts import (METRICS, ObservationRef, DataQuality, RuleIdentity,
                         MonitoringFinding, FindingState, ChannelAnalysis, water_metric_facts)

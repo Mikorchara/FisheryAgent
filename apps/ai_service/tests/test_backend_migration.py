@@ -48,17 +48,42 @@ run=unittest.TextTestRunner().run(suite)
 assert run.wasSuccessful()
 ''')
 
-    def test_management_source_imports_only_explicit_legacy_domain_contracts(self):
-        allowed={'fishery_ai.contracts'}
-        for directory in (ROOT/'apps/ai_service',ROOT/'apps/management_web'):
+    def test_management_product_source_does_not_import_legacy_package(self):
+        for directory in (ROOT/'apps'/name for name in (
+                'monitoring','simulator','knowledge','ai_backend','ai_service','management_web')):
             for path in directory.rglob('*.py'):
-                if 'tests' in path.parts:continue
+                if 'tests' in path.parts or 'development' in path.parts:continue
                 for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
                     names=([node.module or ''] if isinstance(node,ast.ImportFrom) else
                            [a.name for a in node.names] if isinstance(node,ast.Import) else [])
                     for name in names:
-                        if name.startswith('fishery_ai'):
-                            self.assertIn(name,allowed,(path,name))
+                        self.assertFalse(name=='fishery_ai' or name.startswith('fishery_ai.'),(path,name))
+
+    def test_management_http_and_three_tools_run_with_entire_legacy_package_blocked(self):
+        self.fresh('''
+import importlib.abc,sys,unittest
+class BlockOld(importlib.abc.MetaPathFinder):
+ def find_spec(self,name,*args):
+  if name=='fishery_ai' or name.startswith('fishery_ai.'):
+   raise AssertionError('legacy package forbidden: '+name)
+sys.meta_path.insert(0,BlockOld())
+from apps.ai_service.tests.capture_migration import capture
+result=capture()
+assert len(result)==6 and all(row['committed'] and row['resources_closed'] for row in result.values())
+from apps.ai_service.tests.test_unified_tools import UnifiedToolsTests
+from apps.monitoring.tests.test_water_capture import WaterCaptureTests
+from apps.management_web.tests.test_knowledge_content import KnowledgeHTTPTests
+suite=unittest.TestSuite()
+suite.addTests(unittest.defaultTestLoader.loadTestsFromNames([
+ 'test_normal_all_selections_and_sequential_current_history',
+ 'test_streaming_history_and_two_results_reach_final_and_real_frontend_parser',
+ 'test_revocation_rejects_old_confirmation_and_unauthorized_model_call'],UnifiedToolsTests))
+suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(WaterCaptureTests))
+suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(KnowledgeHTTPTests))
+run=unittest.TextTestRunner().run(suite)
+assert run.wasSuccessful()
+assert not any(name=='fishery_ai' or name.startswith('fishery_ai.') for name in sys.modules)
+''')
 
     def test_all_active_execution_classes_and_qualification_adapter_are_new(self):
         from apps.ai_service import service,contracts

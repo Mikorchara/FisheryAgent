@@ -1,7 +1,6 @@
 """Headless AI application tests: no Flask/HTTP client, no external network."""
 
-from apps.knowledge.migration import legacy_reference
-from importlib.resources import files
+from apps.knowledge.tests.support import reference_knowledge
 
 import ast
 from dataclasses import FrozenInstanceError
@@ -54,7 +53,7 @@ class AIServiceTests(unittest.TestCase):
         ref = assistant_profile(PRESETS[0]).credential_ref
         self.gateway = RecordingGateway(ModelResponse('headless final', finish_reason='stop'))
         self.backend = ManagementAssistantService(self.monitoring,
-            knowledge=legacy_reference(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json")),
+            knowledge=reference_knowledge(),
             credentials=CredentialStore(process_env={ref:'fictional-headless-value'}),
             traces=JsonlTraceSink(self.root/'trace.jsonl',tool_names=(
                 'get_current_water_quality','search_fishery_knowledge')), policy_directory=self.root/'policy',

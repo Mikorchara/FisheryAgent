@@ -32,14 +32,13 @@ flowchart TD
     BACKEND --> EXEC[Registry / Policy / Executor]
     EXEC --> BIND
     BIND --> MON[MonitoringService: 同一SQLite权威来源]
-    BIND --> KNOW[既有KnowledgeService: 背景Evidence]
-    MON -. 领域依赖暂留 .-> DOMAIN[旧contracts / Diagnosis / telemetry]
-    KNOW -. 实现和资源暂留 .-> OLD[fishery_ai领域与知识代码]
+    BIND --> KNOW[apps.knowledge: 统一SQLite / 背景Evidence]
+    MON --> DOMAIN[monitoring: water_contracts / diagnosis / current]
     BACKEND --> EVENTS[安全Steps / EventChannel / Trace]
     EVENTS --> HTTP
 ```
 
-箭头表示调用/数据依赖，不代表 Backend 导入业务模块。Handler 由服务层静态注入。Monitoring/Knowledge 的旧领域依赖尚未迁走，所以当前不能卸载整个 fishery_ai 包；管理 Turn 使用的新模型类型、Handle、ContextVar 与 Tool 循环始终来自 Backend。
+箭头表示调用/数据依赖，不代表 Backend 导入业务模块。Handler 由服务层静态注入。MIG-1 后正式管理链（包括 Monitoring 和来源认证）不导入 fishery_ai；新领域合同与 Prototype 类身份独立、JSON 行为兼容。普通管理测试使用自包含固定知识夹具，历史资格/显式旧数据迁移和新旧对拍仍需单独保留旧资源或旧实现；这不代表现有根打包、启动和数据路径已经完成独立项目迁移。
 
 当前监测规则仍为 PROTOTYPE；模拟观测、视觉疑似检测信号、确定性 Finding 与 LLM 解释应分别保留来源，不能升级成真实设备事实或疾病确诊。
 
@@ -287,7 +286,7 @@ node --test apps/management_web/tests/*.test.mjs
 
 - `ai_service/runtime` 名称与 Backend 的“Runtime”容易混淆，当前通过职责说明解决，暂无改名计划。
 - 单/多轮 System 的字符串替换耦合、共享 Policy 编辑边界、新 Tool 的来源类型，需要在相关扩展任务中明确处理，本轮不重构。
-- Monitoring 仍引用旧领域包；Knowledge在R2D-3B已独立；Backend 本身禁止反向导入这些业务。独立领域迁移另立任务。
+- MIG-1 已解除 Monitoring 和来源认证的旧领域 Import；Knowledge在R2D-3B已独立。后续独立项目需处理根打包/启动入口、历史资格资源及数据路径，Backend 仍禁止反向导入业务。
 - 精确资格与历史差分测试各有版本基线；技术 PASS、基本网页人工验收、回答质量审核和产品发布是不同证据，不自动互相继承。
 
 ## 管理端 Tool 授权与历史候选
@@ -302,7 +301,7 @@ node --test apps/management_web/tests/*.test.mjs
 
 管理Web启动在 `management_web.__main__.knowledge_content` 打开 `apps/knowledge_data/knowledge.sqlite3`，显式注入 `ManagementAssistantService(knowledge=...)`；业务Service没有旧JSON默认库。新增知识/编辑/停用/恢复通过 `apps.knowledge.service`，只读Tool仍经 `business_tools/fishery_knowledge.py` 使用同一服务。修改检索算法才涉及 `apps/knowledge/retrieval.py`；日常录入不改算法、Prompt或Scope。
 
-`apps.knowledge.evidence.KnowledgeEvidence` 取代管理检索旧Evidence，通用Backend不依赖知识业务。`legacy_import.py` / `migration.py` 仅显式迁移及历史资格固定夹具使用，正常运行不读资源。迁移版本、每条内容来源版本、索引revision与模型发布合同分别管理；详见[统一文本合同与回滚](KNOWLEDGE_CONTENT.md)。Monitoring旧领域依赖仍是单独后续任务。
+`apps.knowledge.evidence.KnowledgeEvidence` 取代管理检索旧Evidence，通用Backend不依赖知识业务。`legacy_import.py` / `migration.py` 仅显式迁移及固定测试/历史资格夹具使用，正常运行不读资源。迁移版本、每条内容来源版本、索引revision与模型发布合同分别管理；详见[统一文本合同与回滚](KNOWLEDGE_CONTENT.md)。Monitoring 已在 MIG-1 拥有自己的领域合同与诊断，不再引入旧包。
 
 ## 设置与凭据操作（R2D-4A）
 

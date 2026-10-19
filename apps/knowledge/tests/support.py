@@ -1,8 +1,13 @@
 """Explicit isolated seed; never opens a user DB."""
 from pathlib import Path
-from apps.knowledge.migration import migrate
+from apps.knowledge.migration import migrate, legacy_reference
 
-LEGACY_JSON=Path(__file__).resolve().parents[3]/'src/fishery_ai/resources/knowledge/eel_knowledge.json'
+LEGACY_JSON=Path(__file__).with_name('fixtures')/'eel_knowledge_v1.json'
+
+
+def reference_knowledge():
+    """Frozen public corpus; preserves Scope/DTO baselines without importing the old package."""
+    return legacy_reference(LEGACY_JSON)
 
 
 def seed(path):

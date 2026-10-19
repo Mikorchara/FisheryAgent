@@ -21,10 +21,10 @@ R2D-1G 的 [历史 Tool](../business_tools/water_quality_history.py) 由 bind_to
 
 同名文件要按层定位：顶层 execution.py 是 Normal 发布/Scope/revision，streaming.py 是 Streaming 发布/Scope；通用请求取消/Deadline 在 ai_backend/execution.py，HTTP SSE worker 在 management_web/streaming.py。顶层 contracts.py 是进程内 PreparedAssistantTurn / AssistantBackend 业务合同，不是 Web DTO。
 
-依赖为Web → AI Service → Backend；Handler → Monitoring / apps.knowledge统一SQLite与独立TF-IDF。暂留旧领域依赖仅包括Diagnosis/telemetry/Reading、sources中的Quality/Freshness，连带旧model_options；不调用旧Assistant/Gateway/Adapter/Executor/Handle/ContextVar。阻断这些旧执行模块后，实际HTTP/SSE及管理资格Fake测试仍通过。
+依赖为Web → AI Service → Backend；Handler → Monitoring / apps.knowledge统一SQLite与独立TF-IDF。MIG-1 将 sources 的 Quality/Freshness/Reading/parse_time 统一到 monitoring.water_contracts，Monitoring 自有 Diagnosis/Reader，正式管理链不再导入任何 fishery_ai 模块。新进程阻断整个旧包后验证管理 HTTP/SSE 三工具与知识 SQLite；历史资格/迁移及新旧差分测试另保留有意的旧依赖。
 
 资格观察器在上一级development，使用新Backend，正式启动不加载它。既有真实资格记录仍属于旧Runtime；新计划@2改变授权hash，不改Scope或既有记录，不自动联网。
 
-R2C-1E：用户已报告新 Backend 的 Qwen Normal 水质查询、Streaming 水质 + Knowledge 与最终提交基本网页验收通过。迁移主线已结束；这不替代回答质量专项审核，不增加 Provider 资格或发布范围。Monitoring领域独立化留待后续任务；Knowledge已在R2D-3B脱离旧实现，旧JSON仅作显式迁移/历史资格夹具。
+R2C-1E：用户已报告新 Backend 的 Qwen Normal 水质查询、Streaming 水质 + Knowledge 与最终提交基本网页验收通过。迁移主线已结束；这不替代回答质量专项审核，不增加 Provider 资格或发布范围。Monitoring 领域独立化已由 MIG-1 完成；Knowledge 在 R2D-3B 脱离旧实现，旧 JSON 仅作显式迁移/历史资格夹具。
 
 验证：`python scripts/dev/run_tests.py backend`。当前执行路径、指纹与回滚见 [实施记录](../../docs/deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#14-r2c-1d-phase-ii-管理端整体切换)。

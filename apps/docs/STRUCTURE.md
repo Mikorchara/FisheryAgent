@@ -196,6 +196,7 @@ apps/
 ├─ monitoring/                                                           # Web 与未来 Tool 共享的数据基础
 │  ├─ tests/                                                             # 离线测试及Fake SDK
 │  │  ├─ test_business_services.py                                       # 纯服务一致性、设备/时间边界与故障回滚
+│  │  ├─ test_domain_compatibility.py                                    # MIG-1 新旧领域/Reader/来源验证差分
 │  │  ├─ test_history_projection.py                                      # 历史 API 排序、会话与旧元数据兼容
 │  │  ├─ test_local_http.py                                              # 真实 loopback 上报及停止/重启
 │  │  ├─ test_pipeline.py                                                # 校验、时序、安全、状态与共享来源
@@ -205,10 +206,13 @@ apps/
 │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
 │  ├─ analysis.py                                                        # 纯领域求值、单次水质捕获与 canonical Reading 投影
 │  ├─ contracts.py                                                       # v1 上报校验、监测事实与分析 DTO
+│  ├─ current.py                                                         # 自有只读 Reader/View；保留 bind().water_reader
+│  ├─ diagnosis.py                                                       # 管理端唯一水质阈值实现，保留原规则身份/结果
 │  ├─ events.py                                                          # 纯 EventService、事件变更及只读状态投影
 │  ├─ history.py                                                         # 有界历史窗口统计、覆盖/缺口与有限 DTO
 │  ├─ repository.py                                                      # SQLite、事务、历史与事件变更持久化
 │  ├─ rules.py                                                           # 纯评估函数、证据门禁与 PROTOTYPE 规则投影
+│  ├─ water_contracts.py                                                 # 独立水质 Reading/枚举/时间校验/RuleFinding
 │  └─ service.py                                                         # 监测业务协调、统一查询与设备绑定
 ├─ simulator/                                                            # 独立设备生产端
 │  ├─ tests/                                                             # 离线测试及Fake SDK
@@ -237,7 +241,7 @@ management_web HTTP/SSE/访问控制 + 新RequestRegistry
     → 新Steps / EventChannel / SafeTrace → Web临时Preview或唯一Final
 ```
 
-Backend无fishery_ai/Flask/SQLite/业务反向依赖。Monitoring/Knowledge及业务sources保留旧领域合同/资源，连带旧model_options；它们不调用旧LLM Runtime。旧Prototype独立，管理单个Turn只用新ContextVar/Handle/Registry/Adapter。
+Backend无fishery_ai/Flask/SQLite/业务反向依赖。MIG-1 后 Monitoring/Knowledge 和业务 sources 正式链均不导入 fishery_ai，也不连带旧 model_options/telemetry；旧 Prototype 保留独立实现。普通管理测试使用 knowledge/tests/fixtures 固定资源，新旧差分/历史资格/显式迁移仍保留有意的旧包或旧资源引用，后续独立项目需分类处理。管理单个 Turn 只用新 ContextVar/Handle/Registry/Adapter。
 
 Phase I 的五个 runtime 准备模块和三份重复测试已移除；当前 Service/合同/发布装配在顶层，业务 Tool 在 business_tools，无 alias/fallback。R2C-1E 迁移验收记录保留当时结构，见 [收尾记录](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。
 

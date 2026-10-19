@@ -11,7 +11,7 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from fishery_ai.contracts import WaterQualityReading
+    from .water_contracts import WaterQualityReading
 
 SCHEMA_VERSION = 1
 METRICS = {

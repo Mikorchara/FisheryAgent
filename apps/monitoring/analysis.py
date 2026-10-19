@@ -3,8 +3,8 @@
 from datetime import datetime
 import math
 
-from fishery_ai.contracts import WaterQualityReading, Quality, Freshness, evaluate_freshness
-from fishery_ai.domain import DiagnosisService
+from .water_contracts import WaterQualityReading, Quality, Freshness, evaluate_freshness
+from .diagnosis import DiagnosisService
 
 from .contracts import WaterCapture, water_metric_facts
 from .rules import assess_channel

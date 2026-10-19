@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from enum import Enum
 import math
 
-from fishery_ai.contracts import Freshness, Quality, WaterQualityReading, parse_time
+from apps.monitoring.water_contracts import Freshness, Quality, WaterQualityReading, parse_time
 from apps.ai_backend.tool_conversation import ModelExecutionStep, ToolConversationResult, ToolExecutionStep
 from apps.ai_backend.tools.contracts import ToolStatus
 from apps.monitoring.history import MAX_HISTORY_ROWS, LOOKBACK_MINUTES

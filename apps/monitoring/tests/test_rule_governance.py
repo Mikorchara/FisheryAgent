@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from fishery_ai.domain import DiagnosisService
+from apps.monitoring.diagnosis import DiagnosisService
 from apps.simulator.generator import Simulator, summarize_visual_frames
 from apps.monitoring.contracts import FindingState, RuleIdentity, DataQuality
 from apps.monitoring.repository import MonitoringRepository

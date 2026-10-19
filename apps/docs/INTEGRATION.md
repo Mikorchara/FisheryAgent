@@ -1,6 +1,6 @@
 # 统一监测协议与集成边界
 
-AI 的扩展操作见 [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)；本文件维护当前数据/应用边界。带 R 阶段编号的章节保留来源脉络，下述执行类均为管理独立 Backend，只有明确说明的Monitoring领域代码仍来自旧包。
+AI 的扩展操作见 [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)；本文件维护当前数据/应用边界。带 R 阶段编号的章节保留来源脉络；MIG-1 后正式管理运行链及 Monitoring 领域合同均不导入旧 fishery_ai。
 
 R2D-2C 本机聊天确认方式：主动点击「发送」或 Ctrl+Enter 授权一个 Turn，前端随冻结的设备、epoch/revision 提交 `confirm_network=true`，不再保存勾选状态。底层确认合同及 Host/Origin、浏览器令牌、Tool Policy、Scope、预算、唯一 claim、取消和提交校验不变；缺少确认或配置过期仍在凭据/模型 I/O 前拒绝。刷新可用状态、切换模式与 History 恢复只读，不自动重发。此规则不扩展到远程生产接口或人工资格 CLI；下文旧阶段关于勾选确认的操作以此为准。[当前网页操作](BUILD_RUN.md#一行式常用命令)。
 
@@ -24,7 +24,13 @@ Simulator：Scenario → 逻辑采样 → 10 秒窗口 → HTTP
 
 `apps/monitoring/` 不依赖 Flask 或页面。Web `create_app(data_service=...)` 将同一服务用于监测、视觉和事件；CLI 正常入口总是装配 SQLite 服务。无 data_service 的工厂保留 R1 测试/兼容 Demo；CLI 必须显式 `--legacy-demo` 才使用它，接入失败不回退 Demo。
 
-服务复用现有 WaterQualityReading、DiagnosisService、evaluate_freshness 与 CurrentWaterQualityReader，只依赖领域读取能力，不启动模型或修改 Prototype 当前 Store。
+MIG-1：`water_contracts.py` 拥有管理端 WaterQualityReading、Quality/Freshness、时间校验及 RuleFinding；`diagnosis.py` 是管理端唯一水质阈值实现，保留原算法、文本及版本。`current.py` 保留 bind().water_reader 的只读接口，读取既有设备来源一次、只更新返回副本的新鲜度，不创建第二个 Snapshot Store。`analysis.py` / `rules.py` / Assistant sources 使用同一套新类型；旧 Prototype 自身实现不变。
+
+领域类身份有意独立：Python 中新旧 dataclass 不作为同类互换，构造器仍拒绝另一侧枚举；JSON 字段、枚举字符串、Tool DTO、Receipt 和规则结果不变。历史 RULE_VERSION `fishery-production-c400b7a-v1` 仅保留兼容身份，RuleIdentity 继续是 PROTOTYPE。
+
+普通管理测试的固定知识来自 `apps/knowledge/tests/fixtures/`，不从旧包定位资源。新旧领域/Runtime 对拍、历史资格和旧数据迁移仍可显式依赖旧包或旧 JSON；它们不是产品启动依赖。`test_backend_migration` 在新进程中阻断整个 fishery_ai 包，并经实际管理 HTTP/SSE 执行三工具路径及统一知识 SQLite 流程；`test_domain_compatibility` 保留新旧字段、拒绝、阈值、Reader 和来源认证差分。
+
+独立项目尚需后续处理根打包/启动/测试入口、历史资格夹具和数据路径；MIG-1 不迁移 SQLite、Policy、Settings、凭据或项目身份。离线入口：`python -m unittest apps.monitoring.tests.test_domain_compatibility apps.ai_service.tests.test_backend_migration -q`，以及 `python scripts/dev/run_tests.py management`。
 
 ## 2. HTTP v1 批次 DTO
 
@@ -337,7 +343,7 @@ Video/NPU 将通信、推理、事实归一化和网页播放分离；不迁移�
 
 管理 Runtime 的当前边界见 [独立 Backend](../ai_backend/README.md) 与 [业务 Runtime](../ai_service/runtime/README.md)。旧 Prototype 的 [Analysis / Assistant](../../docs/deep-dive/architecture/ASSISTANT_MODEL_V1_DESIGN.md)、[Tool Runtime](../../docs/deep-dive/tools/READ_ONLY_TOOL_CALLING.md) 与 [凭据](../../docs/deep-dive/operations/PRIVATE_CREDENTIAL_STORAGE.md) 保留迁移来源和独立实验说明，不作为新侧自动同步合同。启动与验收见 [BUILD_RUN](BUILD_RUN.md)。
 
-R2C-1D：正式ManagementAssistantService和Web/SSE/资格入口已统一使用apps.ai_backend新类型；业务Prompt/History/Receipt/Ledger/Policy在ai_service.runtime。顶层 service/contracts/execution/streaming 分别负责协调、进程内合同与发布计算；R2C-2B 将业务绑定整理为 business_tools/registry 与每 Tool 模块，不留旧 tools/bindings 入口。Backend与旧Prototype互不依赖，Monitoring/Knowledge暂留旧领域服务。Scope及授权/输出预算不变，qualification计划@2重新绑定授权，非新真实资格。见 [当前Backend](../ai_backend/README.md)。
+R2C-1D：正式ManagementAssistantService和Web/SSE/资格入口已统一使用apps.ai_backend新类型；业务Prompt/History/Receipt/Ledger/Policy在ai_service.runtime。顶层 service/contracts/execution/streaming 分别负责协调、进程内合同与发布计算；R2C-2B 将业务绑定整理为 business_tools/registry 与每 Tool 模块，不留旧 tools/bindings 入口。MIG-1 后 Monitoring/Knowledge 正式服务与来源认证均无旧包依赖，历史资格资源另行处理。Scope及授权/输出预算不变，qualification计划@2重新绑定授权，非新真实资格。见 [当前Backend](../ai_backend/README.md)。
 
 R2C-1E：迁移主线和基本真实网页人工验收已结束；Qwen Normal 水质查询、Streaming 水质 + Knowledge、Final 提交及来源 / PROTOTYPE 标签由用户观察为正常。本轮工程检查未再调用 Provider，未改变资格记录、发布范围或默认开关。Monitoring 的旧 Diagnosis / telemetry / 领域合同、KnowledgeService / 固定资源仍在业务层，后续独立化不应反向引入通用 Backend。
 

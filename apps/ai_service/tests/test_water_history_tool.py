@@ -313,11 +313,10 @@ class WaterHistoryToolTests(unittest.TestCase):
             self.assertFalse(sources.requirement_satisfied_by_ledger(sources.SourceRequirement.HISTORICAL_WATER_QUERY, ledger))
 
     def test_old_normal_streaming_scopes_reject_history_and_assembled_revision_changes(self):
-        from importlib.resources import files
-        from apps.knowledge.migration import legacy_reference
+        from apps.knowledge.tests.support import reference_knowledge
         from apps.ai_service.execution import load_execution_config, resolve_execution
         from apps.ai_service.streaming import load_streaming_config, resolve_streaming
-        knowledge = legacy_reference(files("fishery_ai").joinpath("resources/knowledge/eel_knowledge.json"))
+        knowledge = reference_knowledge()
         formal = bind_tools(self.monitoring, "pond-a", knowledge)
         candidate = bind_tools(self.monitoring, "pond-a", knowledge, include_history=True)
         old_policy = ToolPolicy("assistant", True, FORMAL_TOOL_NAMES)

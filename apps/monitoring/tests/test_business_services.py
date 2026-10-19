@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from fishery_ai.domain import DiagnosisService
+from apps.monitoring.diagnosis import DiagnosisService
 from apps.simulator.generator import Simulator
 from apps.monitoring.analysis import DomainAnalysisService
 from apps.monitoring.events import EventService

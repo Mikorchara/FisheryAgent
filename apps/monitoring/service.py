@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from functools import partial
 from typing import Callable
 
-from fishery_ai.telemetry.current import CurrentWaterQualityReader
+from .current import CurrentWaterQualityReader
 
 from .contracts import (METRICS, validate_batch, MetricObservation, MonitoringSnapshot, identifier,
                         water_metric_facts, FindingState, ChannelAnalysis, WaterCapture)

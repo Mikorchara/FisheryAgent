@@ -15,7 +15,7 @@ from apps.monitoring.contracts import IngestionError, strict_json, validate_batc
 from apps.monitoring.repository import MonitoringRepository
 from apps.monitoring.service import MonitoringService
 from apps.simulator.generator import Simulator
-from fishery_ai.domain import DiagnosisService
+from apps.monitoring.diagnosis import DiagnosisService
 
 
 class PipelineTests(unittest.TestCase):
