@@ -4,7 +4,6 @@ import json
 
 from apps.ai_backend.credentials import CredentialFileError
 from apps.ai_backend.project_env import EnvWriteError, ProjectEnvWriter
-from apps.ai_backend.tool_conversation import ToolModelTransport
 from .runtime.assistant import assistant_profile
 from .service import PRESETS
 from .settings_store import SettingsError, PreferencesStore
@@ -57,20 +56,19 @@ class ManagementSettingsService:
             modes = {}
             for transport, key in (('normal','execution'),('streaming','streaming')):
                 execution = entry[key]
-                modes[transport] = {**execution,
+                budget = execution.get('output_budget', {})
+                modes[transport] = {k:v for k,v in execution.items() if k!='output_budget'}
+                modes[transport].update({
                     'max_output_tokens':execution['max_output_tokens'] if execution['max_output_tokens'] is not None else profile.default_generation.max_output_tokens,
                     'deadline_s':profile.total_timeout_s, 'retry':profile.max_retries,
                     'output_field':profile.preset_protocol_spec.max_output_tokens_field,
-                    'editable':False, 'approved_token_options':[]}
-                if execution['can_send'] and type(modes[transport]['max_output_tokens']) is int:
-                    modes[transport]['approved_token_options'] = [modes[transport]['max_output_tokens']]
-                _,_,decision,_=self.backend._configuration(entry['preset_id'],device,
-                    transport=ToolModelTransport(transport.upper()))
-                if output_budget.eligible(profile,decision):
-                    modes[transport].update(editable=True,min_output_tokens=output_budget.MIN_TOKENS,
-                        max_allowed_output_tokens=output_budget.MAX_TOKENS,approved_token_options=list(output_budget.RECOMMENDED),
-                        default_output_tokens=decision.output_budget_default if decision.output_budget_default is not None else profile.default_generation.max_output_tokens,
-                        output_budget_contract=output_budget.CONTRACT)
+                    'editable':budget.get('editable',False),
+                    'approved_token_options':list(budget.get('approved_token_options',[]))})
+                if budget.get('editable') is True:
+                    modes[transport].update(min_output_tokens=budget['min_output_tokens'],
+                        max_allowed_output_tokens=budget['max_allowed_output_tokens'],
+                        output_budget_contract=budget['output_budget_contract'],
+                        default_output_tokens=budget['default_output_tokens'])
             models.append({'preset_id':entry['preset_id'], 'name':entry['display_name'],
                 'provider':profile.service_id,'model_id':profile.model, 'connection':profile.base_url,
                 'kind':profile.provider_kind,'thinking':'off',

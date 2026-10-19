@@ -37,11 +37,12 @@ def eligible(profile,decision):
         and decision.profile.mode==ToolExecutionMode.BOUNDED_MULTI_ROUND)
 
 
-def apply(profile,decision,store):
+def apply(profile,decision,store,*,document=None):
     if store is None or not eligible(profile,decision):
         return decision
     decision=replace(decision,output_budget_default=decision.max_output_tokens)
-    document=store.document()
+    if document is None:
+        document=store.document()
     selected=document['output_budgets'].get(key(profile.preset_id,decision.model_transport.value.lower()))
     revision=document['budget_revision']
     if not revision:
@@ -54,3 +55,18 @@ def apply(profile,decision,store):
     return replace(decision,profile=replace(decision.profile,revision=fingerprint),
         max_output_tokens=selected if selected is not None else decision.max_output_tokens,
         output_budget_contract=CONTRACT if selected is not None else None,output_budget_revision=revision)
+
+
+def public_metadata(profile,decision):
+    """Safe read-only budget facts for an already resolved execution decision."""
+    default=decision.output_budget_default
+    if default is None:
+        default=profile.default_generation.max_output_tokens
+    editable=eligible(profile,decision)
+    metadata={'default_output_tokens':default,'editable':editable,'approved_token_options':[]}
+    if decision.can_send and type(decision.max_output_tokens) is int:
+        metadata['approved_token_options']=[decision.max_output_tokens]
+    if editable:
+        metadata.update(min_output_tokens=MIN_TOKENS,max_allowed_output_tokens=MAX_TOKENS,
+            approved_token_options=list(RECOMMENDED),output_budget_contract=CONTRACT)
+    return metadata

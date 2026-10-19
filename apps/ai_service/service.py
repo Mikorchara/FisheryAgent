@@ -123,7 +123,7 @@ class ManagementAssistantService:
         return self.tool_authorization()
 
     def _configuration(self, preset_id, device_id, *, transport=ToolModelTransport.NORMAL,
-                       policy_snapshot=None, execution_profile=None):
+                       policy_snapshot=None, execution_profile=None, budget_document=None):
         if not isinstance(transport, ToolModelTransport):
             raise GatewayError('INVALID_ASSISTANT_REQUEST')
         if preset_id not in PRESETS:
@@ -170,20 +170,28 @@ class ManagementAssistantService:
                 'execution_revision':execution.profile.revision,'management_policy_revision':snapshot.revision})))
         if not historical and not candidate:
             from .output_budget import apply
-            execution=apply(profile,execution,self.settings_store)
+            execution=apply(profile,execution,self.settings_store,document=budget_document)
         return profile, policy, execution, registry
 
     def bootstrap(self, device_id: str) -> dict:
+        # Read Policy and budget state once so every displayed mode describes
+        # one coherent configuration snapshot. Neither snapshot is retained by
+        # a prepared Turn; turn preparation still resolves its own frozen state.
         presets = []
         snapshot = self.management_policy.snapshot()
+        budget_document = self.settings_store.document() if self.settings_store is not None else None
+        from .output_budget import public_metadata
         for identifier in PRESETS:
-            p, policy, execution, _registry = self._configuration(identifier, device_id,policy_snapshot=snapshot)
+            p, policy, execution, _registry = self._configuration(identifier, device_id,policy_snapshot=snapshot,
+                budget_document=budget_document)
             _, streaming_policy, streaming, _ = self._configuration(identifier, device_id,
-                transport=ToolModelTransport.STREAMING,policy_snapshot=snapshot)
+                transport=ToolModelTransport.STREAMING,policy_snapshot=snapshot,budget_document=budget_document)
             presets.append({"preset_id": identifier, "display_name": p.display_name.rsplit(" · ", 1)[0],
                 "runtime_type": p.provider_kind, "revision": execution.profile.revision,
-                "execution":{**execution.public(),'tools':list(policy.exposed_tools)},
-                "streaming":{**streaming.public(),'tools':list(streaming_policy.exposed_tools)}})
+                "execution":{**execution.public(),'tools':list(policy.exposed_tools),
+                    'output_budget':public_metadata(p,execution)},
+                "streaming":{**streaming.public(),'tools':list(streaming_policy.exposed_tools),
+                    'output_budget':public_metadata(p,streaming)}})
         default_execution = presets[0]['execution']
         _, _, candidate, _ = self._configuration(PRESETS[0],device_id,
             policy_snapshot=snapshot,execution_profile=HISTORY_PROFILE)

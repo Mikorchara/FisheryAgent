@@ -86,6 +86,37 @@ class ManagementSettingsTests(unittest.TestCase):
         self.assertEqual(budgets['streaming']['approved_token_options'],[512,1024,2048,4096])
         self.assertTrue(budgets['normal']['editable'])
 
+    def test_settings_consumes_one_bootstrap_projection_for_budget_metadata(self):
+        configuration = self.f.backend._configuration
+        with patch.object(self.f.backend,'_configuration',wraps=configuration) as configure, \
+                patch.object(self.f.backend,'bootstrap',wraps=self.f.backend.bootstrap) as bootstrap:
+            value = self.service.public(credentials=False)
+        bootstrap.assert_called_once()
+        # bootstrap composes two presets in two transports plus its history
+        # candidate view. Settings must not do another private configuration pass.
+        self.assertEqual(configure.call_count,5)
+        qwen = next(model for model in value['models'] if model['preset_id']==self.f.profile.preset_id)
+        self.assertEqual(qwen['modes']['normal']['max_output_tokens'],1024)
+        self.assertEqual(qwen['modes']['normal']['default_output_tokens'],1024)
+        self.assertEqual(qwen['modes']['normal']['approved_token_options'],[512,1024,2048,4096])
+        self.assertTrue(qwen['modes']['normal']['editable'])
+        self.assertEqual(qwen['modes']['streaming']['max_output_tokens'],512)
+        self.assertEqual(qwen['modes']['streaming']['default_output_tokens'],512)
+        self.assertTrue(qwen['modes']['streaming']['editable'])
+        # The Settings response keeps its existing flattened API shape; the
+        # extra internal projection remains scoped to the AI bootstrap DTO.
+        self.assertNotIn('output_budget',qwen['modes']['normal'])
+        with patch.object(self.service.store,'document',wraps=self.service.store.document) as read_budget, \
+                patch.object(self.f.backend.management_policy,'snapshot',
+                    wraps=self.f.backend.management_policy.snapshot) as read_policy:
+            bootstrap_value = self.f.backend.bootstrap('pond-a')
+        read_budget.assert_called_once()
+        read_policy.assert_called_once()
+        normal = bootstrap_value['presets'][0]['execution']['output_budget']
+        streaming = bootstrap_value['presets'][0]['streaming']['output_budget']
+        self.assertEqual(normal['default_output_tokens'],1024)
+        self.assertEqual(streaming['default_output_tokens'],512)
+
     def test_stale_revision_epoch_policy_and_concurrent_save(self):
         value=self.read();prefs={**value['preferences'],'show_details':False}
         self.assertEqual(self.save(prefs,current=value).status_code,200)
