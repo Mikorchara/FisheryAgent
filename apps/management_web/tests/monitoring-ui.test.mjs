@@ -134,14 +134,37 @@ test('chart range controls render real page: default recent, all history, pollin
   const p=page(d);await p.ready();
   const walk=node=>[node,...node.children.flatMap(walk)];
   let nodes=walk(p.node('content'));
-  assert.equal(nodes.filter(n=>n.tagName==='circle').length,85);
+  const singleMarkers=()=>walk(walk(p.node('content')).find(n=>n.attributes['data-chart']==='single')).filter(n=>n.attributes.class==='trend-marker');
+  assert.equal(singleMarkers().length,85);
   const range=nodes.find(n=>n.tagName==='select'&&n.attributes['aria-label']==='历史范围');
   assert.ok(range);range.events.change({target:{value:'all'}});
   assert.equal(p.run('state.trendRange'),'all');
-  nodes=walk(p.node('content'));assert.equal(nodes.filter(n=>n.tagName==='circle').length,214);
+  nodes=walk(p.node('content'));assert.equal(singleMarkers().length,214);
   await p.run('refresh()');assert.equal(p.run('state.trendRange'),'all');
-  assert.equal(walk(p.node('content')).filter(n=>n.tagName==='circle').length,214);
+  assert.equal(singleMarkers().length,214);
   p.run("location.hash='#monitoring';render()");
-  assert.equal(walk(p.node('content')).filter(n=>n.tagName==='circle').length,214);
+  assert.equal(singleMarkers().length,214);
+  assert.ok(p.requests.every(url=>url.startsWith('/api/bootstrap')));
+});
+
+test('5/10 minute selectors drive both charts, keep default 30 minutes and survive polling and navigation',async()=>{
+  const d=fixture();d.monitoring.trend=restartHistory().map((row,i)=>({...row,temperature_c:25+i/100,ph:7+i/1000}));
+  const p=page(d);await p.ready();
+  const walk=node=>[node,...node.children.flatMap(walk)];
+  const nodes=()=>walk(p.node('content'));
+  const range=()=>nodes().find(n=>n.tagName==='select'&&n.attributes['aria-label']==='历史范围');
+  assert.equal(p.run('state.trendRange'),'1800');
+  assert.deepEqual(range().children.map(n=>n.attributes.value),['300','600','1800','3600','all']);
+  for(const [value,count] of [['300',31],['600',61],['1800',85],['3600',85],['all',214]]){
+    range().events.change({target:{value}});
+    const charts=nodes().filter(n=>n.attributes['data-chart']);
+    assert.equal(charts.length,2);
+    assert.equal(walk(charts[0]).filter(n=>n.attributes.class==='trend-marker').length,count);
+    assert.equal(walk(charts[1]).filter(n=>n.attributes.class==='trend-marker').length,count*3);
+  }
+  range().events.change({target:{value:'600'}});
+  await p.run('refresh()');p.run("location.hash='#monitoring';render()");
+  assert.equal(p.run('state.trendRange'),'600');
+  assert.ok(nodes().some(n=>n.textContent==='三指标综合趋势（归一化）'));
   assert.ok(p.requests.every(url=>url.startsWith('/api/bootstrap')));
 });

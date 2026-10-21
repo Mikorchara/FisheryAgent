@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {Element} from './dom-fixture.mjs';
-import {chartGeometry} from '../static/view-model.js';
+import {chartGeometry,normalizedChartGeometry,trendRanges} from '../static/view-model.js';
 import {point,time,restartHistory} from './chart-fixture.mjs';
 const key='dissolved_oxygen_mg_l';
 
-function render(trend,options={}){
+function render(trend,options={},normalized=false){
   const context=vm.createContext({Node:Element,Intl,Date,console,
     document:{createElement:t=>new Element(t),createElementNS:(_ns,t)=>new Element(t),
       createTextNode:text=>{const n=new Element('text');n.textContent=text;return n;}}});
@@ -16,7 +16,7 @@ function render(trend,options={}){
     vm.runInContext(source,context,{filename:file});
   }
   context.input={trend,source_kind:'simulator'};context.options=options;
-  return vm.runInContext("trendChart(input,'dissolved_oxygen_mg_l',options)",context);
+  return vm.runInContext(normalized?'normalizedTrendChart(input,options)':"trendChart(input,'dissolved_oxygen_mg_l',options)",context);
 }
 const walk=node=>[node,...node.children.flatMap(walk)];
 
@@ -77,10 +77,91 @@ test('actual SVG has spaced time ticks, distinct y labels, recent/all controls a
     assert.equal(x.length,5);assert.equal(new Set(x.map(n=>n.textContent)).size,5);
     for(let i=1;i<x.length;i++)assert.ok(x[i].attributes.x-x[i-1].attributes.x>=170);
     assert.equal(x[0].attributes['text-anchor'],'start');assert.equal(x.at(-1).attributes['text-anchor'],'end');
-    assert.equal(nodes.filter(n=>n.tagName==='circle').length,options.rangeSeconds===null?214:85);
+    const markers=nodes.filter(n=>n.attributes.class==='trend-marker');
+    assert.equal(markers.length,options.rangeSeconds===null?214:85);
+    assert.ok(markers.every(n=>n.attributes.r<=1.35));
+    if(options.rangeSeconds===null)assert.ok(markers.every(n=>n.attributes.r<1&&n.attributes.opacity<.5));
     assert.match(root.textContent,/北京时间 UTC\+8/);assert.match(root.textContent,/最后观测/);
     assert.ok(nodes.some(n=>n.className==='chart-viewport'));
   }
   const css=fs.readFileSync(new URL('../static/styles.css',import.meta.url),'utf8');
   assert.match(css,/\.chart-viewport\{overflow-x:auto/);assert.match(css,/min-width:520px/);
+});
+
+test('five ranges share the latest stored timestamp and preserve the default short-window markers',()=>{
+  assert.deepEqual(trendRanges.map(([id])=>id),['300','600','1800','3600','all']);
+  const data=restartHistory();
+  for(const [seconds,count] of [[300,31],[600,61],[1800,85],[3600,85]]){
+    const g=chartGeometry(data,key,{rangeSeconds:seconds});
+    assert.equal(g.displayedCount,count);assert.equal(g.end,Date.parse(data.at(-1).observed_at));
+    assert.ok(g.rows.every(row=>Date.parse(row.observed_at)>=g.end-seconds*1000));
+  }
+  const markers=walk(render([point(10),point(20,6.8)])).filter(n=>n.attributes.class==='trend-marker');
+  assert.ok(markers.every(n=>n.attributes.r>1&&n.attributes.r<2));
+});
+
+const threeMetrics=()=>[
+  point(10,4,{temperature_c:20,ph:7}),point(20,6,{temperature_c:25,ph:7.5}),point(30,8,{temperature_c:30,ph:8}),
+];
+test('per-metric min-max is dimensionless, keeps original values and puts constants at 50',()=>{
+  const rows=threeMetrics(),before=JSON.stringify(rows),g=normalizedChartGeometry(rows);
+  assert.equal(g.series.length,3);
+  for(const item of g.series)assert.deepEqual(item.data.normalized,[0,50,100]);
+  assert.equal(JSON.stringify(rows),before);
+  assert.deepEqual(g.yTicks.map(t=>t.label),['0','25','50','75','100']);
+  const constant=normalizedChartGeometry(rows.map(row=>({...row,ph:7.5})));
+  assert.deepEqual(constant.series[1].data.normalized,[50,50,50]);
+  assert.ok(constant.series[1].data.points.every(p=>Number.isFinite(p[1])));
+  const recent=normalizedChartGeometry(rows,{rangeSeconds:10});
+  assert.deepEqual(recent.series[0].data.normalized,[0,100]);
+  assert.equal(recent.series[0].min,25);
+});
+
+test('normalized series preserve sessions, holes, last-received duplicates and missing metrics without interpolation',()=>{
+  const rows=[...threeMetrics(),point(40,9,{temperature_c:29,ph:7.4,session_id:'b'})];
+  rows[1].metric_quality={ph:'invalid'};
+  const g=normalizedChartGeometry(rows);
+  assert.equal(g.series[1].data.points.length,3);assert.equal(g.series[1].data.segments.length,3);
+  assert.equal(g.series[0].data.segments.length,2);
+  rows.push({...rows[1],ph:null,received_at:time(23)});
+  assert.equal(normalizedChartGeometry(rows).series[1].data.points.length,3);
+  const partial=normalizedChartGeometry([point(10),point(20)]);
+  assert.equal(partial.series[0].data,null);assert.equal(partial.series[1].data,null);
+  assert.equal(partial.displayedCount,2);
+  assert.equal(normalizedChartGeometry([point(10),point(20,null)]),null);
+});
+
+test('combined chart has three distinct styles; pointer, touch and keyboard inspect exact raw values and units',()=>{
+  const root=render(threeMetrics(),{},true),nodes=walk(root);
+  const lines=nodes.filter(n=>n.attributes.class==='trend-line');
+  assert.equal(lines.length,3);assert.equal(new Set(lines.map(n=>n.attributes.stroke)).size,3);
+  assert.equal(new Set(lines.map(n=>n.attributes['stroke-dasharray'])).size,3);
+  assert.match(root.textContent,/仅比较趋势/);assert.match(root.textContent,/非适宜度/);
+  const svg=nodes.find(n=>n.tagName==='svg'),tip=nodes.find(n=>n.className==='chart-tooltip');
+  svg.getBoundingClientRect=()=>({left:100,top:50,width:780,height:276});
+  svg.events.pointermove({clientX:497,clientY:180});
+  assert.equal(tip.getAttribute('hidden'),null);
+  for(const expected of ['水温：25 °C','pH：7.5（无单位）','溶解氧：6 mg/L'])assert.ok(tip.textContent.includes(expected));
+  assert.match(tip.textContent,/08:00:20/);
+  const key=key=>svg.events.keydown({key,preventDefault(){}});
+  key('End');assert.match(tip.textContent,/水温：30 °C/);
+  key('ArrowLeft');assert.match(tip.textContent,/水温：25 °C/);
+  key('Home');assert.match(tip.textContent,/溶解氧：4 mg\/L/);
+  key('Escape');assert.equal(tip.getAttribute('hidden'),'');
+  svg.events.pointerdown({clientX:842,clientY:180});assert.match(tip.textContent,/08:00:30/);
+  svg.events.pointerdown({clientX:843,clientY:259});assert.match(tip.textContent,/08:00:30/);
+  svg.events.pointerleave();assert.equal(tip.getAttribute('hidden'),'');
+});
+
+test('single tooltip stays usable on tiny markers and combined tooltip marks invalid values unavailable',()=>{
+  const root=render(threeMetrics()),nodes=walk(root),svg=nodes.find(n=>n.tagName==='svg');
+  const tip=nodes.find(n=>n.className==='chart-tooltip');
+  svg.getBoundingClientRect=()=>({left:0,top:0,width:780,height:276});
+  svg.events.pointermove({clientX:397,clientY:130});
+  assert.match(tip.textContent,/溶解氧：6 mg\/L/);
+  assert.equal(nodes.find(n=>n.attributes.class==='chart-highlight').attributes.r,4);
+  const rows=threeMetrics();rows[1].metric_quality={ph:'invalid'};
+  const combined=walk(render(rows,{},true)),plot=combined.find(n=>n.tagName==='svg');
+  plot.events.keydown({key:'Home',preventDefault(){}});plot.events.keydown({key:'ArrowRight',preventDefault(){}});
+  assert.match(combined.find(n=>n.className==='chart-tooltip').textContent,/pH：不可用/);
 });

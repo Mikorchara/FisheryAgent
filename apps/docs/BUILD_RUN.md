@@ -1,3 +1,8 @@
+# 常用指令
+
+.\scripts\dev\run_local.ps1 -Scenario low_oxygen
+
+
 # 管理平台启动、联调与验证
 
 ## 环境

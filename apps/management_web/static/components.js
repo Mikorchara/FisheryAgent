@@ -1,4 +1,4 @@
-import {metricText,chartGeometry,timeText,qualityNames,freshnessNames,sourceName,connectionName} from './view-model.js';
+import {metricText,chartGeometry,normalizedChartGeometry,trendMetrics,timeText,qualityNames,freshnessNames,sourceName,connectionName} from './view-model.js';
 
 export function el(tag,attrs={},children=[]) {
   const node=document.createElement(tag);
@@ -52,21 +52,92 @@ export function table(columns,items,rowValues,onDetail){
 export function trendChart(snapshot,key,{rangeSeconds=1800}={}){
   const data=chartGeometry(snapshot?.trend||[],key,{rangeSeconds});
   if(!data)return empty('暂无可展示的趋势','所选范围至少需要两个不同观测时间的有效窗口；缺失值不会补成正常数据。','wave');
+  const metric=trendMetrics.find(item=>item.key===key)||{key,label:key,unit:'',color:'#168c83',dash:''};
+  return drawTrend(snapshot,data,[{...metric,color:'#168c83',dash:'',data}],false);
+}
+export function normalizedTrendChart(snapshot,{rangeSeconds=1800}={}){
+  const data=normalizedChartGeometry(snapshot?.trend||[],{rangeSeconds});
+  if(!data)return empty('暂无可比较的趋势','每项指标至少需要两个不同观测时间的有效窗口；缺失/无效值不参与归一化。','wave');
+  return drawTrend(snapshot,data,data.series,true);
+}
+function drawTrend(snapshot,data,series,normalized){
+  const format=value=>new Intl.NumberFormat('zh-CN',{maximumSignificantDigits:8}).format(value);
+  const rawValue=(row,metric)=>typeof row[metric.key]==='number'&&Number.isFinite(row[metric.key])
+    &&(!row.metric_quality?.[metric.key]||row.metric_quality[metric.key]==='valid')
+    ? `${format(row[metric.key])}${metric.unit==='无单位'?'（无单位）':metric.unit?' '+metric.unit:''}`:'不可用';
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svg.setAttribute('viewBox','0 0 780 276');svg.setAttribute('role','img');svg.setAttribute('aria-label','服务器历史窗口均值，保留来源标识');svg.classList.add('trend-chart');
-  const append=(tag,attrs,text)=>{const n=document.createElementNS(svg.namespaceURI,tag);for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;svg.append(n);};
+  svg.setAttribute('viewBox','0 0 780 276');svg.setAttribute('role','img');svg.setAttribute('tabindex','0');
+  svg.setAttribute('aria-label',normalized?'三指标归一化趋势，0至100仅比较趋势；左右方向键查看原始值':'服务器历史窗口均值，保留来源标识；左右方向键查看原始值');svg.classList.add('trend-chart');
+  const append=(tag,attrs,text,parent=svg)=>{const n=document.createElementNS(svg.namespaceURI,tag);for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;parent.append(n);return n;};
+  append('text',{x:52,y:28,fill:'#71848f','font-size':11},normalized?'归一化值（0–100，非适宜度）':`${series[0].label}${series[0].unit?' · '+series[0].unit:''}`);
   for(const tick of data.yTicks){
     append('line',{x1:52,y1:tick.y,x2:742,y2:tick.y,stroke:'#e6edf0','stroke-dasharray':'4 5'});
     append('text',{x:44,y:tick.y+4,fill:'#81919a','font-size':11,'text-anchor':'end'},tick.label);
   }
-  for(const segment of data.segments){const path=segment.map(([x,y],i)=>`${i?'L':'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');append('path',{d:path,fill:'none',stroke:'#168c83','stroke-width':2.8});}
-  for(const[x,y]of data.points)append('circle',{cx:x,cy:y,r:3,fill:'#fff',stroke:'#168c83','stroke-width':1.8});
+  for(const item of series){
+    if(!item.data)continue;
+    const points=item.data.points;
+    const dense=points.length>120||points.some((point,i)=>i&&point[0]-points[i-1][0]<2.5);
+    for(const segment of item.data.segments){const path=segment.map(([x,y],i)=>`${i?'L':'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
+      append('path',{d:path,fill:'none',stroke:item.color,'stroke-width':2,'stroke-dasharray':item.dash,'vector-effect':'non-scaling-stroke','data-metric':item.key,class:'trend-line'});}
+    points.forEach(([x,y],i)=>{
+      const dot=append('circle',{cx:x,cy:y,r:dense?0.65:1.35,fill:item.color,opacity:dense?0.4:0.85,class:'trend-marker','data-metric':item.key});
+      append('title',{},`${timeText(item.data.rows[i].observed_at)} · ${item.label}：${rawValue(item.data.rows[i],item)}`,dot);
+    });
+  }
   data.xTicks.forEach((tick,i)=>{
     const attrs={x:tick.x,y:241,fill:'#81919a','font-size':11,'text-anchor':i===0?'start':i===data.xTicks.length-1?'end':'middle'};
     append('text',attrs,tick.label);
     if(tick.date)append('text',{...attrs,y:258},tick.date);
   });
-  return el('div',{class:'chart-container'},[el('div',{class:'chart-viewport'},[svg]),
+  // A single nearest-time cursor keeps dense clusters inspectable without large,
+  // overlapping hit circles. Values always come from one actual stored row.
+  const samples=new Map();for(const item of series)for(const row of item.data?.rows||[])samples.set(Date.parse(row.observed_at),row);
+  const records=[...samples].sort((a,b)=>a[0]-b[0]);
+  const focus=append('g',{visibility:'hidden','pointer-events':'none',class:'chart-cursor'});
+  const cursor=append('line',{x1:52,x2:52,y1:53,y2:208,stroke:'#92a6ae','stroke-dasharray':'3 4'},null,focus);
+  const highlights=series.map(item=>({item,positions:new Map((item.data?.rows||[]).map((row,i)=>[Date.parse(row.observed_at),item.data.points[i]])),
+    dot:append('circle',{r:4,fill:'#fff',stroke:item.color,'stroke-width':2,'vector-effect':'non-scaling-stroke',visibility:'hidden',class:'chart-highlight'},null,focus)}));
+  const tooltip=el('div',{class:'chart-tooltip',role:'status','aria-live':'polite',hidden:''});
+  let selected=-1;
+  const show=index=>{
+    index=Math.max(0,Math.min(records.length-1,index));
+    const [time,row]=records[index],x=52+(time-data.start)/(data.end-data.start)*690;
+    selected=index;cursor.setAttribute('x1',x);cursor.setAttribute('x2',x);focus.setAttribute('visibility','visible');
+    for(const {positions,dot} of highlights){const point=positions.get(time);dot.setAttribute('visibility',point?'visible':'hidden');
+      if(point){dot.setAttribute('cx',point[0]);dot.setAttribute('cy',point[1]);}}
+    tooltip.replaceChildren(el('strong',{text:timeText(row.observed_at)}),...series.map(item=>el('div',{class:'chart-tooltip-row'},[
+      el('span',{class:`trend-swatch trend-${item.key}`}),el('span',{text:`${item.label}：${rawValue(row,item)}`})])));
+    tooltip.removeAttribute('hidden');
+  };
+  const hide=()=>{focus.setAttribute('visibility','hidden');tooltip.setAttribute('hidden','');};
+  const pointer=event=>{
+    const box=svg.getBoundingClientRect();let x=(event.clientX-box.left)*780/box.width;
+    const y=(event.clientY-box.top)*276/box.height;
+    // Edge markers extend past the plot, and CSS pixel rounding can move a
+    // pointer just outside it. Keep endpoints inspectable at every viewport.
+    if(x<46||x>748||Number.isFinite(y)&&(y<47||y>214)){hide();return;}
+    if(!Number.isFinite(x))return;
+    x=Math.max(52,Math.min(742,x));
+    const time=data.start+(x-52)/690*(data.end-data.start);
+    let nearest=0;for(let i=1;i<records.length;i++)if(Math.abs(records[i][0]-time)<Math.abs(records[nearest][0]-time))nearest=i;
+    show(nearest);
+  };
+  svg.addEventListener('pointermove',pointer);svg.addEventListener('pointerdown',pointer);
+  svg.addEventListener('pointerleave',()=>{if(document.activeElement!==svg)hide();});
+  svg.addEventListener('focus',()=>show(selected<0?0:selected));svg.addEventListener('blur',hide);
+  svg.addEventListener('keydown',event=>{
+    if(!['ArrowLeft','ArrowRight','Home','End','Escape'].includes(event.key))return;
+    event.preventDefault();
+    if(event.key==='Escape'){hide();return;}
+    show(event.key==='Home'?0:event.key==='End'?records.length-1:Math.max(0,selected)+(event.key==='ArrowRight'?1:-1));
+  });
+  return el('div',{class:'chart-container','data-chart':normalized?'normalized':'single'},[
+    ...(normalized?[el('div',{class:'trend-legend'},series.map(item=>el('span',{},[
+      el('span',{class:`trend-swatch trend-${item.key}`}),el('span',{text:item.label+(!item.data?'（有效窗口不足）':item.constant?'（无变化，50）':'')})])))]:[]),
+    el('div',{class:'chart-viewport'},[svg]),tooltip,
+    ...(normalized?[el('p',{class:'chart-note normalization-note',text:'各指标在所选范围内独立归一化：(原值−最小值)/(最大值−最小值)×100；无变化为50。仅比较趋势，不能比较原始大小、实际变化幅度或水质适宜度；切换范围或新极值会重算刻度。'})]:[]),
+    el('p',{class:'chart-note',text:'悬停或点击图中位置查看原始值；键盘聚焦图表后可用 ← / → 查看，Esc 关闭提示。'}),
     el('p',{class:'chart-note',text:`北京时间 UTC+8 · ${timeText(new Date(data.start).toISOString())} — ${timeText(new Date(data.end).toISOString())}`}),
     el('p',{class:'chart-note',text:`${snapshot?.source_kind==='simulator'?'模拟上报窗口':'独立 R1 Demo 历史'} · 显示 ${data.displayedCount} / ${data.storedCount} 个存储窗口 · 范围以最后观测为终点，非当前实时数据。会话切换、缺失和中断处不连线。${data.duplicateCount?`同时间记录仅展示最后接收项（${data.duplicateCount} 项折叠）。`:''}${data.invalidTimeCount?`已忽略 ${data.invalidTimeCount} 项无效时间。`:''}`})]);
 }

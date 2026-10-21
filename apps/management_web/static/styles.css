@@ -29,6 +29,12 @@ main{max-width:1640px;margin:0 auto;padding:31px 36px 20px}.page-heading{display
 @media(max-width:760px){.management-messages{padding:16px}.management-assistant .assistant-controls{padding:16px}.management-message{max-width:100%}}
 
 /* Readable time ticks at narrow card widths; never compress long gaps into fake time. */
+.trend-stack{min-width:0}.trend-stack>.card:last-child{margin-bottom:0}
+.chart-container{position:relative;min-width:0}.trend-chart:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.trend-legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin:0 0 8px;color:#58717e;font-size:11px}.trend-legend>span,.chart-tooltip-row{display:flex;align-items:center;gap:7px}
+.trend-swatch{display:inline-block;width:14px;height:3px;flex-shrink:0;border-radius:2px;background:#168c83}.trend-temperature_c{background:#a96518}.trend-ph{background:#6461bc}.trend-dissolved_oxygen_mg_l{background:#168c83}
+.chart-tooltip{position:absolute;z-index:2;top:8px;right:8px;max-width:calc(100% - 16px);padding:9px 12px;background:#fff;border:1px solid #d7e5e8;border-radius:8px;box-shadow:0 4px 16px #102f3c18;pointer-events:none;font-size:11px;color:#203640;line-height:1.7;overflow-wrap:anywhere}
+.chart-tooltip[hidden]{display:none}.chart-tooltip>strong{display:block;font-size:10px;font-weight:500;color:#71848f;margin-bottom:3px}.chart-container .normalization-note{color:#58717e;line-height:1.7}
 .chart-viewport{overflow-x:auto;max-width:100%}.chart-viewport .trend-chart{min-width:520px}.chart-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 @media(max-width:600px){.card-heading:has(.chart-controls){flex-wrap:wrap}.chart-controls{width:100%;justify-content:flex-start}}
 

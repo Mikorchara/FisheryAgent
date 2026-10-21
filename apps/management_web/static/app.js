@@ -1,5 +1,5 @@
-import {el,icon,card,badge,empty,button,link,rows,metricCards,metadata,table,trendChart} from './components.js';
-import {routes,routeFor,timeText,filterItems,validateBootstrap,qualityNames,freshnessNames,sourceName,connectionName,eventState,eventStateName,eventSeverityName} from './view-model.js';
+import {el,icon,card,badge,empty,button,link,rows,metricCards,metadata,table,trendChart,normalizedTrendChart} from './components.js';
+import {routes,routeFor,timeText,filterItems,validateBootstrap,qualityNames,freshnessNames,sourceName,connectionName,eventState,eventStateName,eventSeverityName,trendRanges} from './view-model.js';
 import {services} from './services.js';
 import {createAssistantWorkspace} from './assistant.js';
 import {createToolPolicySettings} from './tool-policy.js';
@@ -25,10 +25,13 @@ function eventDetail(item){details(item.title,[badge(sourceName(item.source_kind
 function eventsTable(items){return table(['事件 / 类型','设备','时间','等级','状态','操作'],items,item=>[
   el('div',{class:'table-title'},[el('strong',{text:item.title}),el('small',{text:`${item.id} · ${item.type} · ${sourceName(item.source_kind)}`})]),item.device,timeText(item.occurred_at),severity(item),status(item)],eventDetail);}
 
-function trend(){return card('历史趋势','已存储的窗口均值；不代表连续实时采样。',[trendChart(state.data.monitoring,state.metric,{rangeSeconds:state.trendRange==='all'?null:Number(state.trendRange)})],
-  el('div',{class:'chart-controls'},[
+function trend(){const options={rangeSeconds:state.trendRange==='all'?null:Number(state.trendRange)};
+  return el('div',{class:'trend-stack'},[card('历史趋势','已存储的窗口均值；不代表连续实时采样。',[trendChart(state.data.monitoring,state.metric,options)],
+    el('div',{class:'chart-controls'},[
     select('指标',[['dissolved_oxygen_mg_l','溶解氧'],['temperature_c','水温'],['ph','pH']],state.metric,value=>{state.metric=value;render();}),
-    select('历史范围',[['1800','最近 30 分钟'],['3600','最近 1 小时'],['all','全部存储历史']],state.trendRange,value=>{state.trendRange=value;render();})]));}
+    select('历史范围',trendRanges,state.trendRange,value=>{state.trendRange=value;render();})])),
+    card('三指标综合趋势（归一化）','与上图共用时间范围；比较各指标的变化趋势，不比较原始数值大小。',[
+      normalizedTrendChart(state.data.monitoring,options)])]);}
 function videoPlaceholder(compact=false){return el('div',{class:`video-placeholder ${compact?'compact':''}`},[
   el('div',{class:'video-corner',text:'演示预览区域 / 无视频流'}),el('span',{class:'video-symbol'},[icon('camera')]),el('h3',{text:'等待接入监控设备'}),
   el('p',{text:'未接入真实视频；模拟视觉统计展示在下方。'}),badge('NOT CONNECTED','neutral')]);}

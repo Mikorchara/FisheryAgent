@@ -4,6 +4,8 @@
 
 ## 已实现
 
+- 历史图 UI 实验：小 marker、5/10/30/60 分钟与全部历史、三指标 Min–Max 归一化总览、原始值 tooltip。仅在实验仓库 `apps` 实现，独立管理项目未同步；范围与解释见 [图表说明](deep-dive/HISTORY_CHART_UI.md)。
+
 - R2D-4A：六区设置中心、默认偏好、固定云Provider私有密钥与原 Tool 授权。
 - R2D-4B：Qwen/DeepSeek 主动连接测试后保存，Qwen 本地 Normal/Streaming 的版本化 1–4096 输出范围；不新增模型或 RAG 配置。自定义模型、地址编辑、其他 Provider 可调预算与高级检索仍待后续批准，不自动授权 Tool/Streaming。
 

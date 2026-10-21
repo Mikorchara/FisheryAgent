@@ -28,6 +28,12 @@ export function chartSeries(trend,key) {
   return trend.filter(p=>typeof p[key]==='number' && Number.isFinite(p[key])
     && (!p.metric_quality?.[key]||p.metric_quality[key]==='valid'));
 }
+export const trendRanges=[['300','最近 5 分钟'],['600','最近 10 分钟'],['1800','最近 30 分钟'],['3600','最近 1 小时'],['all','全部存储历史']];
+export const trendMetrics=[
+  {key:'temperature_c',label:'水温',unit:'°C',color:'#a96518',dash:''},
+  {key:'ph',label:'pH',unit:'无单位',color:'#6461bc',dash:'8 4'},
+  {key:'dissolved_oxygen_mg_l',label:'溶解氧',unit:'mg/L',color:'#168c83',dash:'2 4'},
+];
 function timeTicks(start,end) {
   const fractional=end-start<4000;
   const day=value=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit'}).format(value);
@@ -80,6 +86,26 @@ export function chartGeometry(trend,key,{rangeSeconds=null}={}) {
   return {points,segments,low,high,rows,yTicks,xTicks:timeTicks(start,end),start,end,
     duplicateCount:ordered.length-unique.size,invalidTimeCount:trend.length-ordered.length,
     storedCount:trend.length,displayedCount:rows.length};
+}
+export function normalizedChartGeometry(trend,options={}) {
+  // The API has no complete business reference ranges (oxygen has only a
+  // lower threshold). Do not copy Diagnosis thresholds into the front end.
+  // Normalize each selected series independently; constants sit at 50.
+  // Range changes / new extrema recalculate the scale, never the stored facts.
+  const series=trendMetrics.map(metric=>{
+    const raw=chartGeometry(trend,metric.key,options);
+    if(!raw)return {...metric,data:null};
+    const values=raw.rows.map(row=>row[metric.key]),min=Math.min(...values),max=Math.max(...values);
+    const normalized=values.map(value=>max===min?50:(value-min)/(max-min)*100);
+    const points=raw.points.map(([x],i)=>[x,208-normalized[i]*155/100]);
+    const positions=new Map(raw.points.map((point,i)=>[point,points[i]]));
+    return {...metric,min,max,constant:min===max,data:{...raw,points,
+      segments:raw.segments.map(segment=>segment.map(point=>positions.get(point))),normalized}};
+  });
+  const first=series.find(item=>item.data)?.data;
+  if(!first)return null;
+  return {...first,series,displayedCount:new Set(series.flatMap(item=>(item.data?.rows||[]).map(row=>Date.parse(row.observed_at)))).size,
+    yTicks:[0,25,50,75,100].map(value=>({y:208-value*155/100,label:String(value)}))};
 }
 export function filterItems(items,{q='',category='',severity='',status=''}={}) {
   return items.filter(item=>(!q || [item.name,item.title,item.device,item.category].filter(Boolean).join(' ').toLowerCase().includes(q.toLowerCase()))
