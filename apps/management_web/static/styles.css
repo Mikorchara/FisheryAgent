@@ -31,6 +31,18 @@ main{max-width:1640px;margin:0 auto;padding:31px 36px 20px}.page-heading{display
 /* Readable time ticks at narrow card widths; never compress long gaps into fake time. */
 .dashboard-overview{align-items:start}.dashboard-overview>.dashboard-events{grid-column:1 / -1;margin-bottom:0}.dashboard-sidebar{align-self:start}
 .trend-stack{min-width:0}.trend-stack>.card:last-child{margin-bottom:0}
+/* Share the desktop row height; center the unchanged SVG in each flexible plot area. */
+@media(min-width:1001px){
+ .dashboard-overview{align-items:stretch}
+ .dashboard-overview>.trend-stack{display:flex;flex-direction:column;gap:22px}
+ .dashboard-overview>.trend-stack>.card{display:flex;flex-direction:column;flex:1 0 auto;margin-bottom:0}
+ .dashboard-overview>.trend-stack .chart-container{display:flex;flex-direction:column;flex:1 0 auto}
+ .dashboard-overview>.trend-stack .chart-viewport{display:flex;align-items:center;flex:1 0 auto}
+ .dashboard-overview>.trend-stack .trend-chart{flex-shrink:0}
+ .dashboard-overview>.dashboard-sidebar{align-self:stretch}
+ .dashboard-overview>.dashboard-sidebar>.card:last-child{display:flex;flex-direction:column;flex:1 0 auto}
+ .dashboard-overview .connection-list{margin-block:auto}
+}
 .chart-container{position:relative;min-width:0}.trend-chart:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 .trend-legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin:0 0 8px;color:#58717e;font-size:11px}.trend-legend>span,.chart-tooltip-row{display:flex;align-items:center;gap:7px}
 .trend-swatch{display:inline-block;width:14px;height:3px;flex-shrink:0;border-radius:2px;background:#168c83}.trend-temperature_c{background:#a96518}.trend-ph{background:#6461bc}.trend-dissolved_oxygen_mg_l{background:#168c83}

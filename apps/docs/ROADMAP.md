@@ -4,7 +4,7 @@
 
 ## 已实现
 
-- 历史图 UI 实验：五档范围、5/10 分钟 marker 放大与密集退让、三指标 Min–Max 总览及原值 tooltip；首页左侧两图、右侧视觉/AI/连接状态、底部通栏事件，96 项前端回归通过。仅在实验仓库 `apps` 实现，独立管理项目未同步；范围与解释见 [图表说明](deep-dive/HISTORY_CHART_UI.md)。
+- 历史图 UI：五档范围、分档 marker、三指标 Min–Max 总览与原值 tooltip；首页两列底边对齐、底部通栏事件，96 项前端回归通过。经人工认可，已选择性同步独立 Management，两个仓库继续独立回归；范围与解释见 [图表说明](deep-dive/HISTORY_CHART_UI.md)。
 
 - R2D-4A：六区设置中心、默认偏好、固定云Provider私有密钥与原 Tool 授权。
 - R2D-4B：Qwen/DeepSeek 主动连接测试后保存，Qwen 本地 Normal/Streaming 的版本化 1–4096 输出范围；不新增模型或 RAG 配置。自定义模型、地址编辑、其他 Provider 可调预算与高级检索仍待后续批准，不自动授权 Tool/Streaming。
