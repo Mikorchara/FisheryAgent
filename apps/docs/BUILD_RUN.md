@@ -1,9 +1,48 @@
-# 常用指令
-
-.\scripts\dev\run_local.ps1 -Scenario low_oxygen
-
-
 # 管理平台启动、联调与验证
+
+## 快速开始 / 常用指令
+
+**本节只用于 Prototype**，在普通 PowerShell 中先进入项目：
+
+```powershell
+Set-Location -LiteralPath 'D:\CodexProject\Fishery_AI_Prototype'
+```
+
+已有工作区数据时，日常启动 Web + Simulator（默认每10秒上报）：
+
+```powershell
+.\scripts\dev\run_local.ps1 -Scenario normal
+```
+
+仅启动 Web，使用已有工作区数据，不启动模拟器、不开启 HTTP 写入或 AI：
+
+```powershell
+.\.venv\Scripts\python.exe -m apps.management_web --port 8766
+```
+
+使用**已初始化**的隔离开发实例进行模拟联调：
+
+```powershell
+.\scripts\dev\run_local.ps1 -Scenario low_oxygen -DataRoot "$PWD\outputs\dev-instance"
+```
+
+| 常用参数 | 用途 |
+|---|---|
+| `-Scenario normal` | 六场景：normal、low_oxygen、suspected_disease、reduced_feeding、combined_anomaly、device_offline；默认 normal，无交互 |
+| `-Port 8767` / `-Seed 42` | 改端口 / 随机种子；Web-only 使用 `--port` |
+| `-NoAssistant` | 模拟联调关闭 AI；不读取私有凭据，不改变数据写入行为 |
+| `-NoStreaming` / `-NoMultiRound` / `-NoHistory` | 关闭相应既有试用开关；三工具开关与 History/传输组合仍按原实现联动 |
+| `-DataRoot '绝对路径'` | 显式已有隔离实例；缺库拒绝，不自动创建或回退 |
+
+访问 **http://127.0.0.1:8766**（端口改变时同步修改地址）。前台启动器就绪后会提示地址，不自动打开浏览器、没有双终端菜单。**在启动 PowerShell 中按 Ctrl+C** 回收本次两进程；不要直接关闭或强杀 Prototype 启动终端，当前没有 Management 的 Job Object 强制回收保证。
+
+默认工作区路径是 `outputs/management_web`、`apps/knowledge_data/knowledge.sqlite3` 等兼容路径；`-DataRoot` 将业务数据集中到指定实例。正式 `%LOCALAPPDATA%\FisheryManagement` 与 Prototype 实验数据应分开；不要使用 `-UserData` 给正式管理历史注入模拟数据。新隔离实例的显式初始化说明见 [独立运行准备](deep-dive/MANAGEMENT_STANDALONE.md)，不能初始化已有实例来掩盖缺库。隔离业务数据不隔离项目凭据。
+
+`run_local.ps1` 默认启用已批准的 Qwen Normal/Streaming、多轮和三工具本地实验，启动不调用模型；Web-only 原 CLI 默认关闭 AI，完整 AI 开关与工具授权见下文“一行式常用命令”。模型请求仍由用户主动发送。此仓库未移入 Management 专有启动器，后续按“实验 → 测试 → 人工审核 → 选择性同步 → 独立回归”推进。
+
+## 详细配置与阶段记录
+
+以下保留技术配置、历史预算与验证沿革；日常启动优先用上方快速入口。当前管理页面品牌为“AI 监测系统”，不影响包名、接口或数据位置。
 
 ## 环境
 

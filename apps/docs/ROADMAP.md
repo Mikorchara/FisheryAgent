@@ -4,6 +4,8 @@
 
 ## 已实现
 
+- 管理页面品牌统一为“AI 监测系统”，保留原 Logo/导航；BUILD_RUN 顶部补充快速入口，Prototype 前台启动与 Management 双终端保护差异继续明确保留。
+
 - 历史图 UI：五档范围、分档 marker、三指标 Min–Max 总览与原值 tooltip；首页两列底边对齐、底部通栏事件，96 项前端回归通过。经人工认可，已选择性同步独立 Management，两个仓库继续独立回归；范围与解释见 [图表说明](deep-dive/HISTORY_CHART_UI.md)。
 
 - R2D-4A：六区设置中心、默认偏好、固定云Provider私有密钥与原 Tool 授权。

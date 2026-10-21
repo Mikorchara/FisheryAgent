@@ -42,8 +42,10 @@ function page(data=fixture()){
 
 test('uniform server state renders dashboard, monitoring and visual summaries with no fake video',async()=>{
   const p=page();await p.ready();
+  assert.equal(p.document.title,'综合总览 · AI 监测系统');
   assert.match(p.node('content').textContent,/6.4/);assert.match(p.env.textContent,/本机模拟/);
   p.run("location.hash='#monitoring';render()");
+  assert.equal(p.document.title,'水质监测 · AI 监测系统');
   assert.match(p.node('content').textContent,/窗口均值/);assert.doesNotMatch(p.node('content').textContent,/演示数据状态/);
   p.run("location.hash='#video';render()");
   assert.match(p.node('content').textContent,/疑似病灶/);assert.match(p.node('content').textContent,/未标定/);

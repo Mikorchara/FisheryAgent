@@ -108,7 +108,7 @@ function settings(){return [settingsWorkspace.mount()];}
 
 const pages={dashboard,monitoring,assistant,video,events,knowledge,settings};
 function render(passive=false){if(!state.data)return;if(state.readFailed){$('content').replaceChildren(empty('读取失败 · 上次显示已失效','请恢复服务器连接，不将缓存当作当前数据。'));return;}const route=routeFor(location.hash);$('page-title').textContent=route.title;$('page-eyebrow').textContent=route.eyebrow;$('page-description').textContent=route.description;$('breadcrumb').textContent=route.title;
-  document.title=`${route.title} · 鱼境`;$('content').replaceChildren(...pages[route.id]());
+  document.title=`${route.title} · AI 监测系统`;$('content').replaceChildren(...pages[route.id]());
   document.querySelectorAll('#navigation a').forEach(a=>{const active=a.hash===`#${route.id}`;a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
   if(!passive){$('sidebar').classList.remove('open');$('menu-toggle').setAttribute('aria-expanded','false');}}
 let refreshing=false;
