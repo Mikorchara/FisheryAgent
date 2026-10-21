@@ -155,16 +155,46 @@ test('5/10 minute selectors drive both charts, keep default 30 minutes and survi
   const range=()=>nodes().find(n=>n.tagName==='select'&&n.attributes['aria-label']==='历史范围');
   assert.equal(p.run('state.trendRange'),'1800');
   assert.deepEqual(range().children.map(n=>n.attributes.value),['300','600','1800','3600','all']);
-  for(const [value,count] of [['300',31],['600',61],['1800',85],['3600',85],['all',214]]){
+  for(const [value,count,radius] of [['300',31,2.5],['600',61,2],['1800',85,1.35],['3600',85,1.35],['all',214,.65]]){
     range().events.change({target:{value}});
     const charts=nodes().filter(n=>n.attributes['data-chart']);
     assert.equal(charts.length,2);
     assert.equal(walk(charts[0]).filter(n=>n.attributes.class==='trend-marker').length,count);
+    assert.ok(walk(charts[0]).filter(n=>n.attributes.class==='trend-marker').every(n=>n.attributes.r===radius));
     assert.equal(walk(charts[1]).filter(n=>n.attributes.class==='trend-marker').length,count*3);
+    assert.ok(walk(charts[1]).filter(n=>n.attributes.class==='trend-marker').every(n=>n.attributes.r<=1.35));
   }
   range().events.change({target:{value:'600'}});
   await p.run('refresh()');p.run("location.hash='#monitoring';render()");
   assert.equal(p.run('state.trendRange'),'600');
   assert.ok(nodes().some(n=>n.textContent==='三指标综合趋势（归一化）'));
+  assert.ok(p.requests.every(url=>url.startsWith('/api/bootstrap')));
+});
+
+test('dashboard moves existing side cards beside trends and keeps one full-row event table with working details',async()=>{
+  const d=fixture();d.monitoring.trend=restartHistory();
+  const p=page(d);await p.ready();
+  const walk=node=>[node,...node.children.flatMap(walk)];
+  const hasClass=(node,name)=>(node.className||'').split(/\s+/).includes(name);
+  const titles=node=>walk(node).filter(n=>n.tagName==='h2').map(n=>n.textContent);
+  const check=()=>{
+    const nodes=walk(p.node('content')),grid=nodes.find(n=>hasClass(n,'dashboard-overview'));
+    assert.ok(grid);assert.equal(grid.children.length,3);
+    assert.deepEqual(titles(grid.children[0]),['历史趋势','三指标综合趋势（归一化）']);
+    assert.ok(hasClass(grid.children[1],'dashboard-sidebar'));
+    assert.deepEqual(titles(grid.children[1]),['视觉监测概况','AI 智能助手','连接状态']);
+    assert.ok(hasClass(grid.children[2],'dashboard-events'));
+    assert.deepEqual(titles(grid.children[2]),['最近事件']);
+    for(const title of ['视觉监测概况','AI 智能助手','连接状态','最近事件']){
+      assert.equal(nodes.filter(n=>n.tagName==='h2'&&n.textContent===title).length,1);
+    }
+    const eventCard=grid.children[2];
+    assert.ok(walk(eventCard).some(n=>n.attributes.href==='#events'&&n.textContent==='全部记录'));
+    assert.ok(walk(grid.children[1]).some(n=>n.attributes.href==='#assistant'&&n.textContent.includes('打开助手工作区')));
+    walk(eventCard).find(n=>n.tagName==='button'&&n.textContent==='查看详情').events.click();
+    assert.equal(p.node('dialog-title').textContent,d.events[0].title);
+    assert.ok(p.node('dialog-body').textContent.includes(d.events[0].batch_id));
+  };
+  check();await p.run('refresh()');check();
   assert.ok(p.requests.every(url=>url.startsWith('/api/bootstrap')));
 });

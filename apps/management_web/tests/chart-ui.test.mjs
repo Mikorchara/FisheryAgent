@@ -100,9 +100,36 @@ test('five ranges share the latest stored timestamp and preserve the default sho
   assert.ok(markers.every(n=>n.attributes.r>1&&n.attributes.r<2));
 });
 
+test('single markers follow all five ranges, dense data stay small without dropping observations',()=>{
+  const data=Array.from({length:360},(_,i)=>point(i*10,6+(i%7)*.01));
+  for(const [rangeSeconds,count,radius] of [[300,31,2.5],[600,61,2],[1800,181,1.35],[3600,360,.65],[null,360,.65]]){
+    const nodes=walk(render(data,{rangeSeconds})),markers=nodes.filter(n=>n.attributes.class==='trend-marker');
+    assert.equal(markers.length,count);assert.ok(markers.every(n=>n.attributes.r===radius));
+    const plot=nodes.find(n=>n.tagName==='svg'),tip=nodes.find(n=>n.className==='chart-tooltip');
+    plot.events.keydown({key:'End',preventDefault(){}});
+    assert.ok(tip.textContent.includes('溶解氧：'+String(data.at(-1)[key])+' mg/L'));
+    assert.equal(nodes.find(n=>n.attributes.class==='chart-highlight').attributes.r,4);
+  }
+  // One-second windows need a density fallback even in a five-minute selection.
+  const dense=Array.from({length:301},(_,i)=>point(i,6.4,{window_start:time(i-1),window_duration_s:1}));
+  const markers=walk(render(dense,{rangeSeconds:300})).filter(n=>n.attributes.class==='trend-marker');
+  assert.equal(markers.length,301);assert.ok(markers.every(n=>n.attributes.r===.65));
+  for(const rangeSeconds of [3600,null]){
+    assert.ok(walk(render([point(10),point(20)],{rangeSeconds})).filter(n=>n.attributes.class==='trend-marker').every(n=>n.attributes.r===1.35));
+  }
+});
+
 const threeMetrics=()=>[
   point(10,4,{temperature_c:20,ph:7}),point(20,6,{temperature_c:25,ph:7.5}),point(30,8,{temperature_c:30,ph:8}),
 ];
+test('combined view keeps small markers even when the short-view single chart is enlarged',()=>{
+  for(const rangeSeconds of [300,600,1800,3600,null]){
+    const root=render(threeMetrics(),{rangeSeconds},true);
+    const markers=walk(root).filter(n=>n.attributes.class==='trend-marker');
+    assert.equal(markers.length,9);assert.ok(markers.every(n=>n.attributes.r===1.35));
+    assert.equal(new Set(walk(root).filter(n=>n.attributes.class==='trend-line').map(n=>n.attributes.stroke)).size,3);
+  }
+});
 test('per-metric min-max is dimensionless, keeps original values and puts constants at 50',()=>{
   const rows=threeMetrics(),before=JSON.stringify(rows),g=normalizedChartGeometry(rows);
   assert.equal(g.series.length,3);

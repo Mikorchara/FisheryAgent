@@ -29,6 +29,7 @@ main{max-width:1640px;margin:0 auto;padding:31px 36px 20px}.page-heading{display
 @media(max-width:760px){.management-messages{padding:16px}.management-assistant .assistant-controls{padding:16px}.management-message{max-width:100%}}
 
 /* Readable time ticks at narrow card widths; never compress long gaps into fake time. */
+.dashboard-overview{align-items:start}.dashboard-overview>.dashboard-events{grid-column:1 / -1;margin-bottom:0}.dashboard-sidebar{align-self:start}
 .trend-stack{min-width:0}.trend-stack>.card:last-child{margin-bottom:0}
 .chart-container{position:relative;min-width:0}.trend-chart:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 .trend-legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin:0 0 8px;color:#58717e;font-size:11px}.trend-legend>span,.chart-tooltip-row{display:flex;align-items:center;gap:7px}

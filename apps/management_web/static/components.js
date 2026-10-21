@@ -53,14 +53,14 @@ export function trendChart(snapshot,key,{rangeSeconds=1800}={}){
   const data=chartGeometry(snapshot?.trend||[],key,{rangeSeconds});
   if(!data)return empty('暂无可展示的趋势','所选范围至少需要两个不同观测时间的有效窗口；缺失值不会补成正常数据。','wave');
   const metric=trendMetrics.find(item=>item.key===key)||{key,label:key,unit:'',color:'#168c83',dash:''};
-  return drawTrend(snapshot,data,[{...metric,color:'#168c83',dash:'',data}],false);
+  return drawTrend(snapshot,data,[{...metric,color:'#168c83',dash:'',data}],false,rangeSeconds);
 }
 export function normalizedTrendChart(snapshot,{rangeSeconds=1800}={}){
   const data=normalizedChartGeometry(snapshot?.trend||[],{rangeSeconds});
   if(!data)return empty('暂无可比较的趋势','每项指标至少需要两个不同观测时间的有效窗口；缺失/无效值不参与归一化。','wave');
   return drawTrend(snapshot,data,data.series,true);
 }
-function drawTrend(snapshot,data,series,normalized){
+function drawTrend(snapshot,data,series,normalized,rangeSeconds=null){
   const format=value=>new Intl.NumberFormat('zh-CN',{maximumSignificantDigits:8}).format(value);
   const rawValue=(row,metric)=>typeof row[metric.key]==='number'&&Number.isFinite(row[metric.key])
     &&(!row.metric_quality?.[metric.key]||row.metric_quality[metric.key]==='valid')
@@ -77,11 +77,16 @@ function drawTrend(snapshot,data,series,normalized){
   for(const item of series){
     if(!item.data)continue;
     const points=item.data.points;
-    const dense=points.length>120||points.some((point,i)=>i&&point[0]-points[i-1][0]<2.5);
+    // Short views emphasize individual observations. Combined/long views keep
+    // the existing small points; tight time clusters still reduce all markers.
+    const radius=normalized?1.35:rangeSeconds===300?2.5:rangeSeconds===600?2:1.35;
+    const longView=rangeSeconds===null||rangeSeconds>=3600;
+    const dense=((normalized||longView)&&points.length>120)
+      ||points.some((point,i)=>i&&point[0]-points[i-1][0]<(normalized?2.5:Math.max(2.5,radius*2+.5)));
     for(const segment of item.data.segments){const path=segment.map(([x,y],i)=>`${i?'L':'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
       append('path',{d:path,fill:'none',stroke:item.color,'stroke-width':2,'stroke-dasharray':item.dash,'vector-effect':'non-scaling-stroke','data-metric':item.key,class:'trend-line'});}
     points.forEach(([x,y],i)=>{
-      const dot=append('circle',{cx:x,cy:y,r:dense?0.65:1.35,fill:item.color,opacity:dense?0.4:0.85,class:'trend-marker','data-metric':item.key});
+      const dot=append('circle',{cx:x,cy:y,r:dense?0.65:radius,fill:item.color,opacity:dense?0.4:0.85,class:'trend-marker','data-metric':item.key});
       append('title',{},`${timeText(item.data.rows[i].observed_at)} · ${item.label}：${rawValue(item.data.rows[i],item)}`,dot);
     });
   }

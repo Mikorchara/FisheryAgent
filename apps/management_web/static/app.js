@@ -38,17 +38,20 @@ function videoPlaceholder(compact=false){return el('div',{class:`video-placehold
 
 function dashboard(){
   const d=state.data, snapshot=d.monitoring;
+  const recentEvents=card('最近事件','关联实际接收批次；模拟事件不是疾病确诊。',[eventsTable(d.events.slice(0,5))],link('全部记录','events'));
+  recentEvents.className+=' dashboard-events';
   return [el('div',{class:'overview-strip'},[
     el('div',{},[el('span',{class:'strip-icon'},[icon('link')]),el('div',{},[el('strong',{text:'数据连接概况'}),el('small',{text:d.data_mode==='simulator'?'统一监测存储 · 模拟器来源':'独立 Demo adapter 已就绪'})])]),
     el('div',{class:'strip-number'},[el('strong',{text:String(d.devices.length)}),el('span',{text:'监测区域'})]),
     el('div',{class:'strip-number'},[el('strong',{text:'0'}),el('span',{text:'真实设备接入'})]),
     el('div',{class:'strip-number'},[el('strong',{text:d.ai?.connected?'1':'0'}),el('span',{text:'已启用 AI 服务'})]),badge(sourceName(d.data_mode),'demo')]),
     el('div',{class:'section-caption'},[el('h2',{text:'水质指标概览'}),link('查看水质监测','monitoring')]),metadata(snapshot),metricCards(snapshot),
-    el('div',{class:'dashboard-grid'},[trend(),card('视觉监测概况','只有模拟窗口统计，真实视频 / NPU 未接入。',[rows([['设备',d.cameras[0]?.name||'无设备'],['上报状态',connectionName(d.cameras[0]?.status)],['视觉新鲜度',freshnessNames[d.cameras[0]?.freshness]||'未知'],['窗口帧数',d.cameras[0]?.summary?.frames_processed??'暂无上报']]),videoPlaceholder(true),el('div',{class:'card-foot'},[el('span',{text:'无实际视频流'}),link('视觉窗口详情','video')])])]),
-    el('div',{class:'dashboard-grid bottom-grid'},[card('最近事件','关联实际接收批次；模拟事件不是疾病确诊。',[eventsTable(d.events.slice(0,5))],link('全部记录','events')),
-      el('div',{class:'side-stack'},[card('AI 智能助手','从环境事实到可解释的辅助建议。',[el('div',{class:'assistant-entry'},[el('span',{class:'assistant-emblem'},[icon('spark')]),el('p',{text:d.ai?.connected?'Normal 助手已启用；当前水质查询与网页共用监测存储。':'启用 Assistant 后，复用现有模型与只读 Tool Runtime。'}),el('a',{href:'#assistant',class:'button primary'},['打开助手工作区',icon('arrow')])])]),
+    el('div',{class:'dashboard-grid dashboard-overview'},[trend(),
+      el('div',{class:'side-stack dashboard-sidebar'},[
+        card('视觉监测概况','只有模拟窗口统计，真实视频 / NPU 未接入。',[rows([['设备',d.cameras[0]?.name||'无设备'],['上报状态',connectionName(d.cameras[0]?.status)],['视觉新鲜度',freshnessNames[d.cameras[0]?.freshness]||'未知'],['窗口帧数',d.cameras[0]?.summary?.frames_processed??'暂无上报']]),videoPlaceholder(true),el('div',{class:'card-foot'},[el('span',{text:'无实际视频流'}),link('视觉窗口详情','video')])]),
+        card('AI 智能助手','从环境事实到可解释的辅助建议。',[el('div',{class:'assistant-entry'},[el('span',{class:'assistant-emblem'},[icon('spark')]),el('p',{text:d.ai?.connected?'Normal 助手已启用；当前水质查询与网页共用监测存储。':'启用 Assistant 后，复用现有模型与只读 Tool Runtime。'}),el('a',{href:'#assistant',class:'button primary'},['打开助手工作区',icon('arrow')])])]),
         card('连接状态','未连接不代表设备离线。',[el('div',{class:'connection-list'},d.connections.map(c=>el('div',{class:'connection-row'},[
-          el('span',{text:c.name}),badge(connectionName(c.status),c.status==='online'?'success':c.status==='offline'?'warning':'neutral')])))] )])])];
+          el('span',{text:c.name}),badge(connectionName(c.status),c.status==='online'?'success':c.status==='offline'?'warning':'neutral')])))] )]),recentEvents])];
 }
 
 async function changeMonitoring(){
