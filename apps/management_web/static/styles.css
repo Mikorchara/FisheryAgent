@@ -21,6 +21,10 @@ main{max-width:1640px;margin:0 auto;padding:31px 36px 20px}.page-heading{display
 .anomaly-item p{font-size:10px;color:var(--muted);line-height:1.8;margin-top:5px;overflow-wrap:anywhere}
 .anomaly-item>.button{margin-top:7px}
 .anomaly-empty{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.8}
+.event-pager,.event-confirm-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:16px;font-size:11px;color:var(--muted)}
+.button.danger{color:#a54a46;border-color:#e6c8c5;background:#fff9f8}
+.button.danger:hover:enabled{background:#faecea;border-color:#d8a4a0}
+.card-heading>.button.danger{white-space:nowrap;flex-shrink:0}
 @media(max-width:760px){.anomaly-list{grid-template-columns:minmax(0,1fr)}.current-anomalies .card-heading{flex-wrap:wrap}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 

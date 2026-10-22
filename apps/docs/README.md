@@ -14,6 +14,7 @@
 - [连接测试与可调输出预算](BUILD_RUN.md#r2d-4b连接测试与可调输出预算)（先测试后保存、Qwen 双模式 1–4096 本地范围）
 - [上报 DTO、存储和集成边界](INTEGRATION.md)
 - [EVT-1 视觉事件恢复与首页异常概况](deep-dive/EVENT_LIFECYCLE.md)（Prototype 实验，连续三个可靠 CLEAR，待人工验收）
+- [EVT-2 等级关联、时间筛选与历史清理](deep-dive/EVENT_MANAGEMENT.md)（Prototype 实验，服务端分页、受控硬删除，待人工验收）
 - [路线](ROADMAP.md)
 - [开发规则](../AGENTS.md)
 - [R2B 架构评估基线](deep-dive/research/R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md)（R2B-0 研究；当前实现以 INTEGRATION 为准）

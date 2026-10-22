@@ -18,12 +18,22 @@ export function eventStateName(item){
   const state=eventState(item),progress=item.visual_recovery;
   if(state==='ACTIVE'&&progress?.clear_count>0)return `恢复观察中 ${progress.clear_count}/${progress.required_clear_windows}`;
   if(state==='RESOLVED')return item.channel==='visual'?'连续观测未再检出':'规则条件已消退';
+  if(state==='INDETERMINATE'&&item.state_reason==='OTHER_RISK_CONDITION_ACTIVE')return '同指标等级已变化';
   return ({ACTIVE:'异常持续',INDETERMINATE:'观测中断／状态未知'})[state]||'状态未知';
 }
 export function activeEventOverview(data,deviceId){
-  const items=data.events.filter(item=>(item.device_id||item.device)===deviceId&&!item.superseded_by
+  const candidates=data.events.filter(item=>(item.device_id||item.device)===deviceId&&!item.superseded_by
     &&item.status!=='closed'&&eventState(item)!=='RESOLVED')
     .sort((a,b)=>({critical:0,warning:1,info:2}[a.severity]??3)-({critical:0,warning:1,info:2}[b.severity]??3));
+  const groups=new Map();
+  for(const item of candidates){const key=item.risk_family?.episode_id||item.id;
+    if(!groups.has(key))groups.set(key,[]);groups.get(key).push(item);}
+  const items=[...groups.values()].map(members=>{
+    const current=members.find(e=>e.id===e.family_current_event_id);
+    const selected=current||members.slice().sort((a,b)=>String(b.last_observed_at||'').localeCompare(String(a.last_observed_at||'')))[0];
+    return {...selected,overview_title:!current&&selected.risk_family?`${selected.risk_family.label}（当前等级未知）`:selected.title,
+      family_size:members.length};
+  });
   const water=data.monitoring,camera=data.cameras.find(c=>(c.device_id||c.id)===deviceId);
   const quality=camera?.analysis?.data_quality;
   const reliable=data.data_mode==='simulator'&&water?.quality==='valid'&&water?.freshness==='fresh'

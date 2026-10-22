@@ -17,6 +17,9 @@ export const services={
   bootstrap:device=>read('/api/bootstrap'+(device?'?'+new URLSearchParams({device}):'')),
   monitoring:(device,view)=>read(`/api/monitoring?${new URLSearchParams({device,view})}`),
   events:filters=>read(`/api/events?${new URLSearchParams(filters)}`),
+  eventDetail:id=>read('/api/events/'+encodeURIComponent(id)),
+  eventDeletionPreview:(value,token)=>eventWrite('/api/events/deletion-preview',value,token),
+  eventDelete:(value,token)=>eventWrite('/api/events/delete',value,token),
   files:filters=>read(`/api/files?${new URLSearchParams(filters)}`),
   ai:{availability:()=>read('/api/ai/status'),
     toolPolicy:()=>read('/api/ai/tool-policy'),
@@ -34,6 +37,14 @@ export const services={
     state:(value,config)=>aiWrite('/api/ai/request-state',value,config),
     cancel:(value,config)=>aiWrite('/api/ai/cancel',value,config)},
 };
+
+async function eventWrite(path,value,token){
+  const response=await fetch(path,{method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':'application/json','X-Management-Events':token},body:JSON.stringify(value)});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error_code||'EVENT_SERVICE_UNAVAILABLE');
+  return data;
+}
 
 async function knowledgeWrite(path,method,value,token){
   const response=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',

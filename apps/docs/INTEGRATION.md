@@ -116,6 +116,8 @@ water 或 visual 可以为 null，但不能同时为空。两个通道独立更�
 
 同一指标的异常从一个严重程度 code 切换到另一个（如低氧进一步恶化）也不等于恢复；只要该指标还有其他 WATER_RISK 命中，旧事件保持待确认，原因 OTHER_RISK_CONDITION_ACTIVE。该指标获得可靠无风险评估后，才可确认相关事件解除。
 
+EVT-2 保留各 code/ID，使用事件 JSON 的 risk_family 关联相同设备、指标、方向与规则身份的等级变化；首页每族只展示当前可靠等级，旧等级显示“同指标等级已变化”，缺测/过期仍为未知。GET /api/events 按关注区间相交筛选 5/10/30/60 分钟或全部，再服务端分页（默认50、最多100）。POST /api/events/deletion-preview 与 /api/events/delete 使用本机独立能力令牌，只硬删除明确 RESOLVED、无活动或替代引用的历史记录；批量不受当前筛选影响。没有 Schema、阈值或 AI Scope 变化。[关联、证据、删除与并发合同](deep-dive/EVENT_MANAGEMENT.md)。
+
 过期/离线时 events() 只将当前确定性撤回为 INDETERMINATE 的只读投影，不写入新事件、不修改历史。完全缺失通道的批次不覆盖该通道 current；EVT-1 对缺失视觉通道的有效新批次同事务重置视觉恢复进度、记录缺测时间水位，防止迟到旧窗重新提供恢复证明。事件初次批次可能因保留限额被裁剪，事件自身保留时间、来源与首末引用。
 
 EVT-1：四种视觉异常的 RESOLVED 需要三个连续可靠 CLEAR。Session 相同、Sequence 连续、窗口首尾相接、完整有效且 fresh/online、前一证据未过期才累计；中断后从当前可靠窗重新计数，HIT 保留原 ID 并清零。恢复进度保存在事件 JSON，查询不推进计数；水质恢复判定不变。视觉消退表示“连续观测未再检出”，没有人工确认语义。[详细合同与离线验证](deep-dive/EVENT_LIFECYCLE.md)。

@@ -22,6 +22,7 @@ from apps.simulator.generator import Simulator
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8787)
+    parser.add_argument('--evt2', action='store_true', help='Include grade transitions and resolved maintenance fixtures')
     args = parser.parse_args()
     from werkzeug.serving import make_server
     now = datetime.now(timezone.utc)
@@ -40,6 +41,11 @@ def main():
                 batch['visual']['anomaly_counts'].update(suspected_lesion=2 if index < 59 else 0, surface_anomaly=1)
             if index == 59:
                 batch['water']['metrics']['ph'].update(mean=None, min=None, max=None, latest=None, valid_samples=0)
+            if args.evt2:
+                oxygen = {10:4.2, 11:2.2, 12:4.1, 20:4.2, 21:2.2, 57:4.2, 58:2.2, 59:2.2}.get(index, 6.4)
+                batch['water']['metrics']['dissolved_oxygen_mg_l'].update(mean=oxygen, min=oxygen, max=oxygen, latest=oxygen)
+                if index == 40:
+                    batch['visual']['anomaly_counts']['suspected_dead'] = 1
             service.ingest(batch)
         app = create_app(data_service=service, allowed_hosts=(f'127.0.0.1:{args.port}',))
         stopped = False

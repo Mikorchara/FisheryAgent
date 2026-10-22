@@ -8,6 +8,8 @@ from flask import Flask, jsonify, request
 
 from .services import DemoEvents, DemoFiles, DemoMonitoring, DemoVideo, UnavailableAI
 from apps.monitoring.contracts import IngestionError, strict_json, valid_token
+from apps.monitoring.event_records import EventRecordError
+from .event_api import register_event_api
 
 
 def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
@@ -25,6 +27,7 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
     files = files if files is not None else DemoFiles()
     events = events if events is not None else DemoEvents()
     hosts = frozenset(allowed_hosts)
+    event_access = register_event_api(app, data_service)
     # Only the explicit secured adapter enables model I/O; R1 injected AI stubs stay disabled.
     from .ai_adapter import ManagementAssistant
     assistant = ai if isinstance(ai, ManagementAssistant) else None
@@ -80,6 +83,7 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
                 pass  # Monitoring remains usable; Settings exposes the bounded storage error.
         return jsonify(schema_version=1, application="management-web-r1", data_mode=mode, preferences=preferences,
             devices=devices, monitoring=snapshot, cameras=video.cameras(),
+            event_management=event_access(),
             events=events.events(), files=files.files(), ai=ai.availability(),
             connections=[{"name": "监测数据", "status": connection, "description": "模拟器 HTTP 上报" if mode == "simulator" else "独立演示适配器"},
                 {"name": "传感器 / 数据库", "status": "not_connected", "description": "尚未接入"},
@@ -137,6 +141,19 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
 
     @app.get("/api/events")
     def event_list():
+        if data_service is not None:
+            if set(request.args) - {'q', 'severity', 'status', 'lookback_minutes', 'limit', 'offset'} or any(
+                    len(request.args.getlist(key)) != 1 for key in request.args):
+                raise EventRecordError('INVALID_EVENT_FILTER')
+            try:
+                minutes = request.args.get('lookback_minutes', 'all')
+                minutes = None if minutes == 'all' else int(minutes)
+                limit, offset = int(request.args.get('limit', '50')), int(request.args.get('offset', '0'))
+            except ValueError:
+                raise EventRecordError('INVALID_EVENT_FILTER') from None
+            return jsonify(**data_service.query_events(lookback_minutes=minutes, q=request.args.get('q', ''),
+                severity=request.args.get('severity', ''), status=request.args.get('status', ''), limit=limit, offset=offset),
+                source_kind=data_service.data_mode)
         return jsonify(items=collection(events.events()), source_kind=getattr(monitoring, "data_mode", "demo"))
 
     @app.get("/api/files")

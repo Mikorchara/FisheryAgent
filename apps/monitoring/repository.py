@@ -10,6 +10,8 @@ from threading import RLock
 
 from .contracts import IngestionError, ChannelAnalysis, strict_json
 from .events import EventService, interrupt_visual
+from .event_families import associate_water_changes
+from .event_records import EventRecordError, deletable, validate_delete
 from .rules import VISUAL_RULES
 from .history import (HistoryQueryError, MAX_HISTORY_ROWS, MAX_HISTORY_ROW_BYTES,
                       validate_history_range)
@@ -153,6 +155,7 @@ class MonitoringRepository:
         fresh_until = (datetime.fromisoformat(batch["timestamp"]) + timedelta(seconds=stale_after_s)).isoformat() if stale_after_s is not None else None
         changes = self.event_service.transition(existing, assessment, session_id=batch["session_id"],
             sequence=batch["sequence"], fresh_until=fresh_until)
+        changes = associate_water_changes(existing, changes, batch, assessment)
         for event in changes.updates:
             db.execute("UPDATE events SET payload=? WHERE id=?", (json.dumps(event), event["id"]))
         for event in changes.inserts:
@@ -220,8 +223,49 @@ class MonitoringRepository:
 
     def events(self):
         with self.connection() as db:
-            result = [json.loads(r["payload"]) for r in db.execute("SELECT payload FROM events ORDER BY rowid DESC")]
-        return [self.event_service.legacy_projection(event) for event in result]
+            result = []
+            rows = [(json.loads(r['payload']), r['linked']) for r in db.execute(
+                "SELECT e.payload,EXISTS(SELECT 1 FROM alerts a WHERE a.event_id=e.id) AS linked FROM events e ORDER BY rowid DESC")]
+            references = {e.get('superseded_by') for e, _ in rows if e.get('superseded_by')}
+            for raw, linked in rows:
+                event = self.event_service.legacy_projection(raw)
+                event['deletable'] = deletable(event, linked, event['id'] in references)
+                result.append(event)
+        return result
+
+    @staticmethod
+    def _deletion_plan(db, scope, event_id):
+        validate_delete(scope, event_id)
+        all_rows = db.execute("SELECT e.id,e.payload,EXISTS(SELECT 1 FROM alerts a WHERE a.event_id=e.id) AS linked FROM events e ORDER BY e.id").fetchall()
+        references = {e.get('superseded_by') for e in (json.loads(r['payload']) for r in all_rows) if e.get('superseded_by')}
+        rows = [r for r in all_rows if r['id'] == event_id] if scope == 'single' else all_rows
+        if scope == 'single' and not rows:
+            raise EventRecordError('EVENT_NOT_FOUND', 404)
+        candidates = [r for r in rows if deletable(json.loads(r['payload']), r['linked'], r['id'] in references)]
+        if scope == 'single' and not candidates:
+            raise EventRecordError('EVENT_NOT_DELETABLE', 409)
+        identity = json.dumps([scope, event_id, [(r['id'], r['payload']) for r in candidates]], ensure_ascii=True)
+        revision = hashlib.sha256(identity.encode()).hexdigest()
+        return candidates, dict(scope=scope, event_id=event_id, count=len(candidates), revision=revision)
+
+    def prepare_event_deletion(self, scope, event_id=None):
+        with self.connection() as db:
+            db.execute('BEGIN')
+            return self._deletion_plan(db, scope, event_id)[1]
+
+    def delete_events(self, scope, event_id, revision):
+        if not isinstance(revision, str) or len(revision) != 64:
+            raise EventRecordError('INVALID_EVENT_DELETE')
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            candidates, plan = self._deletion_plan(db, scope, event_id)
+            if plan['revision'] != revision:
+                raise EventRecordError('EVENT_DELETE_CONFLICT', 409)
+            for row in candidates:
+                deleted = db.execute('DELETE FROM events WHERE id=? AND NOT EXISTS(SELECT 1 FROM alerts WHERE event_id=events.id)', (row['id'],)).rowcount
+                if deleted != 1:
+                    raise EventRecordError('EVENT_DELETE_CONFLICT', 409)
+        return dict(deleted_count=len(candidates), scope=scope)
 
     @staticmethod
     def _decode(row):

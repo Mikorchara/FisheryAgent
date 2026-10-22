@@ -4,6 +4,8 @@
 
 ## 已实现
 
+- EVT-2（Prototype 待人工验收）：按风险族整合首页等级提示，保留 code 与变化证据；事件关注区间五档筛选、服务端分页、已恢复历史预览/确认/事务硬删除。[规则与限制](deep-dive/EVENT_MANAGEMENT.md)。尚未同步 Management。
+
 - EVT-1（Prototype 待人工验收）：视觉异常连续三个可靠 CLEAR 才消退；恢复进度同事务持久化，活动事件不受历史 300 条裁剪。首页新增当前异常概况；[状态与验证](deep-dive/EVENT_LIFECYCLE.md)。尚未同步 Management。
 
 - 管理页面品牌统一为“AI 监测系统”，保留原 Logo/导航；BUILD_RUN 顶部补充快速入口，Prototype 前台启动与 Management 双终端保护差异继续明确保留。

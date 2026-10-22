@@ -140,6 +140,8 @@ apps/
 │  │  │  └─ R2D1F_TOOL_INTEGRATION_COST_AUDIT.md                           # 历史Tool成本盘点、预算与批量准备
 │  │  ├─ AI_BACKEND_DEVELOPMENT_GUIDE.md                                  # 请求链、Tool/Prompt 扩展与安全测试指南
 │  │  ├─ EVENT_LIFECYCLE.md                                              # EVT-1 连续恢复、持久化、首页提醒与隔离验收
+│  │  ├─ EVENT_MANAGEMENT.md                                             # EVT-2 事件族、关注区间筛选、引用与硬删除安全规则
+│  │  ├─ assets/EVT2/                                                   # 隔离数据首页、事件、详情、确认及390px截图
 │  │  ├─ assets/EVT1/                                                   # 虚构数据桌面、390px 与异常概况截图
 │  │  ├─ R2D2A_PRODUCT_INTEGRATION.md                                     # Policy修复、候选、启动器与聊天视图验收
 │  │  ├─ R2D2B_UNIFIED_TOOLS.md                                           # 操作栏根因、三工具本地范围与离线验收
@@ -194,6 +196,7 @@ apps/
 │  ├─ __main__.py                                                        # 本机启动、存储装配与写入开关
 │  ├─ ai_adapter.py                                                      # Web 薄门面：浏览器令牌、RequestRegistry 与业务合同委托
 │  ├─ app.py                                                             # HTTP、访问控制与服务装配
+│  ├─ event_api.py                                                       # 本机事件清理能力令牌、严格预览/提交端点
 │  ├─ contracts.py                                                       # Web Protocol、共享 DTO 导出
 │  ├─ package.json                                                       # Node 原生测试，无依赖
 │  ├─ services.py                                                        # R1 兼容 Demo、未接入 AI/文件服务
@@ -204,6 +207,7 @@ apps/
 │  │  ├─ test_business_services.py                                       # 纯服务一致性、设备/时间边界与故障回滚
 │  │  ├─ test_domain_compatibility.py                                    # MIG-1 新旧领域/Reader/来源验证差分
 │  │  ├─ test_event_lifecycle.py                                         # 三窗恢复、连续性、重启、裁剪、回滚与固定Seed
+│  │  ├─ test_event_management.py                                        # 事件族、全留存分页、时间语义、并发及受控清理
 │  │  ├─ test_history_projection.py                                      # 历史 API 排序、会话与旧元数据兼容
 │  │  ├─ test_local_http.py                                              # 真实 loopback 上报及停止/重启
 │  │  ├─ test_pipeline.py                                                # 校验、时序、安全、状态与共享来源
@@ -216,6 +220,8 @@ apps/
 │  ├─ current.py                                                         # 自有只读 Reader/View；保留 bind().water_reader
 │  ├─ diagnosis.py                                                       # 管理端唯一水质阈值实现，保留原规则身份/结果
 │  ├─ events.py                                                          # 纯 EventService、事件变更及只读状态投影
+│  ├─ event_families.py                                                  # 水质风险等级关联、变化证据与当前族展示
+│  ├─ event_records.py                                                   # 事件关注区间筛选及删除资格/参数合同
 │  ├─ history.py                                                         # 有界历史窗口统计、覆盖/缺口与有限 DTO
 │  ├─ repository.py                                                      # SQLite、事务、历史与事件变更持久化
 │  ├─ rules.py                                                           # 纯评估函数、证据门禁与 PROTOTYPE 规则投影

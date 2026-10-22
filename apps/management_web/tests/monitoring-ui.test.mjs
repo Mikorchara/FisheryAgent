@@ -18,7 +18,7 @@ function fixture(oxygen=6.4){
     cameras:[{id:'sim-pond-1',name:'模拟池视觉',source_kind:'simulator',status:'online',freshness:'fresh',observed_at:time,received_at:time,window,batch_id:'batch-1',stream_url:null,summary:{frames_processed:20,anomaly_counts:{suspected_lesion:3,surface_anomaly:2,suspected_dead:0},behavior_ratios:{normal_activity:.6,reduced_activity:.1,feeding:.2,feeding_anomaly:.1,unknown:0},length:{average_length_cm:null,length_sample_count:0,calibration:'uncalibrated'},visible_fish_count:8,model_version:'synthetic-v1'}}],
     events:[{id:'event-1',device:'sim-pond-1',severity:'warning',status:'pending',title:'疑似异常（模拟）',type:'视觉',source_kind:'simulator',occurred_at:time,batch_id:'batch-1',attachments:[]}],files:[],ai:{connected:false},connections:[{name:'监测数据',status:'online'}]};
 }
-function page(data=fixture()){
+function page(data=fixture(),handler=null){
   const elements=new Map();const node=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
   const env=new Element(),skip=new Element();const timers=[];const events={};const requests=[];
   let current=data;
@@ -28,7 +28,7 @@ function page(data=fixture()){
   const context=vm.createContext({document,Node:Element,URLSearchParams,Intl,Date,console,location:{hash:'#dashboard'},
     window:{addEventListener:(type,fn)=>events[type]=fn,scrollTo:()=>{}},
     setInterval:(fn,ms)=>{timers.push({fn,ms});return timers.length;},clearInterval:()=>{},
-    fetch:async url=>{requests.push(url);if(current instanceof Error)throw current;
+    fetch:async (url,options)=>{requests.push(url);if(handler)return handler(url,options,current);if(current instanceof Error)throw current;
       return {ok:true,json:async()=>url.startsWith('/api/knowledge')?
         {items:[],total:0,categories:[],offset:0,limit:50,write_token:'fictional-knowledge-token'}:structuredClone(current)};}});
   for(const file of ['view-model.js','components.js','assistant-events.js','services.js','assistant.js','tool-policy.js','knowledge.js','settings.js','app.js']){
@@ -50,6 +50,102 @@ test('uniform server state renders dashboard, monitoring and visual summaries wi
   p.run("location.hash='#video';render()");
   assert.match(p.node('content').textContent,/疑似病灶/);assert.match(p.node('content').textContent,/未标定/);
   assert.match(p.node('content').textContent,/不代表鱼池存量/);assert.match(p.node('content').textContent,/无视频流/);
+});
+
+test('EVT-2 homepage collapses risk grades but retains unknown evidence and original detail',async()=>{
+  const d=fixture();const common={...d.events[0],device_id:'sim-pond-1',channel:'water',
+    risk_family:{episode_id:'same-low-oxygen',label:'溶解氧偏低风险',transitions:[]},family_current_event_id:'critical',family_current_code:'OXYGEN_CRITICAL_LOW'};
+  d.events=[{...common,id:'low',title:'溶氧偏低',severity:'warning',lifecycle_state:'INDETERMINATE',state_reason:'OTHER_RISK_CONDITION_ACTIVE'},
+    {...common,id:'critical',title:'溶氧低',severity:'critical',lifecycle_state:'ACTIVE',last_observed_at:d.monitoring.observed_at}];
+  const p=page(d);await p.ready();
+  const walk=node=>[node,...node.children.flatMap(walk)];
+  let overview=walk(p.node('content')).find(n=>n.attributes['data-current-anomalies']==='true');
+  assert.equal(walk(overview).filter(n=>n.attributes['data-event-id']).length,1);
+  assert.match(overview.textContent,/溶氧低/);assert.doesNotMatch(overview.textContent,/溶氧偏低/);
+  assert.match(overview.textContent,/关联 2 条等级记录/);
+  for(const e of d.events){e.lifecycle_state='INDETERMINATE';e.family_current_code=null;e.family_current_event_id=null;}
+  p.setData(d);await p.run('refresh()');
+  overview=walk(p.node('content')).find(n=>n.attributes['data-current-anomalies']==='true');
+  assert.equal(walk(overview).filter(n=>n.attributes['data-event-id']).length,1);
+  assert.match(overview.textContent,/当前等级未知/);assert.doesNotMatch(overview.textContent,/当前未见异常信号/);
+});
+
+function eventPage({conflict=false}={}){
+  const data=fixture();data.event_management={enabled:true,write_token:'fictional-event-capability'};
+  const record={...data.events[0],id:'closed-record',lifecycle_state:'RESOLVED',status:'closed',deletable:true,
+    channel:'visual',resolved_at:data.monitoring.observed_at};
+  data.events=[record];let records=[record];const writes=[],queries=[];
+  const p=page(data,async(url,options)=>{
+    if(url.startsWith('/api/bootstrap'))return {ok:true,json:async()=>structuredClone(data)};
+    if(url.startsWith('/api/events?')){const query=new URL(url,'http://localhost').searchParams;queries.push(query);
+      return {ok:true,json:async()=>({items:Number(query.get('offset'))===50?[]:structuredClone(records),
+        total:records.length?51:0,limit:50,offset:Number(query.get('offset'))})};}
+    if(url.startsWith('/api/events/')){
+      writes.push({url,value:JSON.parse(options.body),token:options.headers['X-Management-Events']});
+      if(url.endsWith('deletion-preview'))return {ok:true,json:async()=>({count:1,revision:'f'.repeat(64)})};
+      if(conflict)return {ok:false,json:async()=>({error_code:'EVENT_DELETE_CONFLICT'})};
+      records=[];data.events=[];return {ok:true,json:async()=>({deleted_count:1})};
+    }
+    return {ok:true,json:async()=>({items:[],total:0})};
+  });
+  const walk=node=>[node,...node.children.flatMap(walk)];
+  return {...p,writes,queries,walk,findButton:(root,text)=>walk(root).find(n=>n.tagName==='button'&&n.textContent===text),
+    open:async()=>{await p.ready();p.run("location.hash='#events';render()");await p.ready();}};
+}
+
+test('EVT-2 server queries all five intervals with combined filters and pagination',async()=>{
+  const p=eventPage();await p.open();
+  const range=p.walk(p.node('content')).find(n=>n.attributes['aria-label']==='事件时间范围');
+  assert.deepEqual(range.children.map(n=>n.attributes.value),['5','10','30','60','all']);
+  for(const value of ['5','10','30','60','all']){range.events.change({target:{value}});await p.ready();assert.equal(p.queries.at(-1).get('lookback_minutes'),value);}
+  p.findButton(p.node('content'),'下一页').events.click();await p.ready();assert.equal(p.queries.at(-1).get('offset'),'50');
+  const level=p.walk(p.node('content')).find(n=>n.attributes['aria-label']==='事件等级');
+  level.events.change({target:{value:'warning'}});await p.ready();
+  assert.equal(p.queries.at(-1).get('offset'),'0');assert.equal(p.queries.at(-1).get('severity'),'warning');
+  assert.match(p.node('content').textContent,/共 51 条符合条件/);
+  assert.equal(p.writes.length,0);
+});
+
+test('EVT-2 single deletion requires confirmation and cancel never sends commit',async()=>{
+  const p=eventPage();await p.open();
+  p.findButton(p.node('content'),'删除记录').events.click();await p.ready();
+  assert.match(p.node('dialog-body').textContent,/预计删除 1 条/);
+  assert.equal(p.writes.filter(w=>w.url.endsWith('/delete')).length,0);
+  p.findButton(p.node('dialog-body'),'取消').events.click();
+  assert.equal(p.writes.length,1);
+  p.findButton(p.node('content'),'删除记录').events.click();await p.ready();
+  await p.findButton(p.node('dialog-body'),'确认删除此条事件').events.click();await p.ready();
+  const commits=p.writes.filter(w=>w.url.endsWith('/delete'));
+  assert.equal(commits.length,1);assert.equal(commits[0].value.event_id,'closed-record');
+  assert.equal(commits[0].token,'fictional-event-capability');assert.equal(commits[0].value.revision,'f'.repeat(64));
+  assert.match(p.node('content').textContent,/没有符合条件的记录/);
+  assert.equal(p.run('state.data.events.length'),0);
+});
+
+test('EVT-2 bulk clear has two confirmations, global scope and cancellable final step',async()=>{
+  const p=eventPage();await p.open();
+  p.run("state.eventFilters.q='屏幕上的筛选';state.eventFilters.lookback_minutes='5'");
+  p.findButton(p.node('content'),'清理全部已结束事件').events.click();await p.ready();
+  assert.match(p.node('dialog-body').textContent,/全部设备、全部时间/);
+  assert.equal(p.findButton(p.node('dialog-body'),'确认清理 1 条记录'),undefined);
+  p.findButton(p.node('dialog-body'),'继续核对').events.click();
+  assert.match(p.node('dialog-body').textContent,/不受当前筛选或分页影响/);
+  p.findButton(p.node('dialog-body'),'取消').events.click();
+  assert.equal(p.writes.filter(w=>w.url.endsWith('/delete')).length,0);
+  p.findButton(p.node('content'),'清理全部已结束事件').events.click();await p.ready();
+  p.findButton(p.node('dialog-body'),'继续核对').events.click();
+  await p.findButton(p.node('dialog-body'),'确认清理 1 条记录').events.click();await p.ready();
+  const commit=p.writes.find(w=>w.url.endsWith('/delete'));
+  assert.deepEqual(Object.keys(commit.value).sort(),['revision','scope']);assert.equal(commit.value.scope,'all_resolved');
+});
+
+test('EVT-2 conflicting deletion stays explicit, never retries or clears local data',async()=>{
+  const p=eventPage({conflict:true});await p.open();
+  p.findButton(p.node('content'),'删除记录').events.click();await p.ready();
+  await p.findButton(p.node('dialog-body'),'确认删除此条事件').events.click();await p.ready();
+  assert.match(p.node('dialog-body').textContent,/未自动重试/);
+  assert.equal(p.writes.filter(w=>w.url.endsWith('/delete')).length,1);
+  assert.equal(p.run('state.data.events.length'),1);
 });
 test('all page timestamps display Beijing seconds and weighted length statistics remain distinct',async()=>{
   const d=fixture();d.cameras[0].summary.valid_frames=3;d.cameras[0].summary.frames_processed=4;

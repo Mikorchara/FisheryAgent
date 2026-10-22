@@ -198,7 +198,7 @@ class EventService:
             result.update(lifecycle_state="INDETERMINATE", status="pending",
                 state_reason="RULE_CHANGED" if finding and not match else
                 "OTHER_RISK_CONDITION_ACTIVE" if other_risk(finding, assessment) else
-                "STALE_OR_OFFLINE" if result.get("code") in VISUAL_RULES and (
+                "STALE_OR_OFFLINE" if (
                     assessment.data_quality.freshness != "fresh" or assessment.data_quality.connectivity != "online") else
                 result.get("state_reason") or "CURRENT_EVIDENCE_UNAVAILABLE")
             if result.get("channel") == "visual" and result.get("code") in VISUAL_RULES:
