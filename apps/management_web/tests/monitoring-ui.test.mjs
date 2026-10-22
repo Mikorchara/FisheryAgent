@@ -121,13 +121,63 @@ test('event lifecycle and critical severity are distinct from data quality and h
     {...d.events[0],id:'resolved',title:'有效新观测',status:'closed',lifecycle_state:'RESOLVED'}];
   const p=page(d);await p.ready();p.run("location.hash='#events';render()");
   assert.match(p.node('content').textContent,/严重/);assert.match(p.node('content').textContent,/异常持续/);
-  assert.match(p.node('content').textContent,/状态待确认/);assert.match(p.node('content').textContent,/已确认消退/);
+  assert.match(p.node('content').textContent,/状态未知/);assert.match(p.node('content').textContent,/规则条件已消退/);
   assert.match(p.node('content').textContent,/PROTOTYPE/);
   p.run("state.eventFilters.status='INDETERMINATE';render()");
   assert.match(p.node('content').textContent,/证据不足/);assert.doesNotMatch(p.node('content').textContent,/低氧实验规则/);
   p.run("location.hash='#monitoring';render()");assert.match(p.node('content').textContent,/PROTOTYPE/);
   d.cameras[0].signal_status='indeterminate';p.setData(d);p.run("location.hash='#video'");await p.run('refresh()');
   assert.match(p.node('content').textContent,/当前状态待确认/);
+});
+
+test('dashboard shows ongoing old events before recent resolved records and opens original details',async()=>{
+  const d=fixture();d.events=[...Array.from({length:6},(_,i)=>({...d.events[0],id:'resolved-'+i,status:'closed',lifecycle_state:'RESOLVED'})),
+    {...d.events[0],id:'old-active',device_id:'sim-pond-1',channel:'visual',code:'SUSPECTED_LESION',
+      title:'疑似病灶检测信号（模拟，非诊断）',lifecycle_state:'ACTIVE',last_observed_at:d.monitoring.observed_at,
+      visual_recovery:{clear_count:1,required_clear_windows:3,last_valid_observed_at:d.monitoring.observed_at,continuity:'continuous'}}];
+  const p=page(d);await p.ready();
+  const walk=node=>[node,...node.children.flatMap(walk)];
+  const overview=()=>walk(p.node('content')).find(n=>n.attributes['data-current-anomalies']==='true');
+  assert.ok(overview());assert.match(overview().textContent,/恢复观察中 1\/3/);
+  assert.match(overview().textContent,/SIMULATOR/);assert.match(overview().textContent,/最近有效观测/);
+  assert.match(overview().textContent,/首次发生/);assert.match(overview().textContent,/sim-pond-1/);
+  assert.doesNotMatch(overview().textContent,/resolved-/);
+  walk(overview()).find(n=>n.tagName==='button'&&n.textContent==='查看详情').events.click();
+  assert.match(p.node('dialog-title').textContent,/疑似病灶/);
+  assert.match(p.node('dialog-body').textContent,/未再检出/);
+  assert.doesNotMatch(p.node('dialog-body').textContent,/已确认消退|疾病已经治愈|人工已经确认/);
+  await p.run('refresh()');assert.ok(overview());
+});
+
+test('dashboard empty current anomalies requires fresh complete evidence from both channels',async()=>{
+  const d=fixture();d.events=[];
+  d.monitoring.device_id='sim-pond-1';d.monitoring.findings=[];
+  d.cameras[0].signal_status='no_obvious_anomaly';
+  d.cameras[0].analysis={data_quality:{quality:'valid',freshness:'fresh',connectivity:'online'}};
+  const p=page(d);await p.ready();
+  assert.match(p.node('content').textContent,/当前未见异常信号/);
+  for(const key of ['stale','missing','invalid','offline']){
+    const next=structuredClone(d);
+    if(key==='stale')next.monitoring.freshness='stale';
+    if(key==='missing')next.cameras[0].summary=null;
+    if(key==='invalid')next.cameras[0].analysis.data_quality.quality='invalid';
+    if(key==='offline')next.cameras[0].analysis.data_quality.connectivity='offline';
+    p.setData(next);await p.run('refresh()');
+    assert.match(p.node('content').textContent,/状态未知/);
+    assert.doesNotMatch(p.node('content').textContent,/当前未见异常信号/);
+  }
+});
+
+test('unknown active observation is distinct from recovery and resolved signal wording',async()=>{
+  const d=fixture();d.events=[{...d.events[0],device_id:'sim-pond-1',channel:'visual',code:'SUSPECTED_LESION',
+    lifecycle_state:'INDETERMINATE',visual_recovery:{clear_count:0,required_clear_windows:3,continuity:'interrupted'}}];
+  const p=page(d);await p.ready();
+  assert.match(p.node('content').textContent,/观测中断.*状态未知/);
+  assert.doesNotMatch(p.node('content').textContent,/恢复观察中/);
+  d.events[0].lifecycle_state='RESOLVED';d.events[0].status='closed';p.setData(d);
+  p.run("location.hash='#events'");await p.run('refresh()');
+  assert.match(p.node('content').textContent,/连续观测未再检出/);
+  assert.doesNotMatch(p.node('content').textContent,/已确认消退/);
 });
 
 

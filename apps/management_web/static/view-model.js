@@ -14,7 +14,26 @@ export const freshnessNames={fresh:'新鲜',stale:'已过期',unknown:'未知'};
 export function sourceName(kind){return ({simulator:'SIMULATOR 模拟来源',demo:'DEMO 演示',connected:'已接入',mixed:'混合来源'})[kind]||'未声明来源';}
 export function connectionName(status){return ({online:'正常上报',offline:'上报中断',never_received:'尚无上报',not_connected:'未接入',connected:'已装配',demo:'演示'})[status]||'状态未知';}
 export function eventState(item){return item.lifecycle_state||(item.status==='closed'?'RESOLVED':'ACTIVE');}
-export function eventStateName(item){return ({ACTIVE:'异常持续',RESOLVED:'已确认消退',INDETERMINATE:'状态待确认'})[eventState(item)]||'状态未知';}
+export function eventStateName(item){
+  const state=eventState(item),progress=item.visual_recovery;
+  if(state==='ACTIVE'&&progress?.clear_count>0)return `恢复观察中 ${progress.clear_count}/${progress.required_clear_windows}`;
+  if(state==='RESOLVED')return item.channel==='visual'?'连续观测未再检出':'规则条件已消退';
+  return ({ACTIVE:'异常持续',INDETERMINATE:'观测中断／状态未知'})[state]||'状态未知';
+}
+export function activeEventOverview(data,deviceId){
+  const items=data.events.filter(item=>(item.device_id||item.device)===deviceId&&!item.superseded_by
+    &&item.status!=='closed'&&eventState(item)!=='RESOLVED')
+    .sort((a,b)=>({critical:0,warning:1,info:2}[a.severity]??3)-({critical:0,warning:1,info:2}[b.severity]??3));
+  const water=data.monitoring,camera=data.cameras.find(c=>(c.device_id||c.id)===deviceId);
+  const quality=camera?.analysis?.data_quality;
+  const reliable=data.data_mode==='simulator'&&water?.quality==='valid'&&water?.freshness==='fresh'
+    &&water?.connectivity==='online'&&camera?.summary&&quality?.quality==='valid'
+    &&quality?.freshness==='fresh'&&quality?.connectivity==='online';
+  // Use server assessments; never duplicate risk thresholds or infer health from zero events.
+  const clear=Boolean(reliable&&Array.isArray(water.findings)&&water.findings.length===0
+    &&camera.signal_status==='no_obvious_anomaly');
+  return {items,clear};
+}
 export function eventSeverityName(item){return ({critical:'严重',warning:'提醒',info:'信息'})[item.severity]||'未知';}
 export function metricText(metric) {
   return typeof metric?.value==='number' && Number.isFinite(metric.value) && metric.quality==='valid'

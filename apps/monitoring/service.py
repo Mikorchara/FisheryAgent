@@ -141,7 +141,7 @@ class MonitoringService:
                 "observed_at": batch["timestamp"], "received_at": now.isoformat(),
                 "payload": {"window": batch["window"], "data": batch[channel]}} if batch[channel] is not None else None)
             assessments[channel] = self._assess(batch["device_id"], channel, row, now)
-        return self.repository.ingest(batch, now, assessments)
+        return self.repository.ingest(batch, now, assessments, stale_after_s=self.stale_after_s)
 
     def snapshot(self, device_id, view="available"):
         self._device(device_id)

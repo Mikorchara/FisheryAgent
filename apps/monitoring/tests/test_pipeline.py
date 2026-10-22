@@ -279,6 +279,11 @@ class PipelineTests(unittest.TestCase):
         b = sim.advance()
         self.now = datetime.fromisoformat(b['timestamp'])
         self.service.ingest(b)
+        self.assertTrue(all(e['status']=='closed' for e in self.service.events() if e['channel']=='water'))
+        for _ in range(2):
+            b = sim.advance()
+            self.now = datetime.fromisoformat(b['timestamp'])
+            self.service.ingest(b)
         self.assertTrue(all(e['status']=='closed' for e in self.service.events()))
 
     def test_history_bounds_and_restart_preserve_current(self):

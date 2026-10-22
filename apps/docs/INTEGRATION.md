@@ -99,7 +99,7 @@ water 或 visual 可以为 null，但不能同时为空。两个通道独立更�
 
 `outputs/management_web/monitoring.sqlite3`，Git ignored；schema user_version=1，未知版本拒绝，不自动改未知数据。标准库 SQLite 每操作短连接、事务提交/关闭；每设备每通道 current 一份，water/visual 不混合。
 
-默认每设备每通道保留 360 个窗口（10 秒周期约 1 小时），每设备 1440 个批次幂等记录，全局 300 个事件。超限按最旧记录裁剪；SQLite 可复用空闲页，不承诺文件立即缩小。重启保留数据，不删除旧库。
+默认每设备每通道保留 360 个窗口（10 秒周期约 1 小时），每设备 1440 个批次幂等记录。EVT-1 保留全部 alerts 关联的未结束事件，另保留最近 300 条未关联历史，总事件数可超过 300。超限按最旧历史裁剪；SQLite 可复用空闲页，不承诺文件立即缩小。重启保留数据，不删除旧库。
 
 - 同 batch_id 或 device/session/sequence 的相同有效内容返回 duplicate，不再次入库/造事件；内容冲突返回 409 BATCH_ID_CONFLICT。幂等受有界记录和观测时间限制。
   有效 duplicate 或乱序批次只刷新独立的通道接触时间，不改原观测/接收时间；在线不代表数据新鲜。
@@ -116,7 +116,9 @@ water 或 visual 可以为 null，但不能同时为空。两个通道独立更�
 
 同一指标的异常从一个严重程度 code 切换到另一个（如低氧进一步恶化）也不等于恢复；只要该指标还有其他 WATER_RISK 命中，旧事件保持待确认，原因 OTHER_RISK_CONDITION_ACTIVE。该指标获得可靠无风险评估后，才可确认相关事件解除。
 
-过期/离线时 events() 只将当前确定性撤回为 INDETERMINATE 的只读投影，不写入新事件、不修改历史。完全缺失通道的批次不覆盖该通道 current；其已有观测随后按各自年龄失效。事件初次批次可能因保留限额被裁剪，事件自身保留时间、来源与首末引用。
+过期/离线时 events() 只将当前确定性撤回为 INDETERMINATE 的只读投影，不写入新事件、不修改历史。完全缺失通道的批次不覆盖该通道 current；EVT-1 对缺失视觉通道的有效新批次同事务重置视觉恢复进度、记录缺测时间水位，防止迟到旧窗重新提供恢复证明。事件初次批次可能因保留限额被裁剪，事件自身保留时间、来源与首末引用。
+
+EVT-1：四种视觉异常的 RESOLVED 需要三个连续可靠 CLEAR。Session 相同、Sequence 连续、窗口首尾相接、完整有效且 fresh/online、前一证据未过期才累计；中断后从当前可靠窗重新计数，HIT 保留原 ID 并清零。恢复进度保存在事件 JSON，查询不推进计数；水质恢复判定不变。视觉消退表示“连续观测未再检出”，没有人工确认语义。[详细合同与离线验证](deep-dive/EVENT_LIFECYCLE.md)。
 
 ### R2B-1 分析合同与规则状态
 
@@ -135,7 +137,7 @@ water 或 visual 可以为 null，但不能同时为空。两个通道独立更�
 
 - `analysis.py / DomainAnalysisService.evaluate(device_id, channel, row, evaluated_at=...)` 是纯计算入口：输入已验证的服务端事实，统一 freshness/connectivity，再委托 rules。设备不匹配或评估时间早于接收时间拒绝；没有规则副本或隐式采样。canonical Reading 投影也放在这里，`service.reading_from_row` 保留 import 兼容。
 - `events.py / EventService.transition(existing, assessment)` 返回 EventChanges（updates / inserts / active_links / resolved_codes），不执行 SQL。`project(event, assessment)` 只撤回当前确定性，不确认恢复；版本匹配及严重程度切换策略共用同一处 helper。输入不修改，旧记录兼容投影也由此统一。
-- Repository 在原 `BEGIN IMMEDIATE` + 锁中读取活动事件、计算变更并应用 SQL；current、历史、事件、alerts 和接触时间仍整体提交/回滚。重复与乱序不执行事件变更。未更换 SQLite、表结构或保留策略。
+- Repository 在原 `BEGIN IMMEDIATE` + 锁中读取活动事件、计算变更并应用 SQL；current、历史、事件、alerts 和接触时间仍整体提交/回滚。重复与乱序不推进事件；缺失视觉通道的新观测会撤回连续性。未更换 SQLite 或表结构；EVT-1 调整事件保留策略以保护未结束事件。
 - MonitoringService 协调设备范围、读写与展示；`capture_water(device_id)` 和绑定后的 `DeviceReadContext.capture_water()` 返回一次事实捕获及分析。`analysis(device_id, "water")` 从同一入口取得 ChannelAnalysis；visual 仍独立求值。现有 water_reader 保留兼容，管理 AI 不使用它再次诊断风险。
 - snapshot/cameras 不再重复计算时间状态；当前事实先捕获，再选 evaluated_at。同一 events 查询对每 device/channel 只求值一次；不同查询仍按各自时点更新，不建会过期的全局分析缓存。
 - 每通道仍独立，窗口和设备引用明确。本阶段没有增加跨通道关联规则；以后要关联必须校验设备/池映射和时间重叠，不能仅因同一页面或批次到达就认为同步。

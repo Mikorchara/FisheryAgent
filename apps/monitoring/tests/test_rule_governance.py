@@ -132,6 +132,8 @@ class GovernanceTests(unittest.TestCase):
         self.service.ingest(b)
         self.assertEqual(self.event('SUSPECTED_LESION')['lifecycle_state'],'INDETERMINATE')
         b=self.batch();self.service.ingest(b)
+        self.assertEqual(self.event('SUSPECTED_LESION')['lifecycle_state'],'ACTIVE')
+        self.service.ingest(self.batch());self.service.ingest(self.batch())
         self.assertEqual(self.event('SUSPECTED_LESION')['lifecycle_state'],'RESOLVED')
 
     def test_partial_visual_positive_is_limited_confirmed_signal(self):

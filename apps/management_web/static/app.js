@@ -1,5 +1,5 @@
 import {el,icon,card,badge,empty,button,link,rows,metricCards,metadata,table,trendChart,normalizedTrendChart} from './components.js';
-import {routes,routeFor,timeText,filterItems,validateBootstrap,qualityNames,freshnessNames,sourceName,connectionName,eventState,eventStateName,eventSeverityName,trendRanges} from './view-model.js';
+import {routes,routeFor,timeText,filterItems,validateBootstrap,qualityNames,freshnessNames,sourceName,connectionName,eventState,eventStateName,eventSeverityName,trendRanges,activeEventOverview} from './view-model.js';
 import {services} from './services.js';
 import {createAssistantWorkspace} from './assistant.js';
 import {createToolPolicySettings} from './tool-policy.js';
@@ -20,10 +20,30 @@ function select(label,choices,value,onchange){return el('label',{class:'field'},
   choices.map(([id,text])=>el('option',{value:id,...(id===value?{selected:'selected'}:{})},[text])))]);}
 function search(label,value,oninput){return el('label',{class:'field search-field'},[el('span',{text:label}),el('input',{type:'search',value,placeholder:'输入名称或关键字',oninput:e=>oninput(e.target.value)})]);}
 function details(title,content){$('dialog-title').textContent=title;$('dialog-body').replaceChildren(...content);$('details-dialog').showModal();}
-function eventDetail(item){details(item.title,[badge(sourceName(item.source_kind),'demo'),rows([['记录编号',item.id],['时间',timeText(item.occurred_at)],['设备',item.device],['类型',item.type],['等级',eventSeverityName(item)],['状态',item.source_kind==='simulator'?eventStateName(item):'演示处理状态'],['状态原因',item.state_reason],['规则发布',item.publication_status||'PROTOTYPE'],['关联批次',item.batch_id],['接收时间',timeText(item.received_at)],['最近信号',timeText(item.last_observed_at)],['规则版本',item.rule_version],['规则范围',item.rule_identity?.scope?.join(' / ')||'旧记录未记录']]),el('p',{text:item.description}),
+function eventDetail(item){details(item.title,[badge(sourceName(item.source_kind),'demo'),rows([['记录编号',item.id],['时间',timeText(item.occurred_at)],['设备',item.device],['类型',item.type],['等级',eventSeverityName(item)],['状态',item.source_kind==='simulator'?eventStateName(item):'演示处理状态'],['状态原因',item.state_reason],['规则发布',item.publication_status||'PROTOTYPE'],['关联批次',item.batch_id],['接收时间',timeText(item.received_at)],['最近检出信号',timeText(item.last_observed_at)],['最近有效观测',timeText(item.visual_recovery?.last_valid_observed_at||item.last_observed_at)],['恢复观察',item.visual_recovery?`${item.visual_recovery.clear_count}/${item.visual_recovery.required_clear_windows}（本地实验参数）`:'未记录'],['连续观测段起点',timeText(item.visual_recovery?.segment_started_at)],['观测连续性',item.visual_recovery?.continuity==='interrupted'?'存在观测中断，未知时段不计为已证实持续异常':'以有效窗口为依据'],['最近中断原因',item.visual_recovery?.last_interruption_reason],['规则恢复时间',timeText(item.resolved_at)],['规则版本',item.rule_version],['规则范围',item.rule_identity?.scope?.join(' / ')||'旧记录未记录']]),
+  ...(item.channel==='visual'?[el('p',{text:'视觉信号消退仅表示连续可靠观测未再检出该异常信号，不代表疾病治愈或人工处理完成。'})]:[]),el('p',{text:item.description}),
   empty('暂无关联媒体','这里将展示关联截图与视频片段；R1 未生成或保存媒体。','camera')]);}
 function eventsTable(items){return table(['事件 / 类型','设备','时间','等级','状态','操作'],items,item=>[
   el('div',{class:'table-title'},[el('strong',{text:item.title}),el('small',{text:`${item.id} · ${item.type} · ${sourceName(item.source_kind)}`})]),item.device,timeText(item.occurred_at),severity(item),status(item)],eventDetail);}
+
+function currentAnomalies(data){
+  const overview=activeEventOverview(data,state.device);
+  const name=data.devices.find(d=>d.id===state.device)?.name||state.device;
+  const content=overview.items.length?[
+    el('div',{class:'anomaly-summary'},[badge(`${overview.items.length} 项需关注`,'warning'),badge(sourceName(data.data_mode),'demo'),
+      el('span',{text:'检测信号用于提示核查，疑似疾病不作为确诊。'})]),
+    el('div',{class:'anomaly-list'},overview.items.map(item=>el('article',{class:'anomaly-item','data-event-id':item.id},[
+      el('div',{class:'anomaly-heading'},[el('strong',{text:item.title}),severity(item),status(item)]),
+      el('p',{text:`设备 ${item.device_id||item.device} · 首次发生 ${timeText(item.occurred_at)}`}),
+      el('p',{text:`最近有效观测 ${timeText(item.visual_recovery?.last_valid_observed_at||item.last_observed_at)}`}),
+      ...(item.visual_recovery?.continuity==='interrupted'?[el('p',{class:'muted',text:'存在观测中断；未知时段不计为已证实持续异常。'})]:[]),
+      button('查看详情',()=>eventDetail(item),'text')])))]
+    :[badge(sourceName(data.data_mode),'demo'),el('p',{class:'anomaly-empty',text:overview.clear?'当前未见异常信号':'状态未知 · 需要完整、新鲜的水质与视觉观测。'})];
+  const section=card('当前异常概况',`区域：${name} · ${overview.items.length?'未结束事件，包含恢复观察与观测中断':'以服务器当前规则和观测质量为依据'}`,content,link('全部事件','events'));
+  section.className+=` current-anomalies ${overview.items.length?'needs-attention':overview.clear?'signals-clear':'signals-unknown'}`;
+  section.setAttribute('data-current-anomalies','true');
+  return section;
+}
 
 function trend(){const options={rangeSeconds:state.trendRange==='all'?null:Number(state.trendRange)};
   return el('div',{class:'trend-stack'},[card('历史趋势','已存储的窗口均值；不代表连续实时采样。',[trendChart(state.data.monitoring,state.metric,options)],
@@ -45,7 +65,7 @@ function dashboard(){
     el('div',{class:'strip-number'},[el('strong',{text:String(d.devices.length)}),el('span',{text:'监测区域'})]),
     el('div',{class:'strip-number'},[el('strong',{text:'0'}),el('span',{text:'真实设备接入'})]),
     el('div',{class:'strip-number'},[el('strong',{text:d.ai?.connected?'1':'0'}),el('span',{text:'已启用 AI 服务'})]),badge(sourceName(d.data_mode),'demo')]),
-    el('div',{class:'section-caption'},[el('h2',{text:'水质指标概览'}),link('查看水质监测','monitoring')]),metadata(snapshot),metricCards(snapshot),
+    el('div',{class:'section-caption'},[el('h2',{text:'水质指标概览'}),link('查看水质监测','monitoring')]),metadata(snapshot),metricCards(snapshot),currentAnomalies(d),
     el('div',{class:'dashboard-grid dashboard-overview'},[trend(),
       el('div',{class:'side-stack dashboard-sidebar'},[
         card('视觉监测概况','只有模拟窗口统计，真实视频 / NPU 未接入。',[rows([['设备',d.cameras[0]?.name||'无设备'],['上报状态',connectionName(d.cameras[0]?.status)],['视觉新鲜度',freshnessNames[d.cameras[0]?.freshness]||'未知'],['窗口帧数',d.cameras[0]?.summary?.frames_processed??'暂无上报']]),videoPlaceholder(true),el('div',{class:'card-foot'},[el('span',{text:'无实际视频流'}),link('视觉窗口详情','video')])]),
@@ -98,7 +118,7 @@ function video(){const cameras=state.data.cameras;const camera=cameras.find(c=>c
 
 function events(){const filters=state.eventFilters;const body=el('div',{id:'events-table'},[eventsTable(filterItems(state.data.events,filters))]);const update=()=>body.replaceChildren(eventsTable(filterItems(state.data.events,filters)));
   return [el('div',{class:'filters'},[search('搜索事件',filters.q,v=>{filters.q=v;update();}),select('事件等级',[['','全部等级'],['critical','严重'],['warning','提醒'],['info','信息']],filters.severity,v=>{filters.severity=v;update();}),
-    select('事件状态',state.data.data_mode==='simulator'?[['','全部状态'],['ACTIVE','异常持续'],['RESOLVED','已确认消退'],['INDETERMINATE','状态待确认']]:[['','全部状态'],['pending','待处理（演示）'],['closed','已处理（演示）']],filters.status,v=>{filters.status=v;update();}),button('重置筛选',()=>{state.eventFilters={q:'',severity:'',status:''};render();})]),
+    select('事件状态',state.data.data_mode==='simulator'?[['','全部状态'],['ACTIVE','活动／恢复观察'],['RESOLVED','规则条件已消退'],['INDETERMINATE','观测中断／状态未知']]:[['','全部状态'],['pending','待处理（演示）'],['closed','已处理（演示）']],filters.status,v=>{filters.status=v;update();}),button('重置筛选',()=>{state.eventFilters={q:'',severity:'',status:''};render();})]),
     card('事件列表',`${state.data.events.length} 条记录 · PROTOTYPE 模拟信号，不具备生产处理工作流`,[body]),
     el('p',{class:'footnote',text:'R1 仅提供查询与详情。事件处理、截图和视频片段存储尚未实现。'})];}
 

@@ -1,6 +1,7 @@
 """SQLite authoritative current state and bounded history. No secrets or device I/O."""
 
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 import hashlib
 import json
 from pathlib import Path
@@ -8,7 +9,8 @@ import sqlite3
 from threading import RLock
 
 from .contracts import IngestionError, ChannelAnalysis, strict_json
-from .events import EventService
+from .events import EventService, interrupt_visual
+from .rules import VISUAL_RULES
 from .history import (HistoryQueryError, MAX_HISTORY_ROWS, MAX_HISTORY_ROW_BYTES,
                       validate_history_range)
 
@@ -73,7 +75,7 @@ class MonitoringRepository:
             finally:
                 db.close()
 
-    def ingest(self, batch, received_at, assessments):
+    def ingest(self, batch, received_at, assessments, *, stale_after_s=None):
         if (not isinstance(assessments, dict) or any(not isinstance(a, ChannelAnalysis)
                 or a.device_id != batch["device_id"] or a.channel != channel
                 or batch[channel] is not None and (a.observation is None or a.observation.batch_id != batch["batch_id"])
@@ -95,6 +97,10 @@ class MonitoringRepository:
             for channel in ("water", "visual"):
                 payload = batch[channel]
                 if payload is None:
+                    if channel == "visual":
+                        current = db.execute("SELECT observed_at FROM current WHERE device_id=? AND channel=?", (device, channel)).fetchone()
+                        if current is None or batch["timestamp"] > current["observed_at"]:
+                            self._interrupt_visual(db, device, received_at.isoformat(), batch["timestamp"])
                     continue
                 current = db.execute("SELECT * FROM current WHERE device_id=? AND channel=?", (device, channel)).fetchone()
                 if current and current["observed_at"] == batch["timestamp"]:
@@ -106,14 +112,17 @@ class MonitoringRepository:
                     db.execute("INSERT OR REPLACE INTO current VALUES(?,?,?,?,?,?)",
                         (device, channel, batch["batch_id"], batch["timestamp"], received_at.isoformat(), encoded))
                     updated.append(channel)
-                    self._events(db, batch, channel, assessments[channel])
+                    self._events(db, batch, channel, assessments[channel], stale_after_s=stale_after_s)
                 db.execute("DELETE FROM history WHERE device_id=? AND channel=? AND batch_id NOT IN (SELECT batch_id FROM history WHERE device_id=? AND channel=? ORDER BY observed_at DESC LIMIT ?)",
                            (device, channel, device, channel, self.history_limit))
             db.execute("INSERT INTO batches VALUES(?,?,?,?,?,?)", (batch["batch_id"], device, batch["session_id"], batch["sequence"], digest, received_at.isoformat()))
             self._contact(db, batch, received_at)
             db.execute("DELETE FROM batches WHERE device_id=? AND batch_id NOT IN (SELECT batch_id FROM batches WHERE device_id=? ORDER BY received_at DESC, rowid DESC LIMIT ?)",
                        (device, device, self.batch_limit))
-            db.execute("DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY rowid DESC LIMIT ?)", (self.event_limit,))
+            # Keep every linked unresolved episode, plus the latest bounded unlinked history.
+            db.execute("""DELETE FROM events WHERE id NOT IN (SELECT event_id FROM alerts)
+                AND id NOT IN (SELECT id FROM events WHERE id NOT IN (SELECT event_id FROM alerts)
+                    ORDER BY rowid DESC LIMIT ?)""", (self.event_limit,))
             db.execute("DELETE FROM alerts WHERE event_id NOT IN (SELECT id FROM events)")
         return {"status": "accepted" if updated else "out_of_order", "updated_channels": updated}
 
@@ -124,11 +133,26 @@ class MonitoringRepository:
                 db.execute("INSERT INTO channel_contacts VALUES(?,?,?) ON CONFLICT(device_id,channel) DO UPDATE SET last_received_at=MAX(last_received_at,excluded.last_received_at)",
                            (batch["device_id"], channel, received_at.isoformat()))
 
-    def _events(self, db, batch, channel, assessment):
+    @staticmethod
+    def _interrupt_visual(db, device_id, at, observed_at):
+        rows = db.execute("SELECT e.payload FROM alerts a JOIN events e ON a.event_id=e.id WHERE a.device_id=? AND a.channel='visual'", (device_id,)).fetchall()
+        for row in rows:
+            event = json.loads(row["payload"])
+            if event["code"] in VISUAL_RULES:
+                previous = event.get("visual_recovery", {}).get("interrupted_through")
+                if previous and datetime.fromisoformat(observed_at) <= datetime.fromisoformat(previous):
+                    continue
+                interrupt_visual(event, "VISUAL_OBSERVATION_MISSING", at)
+                event["visual_recovery"]["interrupted_through"] = observed_at
+                db.execute("UPDATE events SET payload=? WHERE id=?", (json.dumps(event), event["id"]))
+
+    def _events(self, db, batch, channel, assessment, *, stale_after_s):
         rows = db.execute("SELECT e.payload FROM alerts a JOIN events e ON a.event_id=e.id WHERE a.device_id=? AND a.channel=?",
                           (batch["device_id"], channel))
         existing = {e["code"]: e for e in (json.loads(r["payload"]) for r in rows)}
-        changes = self.event_service.transition(existing, assessment)
+        fresh_until = (datetime.fromisoformat(batch["timestamp"]) + timedelta(seconds=stale_after_s)).isoformat() if stale_after_s is not None else None
+        changes = self.event_service.transition(existing, assessment, session_id=batch["session_id"],
+            sequence=batch["sequence"], fresh_until=fresh_until)
         for event in changes.updates:
             db.execute("UPDATE events SET payload=? WHERE id=?", (json.dumps(event), event["id"]))
         for event in changes.inserts:

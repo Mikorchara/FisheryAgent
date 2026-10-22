@@ -13,6 +13,7 @@
 - [系统设置与 API 密钥操作](BUILD_RUN.md#r2d-4a系统设置中心)（默认偏好、私有凭据、真实预算展示与限制）
 - [连接测试与可调输出预算](BUILD_RUN.md#r2d-4b连接测试与可调输出预算)（先测试后保存、Qwen 双模式 1–4096 本地范围）
 - [上报 DTO、存储和集成边界](INTEGRATION.md)
+- [EVT-1 视觉事件恢复与首页异常概况](deep-dive/EVENT_LIFECYCLE.md)（Prototype 实验，连续三个可靠 CLEAR，待人工验收）
 - [路线](ROADMAP.md)
 - [开发规则](../AGENTS.md)
 - [R2B 架构评估基线](deep-dive/research/R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md)（R2B-0 研究；当前实现以 INTEGRATION 为准）

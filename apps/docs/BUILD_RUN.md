@@ -13,6 +13,19 @@ Set-Location -LiteralPath 'D:\CodexProject\Fishery_AI_Prototype'
 ```powershell
 .\scripts\dev\run_local.ps1 -Scenario normal
 ```
+六场景：normal、low_oxygen、suspected_disease、reduced_feeding、combined_anomaly、device_offline；
+
+```powershell
+.\scripts\dev\run_local.ps1 -Scenario suspected_disease
+.\scripts\dev\run_local.ps1 -Scenario low_oxygen
+.\scripts\dev\run_local.ps1 -Scenario 
+.\scripts\dev\run_local.ps1 -Scenario 
+```
+
+
+
+
+
 
 仅启动 Web，使用已有工作区数据，不启动模拟器、不开启 HTTP 写入或 AI：
 

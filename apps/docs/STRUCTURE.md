@@ -139,6 +139,8 @@ apps/
 │  │  │  ├─ R2D1_TOOL_RETROSPECTIVE_AUDIT.md                               # 最终成本、质量风险与简化开发流程
 │  │  │  └─ R2D1F_TOOL_INTEGRATION_COST_AUDIT.md                           # 历史Tool成本盘点、预算与批量准备
 │  │  ├─ AI_BACKEND_DEVELOPMENT_GUIDE.md                                  # 请求链、Tool/Prompt 扩展与安全测试指南
+│  │  ├─ EVENT_LIFECYCLE.md                                              # EVT-1 连续恢复、持久化、首页提醒与隔离验收
+│  │  ├─ assets/EVT1/                                                   # 虚构数据桌面、390px 与异常概况截图
 │  │  ├─ R2D2A_PRODUCT_INTEGRATION.md                                     # Policy修复、候选、启动器与聊天视图验收
 │  │  ├─ R2D2B_UNIFIED_TOOLS.md                                           # 操作栏根因、三工具本地范围与离线验收
 │  │  ├─ HISTORY_QUALIFICATION.md                                         # 历史候选逐案例计划、审批与人工预览
@@ -171,6 +173,7 @@ apps/
 │  │  ├─ chart-fixture.mjs                                               # 固定多次重启、20 小时时间跨度数据
 │  │  ├─ chart-ui.test.mjs                                               # 时间坐标、重复/缺口、精度和 SVG
 │  │  ├─ dom-fixture.mjs                                                 # 无网络 DOM 测试辅助
+│  │  ├─ event_preview.py                                               # EVT-1 限时虚构预览，临时SQLite，不装配AI或凭据
 │  │  ├─ monitoring-ui.test.mjs                                          # 实际页面代码的离线 DOM 行为
 │  │  ├─ local_session_fixture.py                                        # 临时SQLite管理服务器，不装配AI或凭据
 │  │  ├─ stream-browser-bridge.mjs                                       # 实际管理 SSE 到前端解析/提交的 Node 桥
@@ -200,6 +203,7 @@ apps/
 │  ├─ tests/                                                             # 离线测试及Fake SDK
 │  │  ├─ test_business_services.py                                       # 纯服务一致性、设备/时间边界与故障回滚
 │  │  ├─ test_domain_compatibility.py                                    # MIG-1 新旧领域/Reader/来源验证差分
+│  │  ├─ test_event_lifecycle.py                                         # 三窗恢复、连续性、重启、裁剪、回滚与固定Seed
 │  │  ├─ test_history_projection.py                                      # 历史 API 排序、会话与旧元数据兼容
 │  │  ├─ test_local_http.py                                              # 真实 loopback 上报及停止/重启
 │  │  ├─ test_pipeline.py                                                # 校验、时序、安全、状态与共享来源
