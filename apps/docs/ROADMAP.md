@@ -4,6 +4,8 @@
 
 ## 已实现
 
+- 失联提醒人工结束（仅Prototype，待验收）：原因/确认/幂等/事务校验，稳定周期或旧单条ID，独立于监测恢复；历史保留，新可靠HIT重新提醒，自动裁剪/删除保护。Schema保持v2，未同步Management。[实现及限制](deep-dive/EVENT_MANUAL_END.md)。
+
 - SIMPLIFY-1 收尾（仅 Prototype，待验收）：恢复“已确认/未确认”列，低氧名称随当前可靠等级变化；用户明确批准后，可单独永久删除可靠结束的整个 ACK 周期及其确认历史，事务校验、普通批量清理仍受保护，Schema 保持 v2。新增 `oxygen_drop_recovery` 快降慢升场景及启动枚举。[操作说明](BUILD_RUN.md#溶解氧快速下降--逐步回升)。
 - SIMPLIFY-1（仅 Prototype，待验收）：一风险周期一行，服务端全留存整合后筛选分页，首页共用周期摘要；原详情、ACK 与删除保护不变，未实现归档。[实现与验收](deep-dive/EVENT_CYCLE_UI.md)。
 - 旧版已结束事件兼容（仅 Prototype）：明确“旧版已结束（未复核）”；有效原结束信息且无活动/引用/ACK 审计关联时，可经原确认流程清理。保留原 payload 与观测状态，不改 Schema，不自动删除真实记录。[条件与边界](deep-dive/EVENT_MANAGEMENT.md#旧版已结束记录兼容仅-prototype)。

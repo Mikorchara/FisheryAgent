@@ -17,10 +17,11 @@ export function eventState(item){return item.lifecycle_state||(item.status==='cl
 export function cycleConfirmationName(item){return (item.handling?.confirmed??(item.handling?.state==='ACKNOWLEDGED'))?'已确认':'未确认';}
 export function eventHandlingName(item){
   const handling=item.handling;
-  if(eventState(item)==='RESOLVED'||handling?.ended)return handling?.action_count?'历史已知晓':'无确认记录';
+  if(item.manual_end?.active||eventState(item)==='RESOLVED'||handling?.ended)return handling?.action_count?'历史已知晓':'无确认记录';
   return handling?.state==='ACKNOWLEDGED'?'已知晓':'待确认';
 }
 export function eventStateName(item){
+  if(item.manual_end?.active)return '已人工结束';
   if(item.legacy_closed&&item.status==='closed')return '旧版已结束（未复核）';
   if(item.cycle_summary)return ({ACTIVE:'异常中',INDETERMINATE:'状态待核实',RESOLVED:'已恢复'})[eventState(item)]||'状态待核实';
   const state=eventState(item),progress=item.visual_recovery;
@@ -57,7 +58,7 @@ export function eventStateReasonName(item){
 }
 export function activeEventOverview(data,deviceId){
   const candidates=(data.event_cycles||data.events).filter(item=>(item.device_id||item.device)===deviceId&&!item.superseded_by
-    &&item.status!=='closed'&&eventState(item)!=='RESOLVED')
+    &&!item.manual_end?.active&&item.status!=='closed'&&eventState(item)!=='RESOLVED')
     .sort((a,b)=>({critical:0,warning:1,info:2}[a.severity]??3)-({critical:0,warning:1,info:2}[b.severity]??3));
   const groups=new Map();
   for(const item of candidates){const key=item.cycle_summary?.key||item.risk_family?.episode_id||item.id;

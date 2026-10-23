@@ -233,6 +233,7 @@ apps/
 │  ├─ event_cycles.py                                                    # 稳定周期只读摘要，不改原事件与人工审计
 │  ├─ event_cycle_deletion.py                                             # 显式删除已结束周期与ACK历史，完整成员与外部引用校验
 │  ├─ event_handling.py                                                  # ACK等级版本、事务内操作与人工状态只读投影
+│  ├─ manual_end.py                                                      # 失联提醒人工结束、JSON操作记录、重新提醒与事务校验
 │  ├─ schema.py                                                          # Monitoring v2、人工表及RESTRICT引用校验
 │  ├─ migrate.py                                                         # 只在显式维护时备份并升级v1；普通启动不调用
 │  ├─ history.py                                                         # 有界历史窗口统计、覆盖/缺口与有限 DTO

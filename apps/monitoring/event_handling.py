@@ -172,6 +172,9 @@ def acknowledge(db, value, at):
     event = next((e for e in events if e['id'] == value['event_id']),None)
     if not event:
         raise EventRecordError('EVENT_NOT_FOUND',404)
+    from .manual_end import project
+    if next(e for e in project(events) if e['id']==value['event_id'])['manual_end']['active']:
+        raise EventRecordError('EVENT_ACK_MANUALLY_ENDED',409)
     if event.get('lifecycle_state') == 'RESOLVED' or event.get('status') == 'closed':
         raise EventRecordError('EVENT_ACK_NOT_ACTIVE',409)
     reference = cycle_reference(event)

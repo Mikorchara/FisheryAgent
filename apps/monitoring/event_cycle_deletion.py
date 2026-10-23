@@ -20,6 +20,8 @@ def deletion_plan(db, event_id):
     if not handling or not actions:
         raise EventRecordError('EVENT_CYCLE_UNSUPPORTED', 409)
     members = {key for key,e in events.items() if cycle_reference(e) == reference}
+    if any(events[key].get('manual_ends') for key in members):
+        raise EventRecordError('EVENT_MANUAL_END_AUDIT_RETAINED',409)
     stored = {r[0] for r in db.execute('SELECT event_id FROM event_handling_members WHERE cycle_id=?', (cycle_id,))}
     if members != stored or handling['anchor_event_id'] not in members or any(r['event_id'] not in members for r in actions):
         raise EventRecordError('EVENT_CYCLE_MEMBERS_CHANGED', 409)

@@ -25,6 +25,7 @@ def main():
     parser.add_argument('--port', type=int, default=8787)
     parser.add_argument('--evt2', action='store_true', help='Include grade transitions and resolved maintenance fixtures')
     parser.add_argument('--ack-cycles', action='store_true', help='ACK one ended and one active fictional cycle; implies --evt2')
+    parser.add_argument('--manual-end', action='store_true', help='Freeze fictional observations 95 seconds after reports stop')
     args = parser.parse_args()
     args.evt2 = args.evt2 or args.ack_cycles
     from werkzeug.serving import make_server
@@ -55,6 +56,8 @@ def main():
                 h=event['handling']
                 service.acknowledge_event(dict(event_id=event['id'],cycle_id=h['cycle_id'],
                     grade_token=h['grade_token'],grade_version=h['grade_version'],revision=h['revision'],request_id=str(uuid.uuid4())))
+        if args.manual_end:
+            now += timedelta(seconds=95)
         app = create_app(data_service=service, allowed_hosts=(f'127.0.0.1:{args.port}',))
         stopped = False
 

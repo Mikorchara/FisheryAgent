@@ -125,16 +125,29 @@ function eventPage({conflict=false,legacy=false}={}){
     open:async()=>{await p.ready();p.run("location.hash='#events';render()");await p.ready();}};
 }
 
-function ackPage({conflict=false,legacy=false,ended=false,cycleDelete=false}={}){
+function ackPage({conflict=false,legacy=false,ended=false,cycleDelete=false,manual=false}={}){
   const data=fixture();data.event_management={enabled:true,ack_enabled:true,write_token:'fictional-event-token'};
   const item={...data.events[0],device_id:'sim-pond-1',channel:'visual',lifecycle_state:ended?'RESOLVED':'ACTIVE',
     status:ended?'closed':'pending',deletable:false,can_delete_ack_cycle:ended&&cycleDelete,deletion_block_reason:ended?'ACK_AUDIT_RETAINED':null,
     handling:{state:'PENDING',ended,can_ack:!legacy&&!ended,cycle_id:'a'.repeat(64),grade_token:'b'.repeat(64),
       grade_version:'fixture-grades-v1',revision:0,action_count:0,history:[],unavailable_reason:legacy?'LEGACY_OR_UNSUPPORTED_IDENTITY':null}};
+  if(manual){
+    data.event_management.manual_end_enabled=true;
+    item.lifecycle_state='INDETERMINATE';item.handling.can_ack=false;
+    item.manual_end={active:false,can_end:true,history:[]};
+  }
   data.events=[item];const writes=[];
   const p=page(data,async(url,options)=>{
     if(url.startsWith('/api/bootstrap'))return {ok:true,json:async()=>structuredClone(data)};
     if(url.startsWith('/api/events?'))return {ok:true,json:async()=>({items:structuredClone(data.events),total:1,limit:50,offset:0})};
+    if(url==='/api/events/manual-end-preview')return {ok:true,json:async()=>({count:1,revision:'d'.repeat(64)})};
+    if(url==='/api/events/manual-end'){
+      writes.push({value:JSON.parse(options.body),headers:options.headers});
+      if(conflict)return {ok:false,json:async()=>({error_code:'EVENT_END_CONFLICT'})};
+      item.manual_end={active:true,can_end:false,acted_at:data.monitoring.observed_at,history:[{
+        acted_at:data.monitoring.observed_at,reason:writes.at(-1).value.reason,actor_kind:'local_visitor'}]};
+      return {ok:true,json:async()=>({status:'MANUALLY_ENDED'})};
+    }
     if(url==='/api/events/deletion-preview')return {ok:true,json:async()=>({count:2,ack_count:2,revision:'c'.repeat(64)})};
     if(url==='/api/events/delete'){
       writes.push({value:JSON.parse(options.body),headers:options.headers});
@@ -156,6 +169,28 @@ function ackPage({conflict=false,legacy=false,ended=false,cycleDelete=false}={})
   const find=(root,text)=>walk(root).find(n=>n.tagName==='button'&&n.textContent===text);
   return {...p,writes,item,find,walk,open:async()=>{await p.ready();p.run('eventDetail(state.data.events[0])');}};
 }
+
+test('manual end requires reason and confirmation, preserves observation and separates homepage unknown',async()=>{
+  const p=ackPage({manual:true});await p.open();
+  await p.find(p.node('dialog-body'),'人工结束此风险').events.click();
+  await p.find(p.node('dialog-body'),'确认人工结束').events.click();
+  assert.equal(p.writes.length,0);assert.match(p.node('dialog-body').textContent,/请填写/);
+  p.find(p.node('dialog-body'),'取消').events.click();assert.equal(p.writes.length,0);
+  await p.find(p.node('dialog-body'),'人工结束此风险').events.click();
+  p.walk(p.node('dialog-body')).find(n=>n.attributes['aria-label']==='人工结束原因').value='设备停用';
+  await p.find(p.node('dialog-body'),'确认人工结束').events.click();await p.ready();
+  assert.equal(p.writes.length,1);assert.equal(p.writes[0].value.reason,'设备停用');
+  assert.equal(p.writes[0].value.revision,'d'.repeat(64));assert.match(p.node('dialog-body').textContent,/已人工结束/);
+  assert.match(p.node('dialog-body').textContent,/INDETERMINATE/);
+  assert.equal(p.find(p.node('dialog-body'),'人工结束此风险'),undefined);
+  p.run("location.hash='#events';render()");await p.ready();assert.match(p.node('content').textContent,/已人工结束/);
+  p.run("location.hash='#dashboard';render()");await p.ready();assert.match(p.node('content').textContent,/状态未知/);
+  const conflict=ackPage({manual:true,conflict:true});await conflict.open();
+  await conflict.find(conflict.node('dialog-body'),'人工结束此风险').events.click();
+  conflict.walk(conflict.node('dialog-body')).find(n=>n.attributes['aria-label']==='人工结束原因').value='停用';
+  await conflict.find(conflict.node('dialog-body'),'确认人工结束').events.click();await conflict.ready();
+  assert.equal(conflict.writes.length,1);assert.match(conflict.node('dialog-title').textContent,/未完成/);
+});
 
 test('EVT-3A explicit ACK confirmation, cancellation and reload preserve separate observation state',async()=>{
   const p=ackPage();await p.open();

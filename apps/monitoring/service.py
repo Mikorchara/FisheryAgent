@@ -186,7 +186,14 @@ class MonitoringService:
                 row = self.repository.read(*key)
                 assessments[key] = self._assess(*key, row, self.clock())
             result.append(self.repository.event_service.project(event, assessments[key]))
-        return project_families(result)
+        from .manual_end import project
+        return project(project_families(result))
+
+    def preview_manual_end(self, event_id):
+        return self.repository.manual_end_event(event_id,assessed=self.events)
+
+    def manual_end_event(self, value):
+        return self.repository.manual_end_event(None,assessed=self.events,value=value,at=self.clock())
 
     def query_events(self, **filters):
         return query_records(self.events(), now=self.clock(), **filters)

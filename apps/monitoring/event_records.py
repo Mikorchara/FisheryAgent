@@ -11,7 +11,7 @@ class EventRecordError(ValueError):
 
 
 def deletable(event, linked=False, referenced=False, audited=False):
-    if linked or referenced or audited or event.get('status') != 'closed':
+    if linked or referenced or audited or event.get('manual_ends') or event.get('status') != 'closed':
         return False
     end = parse_time(event.get('resolved_at'))
     if event.get('lifecycle_state') == 'RESOLVED':
@@ -48,7 +48,7 @@ def validate_delete(scope, event_id):
 def query_records(events, *, now, lookback_minutes=None, q='', severity='', status='', limit=50, offset=0):
     if (lookback_minutes not in (None, 5, 10, 30, 60) or lookback_minutes is not None and type(lookback_minutes) is not int
             or not isinstance(q, str) or len(q) > 128 or severity not in ('', 'critical', 'warning', 'info')
-            or status not in ('', 'ACTIVE', 'INDETERMINATE', 'RESOLVED', 'pending', 'closed')
+            or status not in ('', 'ACTIVE', 'INDETERMINATE', 'RESOLVED', 'MANUALLY_ENDED', 'pending', 'closed')
             or type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0):
         raise EventRecordError('INVALID_EVENT_FILTER')
     cutoff = now - timedelta(minutes=lookback_minutes) if lookback_minutes else None
@@ -56,12 +56,14 @@ def query_records(events, *, now, lookback_minutes=None, q='', severity='', stat
     for event in events:
         if q.strip().casefold() not in (' '.join(str(event.get(k, '')) for k in ('title', 'device', 'code'))+' '+event.get('cycle_summary', {}).get('search_text','')).casefold():
             continue
-        if severity and event.get('severity') != severity or status and status not in (event.get('status'), event.get('lifecycle_state')):
+        manually_ended = event.get('manual_end',{}).get('active',False)
+        states = ('MANUALLY_ENDED',) if manually_ended else (event.get('status'),event.get('lifecycle_state'))
+        if severity and event.get('severity') != severity or status and status not in states:
             continue
         if cutoff:
             start = parse_time(event.get('occurred_at'))
-            closed = event.get('lifecycle_state') == 'RESOLVED' or event.get('status') == 'closed'
-            end = parse_time(event.get('resolved_at')) if closed else None
+            closed = manually_ended or event.get('lifecycle_state') == 'RESOLVED' or event.get('status') == 'closed'
+            end = parse_time(event.get('manual_end',{}).get('acted_at') if manually_ended else event.get('resolved_at')) if closed else None
             if start is None or start > now or closed and (end is None or end < cutoff):
                 continue
         result.append(event)

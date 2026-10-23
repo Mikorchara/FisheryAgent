@@ -1,5 +1,7 @@
 # EVT-3A：人工知晓 ACK 与操作留痕
 
+后续更新：Prototype已实现独立的失联提醒人工结束，未同步Management；ACK与监测恢复仍独立，详见[人工结束边界](EVENT_MANUAL_END.md)。下文“无Close”的说明为EVT-3A初版范围；本次不是人工处置/派单工作流。
+
 当前仅在 Prototype/apps 实现，待人工验收；未同步 Management。没有操作真实数据库、Settings、Policy、Credential 或真实 Provider/NPU。ACK 不改变 ACTIVE / INDETERMINATE / RESOLVED，不提供 Snooze、Close、派单、登录或 AI 写入 Tool。
 
 ## 1. 确认对象与等级版本

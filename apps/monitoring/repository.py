@@ -16,6 +16,7 @@ from .rules import VISUAL_RULES
 from .schema import SCHEMA_VERSION, add_handling_tables, validate_schema
 from .event_handling import acknowledge, project_handling, sync_existing
 from .event_cycle_deletion import deletion_plan as ack_cycle_plan, delete_handling
+from . import manual_end
 from .history import (HistoryQueryError, MAX_HISTORY_ROWS, MAX_HISTORY_ROW_BYTES,
                       validate_history_range)
 
@@ -130,12 +131,15 @@ class MonitoringRepository:
             db.execute("INSERT INTO batches VALUES(?,?,?,?,?,?)", (batch["batch_id"], device, batch["session_id"], batch["sequence"], digest, received_at.isoformat()))
             self._contact(db, batch, received_at)
             sync_existing(db)
+            manual_end.sync_history(db)
             db.execute("DELETE FROM batches WHERE device_id=? AND batch_id NOT IN (SELECT batch_id FROM batches WHERE device_id=? ORDER BY received_at DESC, rowid DESC LIMIT ?)",
                        (device, device, self.batch_limit))
             # Keep every linked unresolved episode, plus the latest bounded unlinked history.
-            db.execute("""DELETE FROM events WHERE id NOT IN (SELECT event_id FROM alerts)
+            db.execute("""DELETE FROM events WHERE coalesce(json_array_length(json_extract(payload,'$.manual_ends')),0)=0
+                AND id NOT IN (SELECT event_id FROM alerts)
                 AND id NOT IN (SELECT event_id FROM event_handling_members)
-                AND id NOT IN (SELECT id FROM events WHERE id NOT IN (SELECT event_id FROM alerts)
+                AND id NOT IN (SELECT id FROM events WHERE coalesce(json_array_length(json_extract(payload,'$.manual_ends')),0)=0
+                    AND id NOT IN (SELECT event_id FROM alerts)
                     AND id NOT IN (SELECT event_id FROM event_handling_members)
                     ORDER BY rowid DESC LIMIT ?)""", (self.event_limit,))
             db.execute("DELETE FROM alerts WHERE event_id NOT IN (SELECT id FROM events)")
@@ -256,6 +260,16 @@ class MonitoringRepository:
                 return acknowledge(db, value, at)
         except sqlite3.Error:
             raise EventRecordError('EVENT_ACK_STORAGE_ERROR',503) from None
+
+    def manual_end_event(self, event_id, *, assessed, value=None, at=None):
+        try:
+            with self.connection() as db:
+                db.execute('BEGIN IMMEDIATE' if value is not None else 'BEGIN')
+                if value is None:
+                    return manual_end.plan(db,event_id,assessed)[1]
+                return manual_end.commit(db,value,at,assessed)
+        except sqlite3.Error:
+            raise EventRecordError('EVENT_END_STORAGE_ERROR',503) from None
 
     @staticmethod
     def _deletion_plan(db, scope, event_id):

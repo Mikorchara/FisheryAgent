@@ -21,7 +21,7 @@ def register_event_api(app, service):
 
     def access():
         enabled = service is not None and local()
-        return dict(enabled=enabled, ack_enabled=enabled, write_token=token if enabled else None)
+        return dict(enabled=enabled, ack_enabled=enabled, manual_end_enabled=enabled, write_token=token if enabled else None)
 
     @app.errorhandler(EventRecordError)
     def error(exc):
@@ -59,5 +59,18 @@ def register_event_api(app, service):
     def ack():
         gate('INVALID_EVENT_ACK')
         return jsonify(service.acknowledge_event(strict_json(request.get_data())))
+
+    @app.post('/api/events/manual-end-preview')
+    def manual_end_preview():
+        gate('INVALID_EVENT_END')
+        value=strict_json(request.get_data())
+        if not isinstance(value,dict) or set(value)!={'event_id'}:
+            raise EventRecordError('INVALID_EVENT_END')
+        return jsonify(service.preview_manual_end(value['event_id']))
+
+    @app.post('/api/events/manual-end')
+    def manual_end():
+        gate('INVALID_EVENT_END')
+        return jsonify(service.manual_end_event(strict_json(request.get_data())))
 
     return access
