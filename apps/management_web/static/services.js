@@ -20,6 +20,7 @@ export const services={
   eventDetail:id=>read('/api/events/'+encodeURIComponent(id)),
   eventDeletionPreview:(value,token)=>eventWrite('/api/events/deletion-preview',value,token),
   eventDelete:(value,token)=>eventWrite('/api/events/delete',value,token),
+  eventAck:(value,token)=>eventWrite('/api/events/ack',value,token),
   files:filters=>read(`/api/files?${new URLSearchParams(filters)}`),
   ai:{availability:()=>read('/api/ai/status'),
     toolPolicy:()=>read('/api/ai/tool-policy'),

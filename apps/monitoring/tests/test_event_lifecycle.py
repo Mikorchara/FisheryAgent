@@ -214,7 +214,7 @@ class VisualLifecycleTests(unittest.TestCase):
         self.assertEqual(len(self.events()), 1)
         with self.repo.connection() as db:
             self.assertEqual(db.execute('SELECT event_id FROM alerts WHERE code=?', ('SUSPECTED_LESION',)).fetchone()[0], original)
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 1)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 2)
 
     def test_legacy_payload_read_is_nonmutating_then_starts_new_clear_run(self):
         self.ingest('suspected_lesion')

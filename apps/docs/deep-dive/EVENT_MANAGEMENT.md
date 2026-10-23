@@ -1,6 +1,6 @@
 # EVT-2：事件族、时间筛选与历史清理
 
-仅在 Prototype/apps 实验，待人工验收；没有同步 Management，没有修改真实数据库。SQLite user_version 仍为 1，无 Schema 迁移。水质阈值、视觉三窗恢复、AI Tool/Prompt/Scope 均不变。
+EVT-1/EVT-2 及文案收尾已同步 Management 并经人工验收。本文保留 EVT-2 的机制与原验收记录；当前 Prototype 另实现 [EVT-3A ACK](EVENT_ACK.md)，Monitoring Schema 为 v2，只有 ACK 尚未同步 Management。水质阈值、视觉三窗恢复、AI Tool/Prompt/Scope 均不变，没有修改真实数据库。
 
 ## 1. 两个低氧事件为什么并排
 
@@ -24,7 +24,7 @@
 
 视觉消退详情明确为“连续可靠观测未再检出该异常信号”，不代表疾病治愈或人工处理完成。历史 `visual_recovery.continuity=interrupted` 可能记录过去的窗口不连续，不能仅凭它断言当前离线；页面改为说明“历史观测存在不连续”。无活动事件的空状态仍沿用严格的可靠观测门禁，未知不显示正常。SIMULATOR 来源说明保留。
 
-`EventService.project()` 只读追加 `current_data_quality`（quality/freshness/connectivity）；`project_families()` 依据既有等级序号追加 `family_level_change`，并投影到关联成员。两者不落盘，不改变 status、lifecycle_state、state_reason、code、阈值、时间或恢复规则。没有 Schema 变化、历史回填或人工管理能力；旧 payload 缺少这些字段时保守显示，不猜测标题字符串。
+`EventService.project()` 只读追加 `current_data_quality`（quality/freshness/connectivity）；`project_families()` 依据既有等级序号追加 `family_level_change`，并投影到关联成员。两者不落盘，不改变 status、lifecycle_state、state_reason、code、阈值、时间或恢复规则。文案收尾本身没有 Schema 变化或历史回填；当前新增 ACK 使用独立人工表，详见 EVT-3A。旧 payload 缺少显示字段时保守显示，不猜测标题字符串。
 
 本次文案收尾离线验证：Targeted Python 32 项、Targeted Node 30 项通过；完整 Monitoring 144、管理 Web 144、Simulator 20、管理 Node 106 项通过。新增合成事件验证查询前后原 payload 不变、旧族投影、离线与仅过期的区分、三窗恢复及 Bootstrap/列表/详情字段一致；真实页面代码的 DOM 回归核对首页、列表、详情和关联成员文案。本次未启动浏览器或真实数据实例，下面 EVT-2 原验收截图未重新生成。
 
@@ -57,6 +57,7 @@
 - lifecycle_state=RESOLVED、status=closed，具有有效恢复时间；
 - 没有任何 alerts 关联；
 - 没有其他留存事件以 superseded_by 引用它。
+- 未关联 ACK 审计周期；当前 Prototype 的 event_handling_members 关联成员受单条/批量删除与自动裁剪保护。
 
 ACTIVE、恢复观察、未知、旧 closed 但恢复证据不明的记录，以及被引用的已结束记录均保留。事件族变化快照保留历史标识及证据，详情关联列表只列仍存在的记录。
 
@@ -102,4 +103,4 @@ node --test apps/management_web/tests/*.test.mjs
 
 截图：[首页](assets/EVT2/home.jpg) · [事件页桌面](assets/EVT2/events-desktop.jpg) · [390px](assets/EVT2/events-390.jpg) · [等级详情](assets/EVT2/family-detail.jpg) · [批量最终确认](assets/EVT2/confirmation.jpg)。
 
-人工验收后，才可选择性同步 Management 并独立回归。完整历史归档、人工确认、生产账户/远程维护权限均未实现。
+EVT-1/EVT-2 已完成 Management 同步及独立回归；新增 ACK 仅在 Prototype 等待人工验收。完整历史归档、Close/Snooze、生产账户/远程维护权限仍未实现。

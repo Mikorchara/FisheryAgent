@@ -191,6 +191,9 @@ class MonitoringService:
     def query_events(self, **filters):
         return query_records(self.events(), now=self.clock(), **filters)
 
+    def acknowledge_event(self, value):
+        return self.repository.acknowledge_event(value, at=self.clock())
+
     def history(self, device_id, channel, limit=None):
         self._device(device_id)
         if limit is None:

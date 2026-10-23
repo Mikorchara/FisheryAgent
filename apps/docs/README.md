@@ -4,6 +4,7 @@
 
 ## 阅读入口
 
+- [EVT-3A 人工知晓、审计与显式 Schema 升级](deep-dive/EVENT_ACK.md)（Prototype 实验；ACK 与规则消退独立，待人工验收）
 - [目录与职责](STRUCTURE.md)
 - [MIG-2 独立发行与数据实例](deep-dive/MANAGEMENT_STANDALONE.md)（独立 Wheel、显式数据根/初始化、隔离测试与 MIG-3 清单）
 - [R2D-2A 产品整理与验收](deep-dive/R2D2A_PRODUCT_INTEGRATION.md)（并发小修、一行启动、全屏/阅读、三工具候选）

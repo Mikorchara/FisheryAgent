@@ -10,8 +10,8 @@ class EventRecordError(ValueError):
         self.code, self.status = code, status
 
 
-def deletable(event, linked=False, referenced=False):
-    return (not linked and not referenced and event.get('lifecycle_state') == 'RESOLVED' and event.get('status') == 'closed'
+def deletable(event, linked=False, referenced=False, audited=False):
+    return (not linked and not referenced and not audited and event.get('lifecycle_state') == 'RESOLVED' and event.get('status') == 'closed'
             and parse_time(event.get('resolved_at')) is not None)
 
 

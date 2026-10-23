@@ -182,3 +182,6 @@ body:has(.management-assistant.view-reading) main{padding:18px;max-width:1300px;
 .settings-body .field input{width:100%;min-width:0;box-sizing:border-box}
 .settings-body dd{overflow-wrap:anywhere}.settings-body .details-grid{min-width:0}
 @media(max-width:600px){.settings-fields{grid-template-columns:minmax(0,1fr)}.settings-actions .button{max-width:100%}}
+/* Observation state and local acknowledgement remain separate, wrapping badges. */
+.event-status{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
+.event-handling{margin-block:18px;padding-block:12px;border-top:1px solid var(--line)}

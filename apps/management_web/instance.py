@@ -9,6 +9,7 @@ import stat
 import tempfile
 
 from apps.management_paths import ManagementPaths
+from apps.monitoring.schema import BASE_COLUMNS, HANDLING_COLUMNS, SCHEMA_VERSION, validate_schema
 
 
 class InstanceError(ValueError):
@@ -35,14 +36,7 @@ def safe_path(path):
 
 # Validate the columns actually required by each existing Repository, without
 # changing its schema or reading business records into application output.
-MONITORING_COLUMNS = {
-    'batches': 'batch_id device_id session_id sequence digest received_at',
-    'history': 'batch_id device_id channel observed_at received_at payload',
-    'current': 'device_id channel batch_id observed_at received_at payload',
-    'events': 'id device_id channel code payload',
-    'alerts': 'device_id channel code event_id',
-    'channel_contacts': 'device_id channel last_received_at',
-}
+MONITORING_COLUMNS = BASE_COLUMNS | HANDLING_COLUMNS
 KNOWLEDGE_COLUMNS = {
     'knowledge_records': ('id title category body version status updated_at origin original_source_id '
         'original_source_version source_id source_version evidence_id chunk_type keywords_json text_style ordinal'),
@@ -62,7 +56,9 @@ def check_database(path, kind):
         with closing(sqlite3.connect(path.as_uri()+'?mode=ro', uri=True, timeout=2)) as db:
             if db.execute('PRAGMA integrity_check').fetchone() != ('ok',):
                 raise InstanceError(kind+'_DATABASE_CORRUPT')
-            expected = 1 if kind == 'MONITORING' else 2
+            expected = SCHEMA_VERSION if kind == 'MONITORING' else 2
+            if kind == 'MONITORING' and db.execute('PRAGMA user_version').fetchone()[0] == 1:
+                raise InstanceError('MONITORING_DATABASE_UPGRADE_REQUIRED')
             if db.execute('PRAGMA user_version').fetchone()[0] != expected:
                 raise InstanceError(kind+'_DATABASE_SCHEMA_INCOMPATIBLE')
             columns = MONITORING_COLUMNS if kind == 'MONITORING' else KNOWLEDGE_COLUMNS
@@ -81,6 +77,11 @@ def check_database(path, kind):
                         raise ValueError()
                 except (TypeError,ValueError):
                     raise InstanceError(kind+'_DATABASE_CORRUPT') from None
+            else:
+                try:
+                    validate_schema(db)
+                except ValueError:
+                    raise InstanceError('MONITORING_DATABASE_SCHEMA_INCOMPATIBLE') from None
     except sqlite3.Error as error:
         corrupt = getattr(error, 'sqlite_errorcode', None) in (sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB)
         raise InstanceError(kind+('_DATABASE_CORRUPT' if corrupt else '_DATABASE_STORAGE_ERROR')) from None

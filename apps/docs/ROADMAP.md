@@ -4,11 +4,13 @@
 
 ## 已实现
 
-- EVT-2 文案收尾（Prototype）：只读投影区分等级升级、恢复状态待确认与监测数据中断，首页/列表/详情统一；不改变生命周期或 SQLite Schema。人工 ACK/Close/Snooze 仅调查，未实施；尚未同步 Management。
+- EVT-3A（仅 Prototype，待人工验收）：稳定周期／等级版本 ACK、追加操作历史及审计成员保护；Monitoring Schema v2，v1 只允许显式备份升级，普通启动拒绝。509 项管理 Python、109 项 Node 通过。[边界与迁移](deep-dive/EVENT_ACK.md)。未实现 Close/Snooze，未同步 Management。
 
-- EVT-2（Prototype 待人工验收）：按风险族整合首页等级提示，保留 code 与变化证据；事件关注区间五档筛选、服务端分页、已恢复历史预览/确认/事务硬删除。[规则与限制](deep-dive/EVENT_MANAGEMENT.md)。尚未同步 Management。
+- EVT-2 文案收尾：只读投影区分等级升级、恢复状态待确认与监测数据中断，首页/列表/详情统一；文案本身不改变生命周期或 SQLite Schema。已选择性同步 Management 并经人工验收。
 
-- EVT-1（Prototype 待人工验收）：视觉异常连续三个可靠 CLEAR 才消退；恢复进度同事务持久化，活动事件不受历史 300 条裁剪。首页新增当前异常概况；[状态与验证](deep-dive/EVENT_LIFECYCLE.md)。尚未同步 Management。
+- EVT-2：按风险族整合首页等级提示，保留 code 与变化证据；事件关注区间五档筛选、服务端分页、已恢复历史预览/确认/事务硬删除。[规则与限制](deep-dive/EVENT_MANAGEMENT.md)。已同步 Management 并经人工验收。
+
+- EVT-1：视觉异常连续三个可靠 CLEAR 才消退；恢复进度同事务持久化，活动事件不受历史 300 条裁剪。首页新增当前异常概况；[状态与验证](deep-dive/EVENT_LIFECYCLE.md)。已同步 Management 并经人工验收。
 
 - 管理页面品牌统一为“AI 监测系统”，保留原 Logo/导航；BUILD_RUN 顶部补充快速入口，Prototype 前台启动与 Management 双终端保护差异继续明确保留。
 

@@ -76,6 +76,8 @@ def main(argv=None):
         try:
             validate_instance(paths)
         except InstanceError as error:
+            if error.code == 'MONITORING_DATABASE_UPGRADE_REQUIRED':
+                parser.error(error.code+': 请先停止写入、备份，并显式执行 apps/monitoring/migrate.py；不要重新初始化旧实例。')
             parser.error(error.code+': 请核对实例路径；新实例须显式使用 --init-data，已有数据须先迁移。')
     data_service, token = None, None
     if not args.legacy_demo:
@@ -88,8 +90,13 @@ def main(argv=None):
                 parser.error("INGESTION_TOKEN_REQUIRED: set a 32-128 character alphanumeric development token")
         # The legacy mode retains its development auto-create contract. Explicit
         # instances use rw (not rwc), including subsequent Repository connections.
-        data_service = MonitoringService(MonitoringRepository(paths.monitoring,
-            **({'require_existing':True} if paths.data_root is not None else {})))
+        try:
+            data_service = MonitoringService(MonitoringRepository(paths.monitoring,
+                **({'require_existing':True} if paths.data_root is not None else {})))
+        except ValueError as error:
+            if str(error) == 'MONITORING_SCHEMA_UPGRADE_REQUIRED':
+                parser.error(str(error)+': 请先停止写入、备份，并显式执行 apps/monitoring/migrate.py；不会自动升级旧库。')
+            raise
     from apps.knowledge.repository import KnowledgeError
     try:
         knowledge = knowledge_content(root, **({'data_paths':paths} if paths.data_root is not None else {}))

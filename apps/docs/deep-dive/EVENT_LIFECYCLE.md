@@ -1,6 +1,6 @@
 # EVT-1：视觉事件连续恢复与首页异常概况
 
-范围：Prototype 的 `apps/` 本地实验。尚未同步 Management；连续三个可靠 CLEAR 是实验参数，不是疾病恢复标准。没有人工确认、派单或设备控制。
+EVT-1 已同步 Management 并经人工验收；连续三个可靠 CLEAR 是实验参数，不是疾病恢复标准。当前仅 Prototype 新增独立 [ACK 知晓记录](EVENT_ACK.md)，不改变本文恢复机制；没有派单、Close/Snooze 或设备控制。
 
 ## 状态与证据
 
@@ -26,7 +26,7 @@
 
 Repository 原 BEGIN IMMEDIATE 事务同时保存 current、history、events、alerts 和恢复计数。异常整体回滚。重复/乱序不会推进恢复。读投影不写数据库、不增加 CLEAR；重启后从 payload 恢复进度，仅连续且仍有效的新证据可以继续累计。
 
-没有 SQLite Schema 或 user_version 变化（仍为 1）；没有批量重算或清理旧记录。旧 payload 没有恢复元数据时，读兼容、首次新 CLEAR 从 1 开始。已关闭历史不追溯重新判定。
+EVT-1 本身未改变 SQLite Schema（当时为 v1）；当前 Prototype 的 ACK 独立表使用 v2，旧库须显式维护，不批量重算或清理事件。旧 payload 没有恢复元数据时，读兼容、首次新 CLEAR 从 1 开始。已关闭历史不追溯重新判定。
 
 默认保留所有 alerts 关联的未结束事件，另保留最近 300 条未关联历史；总事件数可以超过 300。首批次可能因原 batch/history 限额被裁剪，事件自身保留引用。长期归档未实现。
 
@@ -36,7 +36,7 @@ Repository 原 BEGIN IMMEDIATE 事务同时保存 current、history、events、a
 
 无未结束事件时，仅在所选区域水质和视觉均完整、新鲜、在线且服务器未命中规则时显示“当前未见异常信号”；缺失或证据不足显示“状态未知”。保留 SIMULATOR 与非诊断说明。最近事件仍为底部通栏，筛选、详情和五秒只读轮询继续使用原接口。
 
-视觉与水质 RESOLVED 均显示“规则条件已消退”；视觉详情说明“连续可靠观测未再检出该异常信号”，不代表疾病治愈或人工处理完成。等级变化、恢复待确认与明确监测中断的显示条件见 [EVT-2 文案收尾](EVENT_MANAGEMENT.md)。没有新增人工确认字段或接口。
+视觉与水质 RESOLVED 均显示“规则条件已消退”；视觉详情说明“连续可靠观测未再检出该异常信号”，不代表疾病治愈或人工处理完成。等级变化、恢复待确认与明确监测中断的显示条件见 [EVT-2 文案收尾](EVENT_MANAGEMENT.md)。人工知晓独立记录，不改变 RESOLVED。
 
 ## 固定 Seed 对比
 

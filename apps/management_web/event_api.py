@@ -21,20 +21,20 @@ def register_event_api(app, service):
 
     def access():
         enabled = service is not None and local()
-        return dict(enabled=enabled, write_token=token if enabled else None)
+        return dict(enabled=enabled, ack_enabled=enabled, write_token=token if enabled else None)
 
     @app.errorhandler(EventRecordError)
     def error(exc):
         return jsonify(error_code=exc.code), exc.status
 
-    def gate():
+    def gate(invalid_code='INVALID_EVENT_DELETE'):
         if service is None:
             raise EventRecordError('EVENT_MAINTENANCE_UNAVAILABLE', 503)
         supplied = request.headers.get('X-Management-Events', '')
         if not local() or not supplied.isascii() or not compare_digest(token, supplied):
             raise EventRecordError('EVENT_ACCESS_DENIED', 403)
         if request.mimetype != 'application/json':
-            raise EventRecordError('INVALID_EVENT_DELETE')
+            raise EventRecordError(invalid_code)
 
     def body(commit=False):
         gate()
@@ -54,5 +54,10 @@ def register_event_api(app, service):
     def delete():
         value = body(commit=True)
         return jsonify(service.repository.delete_events(value['scope'], value.get('event_id'), value['revision']))
+
+    @app.post('/api/events/ack')
+    def ack():
+        gate('INVALID_EVENT_ACK')
+        return jsonify(service.acknowledge_event(strict_json(request.get_data())))
 
     return access

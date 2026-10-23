@@ -103,6 +103,6 @@ def project_families(events):
         for event in members:
             event['family_members'] = [{k: e.get(k) for k in ('id', 'code', 'title', 'severity',
                 'lifecycle_state', 'state_reason', 'status', 'channel', 'source_kind',
-                'family_current_code', 'family_level_change', 'current_data_quality',
+                'family_current_code', 'family_level_change', 'current_data_quality', 'handling',
                 'occurred_at', 'last_observed_at', 'batch_id', 'resolved_at')} for e in members]
     return result

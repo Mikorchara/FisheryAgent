@@ -13,6 +13,8 @@ from .events import EventService, interrupt_visual
 from .event_families import associate_water_changes
 from .event_records import EventRecordError, deletable, validate_delete
 from .rules import VISUAL_RULES
+from .schema import SCHEMA_VERSION, add_handling_tables, validate_schema
+from .event_handling import acknowledge, project_handling, sync_existing
 from .history import (HistoryQueryError, MAX_HISTORY_ROWS, MAX_HISTORY_ROW_BYTES,
                       validate_history_range)
 
@@ -32,13 +34,17 @@ class MonitoringRepository:
         self.lock = RLock()
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if require_existing:
-                if version != 1:
-                    raise ValueError("UNSUPPORTED_MONITORING_STORAGE_SCHEMA")
+            if version == 1:
+                raise ValueError('MONITORING_SCHEMA_UPGRADE_REQUIRED')
+            if version == SCHEMA_VERSION:
+                validate_schema(db)
                 return
-            if version not in (0, 1):
+            if require_existing or version != 0:
                 raise ValueError("UNSUPPORTED_MONITORING_STORAGE_SCHEMA")
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone():
+                raise ValueError('INVALID_MONITORING_STORAGE_SCHEMA')
             db.executescript('''
+                BEGIN IMMEDIATE;
                 CREATE TABLE IF NOT EXISTS batches (
                     batch_id TEXT PRIMARY KEY, device_id TEXT NOT NULL, session_id TEXT NOT NULL,
                     sequence INTEGER NOT NULL, digest TEXT NOT NULL, received_at TEXT NOT NULL,
@@ -62,7 +68,9 @@ class MonitoringRepository:
                     device_id TEXT NOT NULL, channel TEXT NOT NULL, last_received_at TEXT NOT NULL,
                     PRIMARY KEY(device_id, channel));
             ''')
-            db.execute("PRAGMA user_version=1")
+            add_handling_tables(db)
+            db.execute('PRAGMA user_version='+str(SCHEMA_VERSION))
+            validate_schema(db)
 
     @contextmanager
     def connection(self):
@@ -71,6 +79,7 @@ class MonitoringRepository:
             db = (sqlite3.connect(self.path.resolve().as_uri()+'?mode=rw', uri=True, timeout=5)
                   if self.require_existing else sqlite3.connect(self.path, timeout=5))
             db.row_factory = sqlite3.Row
+            db.execute('PRAGMA foreign_keys=ON')
             try:
                 with db:
                     yield db
@@ -119,11 +128,14 @@ class MonitoringRepository:
                            (device, channel, device, channel, self.history_limit))
             db.execute("INSERT INTO batches VALUES(?,?,?,?,?,?)", (batch["batch_id"], device, batch["session_id"], batch["sequence"], digest, received_at.isoformat()))
             self._contact(db, batch, received_at)
+            sync_existing(db)
             db.execute("DELETE FROM batches WHERE device_id=? AND batch_id NOT IN (SELECT batch_id FROM batches WHERE device_id=? ORDER BY received_at DESC, rowid DESC LIMIT ?)",
                        (device, device, self.batch_limit))
             # Keep every linked unresolved episode, plus the latest bounded unlinked history.
             db.execute("""DELETE FROM events WHERE id NOT IN (SELECT event_id FROM alerts)
+                AND id NOT IN (SELECT event_id FROM event_handling_members)
                 AND id NOT IN (SELECT id FROM events WHERE id NOT IN (SELECT event_id FROM alerts)
+                    AND id NOT IN (SELECT event_id FROM event_handling_members)
                     ORDER BY rowid DESC LIMIT ?)""", (self.event_limit,))
             db.execute("DELETE FROM alerts WHERE event_id NOT IN (SELECT id FROM events)")
         return {"status": "accepted" if updated else "out_of_order", "updated_channels": updated}
@@ -223,6 +235,7 @@ class MonitoringRepository:
 
     def events(self):
         with self.connection() as db:
+            db.execute('BEGIN')
             result = []
             rows = [(json.loads(r['payload']), r['linked']) for r in db.execute(
                 "SELECT e.payload,EXISTS(SELECT 1 FROM alerts a WHERE a.event_id=e.id) AS linked FROM events e ORDER BY rowid DESC")]
@@ -231,17 +244,28 @@ class MonitoringRepository:
                 event = self.event_service.legacy_projection(raw)
                 event['deletable'] = deletable(event, linked, event['id'] in references)
                 result.append(event)
-        return result
+            return project_handling(db, result)
+
+    def acknowledge_event(self, value, *, at):
+        if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None:
+            raise EventRecordError('INVALID_EVENT_ACK')
+        try:
+            with self.connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                return acknowledge(db, value, at)
+        except sqlite3.Error:
+            raise EventRecordError('EVENT_ACK_STORAGE_ERROR',503) from None
 
     @staticmethod
     def _deletion_plan(db, scope, event_id):
         validate_delete(scope, event_id)
         all_rows = db.execute("SELECT e.id,e.payload,EXISTS(SELECT 1 FROM alerts a WHERE a.event_id=e.id) AS linked FROM events e ORDER BY e.id").fetchall()
         references = {e.get('superseded_by') for e in (json.loads(r['payload']) for r in all_rows) if e.get('superseded_by')}
+        audited = {r[0] for r in db.execute('SELECT event_id FROM event_handling_members')}
         rows = [r for r in all_rows if r['id'] == event_id] if scope == 'single' else all_rows
         if scope == 'single' and not rows:
             raise EventRecordError('EVENT_NOT_FOUND', 404)
-        candidates = [r for r in rows if deletable(json.loads(r['payload']), r['linked'], r['id'] in references)]
+        candidates = [r for r in rows if deletable(json.loads(r['payload']), r['linked'], r['id'] in references, r['id'] in audited)]
         if scope == 'single' and not candidates:
             raise EventRecordError('EVENT_NOT_DELETABLE', 409)
         identity = json.dumps([scope, event_id, [(r['id'], r['payload']) for r in candidates]], ensure_ascii=True)

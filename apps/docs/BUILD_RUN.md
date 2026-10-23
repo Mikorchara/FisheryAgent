@@ -1,5 +1,7 @@
 # 管理平台启动、联调与验证
 
+EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 实例在普通启动时拒绝并提示显式维护。不要用重新初始化掩盖旧数据，也不要直接套用旧库启动命令；须先停写、备份并在隔离副本验证。[ACK 与迁移步骤](deep-dive/EVENT_ACK.md#5-受控-v1--v2-维护)。本轮没有升级任何真实实例，Management 尚未同步 EVT-3A。
+
 ## 快速开始 / 常用指令
 
 **本节只用于 Prototype**，在普通 PowerShell 中先进入项目：
@@ -18,15 +20,7 @@ Set-Location -LiteralPath 'D:\CodexProject\Fishery_AI_Prototype'
 ```powershell
 .\scripts\dev\run_local.ps1 -Scenario suspected_disease
 .\scripts\dev\run_local.ps1 -Scenario low_oxygen
-.\scripts\dev\run_local.ps1 -Scenario 
-.\scripts\dev\run_local.ps1 -Scenario 
 ```
-
-
-
-
-
-
 仅启动 Web，使用已有工作区数据，不启动模拟器、不开启 HTTP 写入或 AI：
 
 ```powershell

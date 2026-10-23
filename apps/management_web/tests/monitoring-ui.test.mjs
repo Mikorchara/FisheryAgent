@@ -26,6 +26,7 @@ function page(data=fixture(),handler=null){
     createTextNode:text=>{const n=new Element('text');n.textContent=text;return n;},
     querySelector:s=>s==='.environment'?env:skip,querySelectorAll:()=>node('navigation').children,addEventListener:()=>{}};
   const context=vm.createContext({document,Node:Element,URLSearchParams,Intl,Date,console,location:{hash:'#dashboard'},
+    crypto:{randomUUID:()=> '00000000-0000-4000-8000-000000000001'},
     window:{addEventListener:(type,fn)=>events[type]=fn,scrollTo:()=>{}},
     setInterval:(fn,ms)=>{timers.push({fn,ms});return timers.length;},clearInterval:()=>{},
     fetch:async (url,options)=>{requests.push(url);if(handler)return handler(url,options,current);if(current instanceof Error)throw current;
@@ -92,6 +93,66 @@ function eventPage({conflict=false}={}){
   return {...p,writes,queries,walk,findButton:(root,text)=>walk(root).find(n=>n.tagName==='button'&&n.textContent===text),
     open:async()=>{await p.ready();p.run("location.hash='#events';render()");await p.ready();}};
 }
+
+function ackPage({conflict=false,legacy=false,ended=false}={}){
+  const data=fixture();data.event_management={enabled:true,ack_enabled:true,write_token:'fictional-event-token'};
+  const item={...data.events[0],device_id:'sim-pond-1',channel:'visual',lifecycle_state:ended?'RESOLVED':'ACTIVE',
+    status:ended?'closed':'pending',deletable:false,deletion_block_reason:ended?'ACK_AUDIT_RETAINED':null,
+    handling:{state:'PENDING',ended,can_ack:!legacy&&!ended,cycle_id:'a'.repeat(64),grade_token:'b'.repeat(64),
+      grade_version:'fixture-grades-v1',revision:0,action_count:0,history:[],unavailable_reason:legacy?'LEGACY_OR_UNSUPPORTED_IDENTITY':null}};
+  data.events=[item];const writes=[];
+  const p=page(data,async(url,options)=>{
+    if(url.startsWith('/api/bootstrap'))return {ok:true,json:async()=>structuredClone(data)};
+    if(url.startsWith('/api/events?'))return {ok:true,json:async()=>({items:structuredClone(data.events),total:1,limit:50,offset:0})};
+    if(url==='/api/events/ack'){
+      writes.push({value:JSON.parse(options.body),headers:options.headers});
+      if(conflict)return {ok:false,json:async()=>({error_code:'EVENT_ACK_CONFLICT'})};
+      item.handling={...item.handling,state:'ACKNOWLEDGED',can_ack:false,revision:1,acked_at:data.monitoring.observed_at,
+        latest_ack_at:data.monitoring.observed_at,actor_kind:'local_visitor',action_count:1,
+        history:[{acted_at:data.monitoring.observed_at,event_title:'疑似病灶检测信号',grade_code:'SUSPECTED_LESION',actor_kind:'local_visitor'}]};
+      return {ok:true,json:async()=>({status:'ACK_RECORDED'})};
+    }
+    if(url==='/api/events/'+item.id)return {ok:true,json:async()=>structuredClone(item)};
+    return {ok:true,json:async()=>({items:[],total:0})};
+  });
+  const walk=node=>[node,...node.children.flatMap(walk)];
+  const find=(root,text)=>walk(root).find(n=>n.tagName==='button'&&n.textContent===text);
+  return {...p,writes,item,find,walk,open:async()=>{await p.ready();p.run('eventDetail(state.data.events[0])');}};
+}
+
+test('EVT-3A explicit ACK confirmation, cancellation and reload preserve separate observation state',async()=>{
+  const p=ackPage();await p.open();
+  assert.match(p.node('content').textContent,/待确认/);
+  assert.ok(p.find(p.node('dialog-body'),'确认已知晓'));
+  assert.equal(p.walk(p.node('content')).filter(n=>n.tagName==='button'&&n.textContent==='确认已知晓').length,0);
+  p.find(p.node('dialog-body'),'确认已知晓').events.click();
+  assert.equal(p.writes.length,0);assert.match(p.node('dialog-body').textContent,/不代表经过认证/);
+  p.find(p.node('dialog-body'),'取消').events.click();assert.equal(p.writes.length,0);
+  p.find(p.node('dialog-body'),'确认已知晓').events.click();
+  p.find(p.node('dialog-body'),'确认知晓此风险').events.click();await p.ready();
+  assert.equal(p.writes.length,1);assert.equal(p.writes[0].headers['X-Management-Events'],'fictional-event-token');
+  assert.equal(p.writes[0].value.grade_token,'b'.repeat(64));assert.equal(p.writes[0].value.revision,0);
+  assert.match(p.node('dialog-body').textContent,/已知晓/);assert.match(p.node('dialog-body').textContent,/本机操作（未认证访客）/);
+  assert.match(p.node('dialog-body').textContent,/异常持续/);
+  assert.equal(p.find(p.node('dialog-body'),'确认已知晓'),undefined);
+  await p.run('refresh()');assert.match(p.node('content').textContent,/已知晓/);
+  p.run("location.hash='#events';render()");await p.ready();assert.match(p.node('content').textContent,/已知晓/);
+});
+
+test('EVT-3A conflicts never retry; legacy and ended audit records cannot ACK or delete',async()=>{
+  const p=ackPage({conflict:true});await p.open();
+  p.find(p.node('dialog-body'),'确认已知晓').events.click();p.find(p.node('dialog-body'),'确认知晓此风险').events.click();await p.ready();
+  assert.equal(p.writes.length,1);assert.match(p.node('dialog-title').textContent,/确认未完成/);
+  assert.match(p.node('dialog-body').textContent,/未自动重试/);assert.match(p.node('content').textContent,/待确认/);
+  const old=ackPage({legacy:true});await old.open();
+  assert.equal(old.find(old.node('dialog-body'),'确认已知晓'),undefined);assert.match(old.node('dialog-body').textContent,/仅供查看/);
+  const ended=ackPage({ended:true});ended.item.handling.action_count=1;
+  ended.item.handling.history=[{acted_at:'2026-10-23T00:00:00Z',grade_code:'SUSPECTED_LESION'}];
+  await ended.open();assert.match(ended.node('dialog-body').textContent,/历史已知晓/);
+  assert.equal(ended.find(ended.node('dialog-body'),'确认已知晓'),undefined);
+  ended.run("location.hash='#events';render()");await ended.ready();
+  assert.match(ended.node('content').textContent,/知晓审计留存，不可删除/);
+});
 
 test('EVT wording is consistent in homepage, list, detail and family member rows',async()=>{
   const cases=[

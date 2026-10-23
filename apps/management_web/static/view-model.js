@@ -14,6 +14,11 @@ export const freshnessNames={fresh:'新鲜',stale:'已过期',unknown:'未知'};
 export function sourceName(kind){return ({simulator:'SIMULATOR 模拟来源',demo:'DEMO 演示',connected:'已接入',mixed:'混合来源'})[kind]||'未声明来源';}
 export function connectionName(status){return ({online:'正常上报',offline:'上报中断',never_received:'尚无上报',not_connected:'未接入',connected:'已装配',demo:'演示'})[status]||'状态未知';}
 export function eventState(item){return item.lifecycle_state||(item.status==='closed'?'RESOLVED':'ACTIVE');}
+export function eventHandlingName(item){
+  const handling=item.handling;
+  if(eventState(item)==='RESOLVED'||handling?.ended)return handling?.action_count?'历史已知晓':'无确认记录';
+  return handling?.state==='ACKNOWLEDGED'?'已知晓':'待确认';
+}
 export function eventStateName(item){
   const state=eventState(item),progress=item.visual_recovery;
   if(state==='ACTIVE'&&progress?.clear_count>0)return `恢复观察中 ${progress.clear_count}/${progress.required_clear_windows}`;

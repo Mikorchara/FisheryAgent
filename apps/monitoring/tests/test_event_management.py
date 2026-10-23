@@ -125,7 +125,7 @@ class EventManagementTests(unittest.TestCase):
             self.repo.delete_events('single', active['id'], plan['revision'])
         with self.repo.connection() as db:
             self.assertEqual(before, {name: db.execute('SELECT count(*) FROM ' + name).fetchone()[0] for name in before})
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 1)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 2)
 
     def test_bulk_preview_revision_rejects_changed_candidates_and_preserves_active(self):
         self.closed()

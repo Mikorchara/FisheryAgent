@@ -1,8 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {routes,routeFor,metricText,filterItems,chartGeometry,timeText,validateBootstrap,eventStateName,eventStateReasonName} from '../static/view-model.js';
+import {routes,routeFor,metricText,filterItems,chartGeometry,timeText,validateBootstrap,eventStateName,eventStateReasonName,eventHandlingName} from '../static/view-model.js';
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
+
+test('manual acknowledgement never replaces observation state or invents a legacy timestamp',()=>{
+  assert.equal(eventHandlingName({lifecycle_state:'INDETERMINATE'}),'待确认');
+  const event={lifecycle_state:'INDETERMINATE',handling:{state:'ACKNOWLEDGED',action_count:1}};
+  assert.equal(eventHandlingName(event),'已知晓');assert.equal(eventStateName(event),'恢复状态待确认');
+  assert.equal(eventHandlingName({...event,lifecycle_state:'RESOLVED'}),'历史已知晓');
+  assert.equal(eventHandlingName({lifecycle_state:'RESOLVED'}),'无确认记录');
+  assert.equal(eventHandlingName({...event,handling:{state:'PENDING',action_count:1}}),'待确认');
+});
 
 test('event wording distinguishes structured grade changes, uncertainty and interruption',()=>{
   const unknown={lifecycle_state:'INDETERMINATE'};
