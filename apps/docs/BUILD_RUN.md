@@ -15,11 +15,12 @@ Set-Location -LiteralPath 'D:\CodexProject\Fishery_AI_Prototype'
 ```powershell
 .\scripts\dev\run_local.ps1 -Scenario normal
 ```
-六场景：normal、low_oxygen、suspected_disease、reduced_feeding、combined_anomaly、device_offline；
+七个常用场景：normal、low_oxygen、oxygen_drop_recovery、suspected_disease、reduced_feeding、combined_anomaly、device_offline；
 
 ```powershell
 .\scripts\dev\run_local.ps1 -Scenario suspected_disease
 .\scripts\dev\run_local.ps1 -Scenario low_oxygen
+.\scripts\dev\run_local.ps1 -Scenario oxygen_drop_recovery
 ```
 仅启动 Web，使用已有工作区数据，不启动模拟器、不开启 HTTP 写入或 AI：
 
@@ -35,7 +36,7 @@ Set-Location -LiteralPath 'D:\CodexProject\Fishery_AI_Prototype'
 
 | 常用参数 | 用途 |
 |---|---|
-| `-Scenario normal` | 六场景：normal、low_oxygen、suspected_disease、reduced_feeding、combined_anomaly、device_offline；默认 normal，无交互 |
+| `-Scenario normal` | 上述七个常用场景；默认 normal，无交互 |
 | `-Port 8767` / `-Seed 42` | 改端口 / 随机种子；Web-only 使用 `--port` |
 | `-NoAssistant` | 模拟联调关闭 AI；不读取私有凭据，不改变数据写入行为 |
 | `-NoStreaming` / `-NoMultiRound` / `-NoHistory` | 关闭相应既有试用开关；三工具开关与 History/传输组合仍按原实现联动 |
@@ -46,6 +47,35 @@ Set-Location -LiteralPath 'D:\CodexProject\Fishery_AI_Prototype'
 默认工作区路径是 `outputs/management_web`、`apps/knowledge_data/knowledge.sqlite3` 等兼容路径；`-DataRoot` 将业务数据集中到指定实例。正式 `%LOCALAPPDATA%\FisheryManagement` 与 Prototype 实验数据应分开；不要使用 `-UserData` 给正式管理历史注入模拟数据。新隔离实例的显式初始化说明见 [独立运行准备](deep-dive/MANAGEMENT_STANDALONE.md)，不能初始化已有实例来掩盖缺库。隔离业务数据不隔离项目凭据。
 
 `run_local.ps1` 默认启用已批准的 Qwen Normal/Streaming、多轮和三工具本地实验，启动不调用模型；Web-only 原 CLI 默认关闭 AI，完整 AI 开关与工具授权见下文“一行式常用命令”。模型请求仍由用户主动发送。此仓库未移入 Management 专有启动器，后续按“实验 → 测试 → 人工审核 → 选择性同步 → 独立回归”推进。
+
+### 溶解氧快速下降 → 逐步回升
+
+`oxygen_drop_recovery` 使用原生成器、窗口与 Seed，不直接写事件状态。每10秒上报，默认 Seed=42；从该次 Simulator 启动开始计时：
+
+| 时间 | 溶解氧目标值与阶段 |
+|---|---|
+| 0–20秒 | 约 6.4 mg/L，正常保持 |
+| 20–50秒 | 快速降至约 2.2 mg/L |
+| 50–90秒 | 保持低氧 |
+| 90–180秒 | 逐步升至约 4.2 mg/L |
+| 180–300秒 | 继续升至约 6.4 mg/L |
+| 300秒以后 | 保持正常，不周期重复 |
+
+目标值经过原随机波动和窗口均值后显示，因此网页不一定恰好等于节点值。规则仍按原阈值生成、更新和结束事件；水温/pH 保持原正常目标，低氧期伴随模拟活动减少。仅用于演示，非设备安全标准或疾病恢复结论。重新启动产生新 Session，不清空原历史。
+
+只在内存中快速验证6分钟、不上报、不访问数据库或凭据：
+
+```powershell
+.\.venv\Scripts\python.exe -B -m apps.simulator --scenario oxygen_drop_recovery --seed 42 --windows 36 --dry-run
+```
+
+此 dry-run 输出每窗口摘要，不打印完整报文。日常 `run_local.ps1` 会继续向选定实例写模拟观测；如需隔离，请使用上方已初始化的 `-DataRoot`。
+
+### 事件列表与删除
+
+事件记录、首页最近事件以风险周期展示，“是否确认”只有 **已确认 / 未确认**：确认针对当前等级，结束后表示最后等级是否确认；升级或降级后均需重新确认，早期等级的确认只保留在详情历史中。名称随可靠等级变化为“溶解氧偏低 / 溶解氧低 / 溶解氧极低”；结束后按历史最高等级显示，读数明确标为异常时读数。
+
+已结束且存在 ACK 历史的周期，在“查看详情”或事件列表中选择 **删除已结束周期**，预览原始事件数及确认历史数，再明确确认。此操作永久删除整个周期及全部 ACK 历史，不可在应用内撤销；不删除水质历史、采样批次、当前值、知识或设置。活动、恢复观察、未核实、无可靠身份及仍受外部引用的周期不允许删除。原“清理全部已结束事件”仍跳过有 ACK 保护的周期，避免批量误删确认历史。没有自动清理真实数据。
 
 ## 详细配置与阶段记录
 

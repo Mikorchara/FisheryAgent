@@ -4,6 +4,8 @@
 
 ## 已实现
 
+- SIMPLIFY-1 收尾（仅 Prototype，待验收）：恢复“已确认/未确认”列，低氧名称随当前可靠等级变化；用户明确批准后，可单独永久删除可靠结束的整个 ACK 周期及其确认历史，事务校验、普通批量清理仍受保护，Schema 保持 v2。新增 `oxygen_drop_recovery` 快降慢升场景及启动枚举。[操作说明](BUILD_RUN.md#溶解氧快速下降--逐步回升)。
+- SIMPLIFY-1（仅 Prototype，待验收）：一风险周期一行，服务端全留存整合后筛选分页，首页共用周期摘要；原详情、ACK 与删除保护不变，未实现归档。[实现与验收](deep-dive/EVENT_CYCLE_UI.md)。
 - 旧版已结束事件兼容（仅 Prototype）：明确“旧版已结束（未复核）”；有效原结束信息且无活动/引用/ACK 审计关联时，可经原确认流程清理。保留原 payload 与观测状态，不改 Schema，不自动删除真实记录。[条件与边界](deep-dive/EVENT_MANAGEMENT.md#旧版已结束记录兼容仅-prototype)。
 
 - EVT-3A（仅 Prototype，待人工验收）：稳定周期／等级版本 ACK、追加操作历史及审计成员保护；Monitoring Schema v2，v1 只允许显式备份升级，普通启动拒绝。509 项管理 Python、109 项 Node 通过。[边界与迁移](deep-dive/EVENT_ACK.md)。未实现 Close/Snooze，未同步 Management。

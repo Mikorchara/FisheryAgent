@@ -81,10 +81,13 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
                 preferences = settings_service.preferences()
             except SettingsError:
                 pass  # Monitoring remains usable; Settings exposes the bounded storage error.
+        original_events = events.events()
+        from apps.monitoring.event_cycles import summarize_cycles
         return jsonify(schema_version=1, application="management-web-r1", data_mode=mode, preferences=preferences,
             devices=devices, monitoring=snapshot, cameras=video.cameras(),
             event_management=event_access(),
-            events=events.events(), files=files.files(), ai=ai.availability(),
+            events=original_events, event_cycles=summarize_cycles(original_events) if data_service is not None else None,
+            files=files.files(), ai=ai.availability(),
             connections=[{"name": "监测数据", "status": connection, "description": "模拟器 HTTP 上报" if mode == "simulator" else "独立演示适配器"},
                 {"name": "传感器 / 数据库", "status": "not_connected", "description": "尚未接入"},
                 {"name": "视频 / NPU", "status": "not_connected", "description": "尚未接入"},
@@ -142,7 +145,7 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
     @app.get("/api/events")
     def event_list():
         if data_service is not None:
-            if set(request.args) - {'q', 'severity', 'status', 'lookback_minutes', 'limit', 'offset'} or any(
+            if set(request.args) - {'q', 'severity', 'status', 'lookback_minutes', 'limit', 'offset', 'view'} or any(
                     len(request.args.getlist(key)) != 1 for key in request.args):
                 raise EventRecordError('INVALID_EVENT_FILTER')
             try:
@@ -151,7 +154,11 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
                 limit, offset = int(request.args.get('limit', '50')), int(request.args.get('offset', '0'))
             except ValueError:
                 raise EventRecordError('INVALID_EVENT_FILTER') from None
-            return jsonify(**data_service.query_events(lookback_minutes=minutes, q=request.args.get('q', ''),
+            view = request.args.get('view', 'records')
+            if view not in ('records', 'cycles'):
+                raise EventRecordError('INVALID_EVENT_FILTER')
+            query = data_service.query_event_cycles if view == 'cycles' else data_service.query_events
+            return jsonify(**query(lookback_minutes=minutes, q=request.args.get('q', ''),
                 severity=request.args.get('severity', ''), status=request.args.get('status', ''), limit=limit, offset=offset),
                 source_kind=data_service.data_mode)
         return jsonify(items=collection(events.events()), source_kind=getattr(monitoring, "data_mode", "demo"))

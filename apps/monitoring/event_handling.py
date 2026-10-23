@@ -123,6 +123,7 @@ def project_handling(db, events):
         can_ack = bool(context and context['active'] and context['current']['id'] == event['id']
             and not ended and not state['acked_at'] and context['anchor_event_id'] in {e['id'] for e in context['members']})
         event['handling'] = dict(state='ACKNOWLEDGED' if state['acked_at'] and not ended else 'PENDING',
+            confirmed=bool(state['acked_at']),
             ended=ended, can_ack=can_ack, revision=state['revision'], acked_at=state['acked_at'] if not ended else None,
             latest_ack_at=history[0]['acted_at'] if history else None, actor_kind='local_visitor' if history else None,
             cycle_id=reference[0] if reference else None, grade_code=context['grade_code'] if context else None,
@@ -133,6 +134,9 @@ def project_handling(db, events):
                 'EVENT_ENDED' if ended else 'NOT_CURRENT_GRADE' if context['current'] is None or context['current']['id'] != event['id'] else None)
         if event['id'] in protected:
             event.update(deletable=False, deletion_block_reason='ACK_AUDIT_RETAINED')
+        event['can_delete_ack_cycle'] = bool(event['id'] in protected and context and
+            counts.get(reference[0],0) and all(e.get('lifecycle_state') == 'RESOLVED' and
+                e.get('status') == 'closed' and e['id'] not in linked for e in context['members']))
     return events
 
 

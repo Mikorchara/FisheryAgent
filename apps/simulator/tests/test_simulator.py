@@ -3,12 +3,16 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from apps.simulator.generator import Simulator, WaterQualityGenerator, VisualDetectionGenerator, summarize_visual_frames
 from apps.simulator.scenarios import SCENARIOS, at_time
 from apps.simulator.__main__ import run, main
 from apps.simulator.transport import HttpReporter, ReportError
 from apps.monitoring.contracts import validate_batch
+from apps.monitoring.repository import MonitoringRepository
+from apps.monitoring.service import MonitoringService
 
 
 class SimulatorTests(unittest.TestCase):
@@ -16,6 +20,33 @@ class SimulatorTests(unittest.TestCase):
 
     def create(self, **kwargs):
         return Simulator(start=self.start, session_id='fixed-session', **kwargs)
+
+    def test_rapid_oxygen_drop_then_gradual_recovery_is_one_ended_risk_cycle(self):
+        scenario='oxygen_drop_recovery'
+        sim=self.create(scenario=scenario,seed=42)
+        values=[];now=self.start
+        with TemporaryDirectory() as directory:
+            service=MonitoringService(MonitoringRepository(Path(directory)/'monitoring.sqlite3'),clock=lambda:now)
+            names=[]
+            for _ in range(36):
+                batch=sim.advance();now=datetime.fromisoformat(batch['timestamp'])
+                validate_batch(batch,now=now,device_ids=('sim-pond-1',))
+                values.append(batch['water']['metrics']['dissolved_oxygen_mg_l']['mean'])
+                service.ingest(batch)
+                names.extend(e['title'] for e in service.event_cycles())
+            cycles=[e for e in service.event_cycles() if e['channel']=='water']
+            self.assertEqual(len(cycles),1)
+            self.assertEqual(cycles[0]['lifecycle_state'],'RESOLVED')
+            self.assertEqual(cycles[0]['title'],'溶解氧低')
+            self.assertIn('溶解氧偏低',names);self.assertIn('溶解氧低',names)
+        self.assertGreater(values[1],6);self.assertLess(values[5],2.5)
+        self.assertLess(values[8],2.5);self.assertGreater(values[29],6)
+        self.assertGreater(values[17],values[8]);self.assertLess(values[17],values[29])
+        for at,value in ((20,6.4),(50,2.2),(90,2.2),(180,4.2),(300,6.4),(600,6.4)):
+            self.assertAlmostEqual(at_time(SCENARIOS[scenario],at)['dissolved_oxygen_mg_l'],value)
+        with patch('apps.simulator.__main__.HttpReporter') as reporter, patch('builtins.print'):
+            self.assertEqual(main(['--scenario',scenario,'--seed','42','--windows','36','--dry-run']),0)
+            reporter.assert_not_called()
 
     def test_seed_and_timeline_repeat_exactly(self):
         a,b = self.create(),self.create()

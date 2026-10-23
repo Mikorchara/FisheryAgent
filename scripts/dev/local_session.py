@@ -113,7 +113,7 @@ def run_local(scenario='normal', port=8766, seed=42, *, root=ROOT, python=None,
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description='本机管理服务+模拟器；不会发起模型请求')
-    parser.add_argument('--scenario',choices=('normal','low_oxygen','suspected_disease','reduced_feeding','combined_anomaly','device_offline'),default='normal')
+    parser.add_argument('--scenario',choices=('normal','low_oxygen','oxygen_drop_recovery','suspected_disease','reduced_feeding','combined_anomaly','device_offline'),default='normal')
     parser.add_argument('--port',type=int,default=8766)
     parser.add_argument('--seed',type=int,default=42)
     locations=parser.add_mutually_exclusive_group()

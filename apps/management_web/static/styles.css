@@ -29,6 +29,7 @@ main{max-width:1640px;margin:0 auto;padding:31px 36px 20px}.page-heading{display
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 
 .badge.critical{background:#fff0f0;border-color:#f5d4d4;color:#b44747}
+.badge.resolved{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
 .management-assistant{min-width:0}.assistant-controls{flex-wrap:wrap;gap:14px}.assistant-controls .field{min-width:150px;flex:1}.assistant-controls select{width:100%;min-width:0}
 .management-messages{min-height:320px;max-height:55vh;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:18px}.management-message{max-width:95%;min-width:0;padding:16px 18px;border:1px solid var(--line);border-radius:10px;background:#f5f9fa}
 .management-message.user{align-self:flex-end;background:#eaf4f3}.management-message.assistant{align-self:flex-start;background:white}.management-message.status{color:#8f5426;background:#fff8ed}.management-message>strong{font-size:11px;color:var(--muted)}.management-message>p{font-size:13px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:8px}
@@ -184,4 +185,5 @@ body:has(.management-assistant.view-reading) main{padding:18px;max-width:1300px;
 @media(max-width:600px){.settings-fields{grid-template-columns:minmax(0,1fr)}.settings-actions .button{max-width:100%}}
 /* Observation state and local acknowledgement remain separate, wrapping badges. */
 .event-status{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
+.cycle-time,.cycle-level{display:flex;flex-direction:column;align-items:flex-start;gap:5px}.cycle-time small,.cycle-level small{display:block;color:var(--muted)}
 .event-handling{margin-block:18px;padding-block:12px;border-top:1px solid var(--line)}

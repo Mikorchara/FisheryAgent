@@ -15,6 +15,7 @@ from .event_records import EventRecordError, deletable, legacy_closed_record, va
 from .rules import VISUAL_RULES
 from .schema import SCHEMA_VERSION, add_handling_tables, validate_schema
 from .event_handling import acknowledge, project_handling, sync_existing
+from .event_cycle_deletion import deletion_plan as ack_cycle_plan, delete_handling
 from .history import (HistoryQueryError, MAX_HISTORY_ROWS, MAX_HISTORY_ROW_BYTES,
                       validate_history_range)
 
@@ -259,6 +260,8 @@ class MonitoringRepository:
     @staticmethod
     def _deletion_plan(db, scope, event_id):
         validate_delete(scope, event_id)
+        if scope == 'ack_cycle':
+            return ack_cycle_plan(db, event_id)
         all_rows = db.execute("SELECT e.id,e.payload,EXISTS(SELECT 1 FROM alerts a WHERE a.event_id=e.id) AS linked FROM events e ORDER BY e.id").fetchall()
         references = {e.get('superseded_by') for e in (json.loads(r['payload']) for r in all_rows) if e.get('superseded_by')}
         audited = {r[0] for r in db.execute('SELECT event_id FROM event_handling_members')}
@@ -282,16 +285,22 @@ class MonitoringRepository:
     def delete_events(self, scope, event_id, revision):
         if not isinstance(revision, str) or len(revision) != 64:
             raise EventRecordError('INVALID_EVENT_DELETE')
-        with self.connection() as db:
-            db.execute('BEGIN IMMEDIATE')
-            candidates, plan = self._deletion_plan(db, scope, event_id)
-            if plan['revision'] != revision:
-                raise EventRecordError('EVENT_DELETE_CONFLICT', 409)
-            for row in candidates:
-                deleted = db.execute('DELETE FROM events WHERE id=? AND NOT EXISTS(SELECT 1 FROM alerts WHERE event_id=events.id)', (row['id'],)).rowcount
-                if deleted != 1:
+        ack_count = 0
+        try:
+            with self.connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                candidates, plan = self._deletion_plan(db, scope, event_id)
+                if plan['revision'] != revision:
                     raise EventRecordError('EVENT_DELETE_CONFLICT', 409)
-        return dict(deleted_count=len(candidates), scope=scope)
+                if scope == 'ack_cycle':
+                    ack_count = delete_handling(db, plan)
+                for row in candidates:
+                    deleted = db.execute('DELETE FROM events WHERE id=? AND NOT EXISTS(SELECT 1 FROM alerts WHERE event_id=events.id)', (row['id'],)).rowcount
+                    if deleted != 1:
+                        raise EventRecordError('EVENT_DELETE_CONFLICT', 409)
+        except sqlite3.Error:
+            raise EventRecordError('EVENT_DELETE_STORAGE_ERROR', 503) from None
+        return dict(deleted_count=len(candidates), deleted_ack_count=ack_count, scope=scope)
 
     @staticmethod
     def _decode(row):

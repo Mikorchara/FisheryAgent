@@ -191,6 +191,13 @@ class MonitoringService:
     def query_events(self, **filters):
         return query_records(self.events(), now=self.clock(), **filters)
 
+    def event_cycles(self):
+        from .event_cycles import summarize_cycles
+        return summarize_cycles(self.events())
+
+    def query_event_cycles(self, **filters):
+        return query_records(self.event_cycles(), now=self.clock(), **filters)
+
     def acknowledge_event(self, value):
         return self.repository.acknowledge_event(value, at=self.clock())
 

@@ -1,5 +1,5 @@
 import {el,icon,card,badge,empty,button,link,rows,metricCards,metadata,table,trendChart,normalizedTrendChart} from './components.js';
-import {routes,routeFor,timeText,filterItems,validateBootstrap,qualityNames,freshnessNames,sourceName,connectionName,eventState,eventStateName,eventStateReasonName,eventHandlingName,eventSeverityName,trendRanges,activeEventOverview} from './view-model.js';
+import {routes,routeFor,timeText,filterItems,validateBootstrap,qualityNames,freshnessNames,sourceName,connectionName,eventState,eventStateName,eventStateReasonName,eventHandlingName,cycleConfirmationName,eventSeverityName,trendRanges,activeEventOverview} from './view-model.js';
 import {services} from './services.js';
 import {createAssistantWorkspace} from './assistant.js';
 import {createToolPolicySettings} from './tool-policy.js';
@@ -16,7 +16,7 @@ const knowledgeWorkspace=createKnowledgeWorkspace(services.knowledge);
 const settingsWorkspace=createSettingsWorkspace(services.settings,toolPolicySettings,{onBudgetSaved:()=>assistantWorkspace.policyChanged()});
 const severity=item=>badge(eventSeverityName(item),item.severity==='critical'?'critical':item.severity==='warning'?'warning':'neutral');
 const status=item=>el('div',{class:'event-status'},[
-  badge(item.source_kind==='simulator'?eventStateName(item):(item.status==='pending'?'待处理（演示）':'已处理（演示）'),item.status==='closed'||eventState(item)==='RESOLVED'?'neutral':'warning'),
+  badge(item.source_kind==='simulator'?eventStateName(item):(item.status==='pending'?'待处理（演示）':'已处理（演示）'),eventState(item)==='RESOLVED'?'resolved':item.status==='closed'?'neutral':'warning'),
   ...(item.source_kind==='simulator'?[badge(eventHandlingName(item),item.handling?.state==='ACKNOWLEDGED'?'success':'neutral')]:[])]);
 
 function select(label,choices,value,onchange){return el('label',{class:'field'},[el('span',{text:label}),el('select',{'aria-label':label,onchange:e=>onchange(e.target.value)},
@@ -74,12 +74,31 @@ function eventDetail(item){details(item.title,[badge(sourceName(item.source_kind
     table(['关联记录','等级','状态'],item.family_members||[],e=>[e.title,eventSeverityName(e),eventStateName(e)],
       async e=>{try{eventDetail(await services.eventDetail(e.id));}catch(_){details('关联记录不可用',[el('p',{text:'该历史记录可能已删除或按留存规则裁剪；已保存的变化证据仍保留。'})]);}})]:[]),
   ...eventHandlingPanel(item),
+  ...(item.source_kind==='simulator'&&state.data.event_management?.enabled?[
+    ...(item.can_delete_ack_cycle?[button('删除已结束周期',()=>requestEventDeletion('ack_cycle',item),'danger')]:
+      item.deletable?[button('删除此原始记录',()=>requestEventDeletion('single',item),'danger')]:[
+      el('p',{class:'muted',text:item.deletion_block_reason==='ACK_AUDIT_RETAINED'?'知晓审计留存，不可单条删除；整个周期可靠结束后，可连同确认历史一起明确删除。':'此原始记录当前不满足历史删除条件。'})])]:[]),
   ...(item.channel==='visual'?[el('p',{text:'视觉信号消退仅表示连续可靠观测未再检出该异常信号，不代表疾病治愈或人工处理完成。'})]:[]),el('p',{text:item.description}),
   empty('暂无关联媒体','这里将展示关联截图与视频片段；R1 未生成或保存媒体。','camera')]);}
-function eventsTable(items,maintenance=false){return table(['事件 / 类型','设备','首次发生','等级','状态',...(maintenance?['历史清理']:[]),'操作'],items,item=>[
-  el('div',{class:'table-title'},[el('strong',{text:item.title}),el('small',{text:`${item.id} · ${item.type} · ${sourceName(item.source_kind)}`})]),item.device,timeText(item.occurred_at),severity(item),status(item),
-  ...(maintenance?[item.deletable?button('删除记录',()=>requestEventDeletion('single',item),'text danger'):
-    item.deletion_block_reason==='ACK_AUDIT_RETAINED'?'知晓审计留存，不可删除':'不可删除']:[])],eventDetail);}
+async function showEventDetail(item){
+  if(!item.cycle_summary){eventDetail(item);return;}
+  try{eventDetail(await services.eventDetail(item.cycle_summary.detail_event_id));}
+  catch(_){details('详情暂不可用',[el('p',{text:'请刷新列表后重试；没有修改任何记录。'})]);}
+}
+function eventsTable(items,maintenance=false){return table(['风险 / 类型','设备','首次发生 / 恢复','等级','状态','是否确认',...(maintenance?['历史清理']:[]),'操作'],items,item=>[
+  el('div',{class:'table-title'},[el('strong',{text:item.title}),
+    ...(item.cycle_summary?[el('small',{text:`${item.cycle_summary.reading_label}：${item.cycle_summary.reading}`}),
+      el('small',{text:`${item.cycle_summary.count} 条原始记录 · ${sourceName(item.source_kind)}`})]:[el('small',{text:`${item.id} · ${item.type} · ${sourceName(item.source_kind)}`})])]),
+  item.device,el('div',{class:'cycle-time'},[el('span',{text:timeText(item.occurred_at)}),
+    ...(item.cycle_summary?[el('small',{text:item.cycle_summary.ended?`恢复 / 原结束：${timeText(item.resolved_at)}`:`最近观测：${timeText(item.last_observed_at)}`})]:[])]),
+  el('div',{class:'cycle-level'},[...(item.cycle_summary?.ended?[el('small',{text:'历史最高等级'})]:[]),severity(item)]),
+  item.cycle_summary?badge(eventStateName(item),eventState(item)==='RESOLVED'?'resolved':item.status==='closed'?'neutral':'warning'):status(item),
+  badge(cycleConfirmationName(item),cycleConfirmationName(item)==='已确认'?'success':'neutral'),
+  ...(maintenance?[item.can_delete_ack_cycle?button('删除已结束周期',()=>requestEventDeletion('ack_cycle',item),'text danger'):
+    item.deletable?button('删除记录',()=>requestEventDeletion('single',item),'text danger'):
+    item.deletion_block_reason==='ACK_AUDIT_RETAINED'?(item.cycle_summary?
+      (item.cycle_summary.ended?'周期引用受保护，暂不可删除':'周期未结束，不可删除'):'知晓审计留存，不可删除'):
+      item.cycle_summary?'原始记录操作见详情':'不可删除']:[])],showEventDetail);}
 
 function currentAnomalies(data){
   const overview=activeEventOverview(data,state.device);
@@ -94,7 +113,7 @@ function currentAnomalies(data){
       el('p',{text:`最近有效观测 ${timeText(item.visual_recovery?.last_valid_observed_at||item.last_observed_at)}`}),
       ...(item.family_size>1?[el('p',{text:`关联 ${item.family_size} 条等级记录，详情保留变化证据。`})]:[]),
       ...(item.visual_recovery?.continuity==='interrupted'?[el('p',{class:'muted',text:'历史观测存在不连续；未知时段不计为已证实持续异常。'})]:[]),
-      button('查看详情',()=>eventDetail(item),'text')])))]
+      button('查看详情',()=>showEventDetail(item),'text')])))]
     :[badge(sourceName(data.data_mode),'demo'),el('p',{class:'anomaly-empty',text:overview.clear?'当前未见异常信号':'状态未知 · 需要完整、新鲜的水质与视觉观测。'})];
   const section=card('当前异常概况',`区域：${name} · ${overview.items.length?'未结束事件，包含恢复观察与观测中断':'以服务器当前规则和观测质量为依据'}`,content,link('全部事件','events'));
   section.className+=` current-anomalies ${overview.items.length?'needs-attention':overview.clear?'signals-clear':'signals-unknown'}`;
@@ -115,7 +134,7 @@ function videoPlaceholder(compact=false){return el('div',{class:`video-placehold
 
 function dashboard(){
   const d=state.data, snapshot=d.monitoring;
-  const recentEvents=card('最近事件','关联实际接收批次；模拟事件不是疾病确诊。',[eventsTable(d.events.slice(0,5))],link('全部记录','events'));
+  const recentEvents=card('最近事件','按风险周期展示；等级变化与原始证据见详情。',[eventsTable((d.event_cycles||d.events).slice(0,5))],link('全部记录','events'));
   recentEvents.className+=' dashboard-events';
   return [el('div',{class:'overview-strip'},[
     el('div',{},[el('span',{class:'strip-icon'},[icon('link')]),el('div',{},[el('strong',{text:'数据连接概况'}),el('small',{text:d.data_mode==='simulator'?'统一监测存储 · 模拟器来源':'独立 Demo adapter 已就绪'})])]),
@@ -181,22 +200,23 @@ async function requestEventDeletion(scope,item=null){
   try{
     const plan=await services.eventDeletionPreview(value,token);
     const finish=()=>{
-      const commit=button(scope==='single'?'确认删除此条事件':`确认清理 ${plan.count} 条记录`,async()=>{
+      const commit=button(scope==='ack_cycle'?'确认删除周期及确认历史':scope==='single'?'确认删除此条事件':`确认清理 ${plan.count} 条记录`,async()=>{
         if(eventDeletionBusy)return;eventDeletionBusy=true;commit.disabled=true;
         try{const result=await services.eventDelete({...value,revision:plan.revision},token);
           $('details-dialog').close();state.eventOffset=0;state.revision++;await refresh(true);
-          $('refresh-status').textContent=`已删除 ${result.deleted_count} 条已结束事件记录`;
+          $('refresh-status').textContent=`已删除 ${result.deleted_count} 条已结束事件记录${scope==='ack_cycle'?`及 ${result.deleted_ack_count} 条确认历史`:''}`;
         }catch(_){details('删除未完成',[el('p',{text:'记录或权限可能已变化。未自动重试；请刷新后重新预览、确认。'}),button('关闭',cancel)]);}
         finally{eventDeletionBusy=false;commit.disabled=false;}
       },'danger');
-      details(scope==='single'?'确认删除历史事件':'最终确认：清理全部已结束事件',[
-        el('p',{text:scope==='single'?`${item.title} · ${item.id}`:'范围：全部设备、全部时间的可删除已结束记录，包含符合条件的旧版已结束记录；不受当前筛选或分页影响。'}),
+      details(scope==='ack_cycle'?'永久删除已结束周期':scope==='single'?'确认删除历史事件':'最终确认：清理全部已结束事件',[
+        el('p',{text:scope!=='all_resolved'?`${item.title} · ${item.id}`:'范围：全部设备、全部时间的可删除已结束记录，包含符合条件的旧版已结束记录；不受当前筛选或分页影响。'}),
         el('p',{text:`预计删除 ${plan.count} 条。数据库硬删除，应用内不可撤销；水质历史、批次及其他业务数据不受影响。`}),
+        ...(scope==='ack_cycle'?[el('p',{text:`同时永久删除该周期的 ${plan.ack_count} 条确认历史及等级关联。此后无法查看该周期的确认时间及当时等级；不会保留可恢复的归档。`})]:[]),
         ...(plan.legacy_count?[el('p',{text:`其中 ${plan.legacy_count} 条为旧版已结束记录，未经新版规则复核；清理不表示已验证恢复，不补造人工确认。`})]:[]),
         el('div',{class:'event-confirm-actions'},[...(plan.count?[commit]:[]),button('取消',cancel)]),
         ...(!plan.count?[el('p',{text:'没有可删除的已结束事件。'})]:[])]);
     };
-    if(scope==='single')finish();
+    if(scope!=='all_resolved')finish();
     else details('清理范围核对',[
       el('p',{text:`全部设备、全部时间，共 ${plan.count} 条可删除的已结束事件，其中 ${plan.legacy_count||0} 条为旧版已结束记录；忽略当前筛选和分页。活动、恢复观察及未结束的未知事件均保留。`}),
       el('div',{class:'event-confirm-actions'},[button('继续核对',finish),button('取消',cancel)])]);
@@ -214,7 +234,7 @@ function events(){const filters=state.eventFilters,maintenance=Boolean(state.dat
       if(revision!==eventQueryRevision)return;
       if(data.total&&state.eventOffset>=data.total){state.eventOffset=0;return update();}
       body.replaceChildren(eventsTable(data.items,true));
-      count.textContent=`共 ${data.total} 条符合条件 · 本页 ${data.items.length} 条 · 已查询全部留存记录`;
+      count.textContent=`共 ${data.total} 条符合条件 · 本页 ${data.items.length} 条 · 已查询全部留存记录（风险周期）`;
       const previous=button('上一页',()=>{state.eventOffset=Math.max(0,state.eventOffset-50);void update();});previous.disabled=state.eventOffset===0;
       const next=button('下一页',()=>{state.eventOffset+=50;void update();});next.disabled=state.eventOffset+50>=data.total;
       pager.replaceChildren(previous,el('span',{text:`第 ${Math.floor(state.eventOffset/50)+1} 页`}),next);
@@ -223,11 +243,11 @@ function events(){const filters=state.eventFilters,maintenance=Boolean(state.dat
   const change=()=>{state.eventOffset=0;void update();};
   void update();
   return [el('div',{class:'filters'},[search('搜索事件',filters.q,v=>{filters.q=v;change();}),select('事件等级',[['','全部等级'],['critical','严重'],['warning','提醒'],['info','信息']],filters.severity,v=>{filters.severity=v;change();}),
-    select('事件状态',state.data.data_mode==='simulator'?[['','全部状态'],['ACTIVE','活动／恢复观察'],['RESOLVED','规则条件已消退'],['INDETERMINATE','证据不足／等级变化']]:[['','全部状态'],['pending','待处理（演示）'],['closed','已处理（演示）']],filters.status,v=>{filters.status=v;change();}),
+    select('事件状态',state.data.data_mode==='simulator'?[['','全部状态'],['ACTIVE','异常中'],['RESOLVED','已恢复'],['INDETERMINATE','状态待核实／旧版未复核']]:[['','全部状态'],['pending','待处理（演示）'],['closed','已处理（演示）']],filters.status,v=>{filters.status=v;change();}),
     ...(maintenance?[select('事件时间范围',[['5','最近 5 分钟'],['10','最近 10 分钟'],['30','最近 30 分钟'],['60','最近 1 小时'],['all','全部记录']],filters.lookback_minutes||'all',v=>{filters.lookback_minutes=v;change();})]:[]),
     button('重置筛选',()=>{state.eventFilters={q:'',severity:'',status:'',lookback_minutes:'all'};state.eventOffset=0;render();})]),
     card('事件列表','PROTOTYPE 模拟信号，不具备生产处理工作流',[count,body,pager],maintenance?button('清理全部已结束事件',()=>requestEventDeletion('all_resolved'),'danger'):null),
-    el('p',{class:'footnote',text:'时间按事件关注区间与所选时段相交筛选：未结束的早期事件仍列出；未知时段不表示持续检出。全部记录仅包含数据库仍留存的事件。历史清理不受筛选影响；已知晓周期保留审计证据。知晓不表示消退或处理完成，不提供派单。'})];}
+    el('p',{class:'footnote',text:'时间按事件关注区间与所选时段相交筛选：未结束的早期事件仍列出；未知时段不表示持续检出。“已确认”仅表示知晓当前／结束前最后等级，不表示恢复或处理完成。普通批量清理保留确认历史；已结束周期可单独明确删除，连同该周期全部确认历史永久清除。'})];}
 
 function knowledge(){return [knowledgeWorkspace.mount()];}
 

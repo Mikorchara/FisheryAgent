@@ -1,8 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {routes,routeFor,metricText,filterItems,chartGeometry,timeText,validateBootstrap,eventStateName,eventStateReasonName,eventHandlingName} from '../static/view-model.js';
+import {routes,routeFor,metricText,filterItems,chartGeometry,timeText,validateBootstrap,eventStateName,eventStateReasonName,eventHandlingName,cycleConfirmationName} from '../static/view-model.js';
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
+
+test('cycle confirmation uses current or last grade rather than any previous ACK history',()=>{
+  assert.equal(cycleConfirmationName({handling:{confirmed:true,ended:true,state:'PENDING'}}),'已确认');
+  assert.equal(cycleConfirmationName({handling:{confirmed:false,action_count:3}}),'未确认');
+  assert.equal(cycleConfirmationName({handling:{state:'ACKNOWLEDGED'}}),'已确认');
+  assert.equal(cycleConfirmationName({}),'未确认');
+});
+
+test('cycle primary states are simple while legacy unverified endings stay distinct',()=>{
+  for(const [lifecycle_state,label] of [['ACTIVE','异常中'],['INDETERMINATE','状态待核实'],['RESOLVED','已恢复']]){
+    assert.equal(eventStateName({cycle_summary:{},lifecycle_state}),label);
+  }
+  assert.equal(eventStateName({cycle_summary:{},legacy_closed:true,status:'closed',lifecycle_state:'INDETERMINATE'}),'旧版已结束（未复核）');
+});
 
 test('legacy recorded closure is distinct from verified recovery and a current unknown risk',()=>{
   const old={status:'closed',lifecycle_state:'INDETERMINATE',state_reason:'LEGACY_UNREVIEWED',

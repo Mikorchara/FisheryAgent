@@ -27,6 +27,12 @@ class Phase:
 SCENARIOS = {
     "normal": (Phase(0), Phase(180)),
     "low_oxygen": (Phase(0), Phase(60, dissolved_oxygen_mg_l=4.2), Phase(120, dissolved_oxygen_mg_l=2.2, reduced_activity=.5)),
+    # One drop/recovery episode, then hold normal. Values are fictional observations.
+    "oxygen_drop_recovery": (Phase(0), Phase(20),
+        Phase(50, dissolved_oxygen_mg_l=2.2, reduced_activity=.5),
+        Phase(90, dissolved_oxygen_mg_l=2.2, reduced_activity=.5),
+        Phase(180, dissolved_oxygen_mg_l=4.2, reduced_activity=.2),
+        Phase(300), Phase(360)),
     "suspected_disease": (Phase(0), Phase(30, lesion_rate=.3, surface_rate=.25), Phase(120, lesion_rate=.6, surface_rate=.4, death_rate=.08)),
     "reduced_feeding": (Phase(0, feeding=.5), Phase(60, feeding=.05, feeding_anomaly=.6, reduced_activity=.25)),
     "combined_anomaly": (Phase(0), Phase(60, temperature_c=32, dissolved_oxygen_mg_l=3.8, lesion_rate=.3, feeding_anomaly=.3),

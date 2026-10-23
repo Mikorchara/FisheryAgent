@@ -142,7 +142,9 @@ apps/
 │  │  ├─ AI_BACKEND_DEVELOPMENT_GUIDE.md                                  # 请求链、Tool/Prompt 扩展与安全测试指南
 │  │  ├─ EVENT_LIFECYCLE.md                                              # EVT-1 连续恢复、持久化、首页提醒与隔离验收
 │  │  ├─ EVENT_MANAGEMENT.md                                             # EVT-2 事件族、关注区间筛选、引用与硬删除安全规则
+│  │  ├─ EVENT_CYCLE_UI.md                                               # SIMPLIFY-1 周期摘要、服务端筛选分页与原始详情
 │  │  ├─ assets/EVT2/                                                   # 隔离数据首页、事件、详情、确认及390px截图
+│  │  ├─ assets/ACK_CYCLE_DELETE/                                       # 确认列、周期删除预览与390px隔离验收截图
 │  │  ├─ assets/EVT1/                                                   # 虚构数据桌面、390px 与异常概况截图
 │  │  ├─ R2D2A_PRODUCT_INTEGRATION.md                                     # Policy修复、候选、启动器与聊天视图验收
 │  │  ├─ R2D2B_UNIFIED_TOOLS.md                                           # 操作栏根因、三工具本地范围与离线验收
@@ -210,7 +212,9 @@ apps/
 │  │  ├─ test_event_lifecycle.py                                         # 三窗恢复、连续性、重启、裁剪、回滚与固定Seed
 │  │  ├─ test_event_management.py                                        # 事件族、全留存分页、时间语义、并发及受控清理
 │  │  ├─ test_event_ack.py                                               # 周期/等级ACK、幂等并发、审计保护、HTTP与重启
+│  │  ├─ test_ack_cycle_deletion.py                                      # 已结束ACK周期整组删除、并发revision、回滚与权限
 │  │  ├─ test_event_legacy.py                                            # 旧版已结束投影、受控清理、引用/审计与并发保护
+│  │  ├─ test_event_cycles.py                                            # 周期汇总、完整留存筛选、旧记录与原 HTTP 合同
 │  │  ├─ test_monitoring_migration.py                                    # v1→v2显式备份迁移、WAL、回滚及启动拒绝
 │  │  ├─ test_history_projection.py                                      # 历史 API 排序、会话与旧元数据兼容
 │  │  ├─ test_local_http.py                                              # 真实 loopback 上报及停止/重启
@@ -226,6 +230,8 @@ apps/
 │  ├─ events.py                                                          # 纯 EventService、事件变更及只读状态投影
 │  ├─ event_families.py                                                  # 水质风险等级关联、变化证据与当前族展示
 │  ├─ event_records.py                                                   # 事件关注区间筛选及删除资格/参数合同
+│  ├─ event_cycles.py                                                    # 稳定周期只读摘要，不改原事件与人工审计
+│  ├─ event_cycle_deletion.py                                             # 显式删除已结束周期与ACK历史，完整成员与外部引用校验
 │  ├─ event_handling.py                                                  # ACK等级版本、事务内操作与人工状态只读投影
 │  ├─ schema.py                                                          # Monitoring v2、人工表及RESTRICT引用校验
 │  ├─ migrate.py                                                         # 只在显式维护时备份并升级v1；普通启动不调用
