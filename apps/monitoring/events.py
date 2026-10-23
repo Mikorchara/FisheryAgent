@@ -7,6 +7,7 @@ import json
 import uuid
 
 from .contracts import ChannelAnalysis, FindingState
+from .event_records import legacy_closed_record
 from .rules import VISUAL_RULES
 
 
@@ -174,6 +175,8 @@ class EventService:
     def legacy_projection(event):
         result = deepcopy(event)
         if "lifecycle_state" not in result:
+            if legacy_closed_record(event):
+                result['legacy_closed'] = True  # Read-only metadata; no state/time backfill.
             result.update(lifecycle_state="INDETERMINATE", state_reason="LEGACY_UNREVIEWED")
         result.setdefault("publication_status", "PROTOTYPE")
         result["severity"] = result.get("finding_severity", result["severity"])

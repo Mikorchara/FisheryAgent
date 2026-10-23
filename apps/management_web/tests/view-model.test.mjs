@@ -4,6 +4,17 @@ import {routes,routeFor,metricText,filterItems,chartGeometry,timeText,validateBo
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
 
+test('legacy recorded closure is distinct from verified recovery and a current unknown risk',()=>{
+  const old={status:'closed',lifecycle_state:'INDETERMINATE',state_reason:'LEGACY_UNREVIEWED',
+    legacy_closed:true,handling:{ended:true,can_ack:false,action_count:0}};
+  assert.equal(eventStateName(old),'旧版已结束（未复核）');
+  assert.match(eventStateReasonName(old),/原记录已结束/);
+  assert.match(eventStateReasonName(old),/未经新版规则复核/);
+  assert.equal(eventHandlingName(old),'无确认记录');
+  assert.equal(eventStateName({...old,status:'pending',legacy_closed:false}),'恢复状态待确认');
+  assert.equal(eventStateName({status:'closed',lifecycle_state:'RESOLVED'}),'规则条件已消退');
+});
+
 test('manual acknowledgement never replaces observation state or invents a legacy timestamp',()=>{
   assert.equal(eventHandlingName({lifecycle_state:'INDETERMINATE'}),'待确认');
   const event={lifecycle_state:'INDETERMINATE',handling:{state:'ACKNOWLEDGED',action_count:1}};

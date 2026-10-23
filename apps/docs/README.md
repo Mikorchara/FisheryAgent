@@ -4,6 +4,7 @@
 
 ## 阅读入口
 
+- [事件管理现状与简化方案](deep-dive/research/EVENT_MANAGEMENT_SIMPLIFICATION.md)（讨论稿：为什么已恢复仍删不掉、一周期一行、归档与永久删除的取舍；未实施）
 - [EVT-3A 人工知晓、审计与显式 Schema 升级](deep-dive/EVENT_ACK.md)（Prototype 实验；ACK 与规则消退独立，待人工验收）
 - [目录与职责](STRUCTURE.md)
 - [MIG-2 独立发行与数据实例](deep-dive/MANAGEMENT_STANDALONE.md)（独立 Wheel、显式数据根/初始化、隔离测试与 MIG-3 清单）

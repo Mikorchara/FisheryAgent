@@ -4,6 +4,8 @@
 
 ## 已实现
 
+- 旧版已结束事件兼容（仅 Prototype）：明确“旧版已结束（未复核）”；有效原结束信息且无活动/引用/ACK 审计关联时，可经原确认流程清理。保留原 payload 与观测状态，不改 Schema，不自动删除真实记录。[条件与边界](deep-dive/EVENT_MANAGEMENT.md#旧版已结束记录兼容仅-prototype)。
+
 - EVT-3A（仅 Prototype，待人工验收）：稳定周期／等级版本 ACK、追加操作历史及审计成员保护；Monitoring Schema v2，v1 只允许显式备份升级，普通启动拒绝。509 项管理 Python、109 项 Node 通过。[边界与迁移](deep-dive/EVENT_ACK.md)。未实现 Close/Snooze，未同步 Management。
 
 - EVT-2 文案收尾：只读投影区分等级升级、恢复状态待确认与监测数据中断，首页/列表/详情统一；文案本身不改变生命周期或 SQLite Schema。已选择性同步 Management 并经人工验收。

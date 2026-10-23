@@ -11,7 +11,7 @@ from threading import RLock
 from .contracts import IngestionError, ChannelAnalysis, strict_json
 from .events import EventService, interrupt_visual
 from .event_families import associate_water_changes
-from .event_records import EventRecordError, deletable, validate_delete
+from .event_records import EventRecordError, deletable, legacy_closed_record, validate_delete
 from .rules import VISUAL_RULES
 from .schema import SCHEMA_VERSION, add_handling_tables, validate_schema
 from .event_handling import acknowledge, project_handling, sync_existing
@@ -242,7 +242,7 @@ class MonitoringRepository:
             references = {e.get('superseded_by') for e, _ in rows if e.get('superseded_by')}
             for raw, linked in rows:
                 event = self.event_service.legacy_projection(raw)
-                event['deletable'] = deletable(event, linked, event['id'] in references)
+                event['deletable'] = deletable(raw, linked, event['id'] in references)
                 result.append(event)
             return project_handling(db, result)
 
@@ -270,7 +270,9 @@ class MonitoringRepository:
             raise EventRecordError('EVENT_NOT_DELETABLE', 409)
         identity = json.dumps([scope, event_id, [(r['id'], r['payload']) for r in candidates]], ensure_ascii=True)
         revision = hashlib.sha256(identity.encode()).hexdigest()
-        return candidates, dict(scope=scope, event_id=event_id, count=len(candidates), revision=revision)
+        legacy_count = sum(legacy_closed_record(json.loads(r['payload'])) for r in candidates)
+        return candidates, dict(scope=scope, event_id=event_id, count=len(candidates),
+                                legacy_count=legacy_count, revision=revision)
 
     def prepare_event_deletion(self, scope, event_id=None):
         with self.connection() as db:

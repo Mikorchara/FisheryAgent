@@ -71,10 +71,12 @@ test('EVT-2 homepage collapses risk grades but retains unknown evidence and orig
   assert.match(overview.textContent,/当前等级未知/);assert.doesNotMatch(overview.textContent,/当前未见异常信号/);
 });
 
-function eventPage({conflict=false}={}){
+function eventPage({conflict=false,legacy=false}={}){
   const data=fixture();data.event_management={enabled:true,write_token:'fictional-event-capability'};
   const record={...data.events[0],id:'closed-record',lifecycle_state:'RESOLVED',status:'closed',deletable:true,
     channel:'visual',resolved_at:data.monitoring.observed_at};
+  if(legacy)Object.assign(record,{legacy_closed:true,lifecycle_state:'INDETERMINATE',state_reason:'LEGACY_UNREVIEWED',
+    handling:{state:'PENDING',ended:true,can_ack:false,action_count:0,history:[],unavailable_reason:'LEGACY_OR_UNSUPPORTED_IDENTITY'}});
   data.events=[record];let records=[record];const writes=[],queries=[];
   const p=page(data,async(url,options)=>{
     if(url.startsWith('/api/bootstrap'))return {ok:true,json:async()=>structuredClone(data)};
@@ -83,7 +85,7 @@ function eventPage({conflict=false}={}){
         total:records.length?51:0,limit:50,offset:Number(query.get('offset'))})};}
     if(url.startsWith('/api/events/')){
       writes.push({url,value:JSON.parse(options.body),token:options.headers['X-Management-Events']});
-      if(url.endsWith('deletion-preview'))return {ok:true,json:async()=>({count:1,revision:'f'.repeat(64)})};
+      if(url.endsWith('deletion-preview'))return {ok:true,json:async()=>({count:1,legacy_count:legacy?1:0,revision:'f'.repeat(64)})};
       if(conflict)return {ok:false,json:async()=>({error_code:'EVENT_DELETE_CONFLICT'})};
       records=[];data.events=[];return {ok:true,json:async()=>({deleted_count:1})};
     }
@@ -231,6 +233,29 @@ test('EVT-2 bulk clear has two confirmations, global scope and cancellable final
   await p.findButton(p.node('dialog-body'),'确认清理 1 条记录').events.click();await p.ready();
   const commit=p.writes.find(w=>w.url.endsWith('/delete'));
   assert.deepEqual(Object.keys(commit.value).sort(),['revision','scope']);assert.equal(commit.value.scope,'all_resolved');
+});
+
+test('legacy ended history explains closure and cleanup without offering ACK or silently deleting',async()=>{
+  const p=eventPage({legacy:true});await p.open();
+  assert.match(p.node('content').textContent,/旧版已结束（未复核）/);
+  assert.doesNotMatch(p.node('content').textContent,/恢复状态待确认/);
+  p.run('eventDetail(state.data.events[0])');
+  assert.match(p.node('dialog-body').textContent,/未经新版规则复核/);
+  assert.match(p.node('dialog-body').textContent,/不支持人工知晓确认/);
+  assert.equal(p.findButton(p.node('dialog-body'),'确认已知晓'),undefined);
+  p.node('details-dialog').close();
+  p.findButton(p.node('content'),'删除记录').events.click();await p.ready();
+  assert.match(p.node('dialog-body').textContent,/其中 1 条为旧版已结束记录/);
+  assert.match(p.node('dialog-body').textContent,/清理不表示已验证恢复/);
+  p.findButton(p.node('dialog-body'),'取消').events.click();
+  assert.equal(p.writes.filter(w=>w.url.endsWith('/delete')).length,0);
+  p.findButton(p.node('content'),'清理全部已结束事件').events.click();await p.ready();
+  assert.match(p.node('dialog-body').textContent,/其中 1 条为旧版已结束记录/);
+  assert.equal(p.findButton(p.node('dialog-body'),'确认清理 1 条记录'),undefined);
+  p.findButton(p.node('dialog-body'),'继续核对').events.click();
+  assert.match(p.node('dialog-body').textContent,/包含符合条件的旧版已结束记录/);
+  p.findButton(p.node('dialog-body'),'取消').events.click();
+  assert.equal(p.writes.filter(w=>w.url.endsWith('/delete')).length,0);
 });
 
 test('EVT-2 conflicting deletion stays explicit, never retries or clears local data',async()=>{

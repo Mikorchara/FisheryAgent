@@ -11,8 +11,24 @@ class EventRecordError(ValueError):
 
 
 def deletable(event, linked=False, referenced=False, audited=False):
-    return (not linked and not referenced and not audited and event.get('lifecycle_state') == 'RESOLVED' and event.get('status') == 'closed'
-            and parse_time(event.get('resolved_at')) is not None)
+    if linked or referenced or audited or event.get('status') != 'closed':
+        return False
+    end = parse_time(event.get('resolved_at'))
+    if event.get('lifecycle_state') == 'RESOLVED':
+        return end is not None
+    if not legacy_closed_record(event):
+        return False
+    # An old recorded closure permits cleanup, never a new recovery assertion.
+    # Missing, naive or contradictory historical timestamps remain protected.
+    start = parse_time(event.get('occurred_at'))
+    last = parse_time(event.get('last_observed_at'))
+    return bool(start and end and start <= end and (
+        event.get('last_observed_at') is None or last and start <= last <= end))
+
+
+def legacy_closed_record(event):
+    """Use stored structure, never a UI flag, to identify an old recorded closure."""
+    return 'lifecycle_state' not in event and event.get('status') == 'closed'
 
 
 def parse_time(value):

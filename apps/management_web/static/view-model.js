@@ -20,6 +20,7 @@ export function eventHandlingName(item){
   return handling?.state==='ACKNOWLEDGED'?'已知晓':'待确认';
 }
 export function eventStateName(item){
+  if(item.legacy_closed&&item.status==='closed')return '旧版已结束（未复核）';
   const state=eventState(item),progress=item.visual_recovery;
   if(state==='ACTIVE'&&progress?.clear_count>0)return `恢复观察中 ${progress.clear_count}/${progress.required_clear_windows}`;
   if(state==='RESOLVED')return '规则条件已消退';
@@ -35,6 +36,7 @@ export function eventStateName(item){
   return state==='ACTIVE'?'异常持续':'状态未知';
 }
 export function eventStateReasonName(item){
+  if(item.legacy_closed&&item.status==='closed')return '原记录已结束，但缺少完整生命周期或规则身份，未经新版规则复核；不补造恢复证据或人工确认。';
   const state=eventState(item),quality=item.current_data_quality;
   if(state==='RESOLVED')return item.channel==='visual'
     ?'连续可靠观测未再检出该异常信号；不代表疾病治愈或人工处理完成。'

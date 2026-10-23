@@ -54,12 +54,22 @@ EVT-1/EVT-2 及文案收尾已同步 Management 并经人工验收。本文保�
 
 仅同时满足以下条件的记录可硬删除：
 
-- lifecycle_state=RESOLVED、status=closed，具有有效恢复时间；
+- 新版 lifecycle_state=RESOLVED、status=closed，具有有效恢复时间；或满足下文的旧版已结束兼容条件；
 - 没有任何 alerts 关联；
 - 没有其他留存事件以 superseded_by 引用它。
 - 未关联 ACK 审计周期；当前 Prototype 的 event_handling_members 关联成员受单条/批量删除与自动裁剪保护。
 
-ACTIVE、恢复观察、未知、旧 closed 但恢复证据不明的记录，以及被引用的已结束记录均保留。事件族变化快照保留历史标识及证据，详情关联列表只列仍存在的记录。
+ACTIVE、恢复观察、未结束的未知记录、缺少有效结束信息的旧 closed，以及被引用的已结束记录均保留。事件族变化快照保留历史标识及证据，详情关联列表只列仍存在的记录。
+
+### 旧版已结束记录兼容（仅 Prototype）
+
+旧事件可能只有 `status=closed` 和原结束时间，缺少 `lifecycle_state` 与完整规则身份。只读投影增加 `legacy_closed=true`，列表和详情显示“旧版已结束（未复核）”；仍保留 INDETERMINATE / LEGACY_UNREVIEWED，不改写原 payload、结束时间或规则身份，不补造 RESOLVED 或 ACK，不视为当前活动风险。
+
+此类原始记录只有在发生/结束时间有效、含时区且顺序正确，最后观测时间（如存在）有效并位于该区间内，同时无 alerts、superseded_by 引用及 ACK 审计成员关联时，才允许经原预览/确认接口清理。已有显式 ACTIVE / INDETERMINATE 记录不能冒用此兼容路径。缺少结束证据的旧记录仍保护。
+
+列表资格与提交事务共用原始记录判定；删除预览增加 `legacy_count`，单条及批量确认均解释旧记录数量和“未经新版规则复核”。原 `all_resolved` 参数为兼容名称，其范围现在包含符合以上条件的旧版已结束记录；最终仍按服务端 revision 重新校验。没有数据库 Schema 变更，不自动删除现有记录。修改后需重启当前 Web 并刷新页面才能加载新代码。
+
+离线验证：新增 6 项旧格式隔离 SQLite / HTTP 用例及 2 项前端用例，覆盖原 payload 不变、结束时间校验、活动/引用/ACK 保护、提交前新增关联、权限与取消确认。专项 Python 34、Node 35；完整 management-independent 为 Python 515 / Node 111 通过。真实记录仅做只读资格核对，没有执行删除；未实施人工处理完成。
 
 单条删除一次确认；批量先核对范围，再最终确认。批量范围为**全部设备、全部时间的可删除记录，忽略当前筛选与分页**，两步均显示服务端预计数量。取消或 Escape 不提交删除。
 

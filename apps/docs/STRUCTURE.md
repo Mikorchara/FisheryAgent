@@ -130,6 +130,7 @@ apps/
 │  ├─ deep-dive/                                                         # 实际目录
 │  │  ├─ model/                                                          # 实际目录
 │  │  ├─ research/                                                       # 实际目录
+│  │  │  ├─ EVENT_MANAGEMENT_SIMPLIFICATION.md                            # 事件管理现状、ACK 禁删原因及周期归档简化讨论（未实施）
 │  │  │  ├─ R2B3_MANAGEMENT_AI_ARCHITECTURE_REVIEW.md                    # 当前架构、参数故障证据与路线建议
 │  │  │  ├─ R2B5_MANAGEMENT_ASSISTANT_STREAMING_INTEGRATION.md           # Streaming 设计与实施状态
 │  │  │  ├─ R2B_DOMAIN_ANALYSIS_AND_AI_INTEGRATION.md                    # R2B-0 评估基线，非实现现状
@@ -209,6 +210,7 @@ apps/
 │  │  ├─ test_event_lifecycle.py                                         # 三窗恢复、连续性、重启、裁剪、回滚与固定Seed
 │  │  ├─ test_event_management.py                                        # 事件族、全留存分页、时间语义、并发及受控清理
 │  │  ├─ test_event_ack.py                                               # 周期/等级ACK、幂等并发、审计保护、HTTP与重启
+│  │  ├─ test_event_legacy.py                                            # 旧版已结束投影、受控清理、引用/审计与并发保护
 │  │  ├─ test_monitoring_migration.py                                    # v1→v2显式备份迁移、WAL、回滚及启动拒绝
 │  │  ├─ test_history_projection.py                                      # 历史 API 排序、会话与旧元数据兼容
 │  │  ├─ test_local_http.py                                              # 真实 loopback 上报及停止/重启

@@ -16,7 +16,7 @@ const knowledgeWorkspace=createKnowledgeWorkspace(services.knowledge);
 const settingsWorkspace=createSettingsWorkspace(services.settings,toolPolicySettings,{onBudgetSaved:()=>assistantWorkspace.policyChanged()});
 const severity=item=>badge(eventSeverityName(item),item.severity==='critical'?'critical':item.severity==='warning'?'warning':'neutral');
 const status=item=>el('div',{class:'event-status'},[
-  badge(item.source_kind==='simulator'?eventStateName(item):(item.status==='pending'?'待处理（演示）':'已处理（演示）'),eventState(item)==='RESOLVED'?'neutral':'warning'),
+  badge(item.source_kind==='simulator'?eventStateName(item):(item.status==='pending'?'待处理（演示）':'已处理（演示）'),item.status==='closed'||eventState(item)==='RESOLVED'?'neutral':'warning'),
   ...(item.source_kind==='simulator'?[badge(eventHandlingName(item),item.handling?.state==='ACKNOWLEDGED'?'success':'neutral')]:[])]);
 
 function select(label,choices,value,onchange){return el('label',{class:'field'},[el('span',{text:label}),el('select',{'aria-label':label,onchange:e=>onchange(e.target.value)},
@@ -26,7 +26,9 @@ function details(title,content){$('dialog-title').textContent=title;$('dialog-bo
 function eventHandlingPanel(item){
   if(item.source_kind!=='simulator')return [];
   const h=item.handling;
-  const reason=({LEGACY_OR_UNSUPPORTED_IDENTITY:'旧记录缺少可写的稳定周期或规则身份，仅供查看。',
+  const reason=({LEGACY_OR_UNSUPPORTED_IDENTITY:item.legacy_closed?
+    '旧版已结束记录不支持人工知晓确认；符合清理条件时可在事件列表确认删除。':
+    '旧记录缺少可写的稳定周期或规则身份，仅供查看。',
     EVENT_ENDED:'规则条件已消退，仅保留历史知晓记录。',NOT_CURRENT_GRADE:'此记录不是当前等级；请从当前等级记录确认风险。'})[h?.unavailable_reason];
   return [el('section',{class:'event-handling'},[el('h3',{text:'人工知晓记录'}),
     rows([['人工状态',eventHandlingName(item)],['知晓对象',h?.ended?'已结束周期（仅历史）':h?.grade_code?
@@ -188,14 +190,15 @@ async function requestEventDeletion(scope,item=null){
         finally{eventDeletionBusy=false;commit.disabled=false;}
       },'danger');
       details(scope==='single'?'确认删除历史事件':'最终确认：清理全部已结束事件',[
-        el('p',{text:scope==='single'?`${item.title} · ${item.id}`:'范围：全部设备、全部时间的可删除 RESOLVED 记录；不受当前筛选或分页影响。'}),
+        el('p',{text:scope==='single'?`${item.title} · ${item.id}`:'范围：全部设备、全部时间的可删除已结束记录，包含符合条件的旧版已结束记录；不受当前筛选或分页影响。'}),
         el('p',{text:`预计删除 ${plan.count} 条。数据库硬删除，应用内不可撤销；水质历史、批次及其他业务数据不受影响。`}),
+        ...(plan.legacy_count?[el('p',{text:`其中 ${plan.legacy_count} 条为旧版已结束记录，未经新版规则复核；清理不表示已验证恢复，不补造人工确认。`})]:[]),
         el('div',{class:'event-confirm-actions'},[...(plan.count?[commit]:[]),button('取消',cancel)]),
         ...(!plan.count?[el('p',{text:'没有可删除的已结束事件。'})]:[])]);
     };
     if(scope==='single')finish();
     else details('清理范围核对',[
-      el('p',{text:`全部设备、全部时间，共 ${plan.count} 条可删除的已结束事件；忽略当前筛选和分页。活动、恢复观察和未知事件均保留。`}),
+      el('p',{text:`全部设备、全部时间，共 ${plan.count} 条可删除的已结束事件，其中 ${plan.legacy_count||0} 条为旧版已结束记录；忽略当前筛选和分页。活动、恢复观察及未结束的未知事件均保留。`}),
       el('div',{class:'event-confirm-actions'},[button('继续核对',finish),button('取消',cancel)])]);
   }catch(_){details('无法准备删除',[el('p',{text:'记录状态或权限不允许操作。请刷新后重新检查。'}),button('关闭',cancel)]);}
   finally{eventDeletionBusy=false;}
