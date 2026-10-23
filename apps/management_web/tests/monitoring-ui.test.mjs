@@ -93,6 +93,39 @@ function eventPage({conflict=false}={}){
     open:async()=>{await p.ready();p.run("location.hash='#events';render()");await p.ready();}};
 }
 
+test('EVT wording is consistent in homepage, list, detail and family member rows',async()=>{
+  const cases=[
+    [{lifecycle_state:'INDETERMINATE',state_reason:'OTHER_RISK_CONDITION_ACTIVE',family_current_code:'OXYGEN_CRITICAL_LOW',family_level_change:'UPGRADED'},'已升级为严重低氧'],
+    [{lifecycle_state:'INDETERMINATE',state_reason:'OTHER_RISK_CONDITION_ACTIVE'},'同指标等级已变化'],
+    [{lifecycle_state:'INDETERMINATE',state_reason:'FRAME_COVERAGE_INSUFFICIENT'},'恢复状态待确认'],
+    [{lifecycle_state:'INDETERMINATE',state_reason:'STALE_OR_OFFLINE',current_data_quality:{connectivity:'offline'}},'监测数据中断'],
+    [{lifecycle_state:'ACTIVE',visual_recovery:{clear_count:2,required_clear_windows:3}},'恢复观察中 2/3'],
+  ];
+  const walk=node=>[node,...node.children.flatMap(walk)];
+  for(const [fields,label] of cases){
+    const d=fixture();const record={...d.events[0],device_id:'sim-pond-1',channel:'visual',...fields};
+    d.events=[record];const p=page(d);await p.ready();
+    let overview=walk(p.node('content')).find(n=>n.attributes['data-current-anomalies']==='true');
+    assert.ok(overview.textContent.includes(label));assert.match(overview.textContent,/SIMULATOR/);
+    walk(overview).find(n=>n.tagName==='button'&&n.textContent==='查看详情').events.click();
+    assert.ok(p.node('dialog-body').textContent.includes(label));
+    p.run("location.hash='#events';render()");
+    assert.ok(p.node('content').textContent.includes(label));
+    p.run('eventDetail(state.data.events[0])');
+    assert.ok(p.node('dialog-body').textContent.includes(label));
+  }
+  const d=fixture();const member={...d.events[0],channel:'water',lifecycle_state:'INDETERMINATE',
+    state_reason:'OTHER_RISK_CONDITION_ACTIVE',family_current_code:'OXYGEN_CRITICAL_LOW',family_level_change:'UPGRADED'};
+  d.events=[{...member,risk_family:{label:'溶解氧偏低风险',transitions:[]},family_members:[member]}];
+  const p=page(d);await p.ready();p.run('eventDetail(state.data.events[0])');
+  assert.equal(p.node('dialog-body').textContent.split('已升级为严重低氧').length-1,2);
+  p.setData({...d,events:[{...member,channel:'visual',status:'closed',lifecycle_state:'RESOLVED'}]});
+  await p.run('refresh()');p.run("location.hash='#events';render();eventDetail(state.data.events[0])");
+  assert.match(p.node('dialog-body').textContent,/规则条件已消退/);
+  assert.match(p.node('dialog-body').textContent,/连续可靠观测未再检出/);
+  assert.match(p.node('dialog-body').textContent,/不代表疾病治愈/);
+});
+
 test('EVT-2 server queries all five intervals with combined filters and pagination',async()=>{
   const p=eventPage();await p.open();
   const range=p.walk(p.node('content')).find(n=>n.attributes['aria-label']==='事件时间范围');
@@ -217,7 +250,7 @@ test('event lifecycle and critical severity are distinct from data quality and h
     {...d.events[0],id:'resolved',title:'有效新观测',status:'closed',lifecycle_state:'RESOLVED'}];
   const p=page(d);await p.ready();p.run("location.hash='#events';render()");
   assert.match(p.node('content').textContent,/严重/);assert.match(p.node('content').textContent,/异常持续/);
-  assert.match(p.node('content').textContent,/状态未知/);assert.match(p.node('content').textContent,/规则条件已消退/);
+  assert.match(p.node('content').textContent,/恢复状态待确认/);assert.match(p.node('content').textContent,/规则条件已消退/);
   assert.match(p.node('content').textContent,/PROTOTYPE/);
   p.run("state.eventFilters.status='INDETERMINATE';render()");
   assert.match(p.node('content').textContent,/证据不足/);assert.doesNotMatch(p.node('content').textContent,/低氧实验规则/);
@@ -268,11 +301,11 @@ test('unknown active observation is distinct from recovery and resolved signal w
   const d=fixture();d.events=[{...d.events[0],device_id:'sim-pond-1',channel:'visual',code:'SUSPECTED_LESION',
     lifecycle_state:'INDETERMINATE',visual_recovery:{clear_count:0,required_clear_windows:3,continuity:'interrupted'}}];
   const p=page(d);await p.ready();
-  assert.match(p.node('content').textContent,/观测中断.*状态未知/);
+  assert.match(p.node('content').textContent,/恢复状态待确认/);
   assert.doesNotMatch(p.node('content').textContent,/恢复观察中/);
   d.events[0].lifecycle_state='RESOLVED';d.events[0].status='closed';p.setData(d);
   p.run("location.hash='#events'");await p.run('refresh()');
-  assert.match(p.node('content').textContent,/连续观测未再检出/);
+  assert.match(p.node('content').textContent,/规则条件已消退/);
   assert.doesNotMatch(p.node('content').textContent,/已确认消退/);
 });
 

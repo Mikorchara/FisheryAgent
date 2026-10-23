@@ -93,7 +93,16 @@ def project_families(events):
         for event in members:
             event['family_current_code'] = current['code'] if current else None
             event['family_current_event_id'] = current['id'] if current else None
+            definition = FAMILIES.get(event.get('code'))
+            current_definition = FAMILIES.get(current['code']) if current else None
+            event['family_level_change'] = None
+            if (event.get('lifecycle_state') == 'INDETERMINATE'
+                    and event.get('state_reason') == 'OTHER_RISK_CONDITION_ACTIVE'
+                    and definition and current_definition):
+                event['family_level_change'] = 'UPGRADED' if current_definition[3] > definition[3] else 'CHANGED'
+        for event in members:
             event['family_members'] = [{k: e.get(k) for k in ('id', 'code', 'title', 'severity',
                 'lifecycle_state', 'state_reason', 'status', 'channel', 'source_kind',
+                'family_current_code', 'family_level_change', 'current_data_quality',
                 'occurred_at', 'last_observed_at', 'batch_id', 'resolved_at')} for e in members]
     return result

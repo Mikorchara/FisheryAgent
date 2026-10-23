@@ -204,4 +204,9 @@ class EventService:
             if result.get("channel") == "visual" and result.get("code") in VISUAL_RULES:
                 interrupt_visual(result, result["state_reason"], assessment.evaluated_at)
         result["evaluated_at"] = assessment.evaluated_at
+        # Read-only display evidence: the combined reason STALE_OR_OFFLINE cannot
+        # by itself prove an outage. Never copy these query-time facts into storage.
+        quality = assessment.data_quality
+        result["current_data_quality"] = dict(quality=quality.quality,
+            freshness=quality.freshness, connectivity=quality.connectivity)
         return result

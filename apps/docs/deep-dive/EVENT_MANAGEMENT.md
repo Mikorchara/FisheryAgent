@@ -6,7 +6,27 @@
 
 隔离实测 DO 4.2 → 2.2 mg/L：OXYGEN_LOW 从 warning/ACTIVE 变为 INDETERMINATE，原因 OTHER_RISK_CONDITION_ACTIVE；同时创建 critical/ACTIVE 的 OXYGEN_CRITICAL_LOW。两个 alerts 关联仍保留。旧机制按 code 管理周期，严重等级切换不提供恢复证明；原页面把等级变化与观测不足统一显示为未知。
 
-阈值仍由 diagnosis.py 唯一拥有：DO <1.0 极低、<3.0 低、<5.0 偏低。本轮没有调整它们。等级变化现在显示“同指标等级已变化”；真实缺测、过期和离线仍显示未知。只读过期投影会明确使用 STALE_OR_OFFLINE，避免保留上次等级变化原因。
+阈值仍由 diagnosis.py 唯一拥有：DO <1.0 极低、<3.0 低、<5.0 偏低。本轮没有调整它们。只读过期投影使用 STALE_OR_OFFLINE，避免保留上次等级变化原因；该合并原因不能单独证明设备离线。
+
+### EVT-2 文案收尾：显示语义不改变生命周期
+
+首页、事件列表、详情及详情内关联成员共用 `eventStateName()`；详情用 `eventStateReasonName()` 展示中文解释，原原因代码仍保留供核对。
+
+| 显示条件 | 最终文案 |
+|---|---|
+| INDETERMINATE、OTHER_RISK_CONDITION_ACTIVE，且同族当前可靠等级高于该记录；当前为 OXYGEN_CRITICAL_LOW / EXTREME | 已升级为严重低氧 / 已升级为极低氧 |
+| 其他同指标等级转换，或旧数据不能证实升级方向 | 同指标等级已变化 |
+| 当前设备已被既有分析判定 offline，或明确收到缺失视觉通道的报文 | 监测数据中断 |
+| 其他 INDETERMINATE：仅过期但仍 online、无效/不完整/缺少证据、规则变化、旧记录 | 恢复状态待确认 |
+| ACTIVE，视觉可靠 CLEAR 计数 1 或 2 | 恢复观察中 1/3 或 2/3 |
+| ACTIVE，非恢复观察 | 异常持续 |
+| RESOLVED | 规则条件已消退 |
+
+视觉消退详情明确为“连续可靠观测未再检出该异常信号”，不代表疾病治愈或人工处理完成。历史 `visual_recovery.continuity=interrupted` 可能记录过去的窗口不连续，不能仅凭它断言当前离线；页面改为说明“历史观测存在不连续”。无活动事件的空状态仍沿用严格的可靠观测门禁，未知不显示正常。SIMULATOR 来源说明保留。
+
+`EventService.project()` 只读追加 `current_data_quality`（quality/freshness/connectivity）；`project_families()` 依据既有等级序号追加 `family_level_change`，并投影到关联成员。两者不落盘，不改变 status、lifecycle_state、state_reason、code、阈值、时间或恢复规则。没有 Schema 变化、历史回填或人工管理能力；旧 payload 缺少这些字段时保守显示，不猜测标题字符串。
+
+本次文案收尾离线验证：Targeted Python 32 项、Targeted Node 30 项通过；完整 Monitoring 144、管理 Web 144、Simulator 20、管理 Node 106 项通过。新增合成事件验证查询前后原 payload 不变、旧族投影、离线与仅过期的区分、三窗恢复及 Bootstrap/列表/详情字段一致；真实页面代码的 DOM 回归核对首页、列表、详情和关联成员文案。本次未启动浏览器或真实数据实例，下面 EVT-2 原验收截图未重新生成。
 
 ## 2. 关联方式与证据
 

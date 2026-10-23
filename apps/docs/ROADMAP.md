@@ -4,6 +4,8 @@
 
 ## 已实现
 
+- EVT-2 文案收尾（Prototype）：只读投影区分等级升级、恢复状态待确认与监测数据中断，首页/列表/详情统一；不改变生命周期或 SQLite Schema。人工 ACK/Close/Snooze 仅调查，未实施；尚未同步 Management。
+
 - EVT-2（Prototype 待人工验收）：按风险族整合首页等级提示，保留 code 与变化证据；事件关注区间五档筛选、服务端分页、已恢复历史预览/确认/事务硬删除。[规则与限制](deep-dive/EVENT_MANAGEMENT.md)。尚未同步 Management。
 
 - EVT-1（Prototype 待人工验收）：视觉异常连续三个可靠 CLEAR 才消退；恢复进度同事务持久化，活动事件不受历史 300 条裁剪。首页新增当前异常概况；[状态与验证](deep-dive/EVENT_LIFECYCLE.md)。尚未同步 Management。

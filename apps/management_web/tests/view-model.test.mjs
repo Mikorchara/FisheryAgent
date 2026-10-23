@@ -1,8 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {routes,routeFor,metricText,filterItems,chartGeometry,timeText,validateBootstrap} from '../static/view-model.js';
+import {routes,routeFor,metricText,filterItems,chartGeometry,timeText,validateBootstrap,eventStateName,eventStateReasonName} from '../static/view-model.js';
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
+
+test('event wording distinguishes structured grade changes, uncertainty and interruption',()=>{
+  const unknown={lifecycle_state:'INDETERMINATE'};
+  const grade={...unknown,state_reason:'OTHER_RISK_CONDITION_ACTIVE',family_current_code:'OXYGEN_CRITICAL_LOW',family_level_change:'UPGRADED'};
+  assert.equal(eventStateName(grade),'已升级为严重低氧');
+  assert.equal(eventStateName({...grade,family_current_code:'OXYGEN_CRITICAL_EXTREME'}),'已升级为极低氧');
+  assert.equal(eventStateName({...grade,family_level_change:'CHANGED'}),'同指标等级已变化');
+  assert.equal(eventStateName({...grade,family_current_code:'PH_CRITICAL_LOW'}),'同指标等级已变化');
+  for(const state_reason of [undefined,'LEGACY_UNREVIEWED','RULE_CHANGED','METRIC_NOT_RELIABLE','FRAME_COVERAGE_INSUFFICIENT','CURRENT_EVIDENCE_UNAVAILABLE','STALE_OR_OFFLINE']){
+    assert.equal(eventStateName({...unknown,state_reason}),'恢复状态待确认');
+  }
+  const stale={...unknown,state_reason:'STALE_OR_OFFLINE',current_data_quality:{freshness:'stale',connectivity:'online'}};
+  assert.equal(eventStateName(stale),'恢复状态待确认');
+  assert.match(eventStateReasonName(stale),/已过期/);
+  const offline={...stale,current_data_quality:{freshness:'stale',connectivity:'offline'}};
+  assert.equal(eventStateName(offline),'监测数据中断');
+  assert.match(eventStateReasonName(offline),/上报中断/);
+  assert.equal(eventStateName({...unknown,state_reason:'VISUAL_OBSERVATION_MISSING'}),'监测数据中断');
+  // Old continuity metadata can describe a past gap; it cannot prove a current outage.
+  assert.equal(eventStateName({...unknown,visual_recovery:{continuity:'interrupted'}}),'恢复状态待确认');
+  assert.equal(eventStateName({lifecycle_state:'ACTIVE',visual_recovery:{clear_count:2,required_clear_windows:3}}),'恢复观察中 2/3');
+  for(const channel of ['water','visual'])assert.equal(eventStateName({channel,lifecycle_state:'RESOLVED'}),'规则条件已消退');
+  assert.match(eventStateReasonName({channel:'visual',lifecycle_state:'RESOLVED'}),/连续可靠观测未再检出/);
+  assert.match(eventStateReasonName({channel:'visual',lifecycle_state:'RESOLVED'}),/不代表疾病治愈/);
+});
 
 test('seven distinct modules navigate safely including unknown hash',()=>{
   assert.equal(routes.length,7);assert.equal(new Set(routes.map(r=>r.id)).size,7);

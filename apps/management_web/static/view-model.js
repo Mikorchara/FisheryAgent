@@ -17,9 +17,34 @@ export function eventState(item){return item.lifecycle_state||(item.status==='cl
 export function eventStateName(item){
   const state=eventState(item),progress=item.visual_recovery;
   if(state==='ACTIVE'&&progress?.clear_count>0)return `恢复观察中 ${progress.clear_count}/${progress.required_clear_windows}`;
-  if(state==='RESOLVED')return item.channel==='visual'?'连续观测未再检出':'规则条件已消退';
-  if(state==='INDETERMINATE'&&item.state_reason==='OTHER_RISK_CONDITION_ACTIVE')return '同指标等级已变化';
-  return ({ACTIVE:'异常持续',INDETERMINATE:'观测中断／状态未知'})[state]||'状态未知';
+  if(state==='RESOLVED')return '规则条件已消退';
+  if(state==='INDETERMINATE'){
+    if(item.current_data_quality?.connectivity==='offline'||item.state_reason==='VISUAL_OBSERVATION_MISSING')return '监测数据中断';
+    if(item.state_reason==='OTHER_RISK_CONDITION_ACTIVE'){
+      // Rank direction comes from the server association, never from titles or thresholds.
+      const label=({OXYGEN_CRITICAL_LOW:'严重低氧',OXYGEN_CRITICAL_EXTREME:'极低氧'})[item.family_current_code];
+      return item.family_level_change==='UPGRADED'&&label?`已升级为${label}`:'同指标等级已变化';
+    }
+    return '恢复状态待确认';
+  }
+  return state==='ACTIVE'?'异常持续':'状态未知';
+}
+export function eventStateReasonName(item){
+  const state=eventState(item),quality=item.current_data_quality;
+  if(state==='RESOLVED')return item.channel==='visual'
+    ?'连续可靠观测未再检出该异常信号；不代表疾病治愈或人工处理完成。'
+    :'可靠观测满足规则恢复条件；不代表人工处理完成。';
+  if(state==='ACTIVE')return item.visual_recovery?.clear_count>0
+    ?'连续可靠窗口尚未达到恢复门槛（三窗为本地实验参数）。':'当前规则仍命中；未表示人工已经知晓或处理。';
+  if(quality?.connectivity==='offline')return '设备上报中断，无法确认当前风险或恢复。';
+  if(item.state_reason==='OTHER_RISK_CONDITION_ACTIVE')return '该记录的等级暂未命中，同指标仍有其他风险等级；不表示异常已恢复。';
+  if(item.state_reason==='STALE_OR_OFFLINE'&&quality?.freshness==='stale')return '观测已过期，无法确认当前风险或恢复。';
+  return ({VISUAL_OBSERVATION_MISSING:'新报文缺少视觉通道，观测连续性中断，不能作为恢复证据。',
+    RULE_CHANGED:'规则身份已变化，当前证据不能确认旧规则事件是否消退。',
+    LEGACY_UNREVIEWED:'旧记录缺少可核验的生命周期证据，未重算历史。',
+    METRIC_NOT_RELIABLE:'当前指标观测不完整或无效，不能作为恢复证据。',
+    FRAME_COVERAGE_INSUFFICIENT:'有效视觉帧覆盖不足，不能证明异常信号已经消退。',
+    NO_DATA:'缺少可用观测，不能据此确认恢复。'})[item.state_reason]||'缺少足够的当前可靠证据，无法确认异常是否消退。';
 }
 export function activeEventOverview(data,deviceId){
   const candidates=data.events.filter(item=>(item.device_id||item.device)===deviceId&&!item.superseded_by
