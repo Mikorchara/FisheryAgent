@@ -1,1 +1,1 @@
-"""BOT-1A offline QQ boundary. No QQ client, credentials or model execution."""
+"""Read-only QQ adapter; importing the package starts no I/O or model execution."""

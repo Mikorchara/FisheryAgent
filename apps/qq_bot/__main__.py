@@ -1,5 +1,5 @@
-"""Explicit offline-only entry point. No real-data/config/secret options."""
-from .offline import main
+"""Explicit offline or confirmed official QQ entry; no model execution."""
+from .cli import main
 
 if __name__ == '__main__':
     raise SystemExit(main())

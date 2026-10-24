@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "app_id": "REPLACE_APP_ID",
+  "groups": [
+    {
+      "group_id": "REPLACE_GROUP_OPENID",
+      "device_id": "sim-pond-1",
+      "members": ["REPLACE_MEMBER_OPENID"],
+      "capabilities": ["current", "history", "knowledge", "events"]
+    }
+  ]
+}

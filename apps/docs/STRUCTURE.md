@@ -7,9 +7,14 @@ MIG-2：新增 `apps/management_paths.py`（统一业务数据位置）与 `mana
 ```text
 apps/
 ├─ management_paths.py                                                  # 统一数据路径；默认旧路径、显式独立实例
-├─ qq_bot/                                                              # BOT-1A离线Adapter，独立虚构实例，无QQ/AI连接
+├─ qq_bot/                                                              # 只读Adapter；BOT-1A离线 / BOT-1B显式QQ联调，无LLM
 │  ├─ __init__.py                                                       # 无启动I/O的包边界
-│  ├─ __main__.py                                                       # 仅显式offline-demo入口
+│  ├─ __main__.py                                                       # 调用CLI；导入时不启动
+│  ├─ cli.py                                                            # 离线/配置/发现/显式联网，帮助或临时虚构数据
+│  ├─ configuration.py                                                  # 严格访问JSON、复用私有CredentialStore和安全写入器
+│  ├─ transport.py                                                      # 固定QQ HTTPS/WSS、AccessToken、关联msg_id被动回复
+│  ├─ gateway.py                                                        # Identify/Resume/心跳、有界worker与安全日志
+│  ├─ examples/access.example.json                                      # 虚构App/群/成员白名单模板，不含凭据
 │  ├─ contracts.py                                                      # 不可变群/成员/设备能力配置及受限消息解析
 │  ├─ adapter.py                                                        # 时效、去重、限频、会话计数和容量/并发拒绝
 │  ├─ service.py                                                        # 复用权威服务的固定只读命令
@@ -17,6 +22,10 @@ apps/
 │  └─ tests/
 │     ├─ __init__.py                                                    # 离线测试包
 │     ├─ test_adapter.py                                                # 查询/权限/去重/限频/异常与数据只读性
+│     ├─ test_transport.py                                              # Mock HTTP、token、被动回复和错误边界
+│     ├─ test_gateway.py                                                # Fake QQ心跳/重连/权限，本机WS回环与清理
+│     ├─ test_reconnect.py                                              # 本机Gateway黑洞/阻塞I/O、Resume/重新鉴权和线程清理
+│     ├─ test_configuration_cli.py                                      # 私有Store路由、CLI安全与临时实例
 │     └─ test_offline.py                                                # CLI、网络保护和临时目录清理
 ├─ ai_backend/                                                           # 管理正式通用LLM Backend，无旧Runtime依赖
 │  ├─ tests/                                                             # 离线测试及Fake SDK

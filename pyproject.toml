@@ -14,6 +14,9 @@ dependencies = [
     "Flask>=3.0,<4.0",
 ]
 
+[project.optional-dependencies]
+qq = ["websockets>=15.0.1,<16"]
+
 [tool.setuptools.packages.find]
 where = ["src", "."]
 include = ["fishery_ai", "fishery_ai.*", "apps", "apps.ai_backend", "apps.ai_backend.*", "apps.ai_service", "apps.ai_service.*", "apps.knowledge", "apps.knowledge.*", "apps.monitoring", "apps.monitoring.*", "apps.simulator", "apps.simulator.*", "apps.management_web", "apps.management_web.*", "apps.qq_bot", "apps.qq_bot.*"]
@@ -31,3 +34,4 @@ fishery_ai = ["resources/knowledge/*", "resources/mock/*", "resources/scenarios/
 "apps.ai_service" = ["resources/*.json"]
 "apps.ai_service.runtime" = ["resources/*.json"]
 "apps.management_web" = ["static/*.html", "static/*.css", "static/*.js"]
+"apps.qq_bot" = ["examples/*.json"]

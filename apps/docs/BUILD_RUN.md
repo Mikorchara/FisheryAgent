@@ -4,6 +4,10 @@ EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 �
 
 ## 快速开始 / 常用指令
 
+### BOT-1B QQ 官方测试群联调
+
+Prototype 已增加官方 WebSocket 通信层，真实群验收待本机配置。不要将密钥写入源码或访问 JSON；在项目根执行 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot --configure-secret` 隐藏录入，再按 [BOT-1B 配置与人工验收](deep-dive/BOT1B_QQ_TRANSPORT.md#2-本机配置与人工验收) 发现 OpenID、编辑白名单，显式启用网络。先测试 help-only，再使用临时虚构数据。没有真实业务数据入口、LLM、主动通知或群聊写操作；Ctrl+C 或限时结束回收连接。原离线命令保留。
+
 ### BOT-1A 离线实验
 
 在 `D:\CodexProject\Fishery_AI_Prototype` 执行 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot --offline-demo`；可加 `--command '/历史水质 30'`。只创建并清理本仓 `outputs/test-tmp` 内虚构实例，不读取现有数据、不连接 QQ/AI。后续 Bot 功能先在 Prototype 开发并人工验收，获批提交后再选择性同步 Management。[实现、限制及本轮验证](deep-dive/BOT1A_OFFLINE_PROTOTYPE.md)

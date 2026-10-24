@@ -4,6 +4,8 @@
 
 ## 阅读入口
 
+- [BOT-1B QQ 官方通信联调](deep-dive/BOT1B_QQ_TRANSPORT.md)（WS、私有凭据、OpenID 白名单、帮助/虚构只读查询；真实测试群待人工验收，未同步 Management）
+
 - [BOT-1A QQ Bot 离线原型与移植记录](deep-dive/BOT1A_OFFLINE_PROTOTYPE.md)（从 Management 保留成果移植；后续 BOT-1B/BOT-1C 先在 Prototype 开发，验收提交后再选择性同步）
 
 - [SIMPLIFY-1 风险周期列表](deep-dive/EVENT_CYCLE_UI.md)（Prototype 待验收；服务端整合、原始详情、保留 ACK 审计保护）

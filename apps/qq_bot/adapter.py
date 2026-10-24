@@ -1,4 +1,4 @@
-"""Synchronous OFFLINE ingress: bounded RAM, no socket/HTTP/secret/model client."""
+"""Shared bounded read-only ingress; live network ownership stays in Transport."""
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -11,7 +11,7 @@ from .service import plain
 
 
 @dataclass(frozen=True)
-class OfflineReply:
+class GroupReply:
     group_id: str
     msg_id: str
     content: str = field(repr=False)
@@ -22,20 +22,23 @@ class OfflineReply:
 @dataclass(frozen=True)
 class Outcome:
     code: str
-    reply: OfflineReply | None = None
+    reply: GroupReply | None = None
     mode: str = 'OFFLINE_NOT_SENT'
 
 
-class OfflineQQAdapter:
-    """Caller supplies fake transport AppID, NOT a trusted identity assertion.
+class QQAdapter:
+    """Transport supplies AppID; only the authenticated live Gateway may use live mode.
 
     Sessions retain counters, not chat history. Dedup is process-local and never
-    evicts a live entry to admit another. Future live transport needs its own
-    authenticated boundary and durable delivery semantics.
+    evicts a live entry to admit another. The live Gateway owns authentication;
+    this prototype does not promise durable or exactly-once delivery.
     """
-    def __init__(self, config: BotConfig, queries, *, clock=None):
+    def __init__(self, config: BotConfig, queries, *, clock=None, mode="OFFLINE_NOT_SENT"):
         if not isinstance(config, BotConfig):
             raise BotError('INVALID_ACCESS_CONFIG')
+        if mode not in ('OFFLINE_NOT_SENT', 'QQ_PASSIVE_READY'):
+            raise BotError('INVALID_ADAPTER_MODE')
+        self.mode = mode
         self.config, self._queries = config, queries
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._lock = Lock()
@@ -45,33 +48,33 @@ class OfflineQQAdapter:
     def receive(self, raw: bytes, *, transport_app_id: str):
         # No worker/queue: reject concurrent ingress rather than wait unboundedly.
         if not self._lock.acquire(blocking=False):
-            return Outcome('BUSY')
+            return self._outcome('BUSY')
         try:
             return self._receive(raw, transport_app_id)
         except BotError as error:
-            return Outcome(error.code)
+            return self._outcome(error.code)
         except Exception:
-            return Outcome('READ_FAILED')  # Never serialize exception text.
+            return self._outcome('READ_FAILED')  # Never serialize exception text.
         finally:
             self._lock.release()
 
     def _receive(self, raw, app_id):
         if app_id != self.config.app_id:
-            return Outcome('APP_DENIED')
+            return self._outcome('APP_DENIED')
         now = utc(self._clock())
         # A time rollback must not resurrect expired requests/rate windows.
         if self._last_now is not None and now < self._last_now:
-            return Outcome('CLOCK_ROLLBACK')
+            return self._outcome('CLOCK_ROLLBACK')
         self._last_now = now
         message = decode(raw)
         access = next((g for g in self.config.groups if g.group_id == message.group_id), None)
         if access is None:
-            return Outcome('GROUP_DENIED')
+            return self._outcome('GROUP_DENIED')
         if message.member_id not in access.members:
-            return Outcome('MEMBER_DENIED')
+            return self._outcome('MEMBER_DENIED')
         age = (now - message.timestamp).total_seconds()
         if age < -30 or age >= 300:
-            return Outcome('MESSAGE_EXPIRED')
+            return self._outcome('MESSAGE_EXPIRED')
         key = (app_id, message.group_id, message.message_id)
         fingerprint = hashlib.sha256(json.dumps([message.member_id, message.timestamp.isoformat(),
             message.content], ensure_ascii=True).encode()).hexdigest()
@@ -81,19 +84,19 @@ class OfflineQQAdapter:
             while bucket and bucket[0] + timedelta(seconds=60) <= now:
                 bucket.popleft()
         if key in self._seen:
-            return Outcome('DUPLICATE' if self._seen[key][0] == fingerprint else 'MESSAGE_ID_CONFLICT')
+            return self._outcome('DUPLICATE' if self._seen[key][0] == fingerprint else 'MESSAGE_ID_CONFLICT')
         session_key = (app_id, message.group_id, message.member_id, access.device_id)
         if len(self._seen) >= self.config.dedup_limit:
-            return Outcome('DEDUP_CAPACITY')
+            return self._outcome('DEDUP_CAPACITY')
         if session_key not in self._sessions and len(self._sessions) >= self.config.session_limit:
-            return Outcome('SESSION_CAPACITY')
+            return self._outcome('SESSION_CAPACITY')
         session = self._sessions.setdefault(session_key, dict(last=now, count=0, rate=deque()))
         while session['rate'] and session['rate'][0] + timedelta(seconds=60) <= now:
             session['rate'].popleft()
         group_rate = self._groups.setdefault(message.group_id, deque())
         if (len(session['rate']) >= self.config.member_per_minute
                 or len(group_rate) >= self.config.group_per_minute):
-            return Outcome('RATE_LIMITED')
+            return self._outcome('RATE_LIMITED')
         # Claim before query; failures/replays cannot execute it again.
         self._seen[key] = (fingerprint, message.timestamp + timedelta(seconds=300))
         session['last'] = now
@@ -103,13 +106,23 @@ class OfflineQQAdapter:
         # A delayed read cannot produce an already-expired passive reply.
         finished = utc(self._clock())
         if finished < now or (finished - message.timestamp).total_seconds() >= 300:
-            return Outcome('REPLY_EXPIRED')
-        text = '【BOT-1A OFFLINE · 离线输出，未发送 QQ】\n' + plain(text, 1600)
+            return self._outcome('REPLY_EXPIRED')
+        prefix = '【BOT-1A OFFLINE · 离线输出，未发送 QQ】' if self.mode == 'OFFLINE_NOT_SENT' else '【BOT-1B 只读实验】'
+        text = prefix + '\n' + plain(text, 1600)
         if code == 'OK':
             session['count'] += 1
-        return Outcome(code, OfflineReply(message.group_id, message.message_id, text))
+        return self._outcome(code, GroupReply(message.group_id, message.message_id, text))
+
+    def _outcome(self, code, reply=None):
+        return Outcome(code, reply, self.mode)
 
     def session_count(self, group_id, member_id):
-        """Offline diagnostics: counts only, never message bodies or cross-user history."""
+        """Local diagnostics: counts only, never message bodies or cross-user history."""
         with self._lock:
             return sum(v['count'] for k, v in self._sessions.items() if k[1:3] == (group_id, member_id))
+
+
+class OfflineQQAdapter(QQAdapter):
+    """Compatibility entry for BOT-1A; output remains offline and cannot be sent."""
+    def __init__(self, config, queries, *, clock=None):
+        super().__init__(config, queries, clock=clock)

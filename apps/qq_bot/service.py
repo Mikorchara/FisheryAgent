@@ -22,10 +22,12 @@ def _time(value):
 
 class ReadOnlyQueries:
     """Capture read callables only. This facade is not a DB-level permission system."""
-    def __init__(self, monitoring, knowledge):
-        self._capture = monitoring.capture_water
-        self._history = monitoring.query_water_history
-        self._events = monitoring.event_cycles
+    def __init__(self, monitoring, knowledge, *, live=False):
+        self._help = HELP if not live else HELP.replace(
+            'BOT-1A 离线只读原型（未连接 QQ / AI）', 'BOT-1B QQ 只读实验（未启用 AI）')
+        self._capture = monitoring.capture_water if monitoring is not None else None
+        self._history = monitoring.query_water_history if monitoring is not None else None
+        self._events = monitoring.event_cycles if monitoring is not None else None
         self._knowledge = knowledge
 
     def execute(self, message, access):
@@ -33,8 +35,8 @@ class ReadOnlyQueries:
         command, argument = pieces[0], pieces[1] if len(pieces) == 2 else ''
         capability = {'当前水质': 'current', '历史水质': 'history',
                       '知识': 'knowledge', '当前异常': 'events'}.get(command)
-        if command == '帮助' and not argument:
-            return 'OK', HELP
+        if command.lower() in ('help', '帮助') and not argument:
+            return 'OK', self._help
         if command in ('AI', '问AI'):
             return 'AI_DISABLED', 'BOT-1A 未启用 AI，也不会调用模型。请使用 /帮助 查看只读命令。'
         if capability is None:
