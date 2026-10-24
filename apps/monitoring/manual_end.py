@@ -25,7 +25,9 @@ def cursor(members):
 def history(members):
     # A cycle mirrors its ledger into members so retention never loses a grade.
     records = {a['request_id']:a for e in members for a in e.get('manual_ends', [])}
-    return sorted(records.values(), key=lambda a:(a['acted_at'],a['request_id']))
+    # Wall-clock corrections must not resurrect an older operator decision.
+    # Old v2 JSON has no revision and remains a readable prefix of the ledger.
+    return sorted(records.values(), key=lambda a:(a.get('revision',0),a['acted_at'],a['request_id']))
 
 
 def sync_history(db):
@@ -130,7 +132,8 @@ def commit(db, value, at, assessed):
     if preview['revision'] != value['revision']:
         raise EventRecordError('EVENT_END_CONFLICT',409)
     records = history(members)
-    records.append(dict(request_id=value['request_id'],request_hash=request_hash,acted_at=at.isoformat(),
+    revision=max((a.get('revision',0) for a in records),default=0)+1
+    records.append(dict(request_id=value['request_id'],request_hash=request_hash,acted_at=at.isoformat(),revision=revision,
         reason=value['reason'].strip(),actor_kind='local_visitor',cursor=cursor(members),
         event_ids=sorted(e['id'] for e in members),
         evidence=[{k:e.get(k) for k in ('id','code','rule_identity','observation','title','occurred_at',

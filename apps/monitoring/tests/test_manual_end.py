@@ -161,3 +161,67 @@ class ManualEndTests(unittest.TestCase):
         current=next(e for e in self.water_events() if e['lifecycle_state']=='ACTIVE')
         self.assertFalse(current['manual_end']['active'])
         self.assertEqual(current['manual_end']['history'],[])
+
+    def test_latest_operation_survives_server_clock_moving_backwards(self):
+        e=self.interrupted()
+        self.now+=timedelta(hours=1)
+        self.service.manual_end_event(self.value(e))
+        # Previously released JSON did not contain an operation revision.
+        with self.repo.connection() as db:
+            for row in db.execute('select id,payload from events').fetchall():
+                raw=json.loads(row['payload'])
+                for action in raw['manual_ends']:action.pop('revision',None)
+                db.execute('update events set payload=? where id=?',(json.dumps(raw),row['id']))
+        # A clock correction must not make an older operation current again.
+        self.oxygen(2.2)
+        self.now+=timedelta(seconds=95)
+        value=self.value(self.current('OXYGEN_CRITICAL_LOW'))
+        value['reason']='校时后再次人工结束'
+        self.service.manual_end_event(value)
+        current=self.current('OXYGEN_CRITICAL_LOW')['manual_end']
+        self.assertTrue(current['active'])
+        self.assertEqual(current['history'][-1]['reason'],value['reason'])
+
+    def test_distinct_parallel_requests_cannot_append_two_operations(self):
+        e=self.interrupted();first=self.value(e);second={**first,'request_id':str(uuid.uuid4())}
+        def submit(value):
+            try:return self.service.manual_end_event(value)['status']
+            except ValueError as error:return str(error)
+        with ThreadPoolExecutor(2) as pool:
+            results=list(pool.map(submit,[first,second]))
+        self.assertEqual(results.count('MANUALLY_ENDED'),1)
+        self.assertEqual(len(self.current()['manual_end']['history']),1)
+
+    def test_visual_clear_session_break_and_new_hit_keep_truth_separate(self):
+        self.service.ingest(self.batch('suspected_lesion'))
+        self.now+=timedelta(seconds=95)
+        event=next(e for e in self.service.events() if e['code']=='SUSPECTED_LESION')
+        self.service.manual_end_event(self.value(event))
+        self.sim.skip_windows(10,10)
+        for count in (1,2,3):
+            self.service.ingest(self.batch(session='new-observation-session'))
+            event=next(e for e in self.service.events() if e['code']=='SUSPECTED_LESION')
+            if count<3:
+                self.assertTrue(event['manual_end']['active'])
+                self.assertNotEqual(event['lifecycle_state'],'RESOLVED')
+            else:
+                self.assertFalse(event['manual_end']['active'])
+                self.assertEqual(event['lifecycle_state'],'RESOLVED')
+        self.service.ingest(self.batch('suspected_lesion',session='new-observation-session'))
+        renewed=next(e for e in self.service.events() if e['code']=='SUSPECTED_LESION' and e['lifecycle_state']=='ACTIVE')
+        self.assertFalse(renewed['manual_end']['active'])
+        self.assertEqual(renewed['manual_end']['history'],[])
+
+    def test_ack_cycle_cannot_bypass_manual_audit_and_dto_omits_evidence(self):
+        self.oxygen(4.2);self.ack();self.now+=timedelta(seconds=95)
+        event=self.current();self.service.manual_end_event(self.value(event))
+        with create_app(data_service=self.service).test_client() as client:
+            dto=client.get('/api/bootstrap').json
+            self.assertNotIn('manual_ends',dto['events'][0])
+            self.assertNotIn('request_hash',json.dumps(dto))
+            self.assertNotIn('evidence',dto['events'][0]['manual_end']['history'][0])
+        self.sim.skip_windows(10,10);self.oxygen(6.4)
+        with self.assertRaisesRegex(ValueError,'EVENT_MANUAL_END_AUDIT_RETAINED'):
+            self.repo.prepare_event_deletion('ack_cycle',event['id'])
+        with self.assertRaisesRegex(ValueError,'EVENT_NOT_DELETABLE'):
+            self.repo.prepare_event_deletion('single',event['id'])
