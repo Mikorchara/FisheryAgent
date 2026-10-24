@@ -4,6 +4,8 @@
 
 ## 阅读入口
 
+- [BOT-1A QQ Bot 离线原型与移植记录](deep-dive/BOT1A_OFFLINE_PROTOTYPE.md)（从 Management 保留成果移植；后续 BOT-1B/BOT-1C 先在 Prototype 开发，验收提交后再选择性同步）
+
 - [SIMPLIFY-1 风险周期列表](deep-dive/EVENT_CYCLE_UI.md)（Prototype 待验收；服务端整合、原始详情、保留 ACK 审计保护）
 - [事件管理现状与简化方案](deep-dive/research/EVENT_MANAGEMENT_SIMPLIFICATION.md)（讨论稿：为什么已恢复仍删不掉、一周期一行、归档与永久删除的取舍；未实施）
 - [EVT-3A 人工知晓、审计与显式 Schema 升级](deep-dive/EVENT_ACK.md)（Prototype 实验；ACK 与规则消退独立，待人工验收）

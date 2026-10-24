@@ -4,6 +4,8 @@
 
 ## 已实现
 
+- 2026-10-24 BOT-1A：从 Management 选择性移植 9 个离线 Adapter/测试文件，保留原实现；固定只读命令与群/成员门禁，虚构 SQLite，无 QQ/Provider 调用。后续 BOT-1B/BOT-1C 统一先 Prototype 开发→人工验收与获批提交→Management 选择性同步。[边界与验证](deep-dive/BOT1A_OFFLINE_PROTOTYPE.md)。
+
 - 失联提醒人工结束（仅Prototype，待验收）：原因/确认/幂等/事务校验，稳定周期或旧单条ID，独立于监测恢复；历史保留，新可靠HIT重新提醒，自动裁剪/删除保护。Schema保持v2，未同步Management。[实现及限制](deep-dive/EVENT_MANUAL_END.md)。
 
 - SIMPLIFY-1 收尾（仅 Prototype，待验收）：恢复“已确认/未确认”列，低氧名称随当前可靠等级变化；用户明确批准后，可单独永久删除可靠结束的整个 ACK 周期及其确认历史，事务校验、普通批量清理仍受保护，Schema 保持 v2。新增 `oxygen_drop_recovery` 快降慢升场景及启动枚举。[操作说明](BUILD_RUN.md#溶解氧快速下降--逐步回升)。

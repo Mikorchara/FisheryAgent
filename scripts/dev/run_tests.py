@@ -55,7 +55,8 @@ def build_suite(selection):
         # No Prototype imports, resource lookup or historical migration/differential
         # suite is loaded. The ordinary management tier retains those checks.
         groups = ('apps/ai_backend/tests','apps/ai_service/runtime/tests','apps/ai_service/tests',
-                  'apps/monitoring/tests','apps/simulator/tests','apps/knowledge/tests','apps/management_web/tests')
+                  'apps/monitoring/tests','apps/simulator/tests','apps/knowledge/tests','apps/management_web/tests',
+                  'apps/qq_bot/tests')
         excluded = {'test_differential','test_backend_migration','test_domain_compatibility',
                     'test_streaming_qualification','test_history_qualification','test_history_batch',
                     'test_normal_selection_qualification'}
@@ -68,7 +69,8 @@ def build_suite(selection):
         # These existing test directories are namespace packages (no __init__).
         # Use the same unittest loader without changing their package structure.
         names = tuple('.'.join(path.relative_to(ROOT).with_suffix('').parts)
-            for group in ("apps/monitoring/tests", "apps/simulator/tests", "apps/knowledge/tests", "apps/management_web/tests")
+            for group in ("apps/monitoring/tests", "apps/simulator/tests", "apps/knowledge/tests", "apps/management_web/tests",
+                          "apps/qq_bot/tests")
             for path in sorted((ROOT / group).glob('test_*.py')))
         suite.addTests(loader.loadTestsFromNames(names))
         return suite

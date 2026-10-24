@@ -4,6 +4,12 @@ EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 �
 
 ## 快速开始 / 常用指令
 
+### BOT-1A 离线实验
+
+在 `D:\CodexProject\Fishery_AI_Prototype` 执行 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot --offline-demo`；可加 `--command '/历史水质 30'`。只创建并清理本仓 `outputs/test-tmp` 内虚构实例，不读取现有数据、不连接 QQ/AI。后续 Bot 功能先在 Prototype 开发并人工验收，获批提交后再选择性同步 Management。[实现、限制及本轮验证](deep-dive/BOT1A_OFFLINE_PROTOTYPE.md)
+
+### Web 与 Simulator
+
 **本节只用于 Prototype**，在普通 PowerShell 中先进入项目：
 
 ```powershell
