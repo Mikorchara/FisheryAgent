@@ -22,13 +22,18 @@ def _time(value):
 
 class ReadOnlyQueries:
     """Capture read callables only. This facade is not a DB-level permission system."""
-    def __init__(self, monitoring, knowledge, *, live=False):
+    def __init__(self, monitoring, knowledge, *, live=False, instance_id=None):
+        self._instance_id = instance_id
         self._help = HELP if not live else HELP.replace(
             'BOT-1A 离线只读原型（未连接 QQ / AI）', 'BOT-1B QQ 只读实验（未启用 AI）')
         self._capture = monitoring.capture_water if monitoring is not None else None
         self._history = monitoring.query_water_history if monitoring is not None else None
         self._events = monitoring.event_cycles if monitoring is not None else None
         self._knowledge = knowledge
+        if instance_id is not None:
+            self._help = ('BOT-2B 指定实例只读查询（未启用 AI / Knowledge）\n'
+                          '/当前水质\n/历史水质 10（也支持 30、60 分钟）\n/当前异常\n/帮助\n'
+                          '实例和设备仅由本机配置绑定；不支持任何写操作。')
 
     def execute(self, message, access):
         pieces = message.content.lstrip('/').split(maxsplit=1)
@@ -43,6 +48,8 @@ class ReadOnlyQueries:
             return 'UNSUPPORTED_COMMAND', '不支持此命令；仅提供只读查询，请输入 /帮助。'
         if capability not in access.capabilities:
             return 'CAPABILITY_DENIED', '此群尚未获准使用该查询能力。'
+        if capability == 'knowledge' and self._instance_id is not None:
+            return 'CAPABILITY_DENIED', '指定 Monitoring 实例模式未接入知识库。'
         device = access.device_id
         if capability == 'current' and not argument:
             return 'OK', self.current(device)
@@ -67,6 +74,8 @@ class ReadOnlyQueries:
             lines.append(f'{label}：{value} {metric.unit}（{metric.quality}）')
         lines.extend(plain(f['message']) for f in facts.get('findings', []) if f['state'] == 'HIT')
         lines.append('查询不等于重新采样；过期/缺测不能认定当前正常。')
+        if self._instance_id:
+            lines.insert(0, '只读实例：'+self._instance_id)
         return '\n'.join(lines)
 
     def history(self, device, minutes):
@@ -79,6 +88,8 @@ class ReadOnlyQueries:
             interval = f'{low["value"]}～{high["value"]}' if low and high else '无可靠数据'
             lines.append(f'{METRICS[key][0]}：窗口均值范围 {interval} {stat["unit"]}；可靠窗口 {stat["reliable_windows"]}')
         lines.append('历史不代表当前；缺口/恢复/持续异常不在此命令中另作诊断。')
+        if self._instance_id:
+            lines.insert(0, '只读实例：'+self._instance_id)
         return '\n'.join(lines)
 
     def knowledge(self, query):
@@ -96,10 +107,14 @@ class ReadOnlyQueries:
         return '\n'.join(lines)
 
     def events(self, device):
-        cycles = [e for e in self._events() if e['device_id'] == device
+        all_cycles = self._events(device_id=device)
+        cycles = [e for e in all_cycles if e['device_id'] == device
                   and e.get('lifecycle_state') != 'RESOLVED' and e.get('status') != 'closed'
                   and not e.get('manual_end', {}).get('active')]
         lines = [f'当前异常 · {device} · SIMULATOR；{len(cycles)} 个未结束周期']
+        ended = sum(bool(e.get('manual_end', {}).get('active')) for e in all_cycles)
+        if ended:
+            lines.append(f'{ended} 个人工结束周期未列入当前提醒；人工结束不代表规则恢复。')
         for event in cycles[:5]:
             state = ('状态待核实' if event['lifecycle_state'] != 'ACTIVE' else
                      '恢复观察中' if event.get('visual_recovery', {}).get('clear_count', 0) else '异常中')
@@ -115,4 +130,6 @@ class ReadOnlyQueries:
             lines.append('列表未见需提醒周期；水质观测可靠，未据此推定视觉状态或规则恢复。' if reliable else
                          '状态未知：当前水质观测不足，不能认定正常。')
         lines.append('模拟规则信号不代表疾病确诊；人工知晓不代表规则恢复。')
+        if self._instance_id:
+            lines.insert(0, '只读实例：'+self._instance_id)
         return '\n'.join(lines)

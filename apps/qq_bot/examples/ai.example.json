@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "enabled": false,
+  "preset_id": "dashscope-qwen38-flash-r1",
+  "budget": {"max_output_tokens": 512, "turn_timeout_s": 90},
+  "grants": []
+}

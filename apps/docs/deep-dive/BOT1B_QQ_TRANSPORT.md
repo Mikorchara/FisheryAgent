@@ -1,5 +1,7 @@
 # BOT-1B：QQ 官方 WebSocket 只读联调
 
+后续状态（2026-10-25）：本页保留 BOT-1B 首轮实现与当时边界。用户已报告测试群 Gateway、固定只读虚构查询及 AI_DISABLED 通过；长时间断网后的成功 Resume/Identify 和未授权成员拒绝仍待补充人工验收。BOT-2B 另增显式 Monitoring 实例只读模式，未在本轮接入既有实例或真实 QQ；操作以 [BOT-2B 文档](BOT2B_MONITORING_READ_ONLY.md) 为准。
+
 核验日期：2026-10-24。开发项目：`D:\CodexProject\Fishery_AI_Prototype`，起始 `main@6f2fee2`。
 
 当前状态：已实现真实 QQ HTTPS / WSS 通信层并完成离线协议测试；**尚未完成真实 QQ 测试群验收**。用户已准备官方机器人和测试群，将按下文在本机录入 AppSecret、配置 OpenID 白名单。开发期间没有读取真实凭据、连接 QQ、发送群消息或调用模型。仅修改 Prototype，未同步 Management、未提交。

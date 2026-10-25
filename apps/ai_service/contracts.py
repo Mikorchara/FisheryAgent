@@ -12,6 +12,7 @@ from apps.monitoring.service import MonitoringService
 
 from apps.ai_backend.tools.registry import ToolRegistry
 from .execution import ExecutionDecision
+from .channel import ChannelAuthorization
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class PreparedAssistantTurn:
     execution: ExecutionDecision = field(repr=False)
     policy_revision: str | None = field(default=None, repr=False)
     policy_source: str | None = field(default=None, repr=False)
+    channel_authorization: ChannelAuthorization | None = field(default=None, repr=False)
 
 
 class AssistantBackend(Protocol):

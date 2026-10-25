@@ -23,12 +23,13 @@ def bind_tools(monitoring, device_id, knowledge, *, formal=None, include_history
     # One formal definition owner; only the frozen device's water Handler changes.
     water_definition = (formal.lookup(current_water_quality.WATER_DEFINITION.name).model_definition
         if formal else current_water_quality.WATER_DEFINITION)
-    knowledge_entry = (formal.lookup(fishery_knowledge.KNOWLEDGE_DEFINITION.name) if formal else ToolDefinition(
-        fishery_knowledge.KNOWLEDGE_DEFINITION,
-        partial(fishery_knowledge.search_fishery_knowledge, service=knowledge),
-        validate_arguments=fishery_knowledge.validate_arguments))
     entries = [ToolDefinition(water_definition,
-        partial(current_water_quality.water_payload, monitoring, device_id)), knowledge_entry]
+        partial(current_water_quality.water_payload, monitoring, device_id))]
+    if knowledge is not None:
+        entries.append(formal.lookup(fishery_knowledge.KNOWLEDGE_DEFINITION.name) if formal else ToolDefinition(
+            fishery_knowledge.KNOWLEDGE_DEFINITION,
+            partial(fishery_knowledge.search_fishery_knowledge, service=knowledge),
+            validate_arguments=fishery_knowledge.validate_arguments))
     if include_history:
         definition = (formal.lookup(water_quality_history.WATER_QUALITY_HISTORY).model_definition
                       if formal else water_quality_history.HISTORY_DEFINITION)

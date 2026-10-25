@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "instance_id": "approved-monitoring",
+  "data_root": "REPLACE_WITH_APPROVED_ABSOLUTE_DATA_ROOT",
+  "devices": ["REPLACE_WITH_APPROVED_DEVICE_ID"]
+}

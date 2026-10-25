@@ -4,9 +4,15 @@ EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 �
 
 ## 快速开始 / 常用指令
 
+### BOT-2B 指定 Monitoring 实例只读查询
+
+BOT-3B-1 已补齐离线 AI 服务边界；BOT-3B-2 增加有界队列、取消及单次 Fake 交付，仍没有真实 QQ AI 启动开关；现有 `/问AI` 仍为 AI_DISABLED。独立 AI 模板只用于 Fake 候选验证，不能作为真实模型授权。[边界](deep-dive/BOT3B1_QQ_AI_BOUNDARY.md)、[调度/交付测试与 BOT-3C 前置条件](deep-dive/BOT3B2_QQ_AI_SCHEDULING.md)
+
+新增 `--monitoring-config`，与 `--help-only` / `--fictional-data` 互斥。仅在用户单独批准实例和设备后使用；不会自动选择工作区或正式库。先运行 `--check-config` 做纯配置检查，再显式 `--check-monitoring` 只读预检，最后另行批准 QQ 联网。配置模板、完整命令及安全边界见 [BOT-2B 验收](deep-dive/BOT2B_MONITORING_READ_ONLY.md#5-真实实例人工接入步骤待单独批准)。本轮只完成隔离数据验证，未打开真实实例。
+
 ### BOT-1B QQ 官方测试群联调
 
-Prototype 已增加官方 WebSocket 通信层，真实群验收待本机配置。不要将密钥写入源码或访问 JSON；在项目根执行 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot --configure-secret` 隐藏录入，再按 [BOT-1B 配置与人工验收](deep-dive/BOT1B_QQ_TRANSPORT.md#2-本机配置与人工验收) 发现 OpenID、编辑白名单，显式启用网络。先测试 help-only，再使用临时虚构数据。没有真实业务数据入口、LLM、主动通知或群聊写操作；Ctrl+C 或限时结束回收连接。原离线命令保留。
+Prototype 已增加官方 WebSocket 通信层。不要将密钥写入源码或访问 JSON；在项目根执行 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot --configure-secret` 隐藏录入，再按 [BOT-1B 配置与人工验收](deep-dive/BOT1B_QQ_TRANSPORT.md#2-本机配置与人工验收) 发现 OpenID、编辑白名单，显式启用网络。原 help-only / 临时虚构数据模式保留；指定实例走上方 BOT-2B 独立批准流程。没有 LLM、主动通知或群聊写操作；Ctrl+C 或限时结束回收连接。
 
 ### BOT-1A 离线实验
 

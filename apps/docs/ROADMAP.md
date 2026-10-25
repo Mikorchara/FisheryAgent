@@ -4,6 +4,14 @@
 
 ## 已实现
 
+- 2026-10-25 BOT-3B-2（仅 Prototype Fake）：1执行/2等待、10s排队/90s总期限、权限失效与I/O取消、单次提交及未知不重试；40专项、762 Python / 116 Node通过，保留 candidate 与真实 AI_DISABLED。[实现、验证与 BOT-3C 前置条件](deep-dive/BOT3B2_QQ_AI_SCHEDULING.md)。
+
+- 2026-10-25 BOT-3B-1（仅 Prototype 离线）：Monitoring-only、QQ AI 权限交集/失效、单轮 Fake Tool Calling 与同轮 SourceSummary；31 专项、722 Python / 116 Node 完整回归通过。模型正文隔离、真实 Provider/QQ 未开放。[实现与 BOT-3B-2](deep-dive/BOT3B1_QQ_AI_BOUNDARY.md)。
+
+- 2026-10-25 BOT-3A 架构调查完成：建议同进程 AI Service＋有界 AI worker，先补 Monitoring-only 与渠道权限装配，再做单轮 Fake 联调；48 项无数据库离线检查通过。[研究、风险与 BOT-3B 计划](deep-dive/research/BOT3A_QQ_AI_SERVICE_INTEGRATION.md)。未实现 QQ AI、未调用模型或连接 QQ。
+
+- 2026-10-25 BOT-2B（仅 Prototype）：Repository `mode=ro/query_only`、显式实例/设备装配、复用当前/历史/周期投影和有界设备查询；不接 Knowledge/LLM，不改 Schema。隔离回归与真实接入步骤见 [实施及人工验收](deep-dive/BOT2B_MONITORING_READ_ONLY.md)，真实实例仍待单独批准。
+
 - 2026-10-24 BOT-1B：Prototype 增加官方 HTTPS/WSS、心跳/Resume、有界重连与被动回复，复用 BOT-1A 门禁及私有 CredentialStore；只开放 help/临时虚构数据。管理 640 Python / 116 Node（含 73 Bot）通过，真实群联调待用户配置，不接 LLM、不主动通知、不同步 Management。[配置与验收](deep-dive/BOT1B_QQ_TRANSPORT.md)。
 
 - 2026-10-24 BOT-1A：从 Management 选择性移植 9 个离线 Adapter/测试文件，保留原实现；固定只读命令与群/成员门禁，虚构 SQLite，无 QQ/Provider 调用。后续 BOT-1B/BOT-1C 统一先 Prototype 开发→人工验收与获批提交→Management 选择性同步。[边界与验证](deep-dive/BOT1A_OFFLINE_PROTOTYPE.md)。

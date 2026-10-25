@@ -7,14 +7,21 @@ MIG-2：新增 `apps/management_paths.py`（统一业务数据位置）与 `mana
 ```text
 apps/
 ├─ management_paths.py                                                  # 统一数据路径；默认旧路径、显式独立实例
-├─ qq_bot/                                                              # 只读Adapter；BOT-1A离线 / BOT-1B显式QQ联调，无LLM
+├─ qq_bot/                                                              # 只读Adapter；QQ固定查询、离线Fake AI；真实LLM仍关闭
 │  ├─ __init__.py                                                       # 无启动I/O的包边界
 │  ├─ __main__.py                                                       # 调用CLI；导入时不启动
-│  ├─ cli.py                                                            # 离线/配置/发现/显式联网，帮助或临时虚构数据
+│  ├─ cli.py                                                            # 离线/配置/发现/显式联网；指定实例须单独批准
+│  ├─ monitoring_source.py                                              # 严格本机实例配置、设备白名单、只读装配与安全错误
+│  ├─ ai_configuration.py                                              # 独立AI许可与预算，默认关闭，当前工具白名单
+│  ├─ ai_coordinator.py                                                # 离线准入/执行/权限复核，冻结消息上下文与单次claim
+│  ├─ ai_scheduler.py                                                  # 一个AI/一个交付/一个监督线程；1执行2等待及取消
+│  ├─ ai_delivery.py                                                   # 单次提交owner与精确MockTransport，接受/拒绝/未知
 │  ├─ configuration.py                                                  # 严格访问JSON、复用私有CredentialStore和安全写入器
 │  ├─ transport.py                                                      # 固定QQ HTTPS/WSS、AccessToken、关联msg_id被动回复
 │  ├─ gateway.py                                                        # Identify/Resume/心跳、有界worker与安全日志
 │  ├─ examples/access.example.json                                      # 虚构App/群/成员白名单模板，不含凭据
+│  ├─ examples/monitoring.example.json                                  # 指定实例模板；占位符须人工填写，不自动选择业务数据
+│  ├─ examples/ai.example.json                                          # 默认关闭的离线AI候选配置，不含密钥
 │  ├─ contracts.py                                                      # 不可变群/成员/设备能力配置及受限消息解析
 │  ├─ adapter.py                                                        # 时效、去重、限频、会话计数和容量/并发拒绝
 │  ├─ service.py                                                        # 复用权威服务的固定只读命令
@@ -26,6 +33,9 @@ apps/
 │     ├─ test_gateway.py                                                # Fake QQ心跳/重连/权限，本机WS回环与清理
 │     ├─ test_reconnect.py                                              # 本机Gateway黑洞/阻塞I/O、Resume/重新鉴权和线程清理
 │     ├─ test_configuration_cli.py                                      # 私有Store路由、CLI安全与临时实例
+│     ├─ test_monitoring_source.py                                      # 隔离实例只读查询、权限、事件语义、预算与Fake装配
+│     ├─ test_ai_coordinator.py                                          # Fake单轮、权限失效、同轮来源、注入与旧功能隔离
+│     ├─ test_ai_scheduler.py                                            # 有界并发/期限/I/O取消/单次交付及线程回收
 │     └─ test_offline.py                                                # CLI、网络保护和临时目录清理
 ├─ ai_backend/                                                           # 管理正式通用LLM Backend，无旧Runtime依赖
 │  ├─ tests/                                                             # 离线测试及Fake SDK
@@ -127,6 +137,7 @@ apps/
 │  │  └─ test_water_history_tool.py                                      # 历史候选、Receipt/Gate、Fake SDK 与原六路径指纹
 │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
 │  ├─ contracts.py                                                       # 进程内 PreparedAssistantTurn 与 AssistantBackend 合同
+│  ├─ channel.py                                                         # 内部渠道授权、离线candidate、Fake Provider与SourceSummary
 │  ├─ content_binding.py                                                 # 动态知识源的精确本地 Scope 变体，不继承旧真实资格
 │  ├─ execution.py                                                       # Normal 多轮发布、数据绑定、Scope 与确认 revision
 │  ├─ history_execution.py                                               # 历史单工具Scope、1024预算与独立试用门禁
@@ -228,6 +239,7 @@ apps/
 ├─ monitoring/                                                           # Web 与未来 Tool 共享的数据基础
 │  ├─ tests/                                                             # 离线测试及Fake SDK
 │  │  ├─ test_business_services.py                                       # 纯服务一致性、设备/时间边界与故障回滚
+│  │  ├─ test_read_only.py                                               # mode=ro/query_only、防写、Schema拒绝、WAL与锁预算
 │  │  ├─ test_domain_compatibility.py                                    # MIG-1 新旧领域/Reader/来源验证差分
 │  │  ├─ test_event_lifecycle.py                                         # 三窗恢复、连续性、重启、裁剪、回滚与固定Seed
 │  │  ├─ test_event_management.py                                        # 事件族、全留存分页、时间语义、并发及受控清理
@@ -257,7 +269,7 @@ apps/
 │  ├─ schema.py                                                          # Monitoring v2、人工表及RESTRICT引用校验
 │  ├─ migrate.py                                                         # 只在显式维护时备份并升级v1；普通启动不调用
 │  ├─ history.py                                                         # 有界历史窗口统计、覆盖/缺口与有限 DTO
-│  ├─ repository.py                                                      # SQLite、事务、历史与事件变更持久化
+│  ├─ repository.py                                                      # SQLite默认读写/显式只读、事务及有界设备事件快照
 │  ├─ rules.py                                                           # 纯评估函数、证据门禁与 PROTOTYPE 规则投影
 │  ├─ water_contracts.py                                                 # 独立水质 Reading/枚举/时间校验/RuleFinding
 │  └─ service.py                                                         # 监测业务协调、统一查询与设备绑定

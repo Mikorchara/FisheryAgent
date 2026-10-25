@@ -173,9 +173,14 @@ class MonitoringService:
                 "analysis": analysis.to_dict()})
         return result
 
-    def events(self):
+    def events(self, *, device_id=None):
         assessments = {}
-        events = self.repository.events()
+        if device_id is None:
+            events, current = self.repository.events(), None
+        else:
+            self._device(device_id)
+            events, current = self.repository.capture_events(device_id)
+        now = self.clock()
         result = []
         for event in events:
             if event.get("lifecycle_state") == "RESOLVED" or event.get("status") == "closed":
@@ -183,8 +188,8 @@ class MonitoringService:
                 continue
             key = (event["device_id"], event["channel"])
             if key not in assessments:
-                row = self.repository.read(*key)
-                assessments[key] = self._assess(*key, row, self.clock())
+                row = self.repository.read(*key) if current is None else current.get(key[1])
+                assessments[key] = self._assess(*key, row, now)
             result.append(self.repository.event_service.project(event, assessments[key]))
         from .manual_end import project
         return project(project_families(result))
@@ -198,9 +203,9 @@ class MonitoringService:
     def query_events(self, **filters):
         return query_records(self.events(), now=self.clock(), **filters)
 
-    def event_cycles(self):
+    def event_cycles(self, *, device_id=None):
         from .event_cycles import summarize_cycles
-        return summarize_cycles(self.events())
+        return summarize_cycles(self.events(device_id=device_id))
 
     def query_event_cycles(self, **filters):
         return query_records(self.event_cycles(), now=self.clock(), **filters)

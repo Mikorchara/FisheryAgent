@@ -46,11 +46,20 @@ class QQAdapter:
         self._last_now = None
 
     def receive(self, raw: bytes, *, transport_app_id: str):
+        return self._ingress(raw,transport_app_id)
+
+    def admit_offline(self, raw: bytes, *, transport_app_id: str, operation):
+        """Server-only preparation hook. Never enable AI through the live receiver."""
+        if self.mode != 'OFFLINE_NOT_SENT':
+            raise BotError('AI_LIVE_DISABLED')
+        return self._ingress(raw,transport_app_id,operation)
+
+    def _ingress(self, raw, transport_app_id, operation=None):
         # No worker/queue: reject concurrent ingress rather than wait unboundedly.
         if not self._lock.acquire(blocking=False):
             return self._outcome('BUSY')
         try:
-            return self._receive(raw, transport_app_id)
+            return self._receive(raw, transport_app_id, operation)
         except BotError as error:
             return self._outcome(error.code)
         except Exception:
@@ -58,7 +67,7 @@ class QQAdapter:
         finally:
             self._lock.release()
 
-    def _receive(self, raw, app_id):
+    def _receive(self, raw, app_id, operation=None):
         if app_id != self.config.app_id:
             return self._outcome('APP_DENIED')
         now = utc(self._clock())
@@ -102,6 +111,8 @@ class QQAdapter:
         session['last'] = now
         session['rate'].append(now)
         group_rate.append(now)
+        if operation is not None:
+            return operation(message,access)
         code, text = self._queries.execute(message, access)
         # A delayed read cannot produce an already-expired passive reply.
         finished = utc(self._clock())

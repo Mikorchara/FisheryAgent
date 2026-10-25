@@ -4,7 +4,14 @@
 
 ## 阅读入口
 
-- [BOT-1B QQ 官方通信联调](deep-dive/BOT1B_QQ_TRANSPORT.md)（WS、私有凭据、OpenID 白名单、帮助/虚构只读查询；真实测试群待人工验收，未同步 Management）
+- [BOT-3B-2 有界 AI 调度与单次交付](deep-dive/BOT3B2_QQ_AI_SCHEDULING.md)（仅 Fake：1执行/2等待、取消、交付未知不重试；真实 QQ AI 仍关闭）
+- [BOT-3B-1 QQ AI 服务边界与权限装配](deep-dive/BOT3B1_QQ_AI_BOUNDARY.md)（Monitoring-only、渠道权限、同轮来源摘要、Fake candidate；真实 QQ AI 仍关闭）
+
+- [BOT-3A QQ 与 AI Service 集成架构调查](deep-dive/research/BOT3A_QQ_AI_SERVICE_INTEGRATION.md)（复用现有 Agent、有界 AI 队列、成员会话与程序权限；仅研究，BOT-3B 未实施）
+
+- [BOT-2B 指定 Monitoring 实例只读查询](deep-dive/BOT2B_MONITORING_READ_ONLY.md)（显式配置、SQLite 防写与设备隔离；用户已报告 BOT-2C 测试群当前/历史/异常查询通过，AI/Knowledge 仍禁用）
+
+- [BOT-1B QQ 官方通信联调](deep-dive/BOT1B_QQ_TRANSPORT.md)（用户已完成基本测试群验收；长断网恢复及未授权成员拒绝仍待补充，未同步 Management）
 
 - [BOT-1A QQ Bot 离线原型与移植记录](deep-dive/BOT1A_OFFLINE_PROTOTYPE.md)（从 Management 保留成果移植；后续 BOT-1B/BOT-1C 先在 Prototype 开发，验收提交后再选择性同步）
 

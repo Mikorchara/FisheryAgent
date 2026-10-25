@@ -1,16 +1,18 @@
 """SQLite authoritative current state and bounded history. No secrets or device I/O."""
 
 from contextlib import contextmanager
+from collections import Counter
 from datetime import datetime, timedelta
 import hashlib
 import json
 from pathlib import Path
 import sqlite3
 from threading import RLock
+from time import monotonic
 
 from .contracts import IngestionError, ChannelAnalysis, strict_json
 from .events import EventService, interrupt_visual
-from .event_families import associate_water_changes
+from .event_families import associate_water_changes, family_group
 from .event_records import EventRecordError, deletable, legacy_closed_record, validate_delete
 from .rules import VISUAL_RULES
 from .schema import SCHEMA_VERSION, add_handling_tables, validate_schema
@@ -21,15 +23,39 @@ from .history import (HistoryQueryError, MAX_HISTORY_ROWS, MAX_HISTORY_ROW_BYTES
                       validate_history_range)
 
 
+_READ_DENIED = {getattr(sqlite3, 'SQLITE_'+name) for name in (
+              'INSERT','UPDATE','DELETE','CREATE_INDEX','CREATE_TABLE','CREATE_TEMP_INDEX',
+              'CREATE_TEMP_TABLE','CREATE_TEMP_TRIGGER','CREATE_TEMP_VIEW','CREATE_TRIGGER',
+              'CREATE_VIEW','DROP_INDEX','DROP_TABLE','DROP_TEMP_INDEX','DROP_TEMP_TABLE',
+              'DROP_TEMP_TRIGGER','DROP_TEMP_VIEW','DROP_TRIGGER','DROP_VIEW','ALTER_TABLE',
+              'REINDEX','ANALYZE','ATTACH','DETACH')}
+
+
+def _read_authorizer(action, first, second, database, trigger):
+    # mode=ro protects the main file; also prohibit attaching another writable DB
+    # or turning query_only off through a raw connection handed to a caller.
+    if action in _READ_DENIED:
+        return sqlite3.SQLITE_DENY
+    if action == sqlite3.SQLITE_PRAGMA:
+        reads = {'table_info','index_list','index_info','foreign_key_list','foreign_key_check',
+                 'integrity_check','quick_check','user_version','foreign_keys','query_only','journal_mode'}
+        arguments = {'table_info','index_list','index_info','foreign_key_list','foreign_key_check',
+                     'integrity_check','quick_check'}
+        if first.lower() not in reads or second is not None and first.lower() not in arguments:
+            return sqlite3.SQLITE_DENY
+    return sqlite3.SQLITE_OK
+
+
 class MonitoringRepository:
     def __init__(self, path, *, history_limit=360, batch_limit=1440, event_limit=300, event_service=None,
-                 require_existing=False):
+                 require_existing=False, read_only=False):
         for limit in (history_limit, batch_limit, event_limit):
             if type(limit) is not int or not 1 <= limit <= 10000:
                 raise ValueError("INVALID_STORAGE_LIMIT")
         self.path = Path(path)
-        self.require_existing = require_existing
-        if not require_existing:
+        self.read_only = read_only
+        self.require_existing = require_existing or read_only
+        if not self.require_existing:
             self.path.parent.mkdir(parents=True, exist_ok=True)
         self.history_limit, self.batch_limit, self.event_limit = history_limit, batch_limit, event_limit
         self.event_service = event_service if event_service is not None else EventService()
@@ -41,7 +67,7 @@ class MonitoringRepository:
             if version == SCHEMA_VERSION:
                 validate_schema(db)
                 return
-            if require_existing or version != 0:
+            if self.require_existing or version != 0:
                 raise ValueError("UNSUPPORTED_MONITORING_STORAGE_SCHEMA")
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone():
                 raise ValueError('INVALID_MONITORING_STORAGE_SCHEMA')
@@ -78,11 +104,22 @@ class MonitoringRepository:
     def connection(self):
         # One short-lived connection per operation, so Flask threads never share a connection.
         with self.lock:
-            db = (sqlite3.connect(self.path.resolve().as_uri()+'?mode=rw', uri=True, timeout=5)
+            mode = 'ro' if self.read_only else 'rw'
+            db = (sqlite3.connect(self.path.resolve().as_uri()+'?mode='+mode, uri=True,
+                                  timeout=0.25 if self.read_only else 5)
                   if self.require_existing else sqlite3.connect(self.path, timeout=5))
             db.row_factory = sqlite3.Row
-            db.execute('PRAGMA foreign_keys=ON')
             try:
+                db.execute('PRAGMA foreign_keys=ON')
+                if self.read_only:
+                    db.execute('PRAGMA query_only=ON')
+                    db.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 262144)
+                    db.set_authorizer(_read_authorizer)
+                    deadline, steps = monotonic()+2, [0]
+                    def budget():
+                        steps[0] += 1000
+                        return int(steps[0] > 2_000_000 or monotonic() > deadline)
+                    db.set_progress_handler(budget, 1000)
                 with db:
                     yield db
             finally:
@@ -250,6 +287,48 @@ class MonitoringRepository:
                 event['deletable'] = deletable(raw, linked, event['id'] in references)
                 result.append(event)
             return project_handling(db, result)
+
+    def capture_events(self, device_id, *, max_rows=256):
+        """Bounded device snapshot for read consumers; no ACK/audit-table scan.
+
+        Never truncate a risk family: exceed the budget and fail the whole query.
+        Current evidence and all retained device events use one SQLite snapshot.
+        """
+        if type(max_rows) is not int or not 1 <= max_rows <= 256:
+            raise ValueError('INVALID_EVENT_QUERY_LIMIT')
+        with self.connection() as db:
+            db.execute('BEGIN')
+            rows = db.execute('''SELECT id,device_id,channel,code,
+                length(CAST(payload AS BLOB)) AS size,
+                CASE WHEN length(CAST(payload AS BLOB))<=65536 THEN payload END AS payload
+                FROM events WHERE device_id=? ORDER BY rowid DESC LIMIT ?''',
+                (device_id, max_rows+1)).fetchall()
+            if (len(rows)>max_rows or any(r['payload'] is None for r in rows)
+                    or sum(r['size'] for r in rows)>2*1024*1024):
+                raise ValueError('EVENT_QUERY_LIMIT')
+            events = []
+            for row in rows:
+                raw = json.loads(row['payload'])
+                if any(raw.get(k) != row[k] for k in ('id','device_id','channel','code')):
+                    raise ValueError('INVALID_EVENT_STORAGE_RECORD')
+                event = self.event_service.legacy_projection(raw)
+                event['deletable'] = False
+                events.append(event)
+            families = Counter((e.get('risk_family') or {}).get('episode_id') for e in events
+                               if (e.get('risk_family') or {}).get('episode_id'))
+            legacy_groups = Counter(family_group(e) for e in events if family_group(e)
+                and not e.get('risk_family') and e.get('status') != 'closed' and not e.get('superseded_by'))
+            if any(count>16 for count in (*families.values(), *legacy_groups.values())):
+                raise ValueError('EVENT_QUERY_LIMIT')
+            current = {}
+            for row in db.execute('''SELECT c.*,h.last_received_at AS last_reported_at
+                    FROM current c LEFT JOIN channel_contacts h
+                    ON c.device_id=h.device_id AND c.channel=h.channel
+                    WHERE c.device_id=?''', (device_id,)):
+                if row['channel'] not in ('water','visual') or len(row['payload'].encode())>65536:
+                    raise ValueError('INVALID_CURRENT_STORAGE_RECORD')
+                current[row['channel']] = self._decode(row)
+            return events, current
 
     def acknowledge_event(self, value, *, at):
         if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None:
