@@ -7,7 +7,7 @@ MIG-2：新增 `apps/management_paths.py`（统一业务数据位置）与 `mana
 ```text
 apps/
 ├─ management_paths.py                                                  # 统一数据路径；默认旧路径、显式独立实例
-├─ qq_bot/                                                              # 只读Adapter；QQ固定查询、离线Fake AI；真实LLM仍关闭
+├─ qq_bot/                                                              # 固定只读查询、Fake AI与独立批准的Qwen单轮试用；默认AI关闭
 │  ├─ __init__.py                                                       # 无启动I/O的包边界
 │  ├─ __main__.py                                                       # 调用CLI；导入时不启动
 │  ├─ cli.py                                                            # 离线/配置/发现/显式联网；指定实例须单独批准
@@ -44,6 +44,7 @@ apps/
 │     ├─ test_ai_scheduler.py                                            # 有界并发/期限/I/O取消/单次交付及线程回收
 │     ├─ test_ai_preparation.py                                          # 独立Scope、统一Gateway离线装配、展示与真实门禁拒绝
 │     ├─ test_qwen_trial.py                                              # 独立审批、真实SDK内存HTTP、Fake QQ、预算与取消
+│     ├─ test_test_workflow.py                                           # PowerShell 7薄入口、合成实例、审批失败/期限/单次交付及脱敏
 │     ├─ test_provider_sdk_preparation.py                                # 真实SDK+内存HTTP的取消/期限/编码/零重试
 │     ├─ test_sdk_resource_gate.py                                       # SDK失败覆盖取消、拒绝交付/再次准入与不安全关闭
 │     └─ test_offline.py                                                # CLI、网络保护和临时目录清理
@@ -336,3 +337,5 @@ Phase I 的五个 runtime 准备模块和三份重复测试已移除；当前 Se
 [qualify_management_history_batch.py](../../scripts/qualification/qualify_management_history_batch.py) 是固定3案例×5的薄进程编排入口：每个子进程仍只运行一个案例，默认Dry-run，真实执行需三个新计划的一次性明确批准；无重试、补跑或自动恢复。
 
 [scripts/manual_real_tests/](../../scripts/manual_real_tests/README.md) 为用户人工真实连接统一索引；`run_qualification.py`只委托管理单案例CLI，新增Normal三工具候选四案例，不参与应用启动。`scripts/dev/run_local.ps1` + `local_session.py` 负责已有CLI的临时令牌/双进程生命周期，不装配AI或修改Policy。`run_tests.py management` 包含Monitoring/Simulator/Backend/AI业务/管理HTTP/SSE和Node；`product`含义不变。资格层保持离线，不能当作真实Provider证据。见[R2D-2A记录](deep-dive/R2D2A_PRODUCT_INTEGRATION.md)。
+
+`scripts/dev/Test-QQBot.ps1`、`Test-QwenProvider.ps1`、`Test-QQAI.ps1` 为 PowerShell 7 人工验收入口，公共串联逻辑位于 `qq_bot_test_common.ps1`。默认 Check，复用原 CLI 的权限/审批/费用/单次执行；不参与应用启动。见 [操作说明](deep-dive/BOT_TEST_WORKFLOW.md)。

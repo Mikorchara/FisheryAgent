@@ -4,6 +4,8 @@
 
 ## 已实现
 
+- 2026-10-25 BOT 阶段审计：区分 QQ 专用与 Web 共享 SDK 影响，保留资源门禁和暂停草稿；增加三个默认不联网的 PowerShell 7 薄验收入口。用户报告 FAST 真实端到端已通过，模型自由文本仍不展示。[当前总结](deep-dive/BOT_STAGE_SUMMARY.md)、[审计](deep-dive/research/BOT_WEB_IMPACT_AUDIT.md)、[测试入口](deep-dive/BOT_TEST_WORKFLOW.md)。下列 BOT 条目为阶段完成时记录，不是最新联网资格。
+
 - 2026-10-25 BOT-3C-FAST：Monitoring-only Qwen本机/QQ试用准备，限时独立审批、防重复消费、保守费用预留、单次交付；仅离线验证，真实联网待另批，SDK资源门禁保留、进程隔离暂停。[说明与操作](deep-dive/BOT3C_FAST_QWEN_TRIAL.md)。
 
 - 2026-10-25 BOT-3C-2A：SDK租约/有限清理/粘性隔离，Handle/Commit/QQ防线；20新专项、810 Python / 116 Node通过，Scope v2仍candidate。硬退出仍需进程隔离，真实QQ AI关闭。[实施与评估](deep-dive/BOT3C2A_SDK_RESOURCE_GATE.md)。
@@ -28,7 +30,7 @@
 - SIMPLIFY-1（仅 Prototype，待验收）：一风险周期一行，服务端全留存整合后筛选分页，首页共用周期摘要；原详情、ACK 与删除保护不变，未实现归档。[实现与验收](deep-dive/EVENT_CYCLE_UI.md)。
 - 旧版已结束事件兼容（仅 Prototype）：明确“旧版已结束（未复核）”；有效原结束信息且无活动/引用/ACK 审计关联时，可经原确认流程清理。保留原 payload 与观测状态，不改 Schema，不自动删除真实记录。[条件与边界](deep-dive/EVENT_MANAGEMENT.md#旧版已结束记录兼容仅-prototype)。
 
-- EVT-3A（仅 Prototype，待人工验收）：稳定周期／等级版本 ACK、追加操作历史及审计成员保护；Monitoring Schema v2，v1 只允许显式备份升级，普通启动拒绝。509 项管理 Python、109 项 Node 通过。[边界与迁移](deep-dive/EVENT_ACK.md)。未实现 Close/Snooze，未同步 Management。
+- EVT-3A 历史阶段：稳定周期／等级版本 ACK、追加操作历史及审计成员保护；Monitoring Schema v2，v1 只允许显式备份升级，普通启动拒绝。当时 509 项管理 Python、109 项 Node 通过；旧 EVENT_ACK.md 已退役，当前语义见 [事件管理](deep-dive/EVENT_MANAGEMENT.md)。
 
 - EVT-2 文案收尾：只读投影区分等级升级、恢复状态待确认与监测数据中断，首页/列表/详情统一；文案本身不改变生命周期或 SQLite Schema。已选择性同步 Management 并经人工验收。
 

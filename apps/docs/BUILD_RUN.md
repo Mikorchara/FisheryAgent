@@ -1,8 +1,23 @@
 # 管理平台启动、联调与验证
 
-EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 实例在普通启动时拒绝并提示显式维护。不要用重新初始化掩盖旧数据，也不要直接套用旧库启动命令；须先停写、备份并在隔离副本验证。[ACK 与迁移步骤](deep-dive/EVENT_ACK.md#5-受控-v1--v2-维护)。本轮没有升级任何真实实例，Management 尚未同步 EVT-3A。
+EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 实例在普通启动时拒绝并提示显式维护。不要用重新初始化掩盖旧数据；须先停写、备份并在隔离副本验证。[显式迁移工具](../monitoring/migrate.py)。各实例的升级状态以其维护记录为准，本节不授权操作任何现有库。
 
 ## 快速开始 / 常用指令
+
+### BOT 日常验收（PowerShell 7）
+
+在 Prototype 根执行；不带 `-Run` 默认只做指定实例的只读检查，AI 入口额外生成 pending 计划，不读取密钥、不联网、不创建批准：
+
+```powershell
+.\scripts\dev\Test-QQBot.ps1 -Check
+.\scripts\dev\Test-QwenProvider.ps1 -Check
+```
+
+人工决定执行时分别用 `Test-QQBot.ps1 -Run`、`Test-QwenProvider.ps1 -Run`；QQ AI 用 `Test-QQAI.ps1 -Run -ProviderReport '上次成功Provider的绝对路径/result.json'`，必须明确指定真实成功回执，并独立批准 QQ。脚本保留原人工挑战、费用/期限/Scope 复核及一次性消费。[完整参数、失败处理与示例](deep-dive/BOT_TEST_WORKFLOW.md)。
+
+当前用户报告 Qwen + Monitoring + QQ 单轮端到端已成功，SDK 正常关闭且客户端可见；本轮只做离线审计/回归。模型自由文本仍不展示，普通 `apps.qq_bot --connect` 的 `/问AI` 仍是 AI_DISABLED。[当前阶段与证据边界](deep-dive/BOT_STAGE_SUMMARY.md)。
+
+本轮新增脚本测试通过，但原 FAST 的 5 项 Fake QQ 回归仍失败，尚未形成稳定全绿基线；进入下一阶段前先核查短等待窗口与重复校验开销。[完整结果与诊断](deep-dive/research/BOT_WEB_IMPACT_AUDIT.md#2-兼容性证据与限度)。
 
 ### BOT-3C-FAST：Qwen + QQ 受控单轮试用
 
@@ -12,11 +27,11 @@ EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 �
 
 ### BOT-2B 指定 Monitoring 实例只读查询
 
-BOT-3C-2A：SDK清理失败会报SDK_CLEANUP_FAILED/TIMEOUT并隔离后续AI请求；不要循环重试或清空状态。当前仅完成资源门禁，仍未取得不合作线程的硬退出保证，真实QQ AI保持关闭。[状态区分、测试和进程隔离前置条件](deep-dive/BOT3C2A_SDK_RESOURCE_GATE.md)
+BOT-3C-2A 的 SDK清理失败会报SDK_CLEANUP_FAILED/TIMEOUT并隔离后续AI请求；不要循环重试或清空状态。仍未取得不合作线程的硬退出保证，进程隔离草稿继续禁用；FAST 仅通过独立一次性试用入口执行。[状态区分与剩余风险](deep-dive/BOT3C2A_SDK_RESOURCE_GATE.md)
 
 BOT-3C-1：在 Prototype 根执行 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot --check-ai-readiness`，仅核对维护者候选Scope，不读取密钥/实例或联网。退出0表示候选一致且**仍禁止真实AI**；`/问AI`保持AI_DISABLED。SDK不合作清理、真实Scope/费用/实例和QQ批准、真实装配仍是前置条件。[准备结果与人工验收清单](deep-dive/BOT3C1_REAL_AI_PREPARATION.md)
 
-BOT-3B-1 已补齐离线 AI 服务边界；BOT-3B-2 增加有界队列、取消及单次 Fake 交付，仍没有真实 QQ AI 启动开关；现有 `/问AI` 仍为 AI_DISABLED。独立 AI 模板只用于 Fake 候选验证，不能作为真实模型授权。[边界](deep-dive/BOT3B1_QQ_AI_BOUNDARY.md)、[调度/交付测试与 BOT-3C 前置条件](deep-dive/BOT3B2_QQ_AI_SCHEDULING.md)
+BOT-3B-1/2 提供 AI 服务边界、有界队列、取消及单次交付；普通 QQ CLI 的 `/问AI` 仍禁用。独立 AI 配置不能代替 FAST 的真实模型审批。[边界](deep-dive/BOT3B1_QQ_AI_BOUNDARY.md)、[调度/交付](deep-dive/BOT3B2_QQ_AI_SCHEDULING.md)
 
 新增 `--monitoring-config`，与 `--help-only` / `--fictional-data` 互斥。仅在用户单独批准实例和设备后使用；不会自动选择工作区或正式库。先运行 `--check-config` 做纯配置检查，再显式 `--check-monitoring` 只读预检，最后另行批准 QQ 联网。配置模板、完整命令及安全边界见 [BOT-2B 验收](deep-dive/BOT2B_MONITORING_READ_ONLY.md#5-真实实例人工接入步骤待单独批准)。本轮只完成隔离数据验证，未打开真实实例。
 

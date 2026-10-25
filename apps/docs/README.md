@@ -4,14 +4,17 @@
 
 ## 阅读入口
 
-- [BOT-3C-FAST Qwen单轮试用准备](deep-dive/BOT3C_FAST_QWEN_TRIAL.md)（独立审批、一次性Provider/QQ入口；仅离线验证，真实调用待批准，进程隔离仍暂停）
+- [BOT 当前阶段总结](deep-dive/BOT_STAGE_SUMMARY.md)（用户报告 FAST 真实端到端验收通过；模型自由文本仍不展示，普通 QQ CLI 仍禁用 AI）
+- [BOT Web 影响与清理审计](deep-dive/research/BOT_WEB_IMPACT_AUDIT.md)（共享 SDK 行为变化、兼容性证据、暂停草稿与后续同步边界）
+- [QQ / Qwen 简化验收入口](deep-dive/BOT_TEST_WORKFLOW.md)（PowerShell 7；默认不联网，原审批和单次消费保留）
+- [BOT-3C-FAST Qwen单轮试用准备](deep-dive/BOT3C_FAST_QWEN_TRIAL.md)（阶段实施记录与原 CLI；当前验收状态见上方总结）
 - [BOT-3C-2B 进程隔离暂停记录](deep-dive/BOT3C2B_SDK_PROCESS_ISOLATION.md)（4 个实现草稿未接入，执行入口明确禁用；保留 2A 门禁，等待 BOT-3C-FAST 范围确认）
 - [BOT-3C-2A SDK资源门禁与取消](deep-dive/BOT3C2A_SDK_RESOURCE_GATE.md)（租约、失败隔离、Commit/交付保护；硬退出仍需进程隔离，真实AI仍关闭）
 - [BOT-3C-1 真实 AI 联调前置准备](deep-dive/BOT3C1_REAL_AI_PREPARATION.md)（独立candidate、统一回复离线装配、真实SDK内存HTTP验证；真实AI仍关闭）
 - [BOT-3B-2 有界 AI 调度与单次交付](deep-dive/BOT3B2_QQ_AI_SCHEDULING.md)（仅 Fake：1执行/2等待、取消、交付未知不重试；真实 QQ AI 仍关闭）
 - [BOT-3B-1 QQ AI 服务边界与权限装配](deep-dive/BOT3B1_QQ_AI_BOUNDARY.md)（Monitoring-only、渠道权限、同轮来源摘要、Fake candidate；真实 QQ AI 仍关闭）
 
-- [BOT-3A QQ 与 AI Service 集成架构调查](deep-dive/research/BOT3A_QQ_AI_SERVICE_INTEGRATION.md)（复用现有 Agent、有界 AI 队列、成员会话与程序权限；仅研究，BOT-3B 未实施）
+- [BOT-3A QQ 与 AI Service 集成架构调查](deep-dive/research/BOT3A_QQ_AI_SERVICE_INTEGRATION.md)（历史设计依据；BOT-3B/FAST 的后续实现见当前总结）
 
 - [BOT-2B 指定 Monitoring 实例只读查询](deep-dive/BOT2B_MONITORING_READ_ONLY.md)（显式配置、SQLite 防写与设备隔离；用户已报告 BOT-2C 测试群当前/历史/异常查询通过，AI/Knowledge 仍禁用）
 
@@ -21,7 +24,7 @@
 
 - [SIMPLIFY-1 风险周期列表](deep-dive/EVENT_CYCLE_UI.md)（Prototype 待验收；服务端整合、原始详情、保留 ACK 审计保护）
 - [事件管理现状与简化方案](deep-dive/research/EVENT_MANAGEMENT_SIMPLIFICATION.md)（讨论稿：为什么已恢复仍删不掉、一周期一行、归档与永久删除的取舍；未实施）
-- [EVT-3A 人工知晓、审计与显式 Schema 升级](deep-dive/EVENT_ACK.md)（Prototype 实验；ACK 与规则消退独立，待人工验收）
+- EVT-3A 旧 `EVENT_ACK.md` 已不在仓库；当前行为见 [事件管理](deep-dive/EVENT_MANAGEMENT.md)，显式维护入口为 [Monitoring 迁移工具](../monitoring/migrate.py)。
 - [目录与职责](STRUCTURE.md)
 - [MIG-2 独立发行与数据实例](deep-dive/MANAGEMENT_STANDALONE.md)（独立 Wheel、显式数据根/初始化、隔离测试与 MIG-3 清单）
 - [R2D-2A 产品整理与验收](deep-dive/R2D2A_PRODUCT_INTEGRATION.md)（并发小修、一行启动、全屏/阅读、三工具候选）
