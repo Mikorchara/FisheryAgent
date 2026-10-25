@@ -1,4 +1,4 @@
-"""Single passive-reply owner for isolated offline tests, never a live transport."""
+"""Single passive-reply ownership for exact offline or independently approved trial transports."""
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -10,6 +10,7 @@ import time
 import httpx
 
 from apps.ai_backend.model_gateway import GatewayError
+from apps.ai_service.channel_presentation import render_channel_reply
 
 from .contracts import BotError
 from .adapter import GroupReply
@@ -77,18 +78,55 @@ class OfflineQQGateway:
             finally:api.close()
 
 
+class PassiveReplyOwner:
+    """One message claim shared by fixed replies, AI outcomes and safe errors.
+
+    Ownership is not authorization. Only exact Fake/phase-approved Trial transports
+    may be composed; each path still validates immediately before submission.
+    """
+    def __init__(self,gateway,*,clock=None):
+        from .ai_trial_delivery import TrialQQTransport
+        if type(gateway) not in (OfflineQQGateway,TrialQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
+        self.gateway=gateway
+        self.clock=clock or (lambda:datetime.now(timezone.utc))
+        self._claims={};self._lock=threading.Lock()
+
+    def send(self,context,text,cancelled,validate):
+        validate()
+        text=plain(text,max(1,len(text)))
+        if not 1<=len(text)<=1800:raise BotError('AI_REPLY_TOO_LONG')
+        with self._lock:
+            now=self.clock()
+            self._claims={k:v for k,v in self._claims.items() if (now-v).total_seconds()<300}
+            if context.delivery_key in self._claims:raise BotError('AI_DELIVERY_ALREADY_CLAIMED')
+            if len(self._claims)>=128:raise BotError('AI_DELIVERY_CAPACITY')
+            self._claims[context.delivery_key]=context.timestamp
+        reply=GroupReply(context.group_id,context.message_id,text)
+        try:
+            self.gateway.send(context,reply,clock=self.clock,cancelled=cancelled,before_post=validate)
+        except BotError as error:
+            unknown=error.code in ('QQ_DELIVERY_UNKNOWN','QQ_SEND_NOT_CONFIRMED','QQ_HTTP_UNAVAILABLE',
+                                   'QQ_RESPONSE_TOO_LARGE','INVALID_PACKET','PACKET_SIZE_LIMIT')
+            return DeliveryReceipt('DELIVERY_UNKNOWN' if unknown else 'FAILED',error.code)
+        return DeliveryReceipt('DELIVERED','QQ_REPLY_API_ACCEPTED',True,False,
+            self.clock().isoformat(),hashlib.sha256(text.encode('utf-8')).hexdigest())
+
+
 class DeliveryOwner:
     """Revalidation + full safe text + at-most-one submission per original message.
 
-    Candidate can_deliver stays false. This class only accepts the exact offline
-    gateway; it is not a way to authorize real candidate/network delivery.
+    Candidate can_deliver stays false. A separate phase-approved Trial transport
+    does not promote candidates or remove authorization/source/resource checks.
     """
     def __init__(self, coordinator, gateway, *, clock=None, monotonic=time.monotonic):
-        if type(gateway) is not OfflineQQGateway:raise BotError('OFFLINE_DELIVERY_REQUIRED')
+        from .ai_trial_delivery import TrialQQTransport
+        if type(gateway) not in (OfflineQQGateway,TrialQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
+        if type(gateway) is TrialQQTransport and gateway.trial is not coordinator.service._channel_trial:
+            raise BotError('TRIAL_QQ_COMPOSITION_REQUIRED')
         self.coordinator,self.gateway=coordinator,gateway
         self.clock=clock or (lambda:datetime.now(timezone.utc))
         self.now=monotonic
-        self._claims={};self._lock=threading.Lock()
+        self.passive=PassiveReplyOwner(gateway,clock=self.clock)
 
     def deliver(self, plan, result, cancelled):
         def validate():
@@ -100,25 +138,12 @@ class DeliveryOwner:
             try:self.coordinator.validate_delivery_candidate(plan,result)
             except GatewayError as error:raise BotError(error.code) from None
         validate()
-        text=('离线验收 · 非真实 QQ 交付\n'+result.presentation+
-              '\n质量、新鲜度及连接状态均为上述评估时刻的判断；发送时未重新采样。')
+        rendered,_assessment=render_channel_reply(result)
+        from .ai_trial_delivery import TrialQQTransport
+        live_trial=type(self.gateway) is TrialQQTransport and not self.gateway.trial.offline_test
+        text=('受控 Qwen 单轮实验 · SIMULATOR\n' if live_trial else '离线验收 · 非真实 QQ 交付\n')+rendered
         # Sanitize mentions/control characters without silently truncating facts.
         text=plain(text,max(1,len(text)))
         if not 1<=len(text)<=1600:raise BotError('AI_REPLY_TOO_LONG')
-        with self._lock:
-            now=self.clock()
-            self._claims={k:v for k,v in self._claims.items() if (now-v).total_seconds()<300}
-            if plan.context.delivery_key in self._claims:raise BotError('AI_DELIVERY_ALREADY_CLAIMED')
-            if len(self._claims)>=128:raise BotError('AI_DELIVERY_CAPACITY')
-            self.coordinator.claim_delivery(plan,result)
-            self._claims[plan.context.delivery_key]=plan.context.timestamp
-        reply=GroupReply(plan.context.group_id,plan.context.message_id,text)
-        try:
-            self.gateway.send(plan.context,reply,clock=self.clock,cancelled=cancelled,before_post=validate)
-        except BotError as error:
-            # An unconfirmed HTTP 2xx is also uncertain. No retry and no regeneration.
-            unknown=error.code in ('QQ_DELIVERY_UNKNOWN','QQ_SEND_NOT_CONFIRMED','QQ_HTTP_UNAVAILABLE',
-                                   'QQ_RESPONSE_TOO_LARGE','INVALID_PACKET','PACKET_SIZE_LIMIT')
-            return DeliveryReceipt('DELIVERY_UNKNOWN' if unknown else 'FAILED',error.code)
-        return DeliveryReceipt('DELIVERED','QQ_REPLY_API_ACCEPTED',True,False,
-            self.clock().isoformat(),hashlib.sha256(text.encode('utf-8')).hexdigest())
+        self.coordinator.claim_delivery(plan,result)
+        return self.passive.send(plan.context,text,cancelled,validate)

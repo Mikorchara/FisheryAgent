@@ -1,4 +1,4 @@
-"""Offline admission/execution boundary; scheduling and fake delivery are separate owners."""
+"""Channel admission/execution; Fake by default, real trials require an independent approval."""
 from dataclasses import asdict,dataclass,field
 from datetime import datetime,timezone
 from threading import RLock
@@ -40,7 +40,8 @@ class QQAICoordinator:
     """Reuse the existing ingress and Service; never creates a second Agent loop.
 
     Constructor dependencies are explicit. It does not load instances, policies,
-    secrets or providers. Only the exact offline Provider is accepted by Service.
+    secrets or providers. Service accepts the exact Fake Provider or a separately
+    approved QwenTrialSession; ordinary QQ composition still has no AI Service.
     """
     def __init__(self,access,monitoring,service,*,config=QQAIConfig(),clock=None,monotonic=time.monotonic):
         if service.monitoring is not monitoring or type(config) is not QQAIConfig:
@@ -74,6 +75,10 @@ class QQAICoordinator:
     def _permission(self,message):
         if not self.config.enabled:
             raise BotError('AI_DISABLED')
+        trial=self.service._channel_trial
+        if trial is not None:
+            try:trial.check_message(message)
+            except GatewayError as error:raise BotError(error.code) from None
         group=next((g for g in self.access.groups if g.group_id==message.group_id),None)
         grant=next((g for g in self.config.grants if g.group_id==message.group_id),None)
         if (group is None or message.member_id not in group.members or grant is None
@@ -91,6 +96,10 @@ class QQAICoordinator:
                 raise BotError('AI_EXPLICIT_COMMAND_REQUIRED')
             with self._lock:
                 grant=self._permission(message)
+                trial=self.service._channel_trial
+                if trial is not None:
+                    try:trial.check_admission()
+                    except GatewayError as error:raise BotError(error.code) from None
                 revision,binding=self.revision,self.monitoring.binding_revision
                 remaining=300-(self._clock()-message.timestamp).total_seconds()-15
                 if remaining<=0:
@@ -116,6 +125,7 @@ class QQAICoordinator:
                     context=QQAIMessageContext(transport_app_id,message.group_id,message.member_id,
                         message.message_id,message.timestamp,deadline,session_key)
                     plan=QQAIPlan(uuid.uuid4().hex,prepared,self._requests.create(),context)
+                    if trial is not None:trial.reserve_admission(plan.handle)
                 except GatewayError as error:
                     raise BotError(error.code) from None
                 self._tasks[plan.id]=dict(plan=plan,deadline=deadline,state='ADMITTED',result=None)
@@ -145,9 +155,10 @@ class QQAICoordinator:
             raise BotError(getattr(error,'code','AI_SERVICE_UNAVAILABLE')) from None
 
     def check_delivery(self,plan,result):
-        """Revalidate authorization, but always keep real delivery blocked in B-1."""
+        """Fake candidates never authorize QQ; a separate phase-specific trial may."""
         self.validate_delivery_candidate(plan,result)
-        return False
+        trial=self.service._channel_trial
+        return bool(trial is not None and trial.approval.phase=='qq' and not trial.offline_test)
 
     def validate_plan(self,plan):
         with self._lock:
@@ -162,11 +173,18 @@ class QQAICoordinator:
             task=self._tasks.get(plan.id)
             if task is None or task['plan'] is not plan or task['result'] is not result or task['state']!='COMPLETED':
                 raise BotError('INVALID_AI_DELIVERY')
+        plan.handle.assert_resources_closed()
         self.service.validate_channel_turn(plan.prepared)
-        if (not result.completed or result.source is None or not result.offline_only
-                or result.release_status!='candidate' or result.can_deliver is not False
+        trial=self.service._channel_trial
+        expected_status='local_experimental' if trial is not None else 'candidate'
+        expected_offline=trial is None or trial.offline_test
+        if (not result.completed or result.source is None or result.offline_only!=expected_offline
+                or result.release_status!=expected_status or result.can_deliver is not False
                 or result.scope_revision!=plan.prepared.execution.profile.revision):
             raise BotError('INVALID_AI_DELIVERY')
+        if trial is not None and (trial.approval.phase!='qq' or trial.handle is not plan.handle
+                or result.source.source_kind!='simulator'):
+            raise BotError('TRIAL_QQ_DELIVERY_NOT_APPROVED')
 
     def claim_delivery(self,plan,result):
         """One submission even if a second fake DeliveryOwner is accidentally built."""

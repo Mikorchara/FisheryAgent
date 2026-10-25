@@ -260,7 +260,8 @@ class AssemblerTransportTests(unittest.TestCase):
             async def close(self):
                 closed.set()
                 if client_close_error: raise client_close_error
-        adapter = OpenAICompatibleAdapter(async_client_factory=lambda *_: Client())
+        from apps.ai_backend.sdk_resources import SDKResourceBudget
+        adapter = OpenAICompatibleAdapter(async_client_factory=lambda *_: Client(),resource_budget=SDKResourceBudget())
         return adapter, bodies, closed, stream_closed, started
 
     def test_internal_stream_returns_only_after_stream_and_client_close(self):
@@ -322,7 +323,7 @@ class AssemblerTransportTests(unittest.TestCase):
     def test_cleanup_error_discards_complete_tool_call_without_retry(self):
         adapter, bodies, closed, stream_closed, _ = self.transport(good_chunks(), close_error=RuntimeError("fictional-private-error"))
         with self.assertRaises(GatewayError) as error: adapter._complete_tool_stream(self.request, self.runtime)
-        self.assertEqual(error.exception.code, "SDK_ERROR")
+        self.assertEqual(error.exception.code, "SDK_CLEANUP_FAILED")
         self.assertNotIn("fictional-private-error", str(error.exception))
         self.assertEqual(len(bodies), 1)
         self.assertTrue(closed.is_set() and stream_closed.is_set())
@@ -331,7 +332,7 @@ class AssemblerTransportTests(unittest.TestCase):
         adapter, bodies, closed, stream_closed, _ = self.transport(good_chunks(),
             client_close_error=RuntimeError("fictional-private-client"))
         with self.assertRaises(GatewayError) as error: adapter._complete_tool_stream(self.request, self.runtime)
-        self.assertEqual(error.exception.code, "SDK_ERROR")
+        self.assertEqual(error.exception.code, "SDK_CLEANUP_FAILED")
         self.assertNotIn("fictional-private-client", str(error.exception))
         self.assertEqual(len(bodies), 1)
         self.assertTrue(closed.is_set() and stream_closed.is_set())

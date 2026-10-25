@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "release_id": "qq-monitoring-normal-trial-v2",
+  "status": "candidate",
+  "scope": {
+    "contract": "qq-monitoring-normal-trial@2",
+    "runtime": {
+      "preset_id": "dashscope-qwen38-flash-r1",
+      "preset_variant": "off",
+      "contract_version": "1.0.2",
+      "identity": [
+        "dashscope",
+        "openai_chat",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "qwen3.8-flash"
+      ],
+      "protocol_spec": {
+        "spec_id": "dashscope_chat",
+        "version": "1",
+        "max_output_tokens_field": "max_tokens",
+        "thinking_encoding": "enable_thinking",
+        "effort_field": "reasoning_effort",
+        "stream_field": "stream",
+        "usage_options_field": "stream_options"
+      },
+      "thinking": "off",
+      "response_mode": "normal",
+      "prompt_id": "ASSISTANT_V2@1",
+      "prompt_sha256": "4452b6353dd3a20d34e0c2d741601ebdcfb155427e49245dcf48ac64ed8b60e8",
+      "history_projection": "UNTRUSTED_TRANSCRIPT_V1",
+      "history_version": "1",
+      "tools": [
+        "get_current_water_quality"
+      ],
+      "tool_definitions_sha256": "d54f8935a103602673149f7e7078bfd197b4c282a734984254938424d3996e28"
+    },
+    "data_bindings": {
+      "water": "management-current-water@1",
+      "knowledge": null,
+      "sources": [
+        "simulator"
+      ]
+    },
+    "execution": {
+      "mode": "SINGLE_ROUND",
+      "model_requests": 2,
+      "tool_calls": 1,
+      "tool_rounds": 1,
+      "history": false,
+      "streaming": false,
+      "retries": 0,
+      "budget": {
+        "max_output_tokens": 512,
+        "turn_timeout_s": 90
+      },
+      "provider_timeouts_s": [
+        5,
+        30,
+        120
+      ]
+    },
+    "provider": {
+      "credential_ref": "DASHSCOPE_API_KEY",
+      "auth": "REQUIRED_BEARER"
+    },
+    "backend": {
+      "adapter": "apps.ai_backend.openai_compatible_adapter.OpenAICompatibleAdapter",
+      "adapter_sha256": "0ed6e0eac5be9f69965e55593309a94fad97d3614ecb91af4be9cde4e91cce46",
+      "resource_contract": "sdk-resource-quarantine@1",
+      "resources_sha256": "251dea3a275cfce89b27e15aa794005dfa3a714d4d0555f3fc3232fe4e1bfe74",
+      "execution_sha256": "d62aba2a43ccbcf04abc10d9c507292fdc16bcc16d55e16255973ffe4d1e4d41",
+      "openai_version": "2.54.0",
+      "httpx_version": "0.28.1"
+    },
+    "source_requirement": "CURRENT_OBSERVATION_QUERY",
+    "presentation": "qq-current-facts-withheld-explanation@1"
+  },
+  "scope_sha256": "af2ddb61aacd36e4706b381781974d92dd031bd1e3b6ed2f650607e3bee2e23d",
+  "qualification_id": null,
+  "validated_at": null,
+  "trial_approval_id": null
+}

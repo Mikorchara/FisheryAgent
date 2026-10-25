@@ -25,6 +25,7 @@ from .model_options import (GenerationOptions, OptionValidationError, ReasoningM
                             Support, validate_options)
 from .providers import AuthSpec
 from .execution import current_handle, RequestHandle
+from .sdk_resources import SDK_RESOURCES, SDKResourceBudget, CLEANUP_GRACE_S
 from .manual import ManualRequest, ManualResponse
 from .tool_argument_diagnostics import (ArgumentStage, ArgumentRejection, ToolArgumentError,
     ToolArgumentDiagnostic, rejection)
@@ -306,9 +307,15 @@ class OpenAICompatibleAdapter:
     """The gateway owns retries; the SDK performs one attempt at a time."""
 
     def __init__(self, client_factory: Callable[[RuntimeSnapshot, float], object] | None = None,
-                 *, async_client_factory=None):
+                 *, async_client_factory=None, resource_budget=None,cleanup_timeout_s=CLEANUP_GRACE_S):
+        if (resource_budget is not None and type(resource_budget) is not SDKResourceBudget
+                or type(cleanup_timeout_s) not in (float,int) or not math.isfinite(cleanup_timeout_s)
+                or not 0<cleanup_timeout_s<=CLEANUP_GRACE_S):
+            raise ValueError('INVALID_SDK_RESOURCE_CONFIG')
         self._client_factory = client_factory or self._make_client
         self._async_client_factory = async_client_factory or self._make_async_client
+        self._resources=resource_budget if resource_budget is not None else SDK_RESOURCES
+        self._cleanup_timeout_s=cleanup_timeout_s
         self.request_attempts = 0
 
     def _new_tool_stream_assembler(self, definitions):
@@ -392,6 +399,9 @@ class OpenAICompatibleAdapter:
         handle.check()
         if not handle._claimed:
             handle.start()
+        handle.assert_resources_closed()
+        resource=self._resources.reserve()
+        handle._sdk_resource=resource
         handle.io_closed = True
         inbox = queue.Queue(maxsize=32)
         stopped = threading.Event()
@@ -423,8 +433,12 @@ class OpenAICompatibleAdapter:
             async with asyncio.timeout(self._remaining(deadline)):
                 for attempt in range(attempts + 1):
                     handle.check()
-                    client = self._async_client_factory(runtime, self._remaining(deadline))
+                    resource.opening()
                     handle.io_closed = False
+                    try:client = self._async_client_factory(runtime, self._remaining(deadline))
+                    except BaseException:
+                        resource.fail('SDK_CLEANUP_FAILED')
+                        raise
                     sdk_stream = None
                     assembler = self._new_tool_stream_assembler(tool_definitions) if assembling else None
                     stream_assembler = assembler
@@ -473,12 +487,35 @@ class OpenAICompatibleAdapter:
                         if emitted or not isinstance(error, RetryableGatewayError) or attempt >= attempts:
                             raise error from None
                     finally:
+                        async def close_owned():
+                            try:
+                                if sdk_stream is not None:
+                                    await sdk_stream.close()
+                                    closed=getattr(sdk_stream,'is_closed',None)
+                                    if (closed() if callable(closed) else closed) is False:
+                                        raise GatewayError('SDK_CLEANUP_FAILED')
+                            finally:
+                                await client.close()
+                                closed=getattr(client,'is_closed',None)
+                                if (closed() if callable(closed) else closed) is False:
+                                    raise GatewayError('SDK_CLEANUP_FAILED')
+                        closing=asyncio.create_task(close_owned())
+                        cancelled=False
                         try:
-                            if sdk_stream is not None:
-                                await sdk_stream.close()
-                        finally:
-                            await client.close()
-                            handle.io_closed = True
+                            while True:
+                                try:
+                                    await asyncio.shield(closing)
+                                    break
+                                except asyncio.CancelledError:
+                                    cancelled=True  # A second Stop must not interrupt owned cleanup.
+                                    if closing.done():
+                                        closing.result()  # Normal close may race with operation cancellation.
+                                        break
+                            resource.closed();handle.io_closed=True
+                        except BaseException:
+                            resource.fail('SDK_CLEANUP_FAILED')
+                            raise
+                        if cancelled:raise asyncio.CancelledError()
                     if assembler is not None:
                         # Iterator exhausted AND cleanup succeeded; only now publish a complete call.
                         handle.check()
@@ -492,9 +529,16 @@ class OpenAICompatibleAdapter:
         async def run():
             loop = asyncio.get_running_loop()
             task = asyncio.create_task(operation())
+            resource.task_started()
+            task.add_done_callback(lambda _:resource.task_finished())
+            abort_scheduled=threading.Event()
+            abort_lock=threading.Lock()
             def cancel_task():
-                if not task.done() and not loop.is_closed():
-                    loop.call_soon_threadsafe(task.cancel)
+                with abort_lock:
+                    if not task.done() and not loop.is_closed() and not abort_scheduled.is_set():
+                        abort_scheduled.set()
+                        loop.call_soon_threadsafe(task.cancel)
+                        resource.abort()
             handle.bind(cancel_task)
             try:
                 await task
@@ -515,6 +559,7 @@ class OpenAICompatibleAdapter:
             except Exception:
                 await put(("error", safe_stream_error(GatewayError("SDK_ERROR"))))
             finally:
+                if task.done():resource.task_finished()
                 handle.unbind()
 
         def worker():
@@ -524,15 +569,24 @@ class OpenAICompatibleAdapter:
             except asyncio.CancelledError:
                 pass  # Consumer closed; operation finally still closes owned SDK resources.
             except Exception:
+                if resource.task_created:resource.fail('SDK_CLEANUP_FAILED')
                 # Loop startup/cleanup failures must never strand the Flask consumer.
                 try:
                     inbox.put_nowait(("error", GatewayError("SDK_ERROR")))
                 except queue.Full:
                     pass
 
+        # Python cannot kill a wedged thread. This legacy shutdown flag is NOT a
+        # cleanup guarantee: an unconfirmed exit poisons the shared budget and
+        # prevents Commit/Delivery/new SDK workers. Hard exit needs a process boundary.
         thread = threading.Thread(target=worker, name="fishery-sdk-request", daemon=True)
-        thread.start()
-        consumer_deadline = deadline + 5  # Cleanup grace is not a renewed generation budget.
+        resource.attach(thread)
+        try:
+            thread.start();resource.launched()
+        except Exception:
+            code=resource.settle()
+            raise GatewayError(code or 'SDK_ERROR') from None
+        consumer_deadline = deadline
         ended = False
         try:
             while True:
@@ -559,9 +613,10 @@ class OpenAICompatibleAdapter:
             if not ended:
                 handle.abort_io()
             stopped.set()
-            thread.join(timeout=5)
-            if thread.is_alive():
-                handle.io_closed = False
+            thread.join(timeout=self._cleanup_timeout_s)
+            code=resource.settle()
+            handle.io_closed=resource.io_closed
+            if code:raise safe_stream_error(GatewayError(code)) from None
 
     def manual_complete(self, request: ManualRequest, runtime):
         if request.streaming:
@@ -864,6 +919,7 @@ class OpenAICompatibleAdapter:
             r"(?:thinking|reasoning|enable_thinking|reasoning_effort)", message))
 
     def complete(self, request: ModelRequest, runtime: RuntimeSnapshot) -> ModelResponse:
+        self._resources.assert_healthy()
         kwargs = self._kwargs(request, runtime, stream=False)
         if current_handle() is not None:
             events = self._bridge(kwargs, runtime, stream=False)
@@ -913,6 +969,7 @@ class OpenAICompatibleAdapter:
         raise GatewayError("UNREACHABLE")
 
     def stream(self, request: ModelRequest, runtime: RuntimeSnapshot) -> Iterator[ModelEvent]:
+        self._resources.assert_healthy()
         kwargs = self._kwargs(request, runtime, stream=True)
         if current_handle() is not None:
             yield from self._bridge(kwargs, runtime, stream=True)

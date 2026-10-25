@@ -1,4 +1,4 @@
-"""Bounded offline AI and passive-delivery coordination; not wired to the QQ CLI."""
+"""Bounded AI/passive delivery; default Fake, separate operator-approved trial composition."""
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 import re
@@ -35,16 +35,20 @@ class QQAIJobScheduler:
 
     At most three unfinished jobs total (including pending delivery), two queued
     AI jobs, one unfinished job per frozen authorized session. No per-job threads.
-    Only exact Fake delivery can be assembled here; real CLI remains disabled.
+    Exact Fake or independently approved Trial transport only. Ordinary CLI stays disabled.
     """
     def __init__(self, coordinator, gateway, *, clock=None, monotonic=time.monotonic):
-        if type(gateway) is not OfflineQQGateway:raise BotError('OFFLINE_DELIVERY_REQUIRED')
+        from .ai_trial_delivery import TrialQQTransport
+        if type(gateway) not in (OfflineQQGateway,TrialQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
+        if type(gateway) is TrialQQTransport and gateway.trial is not coordinator.service._channel_trial:
+            raise BotError('TRIAL_QQ_COMPOSITION_REQUIRED')
         self.coordinator,self.gateway=coordinator,gateway
         self.now=monotonic
         self.delivery=DeliveryOwner(coordinator,gateway,clock=clock,monotonic=monotonic)
         self._cv=threading.Condition(threading.RLock())
-        self._jobs={};self._finished=OrderedDict();self._acceptances=deque(maxlen=32)
+        self._jobs={};self._finished=OrderedDict();self._finished_resources={};self._acceptances=deque(maxlen=32)
         self._stopping=False
+        self._resource_fault=None
         self._threads=tuple(threading.Thread(target=fn,name='qq-ai-'+name,daemon=False)
             for name,fn in (('worker',self._ai_loop),('delivery',self._delivery_loop),('watchdog',self._watch)))
         coordinator.claim_scheduler(self)
@@ -59,6 +63,7 @@ class QQAIJobScheduler:
     def submit(self, raw, *, transport_app_id):
         with self._cv:
             if self._stopping:raise BotError('AI_SCHEDULER_STOPPED')
+            if self._resource_fault:raise BotError('AI_RESOURCE_QUARANTINED')
             if not self.gateway.connected:raise BotError('AI_GATEWAY_DISCONNECTED')
             plan=self.coordinator.prepare(raw,transport_app_id=transport_app_id)
             if (len(self._jobs)>=3 or sum(j.state=='QUEUED' for j in self._jobs.values())>=2):
@@ -78,10 +83,16 @@ class QQAIJobScheduler:
         with self._cv:
             if task_id in self._jobs:
                 j=self._jobs[task_id]
-                return dict(task_id=task_id,state=j.state,code=j.reason,
+                info=dict(task_id=task_id,state=j.state,code=j.reason,
                     api_accepted=False,client_display_confirmed=False)
+                if j.plan.handle.resource_info() is not None:info['sdk_resources']=j.plan.handle.resource_info()
+                return info
             if task_id not in self._finished:raise BotError('AI_TASK_NOT_FOUND')
-            return dict(self._finished[task_id])
+            info=dict(self._finished[task_id])
+            if task_id in self._finished_resources:
+                info['sdk_resources']={**self._finished_resources[task_id].snapshot(),
+                    'cancel_requested':info['sdk_resources']['cancel_requested']}
+            return info
 
     def wait(self, task_id, timeout=3):
         deadline=time.monotonic()+timeout
@@ -103,8 +114,13 @@ class QQAIJobScheduler:
         receipt=job.receipt
         info=dict(task_id=task_id,state=state,code=code,
             api_accepted=bool(receipt and receipt.api_accepted),client_display_confirmed=False)
+        if job.plan.handle.resource_info() is not None:
+            info['sdk_resources']=job.plan.handle.resource_info()
+            self._finished_resources[task_id]=job.plan.handle._sdk_resource
         self._finished[task_id]=info
-        while len(self._finished)>32:self._finished.popitem(last=False)
+        while len(self._finished)>32:
+            expired,_=self._finished.popitem(last=False)
+            self._finished_resources.pop(expired,None)
         if receipt and receipt.api_accepted:
             self._acceptances.append(dict(task_id=task_id,accepted_at=receipt.accepted_at,
                 text_sha256=receipt.text_sha256,client_display_confirmed=False))
@@ -118,7 +134,7 @@ class QQAIJobScheduler:
 
     def cancel(self, task_id, *, reason='AI_CANCELLED'):
         if reason not in ('AI_CANCELLED','AI_QUEUE_TIMEOUT','AI_TOTAL_TIMEOUT','AI_REPLY_EXPIRED',
-                          'AI_AUTH_CHANGED','AI_GATEWAY_DISCONNECTED','AI_SHUTDOWN'):
+                          'AI_AUTH_CHANGED','AI_GATEWAY_DISCONNECTED','AI_SHUTDOWN','AI_RESOURCE_UNSAFE'):
             raise BotError('INVALID_AI_CANCEL_REASON')
         with self._cv:
             job=self._jobs.get(task_id)
@@ -137,6 +153,10 @@ class QQAIJobScheduler:
             # Handle ownership remains valid independently of the task map.
             job.plan.handle.cancel();job.plan.handle.abort_io()
         return True
+
+    def cancel_all(self, *, reason='AI_CANCELLED'):
+        with self._cv:ids=tuple(self._jobs)
+        for task_id in ids:self.cancel(task_id,reason=reason)
 
     def _pick(self, state, owner):
         with self._cv:
@@ -157,7 +177,14 @@ class QQAIJobScheduler:
             except Exception as failure:error=_code(failure)
             with self._cv:
                 job.owner=None
-                if job.cancelled.is_set():self._settle_cancel(job)
+                resource_error=job.plan.handle.resource_error()
+                if error in ('SDK_CLEANUP_TIMEOUT','SDK_CLEANUP_FAILED','SDK_RESOURCE_QUARANTINED',
+                             'SDK_RESOURCE_UNCONFIRMED'):
+                    resource_error=resource_error or error
+                if resource_error:
+                    self._resource_fault=resource_error
+                    self._finish(job,'FAILED',resource_error)
+                elif job.cancelled.is_set():self._settle_cancel(job)
                 elif error in ('CHANNEL_AUTHORIZATION_CHANGED','AI_NOT_AUTHORIZED','AI_DISABLED',
                                'AI_DEVICE_NOT_AUTHORIZED'):
                     self._finish(job,'CANCELLED','AI_AUTH_CHANGED')
@@ -170,6 +197,7 @@ class QQAIJobScheduler:
                 else:
                     job.state='COMPLETED';job.result=result
                     job.state='DELIVERY_PENDING';self._cv.notify_all()
+            if self._resource_fault:self.cancel_all(reason='AI_RESOURCE_UNSAFE')
 
     def _delivery_loop(self):
         while (job:=self._pick('DELIVERY_PENDING','delivery')) is not None:
@@ -214,4 +242,5 @@ class QQAIJobScheduler:
         for thread in self._threads:
             if thread.ident is not None:thread.join(max(0,deadline-time.monotonic()))
         if any(t.is_alive() for t in self._threads):raise BotError('AI_SHUTDOWN_INCOMPLETE')
+        if self._resource_fault:raise BotError('AI_SDK_RESOURCE_UNSAFE')
         self.coordinator.release_scheduler(self)

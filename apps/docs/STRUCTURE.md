@@ -11,17 +11,23 @@ apps/
 │  ├─ __init__.py                                                       # 无启动I/O的包边界
 │  ├─ __main__.py                                                       # 调用CLI；导入时不启动
 │  ├─ cli.py                                                            # 离线/配置/发现/显式联网；指定实例须单独批准
+│  ├─ trial.py                                                          # 独立Qwen试用CLI：计划/审批/检查/本机与QQ显式执行
+│  ├─ trial_configuration.py                                            # 防覆盖审批、持久单次消费与配置/实例绑定
+│  ├─ ai_trial_delivery.py                                              # 试用QQAPI传输及最终发送前权限检查
 │  ├─ monitoring_source.py                                              # 严格本机实例配置、设备白名单、只读装配与安全错误
 │  ├─ ai_configuration.py                                              # 独立AI许可与预算，默认关闭，当前工具白名单
 │  ├─ ai_coordinator.py                                                # 离线准入/执行/权限复核，冻结消息上下文与单次claim
 │  ├─ ai_scheduler.py                                                  # 一个AI/一个交付/一个监督线程；1执行2等待及取消
 │  ├─ ai_delivery.py                                                   # 单次提交owner与精确MockTransport，接受/拒绝/未知
+│  ├─ ai_preflight.py                                                  # 维护者真实试用candidate预检，不读取密钥/实例/网络
+│  ├─ ai_routing.py                                                    # 真实Gateway接收路径的显式Fake装配、共用准入/回复与撤销
 │  ├─ configuration.py                                                  # 严格访问JSON、复用私有CredentialStore和安全写入器
 │  ├─ transport.py                                                      # 固定QQ HTTPS/WSS、AccessToken、关联msg_id被动回复
 │  ├─ gateway.py                                                        # Identify/Resume/心跳、有界worker与安全日志
 │  ├─ examples/access.example.json                                      # 虚构App/群/成员白名单模板，不含凭据
 │  ├─ examples/monitoring.example.json                                  # 指定实例模板；占位符须人工填写，不自动选择业务数据
 │  ├─ examples/ai.example.json                                          # 默认关闭的离线AI候选配置，不含密钥
+│  ├─ examples/real-trial.request.example.json                           # 人工申请清单，非运行配置，不可直接启用AI
 │  ├─ contracts.py                                                      # 不可变群/成员/设备能力配置及受限消息解析
 │  ├─ adapter.py                                                        # 时效、去重、限频、会话计数和容量/并发拒绝
 │  ├─ service.py                                                        # 复用权威服务的固定只读命令
@@ -36,6 +42,10 @@ apps/
 │     ├─ test_monitoring_source.py                                      # 隔离实例只读查询、权限、事件语义、预算与Fake装配
 │     ├─ test_ai_coordinator.py                                          # Fake单轮、权限失效、同轮来源、注入与旧功能隔离
 │     ├─ test_ai_scheduler.py                                            # 有界并发/期限/I/O取消/单次交付及线程回收
+│     ├─ test_ai_preparation.py                                          # 独立Scope、统一Gateway离线装配、展示与真实门禁拒绝
+│     ├─ test_qwen_trial.py                                              # 独立审批、真实SDK内存HTTP、Fake QQ、预算与取消
+│     ├─ test_provider_sdk_preparation.py                                # 真实SDK+内存HTTP的取消/期限/编码/零重试
+│     ├─ test_sdk_resource_gate.py                                       # SDK失败覆盖取消、拒绝交付/再次准入与不安全关闭
 │     └─ test_offline.py                                                # CLI、网络保护和临时目录清理
 ├─ ai_backend/                                                           # 管理正式通用LLM Backend，无旧Runtime依赖
 │  ├─ tests/                                                             # 离线测试及Fake SDK
@@ -45,6 +55,8 @@ apps/
 │  │  ├─ test_boundary.py                                                # 阻断旧包导入与跨 Runtime 拒绝
 │  │  ├─ test_credentials.py                                             # 虚构凭据来源与快照安全
 │  │  ├─ test_execution.py                                               # Fake SDK 取消、资源关闭与 Raw body 隔离
+│  │  ├─ test_sdk_resources.py                                           # 不合作I/O/close/Runner、租约隔离/TTL/取消竞态
+│  │  ├─ test_sdk_process_paused.py                                      # 进程隔离暂停入口及基础 JSON 测试，不代表生命周期验收
 │  │  └─ test_protocol_specs.py                                          # 三 Provider 参数编码 parity
 │  ├─ tools/                                                             # 通用Registry/Executor/Policy合同
 │  │  ├─ __init__.py                                                     # 无启动 I/O 的包标记
@@ -61,6 +73,11 @@ apps/
 │  ├─ credentials.py                                                     # 私有 Store/Snapshot 与来源优先级
 │  ├─ project_env.py                                                     # 既有固定路径凭据写入器的独立实现；CAS/私有权限/原子保存
 │  ├─ execution.py                                                       # 请求上下文、取消及 Deadline
+│  ├─ sdk_resources.py                                                   # SDK资源租约、共享容量、退出/关闭事实与粘性故障隔离
+│  ├─ sdk_process_adapter.py                                             # 暂停的进程父端草稿，构造/启动明确拒绝，未接入
+│  ├─ sdk_process_worker.py                                              # 暂停的 SDK 子进程草稿，执行入口明确拒绝
+│  ├─ sdk_process_protocol.py                                            # 草稿版本化有界 JSON 帧及严格解码
+│  ├─ sdk_process_job.py                                                 # 未验收的 Windows Job 草稿，不在运行链路中使用
 │  ├─ history_projection.py                                              # 已保留完整 pair 的 B 默认投影与 A 回滚
 │  ├─ manual.py                                                          # 原 Raw 传输合同，无管理 UI 入口
 │  ├─ model_gateway.py                                                   # 新模型消息、Profile/Snapshot 与 Gateway
@@ -89,6 +106,7 @@ apps/
 │  │  └─ streaming_qualification.py                                      # 管理单案例资格、隔离 SQLite 与安全观察
 │  ├─ resources/                                                         # 固定包内业务资源
 │  │  ├─ assistant_execution.json                                        # Qwen/Ollama 独立本地实验 Scope，默认关闭
+│  │  ├─ qq_monitoring_trial.json                                        # 真实Monitoring-only试用candidate指纹，无真实授权
 │  │  ├─ assistant_normal_candidate.json                                 # Qwen Normal 三工具精确 candidate，未开放
 │  │  ├─ assistant_unified_tools.json                                    # 独立Normal/Streaming三工具本地许可与显式授权子集
 │  │  ├─ water_history_candidate.json                                    # 历史单工具local_experimental，默认关闭
@@ -138,6 +156,9 @@ apps/
 │  ├─ __init__.py                                                        # 无启动 I/O 的包标记
 │  ├─ contracts.py                                                       # 进程内 PreparedAssistantTurn 与 AssistantBackend 合同
 │  ├─ channel.py                                                         # 内部渠道授权、离线candidate、Fake Provider与SourceSummary
+│  ├─ channel_scope.py                                                   # 独立真实试用Scope构造与维护者candidate检查
+│  ├─ channel_trial.py                                                   # 独立限时Qwen试用合同、费用预算、原SDK Adapter子类
+│  ├─ channel_presentation.py                                            # 来源事实/解释分区、有限矛盾诊断，正文仍拒绝展示
 │  ├─ content_binding.py                                                 # 动态知识源的精确本地 Scope 变体，不继承旧真实资格
 │  ├─ execution.py                                                       # Normal 多轮发布、数据绑定、Scope 与确认 revision
 │  ├─ history_execution.py                                               # 历史单工具Scope、1024预算与独立试用门禁

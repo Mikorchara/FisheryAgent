@@ -18,10 +18,15 @@ def load(side, backend_name, business_name=None):
 
 
 def stable(value):
-    """Only nondeterministic execution IDs and wall-clock timings are excluded."""
+    """Exclude volatile IDs/times and the new SDK observation absent from legacy.
+
+    Protocol/results/steps/receipts/closed resources/terminal state still compare;
+    the intentionally stricter resource-failure contract has its own negative tests.
+    """
     if isinstance(value, dict):
         return {k:stable(v) for k,v in value.items() if k not in (
-            'request_id','trace_id','total_latency_ms','duration_ms','started_at','finished_at','completed_at','total_ms')}
+            'request_id','trace_id','total_latency_ms','duration_ms','started_at','finished_at','completed_at','total_ms',
+            'sdk_resources')}
     if isinstance(value, (list,tuple)):return [stable(v) for v in value]
     return value
 

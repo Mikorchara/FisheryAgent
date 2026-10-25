@@ -29,6 +29,7 @@ def main(argv=None):
     mode.add_argument('--configure-secret', action='store_true', help='Hidden prompt; existing private CredentialStore')
     mode.add_argument('--check-config', action='store_true', help='Read access configuration only; no credential or network I/O')
     mode.add_argument('--check-monitoring', action='store_true', help='Explicit read-only instance preflight; no QQ or credentials')
+    mode.add_argument('--check-ai-readiness', action='store_true', help='Maintained candidate only; no credentials, data or network')
     mode.add_argument('--discover', action='store_true', help='Show QQ group/member OpenIDs locally; never replies or queries data')
     mode.add_argument('--connect', action='store_true', help='Connect official WSS and reply to allowed @messages')
     parser.add_argument('--replace-secret', action='store_true', help='Explicit replacement, only with --configure-secret')
@@ -41,6 +42,17 @@ def main(argv=None):
     parser.add_argument('--confirm-qq-network', action='store_true')
     parser.add_argument('--run-seconds', type=int, default=600, help='Finite session, 1..3600 seconds')
     args = parser.parse_args(arguments)
+    if args.check_ai_readiness:
+        if (args.access_file or args.app_id or args.help_only or args.fictional_data or args.monitoring_config
+                or args.confirm_qq_network or args.replace_secret):
+            parser.error('AI_READINESS_ACCEPTS_NO_DATA_OR_NETWORK_OPTIONS')
+        try:
+            import json
+            from .ai_preflight import readiness_report
+            print(json.dumps(readiness_report(),ensure_ascii=False),flush=True)
+            return 0  # A valid BLOCKED preparation, not permission for real execution.
+        except Exception:
+            audit('QQ_AI_SCOPE_REVIEW_REQUIRED');return 1
     if not 1 <= args.run_seconds <= 3600:
         parser.error('INVALID_RUN_DURATION')
     if args.replace_secret and not args.configure_secret:

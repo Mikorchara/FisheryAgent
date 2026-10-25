@@ -44,7 +44,8 @@ class ManagementAssistantService:
 
     def __init__(self, monitoring, *, credentials, traces, policy_directory,
                  gateway_factory=OpenAICompatibleAdapter, execution_config=None, streaming_config=None,
-                 history_config=None, unified_config=None, knowledge=None, offline_channel_provider=None):
+                 history_config=None, unified_config=None, knowledge=None, offline_channel_provider=None,
+                 channel_trial=None):
         self.monitoring, self.credentials, self.traces = monitoring, credentials, traces
         self.gateway_factory = gateway_factory
         self.settings_store = None  # Bound once by management settings startup composition.
@@ -64,6 +65,11 @@ class ManagementAssistantService:
         if offline_channel_provider is not None and type(offline_channel_provider) is not OfflineChannelProvider:
             raise GatewayError('OFFLINE_CHANNEL_PROVIDER_REQUIRED')
         self._offline_channel_provider=offline_channel_provider
+        from .channel_trial import QwenTrialSession
+        if channel_trial is not None and (type(channel_trial) is not QwenTrialSession
+                or offline_channel_provider is not None or knowledge is not None):
+            raise GatewayError('INVALID_QWEN_TRIAL_COMPOSITION')
+        self._channel_trial=channel_trial
         self.knowledge = knowledge
         from apps.knowledge.service import KnowledgeContentService
         if isinstance(self.knowledge,KnowledgeContentService):
@@ -258,6 +264,7 @@ class ManagementAssistantService:
     def _check_channel(self, authorization, policy_revision):
         try:
             authorization.check()
+            if self._channel_trial is not None:self._channel_trial.check()
             if (self.monitoring.binding_revision != authorization.binding_revision
                     or self.management_policy.snapshot().revision != policy_revision):
                 raise GatewayError('CHANNEL_AUTHORIZATION_CHANGED')
@@ -268,10 +275,10 @@ class ManagementAssistantService:
             raise GatewayError('CHANNEL_AUTHORIZATION_CHANGED') from None
 
     def prepare_channel_turn(self, question, authorization):
-        """Offline-only server API. No chat-controlled policy/device/history fields."""
+        """Server API: exact Fake provider or separately approved one-turn Qwen trial."""
         if type(authorization) is not ChannelAuthorization:
             raise GatewayError('INVALID_CHANNEL_AUTHORIZATION')
-        if type(self._offline_channel_provider) is not OfflineChannelProvider:
+        if type(self._offline_channel_provider) is not OfflineChannelProvider and self._channel_trial is None:
             raise GatewayError('OFFLINE_CHANNEL_PROVIDER_REQUIRED')
         if authorization.preset_id not in PRESETS:
             raise GatewayError('ASSISTANT_PRESET_NOT_ALLOWED')
@@ -287,11 +294,15 @@ class ManagementAssistantService:
         entry=registry.lookup(CURRENT_WATER_QUALITY)
         def guarded_water():
             self._check_channel(authorization,snapshot.revision)
-            return entry.handler()
+            result=entry.handler()
+            if self._channel_trial is not None:self._channel_trial.validate_tool_result(result)
+            return result
         registry=ToolRegistry((ToolDefinition(entry.model_definition,guarded_water),))
         profile=assistant_profile(authorization.preset_id)
-        decision=candidate_decision(profile,policy,registry,device_id=authorization.device_id,
-            epoch=self.epoch,policy_revision=snapshot.revision,authorization=authorization)
+        decision=(self._channel_trial.decision(profile,policy,registry,authorization,
+            epoch=self.epoch,policy_revision=snapshot.revision) if self._channel_trial is not None else
+            candidate_decision(profile,policy,registry,device_id=authorization.device_id,
+                epoch=self.epoch,policy_revision=snapshot.revision,authorization=authorization))
         request=AssistantRequest(authorization.preset_id,question,(),
                                  source_requirement=SourceRequirement.CURRENT_OBSERVATION_QUERY)
         return PreparedAssistantTurn(request,authorization.device_id,self.epoch,profile,policy,registry,
@@ -307,9 +318,11 @@ class ManagementAssistantService:
             raise GatewayError('CHANNEL_AUTHORIZATION_REQUIRED')
         authorization=prepared.channel_authorization
         self._check_channel(authorization,prepared.policy_revision)
-        expected=candidate_decision(prepared.profile,prepared.policy,prepared.registry,
-            device_id=prepared.device_id,epoch=self.epoch,policy_revision=prepared.policy_revision,
-            authorization=authorization)
+        expected=(self._channel_trial.decision(prepared.profile,prepared.policy,prepared.registry,authorization,
+            epoch=self.epoch,policy_revision=prepared.policy_revision) if self._channel_trial is not None else
+            candidate_decision(prepared.profile,prepared.policy,prepared.registry,
+                device_id=prepared.device_id,epoch=self.epoch,policy_revision=prepared.policy_revision,
+                authorization=authorization))
         if (prepared.execution!=expected or prepared.profile!=assistant_profile(authorization.preset_id)
                 or prepared.device_id!=authorization.device_id
                 or prepared.request.preset_id!=authorization.preset_id or prepared.request.history
@@ -326,8 +339,8 @@ class ManagementAssistantService:
             raise GatewayError("ASSISTANT_SESSION_EXPIRED")
         if prepared.channel_authorization is not None:
             self.validate_channel_turn(prepared)
-            if (type(self._offline_channel_provider) is not OfflineChannelProvider
-                    or prepared.execution.profile.release_status!='candidate'
+            if ((self._channel_trial is None and type(self._offline_channel_provider) is not OfflineChannelProvider)
+                    or prepared.execution.profile.release_status!=('local_experimental' if self._channel_trial else 'candidate')
                     or prepared.execution.profile.mode!=ToolExecutionMode.SINGLE_ROUND
                     or prepared.request.history or prepared.policy.exposed_tools!=(CURRENT_WATER_QUALITY,)):
                 raise GatewayError('INVALID_CHANNEL_CANDIDATE')
@@ -345,6 +358,7 @@ class ManagementAssistantService:
         handle.limit_turn(prepared.profile.total_timeout_s)
         if prepared.channel_authorization is not None:
             handle.limit_turn(prepared.channel_authorization.budget.turn_timeout_s)
+            if self._channel_trial is not None:self._channel_trial.arm(handle)
         lock, used = threading.Lock(), False
 
         def execute():
@@ -365,8 +379,9 @@ class ManagementAssistantService:
                 authorization=prepared.channel_authorization
                 if authorization is not None:
                     self.validate_channel_turn(prepared)
+                fake_channel=(authorization is not None and (self._channel_trial is None or self._channel_trial.offline_test))
                 credentials=(CredentialStore(process_env={profile.credential_ref:'offline-channel-placeholder'})
-                             if authorization is not None else self.credentials)
+                             if fake_channel else self.credentials)
                 runtime = ProfileRegistry([profile], credentials).snapshot(profile.profile_id)
                 handle.check()
                 if (runtime.auth_spec == AuthSpec.REQUIRED_BEARER
@@ -383,8 +398,10 @@ class ManagementAssistantService:
                 elif decision.max_output_tokens is not None:
                     runtime = replace(runtime,transport_output_token_limit=decision.max_output_tokens)
                 mode = decision.profile.mode
-                gateway=self._offline_channel_provider if authorization is not None else self.gateway_factory()
-                coordinator = ToolCallingService(gateway, registry, self.traces, policy=policy,
+                trial=self._channel_trial if authorization is not None else None
+                gateway=(trial.adapter if trial else self._offline_channel_provider) if authorization is not None else self.gateway_factory()
+                traces=trial.guard_traces(self.traces) if trial else self.traces
+                coordinator = ToolCallingService(gateway, registry, traces, policy=policy,
                     execution_mode=mode,model_transport=decision.model_transport)
                 result = AssistantService(coordinator,execution_mode=mode,
                     history_projection=DEFAULT_HISTORY_PROJECTION).send(turn, runtime)
@@ -392,8 +409,10 @@ class ManagementAssistantService:
                     self._check_channel(authorization,prepared.policy_revision)
                     summary=(SourceSummary.from_result(result,authorization)
                              if result.status.value=='completed' else None)
+                    if trial is not None:trial.source=summary
                     return ChannelAssistantResult(result.status.value=='completed',result.error_code,
-                        summary,result.final_text,decision.profile.revision)
+                        summary,result.final_text,decision.profile.revision,
+                        release_status=decision.profile.release_status,offline_only=trial is None or trial.offline_test)
             return {**result.to_dict(), "device_id": device_id, "transport":decision.model_transport.value.lower(),
                     "execution":prepared.execution.public()}
         except Exception as error:

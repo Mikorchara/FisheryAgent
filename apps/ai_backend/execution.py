@@ -33,6 +33,24 @@ class RequestHandle:
         self._deadline = None  # Internal Turn scope only; never accepted from Web input.
         self._summarize_tool = summarize_tool
         self._event_channel = None  # Only explicitly gated Web Streaming requests attach this.
+        self._sdk_resource = None
+
+    def resource_info(self):
+        resource=self._sdk_resource
+        if resource is None:return None
+        return {**resource.snapshot(),'cancel_requested':self._cancel.is_set()}
+
+    def resource_error(self):
+        info=self.resource_info()
+        if info is None:return None
+        return info['cleanup_error'] or (None if info['state']=='CLOSED' and info['thread_exited']
+                                        and info['local_io_closed'] else 'SDK_RESOURCE_UNCONFIRMED')
+
+    def assert_resources_closed(self):
+        code=self.resource_error()
+        if code:
+            from .model_gateway import GatewayError
+            raise GatewayError(code)
 
     def __repr__(self):
         return f"RequestHandle(state={self.state})"
@@ -46,6 +64,9 @@ class RequestHandle:
             self.check()
 
     def check(self):
+        if self._sdk_resource is not None and self._sdk_resource.failure:
+            from .model_gateway import GatewayError
+            raise GatewayError(self._sdk_resource.failure)
         if self._cancel.is_set():
             from .model_gateway import GatewayError
             raise GatewayError("USER_CANCELLED")
@@ -118,6 +139,7 @@ class RequestHandle:
     def finalize_result(self, record_result):
         """Serialize Stop against final trace+commit; never publish success before recording."""
         with self._lock:
+            self.assert_resources_closed()  # Never record a successful Commit with unresolved SDK ownership.
             self._committing = True
             try:
                 result = record_result(self._cancel.is_set())
@@ -128,15 +150,18 @@ class RequestHandle:
 
     def cancel(self):
         with self._lock:
-            if self._committing or self.state in TERMINAL or self.state == "CANCEL_REQUESTED":
+            unsafe_terminal=self.state in TERMINAL and self.resource_error() is not None
+            if self._committing or (self.state in TERMINAL and not unsafe_terminal) or self.state == "CANCEL_REQUESTED":
                 return
             self._cancel.set()
-            self.state = "CANCEL_REQUESTED"
+            if unsafe_terminal:
+                self.state='FAILED';self.error_code=self.resource_error()
+            else:self.state = "CANCEL_REQUESTED"
             if self._activity is not None:
                 self._activity_revision += 1
                 self._activity.update(state=self.state, revision=self._activity_revision)
             hook = self._hook
-            if not self._claimed:
+            if not self._claimed and not unsafe_terminal:
                 self.state = "CANCELLED"
                 self.error_code = "USER_CANCELLED"
                 self.io_closed = True  # No I/O was started.
@@ -148,9 +173,12 @@ class RequestHandle:
 
     def finish(self, error_code=None):
         with self._lock:
-            self.error_code = "USER_CANCELLED" if self._cancel.is_set() else error_code
-            self.state = "CANCELLED" if self._cancel.is_set() else "FAILED" if error_code else "COMPLETED"
-            self._hook = None
+            resource_error=self.resource_error()
+            self.error_code = resource_error or ("USER_CANCELLED" if self._cancel.is_set() else error_code)
+            self.state = ('FAILED' if resource_error else "CANCELLED" if self._cancel.is_set()
+                          else "FAILED" if error_code else "COMPLETED")
+            if resource_error is None or self.resource_info()['thread_exited']:
+                self._hook = None
             if self._activity is not None:
                 from .assistant_activity import settle_activity
                 self._activity_revision += 1
@@ -166,6 +194,8 @@ class RequestHandle:
                 info["phase"] = self.phase
             if self._activity is not None:
                 info["activity"] = deepcopy(self._activity)
+            if self._sdk_resource is not None:
+                info['sdk_resources']=self.resource_info()
             return info
 
 
@@ -181,11 +211,11 @@ class RequestRegistry:
         with self._lock:
             now = time.monotonic()
             for key, item in list(self._items.items()):
-                if now - item.created_at > self.ttl_s and (not item._claimed or item.state in TERMINAL):
+                if now - item.created_at > self.ttl_s and item.resource_error() is None and (not item._claimed or item.state in TERMINAL):
                     self._items.pop(key)
-            if sum(item.state not in TERMINAL for item in self._items.values()) >= self.limit:
+            if sum(item.state not in TERMINAL or item.resource_error() is not None for item in self._items.values()) >= self.limit:
                 raise GatewayError("REQUEST_LIMIT_REACHED")
-            finished = [key for key, item in self._items.items() if item.state in TERMINAL]
+            finished = [key for key, item in self._items.items() if item.state in TERMINAL and item.resource_error() is None]
             for key in finished[:-32]:
                 self._items.pop(key)
             handle = RequestHandle(summarize_tool=self._summarize_tool)

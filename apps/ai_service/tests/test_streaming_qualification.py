@@ -75,7 +75,11 @@ class StreamingQualificationTests(unittest.TestCase):
             self.assertEqual(runtime.max_retries,0);self.assertEqual(runtime.total_timeout_s,120)
             self.assertEqual(runtime.transport_output_token_limit,512);self.assertTrue(0<remaining<=120)
             client=Client(len(self.clients)+1);self.clients.append(client);return client
-        return lambda *a,**k:q._Adapter(*a,**k,async_client_factory=sdk)
+        from apps.ai_backend.sdk_resources import SDKResourceBudget
+        # Each offline qualification case is an independent simulated process.
+        # A cleanup-failure case must not poison the next unrelated fixture.
+        resources=SDKResourceBudget()
+        return lambda *a,**k:q._Adapter(*a,**k,async_client_factory=sdk,resource_budget=resources)
 
     def run_case(self,case,frames,**options):
         approved=q.plan(case)

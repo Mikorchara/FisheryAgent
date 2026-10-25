@@ -76,7 +76,8 @@ class ManagementStreamingTests(unittest.TestCase):
             client=Client(len(self.clients)+1);self.clients.append(client);return client
         def gateway():
             self.service_handles.append(current_handle())
-            return OpenAICompatibleAdapter(async_client_factory=factory)
+            from apps.ai_backend.sdk_resources import SDKResourceBudget
+            return OpenAICompatibleAdapter(async_client_factory=factory,resource_budget=SDKResourceBudget())
         old=self.backend
         self.backend=ManagementAssistantService(self.monitoring,knowledge=old.knowledge,credentials=old.credentials,traces=old.traces,
             policy_directory=self.root/'policies',gateway_factory=gateway,
@@ -320,7 +321,7 @@ class ManagementStreamingTests(unittest.TestCase):
     def test_truncation_broken_stream_and_cleanup_failure_never_execute_or_commit(self):
         for frames,code,cleanup in (([chunk(content='provisional',finish='length')],'STREAM_TRUNCATED',False),
             ([chunk(content='provisional')],'STREAM_INTERRUPTED',False),
-            (tool_chunks(),'SDK_ERROR',True)):
+            (tool_chunks(),'SDK_CLEANUP_FAILED',True)):
             self.clients.clear();self.bodies.clear()
             self.setup_stream([frames],close_error=cleanup)
             with patch.object(self.monitoring,'capture_water') as capture:

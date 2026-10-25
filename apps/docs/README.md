@@ -4,6 +4,10 @@
 
 ## 阅读入口
 
+- [BOT-3C-FAST Qwen单轮试用准备](deep-dive/BOT3C_FAST_QWEN_TRIAL.md)（独立审批、一次性Provider/QQ入口；仅离线验证，真实调用待批准，进程隔离仍暂停）
+- [BOT-3C-2B 进程隔离暂停记录](deep-dive/BOT3C2B_SDK_PROCESS_ISOLATION.md)（4 个实现草稿未接入，执行入口明确禁用；保留 2A 门禁，等待 BOT-3C-FAST 范围确认）
+- [BOT-3C-2A SDK资源门禁与取消](deep-dive/BOT3C2A_SDK_RESOURCE_GATE.md)（租约、失败隔离、Commit/交付保护；硬退出仍需进程隔离，真实AI仍关闭）
+- [BOT-3C-1 真实 AI 联调前置准备](deep-dive/BOT3C1_REAL_AI_PREPARATION.md)（独立candidate、统一回复离线装配、真实SDK内存HTTP验证；真实AI仍关闭）
 - [BOT-3B-2 有界 AI 调度与单次交付](deep-dive/BOT3B2_QQ_AI_SCHEDULING.md)（仅 Fake：1执行/2等待、取消、交付未知不重试；真实 QQ AI 仍关闭）
 - [BOT-3B-1 QQ AI 服务边界与权限装配](deep-dive/BOT3B1_QQ_AI_BOUNDARY.md)（Monitoring-only、渠道权限、同轮来源摘要、Fake candidate；真实 QQ AI 仍关闭）
 

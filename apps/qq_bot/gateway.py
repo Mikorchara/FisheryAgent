@@ -73,13 +73,29 @@ def normalize(packet, bot_id=None):
 
 class QQGateway:
     def __init__(self, app_id, api, adapter=None, *, connector=connect_gateway,
-                 emit=audit, discover=None, clock=None, monotonic=time.monotonic):
+                 emit=audit, discover=None, clock=None, monotonic=time.monotonic,offline_router=None,trial_router=None):
         self.app_id = app_identifier(app_id)
         if api.app_id != self.app_id or (adapter is not None and (
                 adapter.config.app_id != self.app_id or adapter.mode != 'QQ_PASSIVE_READY')):
             raise BotError('QQ_APP_CONTEXT_MISMATCH')
         if (adapter is None) == (discover is None):
             raise BotError('INVALID_GATEWAY_MODE')
+        if offline_router is not None:
+            from .ai_routing import OfflineQQAIRouter,OfflineGatewayAPI
+            if (type(offline_router) is not OfflineQQAIRouter or type(api) is not OfflineGatewayAPI
+                    or connector is connect_gateway or offline_router.adapter is not adapter):
+                raise BotError('OFFLINE_GATEWAY_COMPOSITION_REQUIRED')
+        if trial_router is not None:
+            from .ai_routing import TrialQQAIRouter
+            from .ai_trial_delivery import TrialQQTransport
+            if (offline_router is not None or type(trial_router) is not TrialQQAIRouter
+                    or type(trial_router.scheduler.gateway) is not TrialQQTransport
+                    or trial_router.scheduler.gateway.api is not api or trial_router.adapter is not adapter):
+                raise BotError('TRIAL_QQ_COMPOSITION_REQUIRED')
+            trial_router.check_liveness()
+        self.offline_router=offline_router
+        self.trial_router=trial_router
+        self.router=offline_router if offline_router is not None else trial_router
         self.api, self.adapter, self.connector, self.emit, self.discover = api, adapter, connector, emit, discover
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.now = monotonic
@@ -99,6 +115,10 @@ class QQGateway:
             try:
                 if self.stop.is_set() or message.group_id in self._revoked:
                     continue
+                if self.router is not None:
+                    code,_result=self.router.receive(raw,transport_app_id=self.app_id)
+                    self.emit(code)
+                    continue  # Router owns ALL replies; never also call api.reply.
                 result = self.adapter.receive(raw, transport_app_id=self.app_id)
                 self.emit(result.code)
                 if result.reply is not None and not self.stop.is_set() and message.group_id not in self._revoked:
@@ -117,6 +137,7 @@ class QQGateway:
             group = data.get('group_openid') if isinstance(data, dict) else None
             if self.adapter and group in {g.group_id for g in self.adapter.config.groups}:
                 self._revoked.add(group)
+                if self.router is not None:self.router.revoke_group(group)
                 self.emit('QQ_GROUP_REMOVED')
             return
         if packet.get('t') != 'GROUP_AT_MESSAGE_CREATE':
@@ -170,6 +191,7 @@ class QQGateway:
         self.emit('QQ_GATEWAY_RESUMING' if resuming else 'QQ_GATEWAY_IDENTIFYING')
         ws.send(json.dumps(identify))
         while not self.stop.is_set() and self.now() < self._deadline:
+            if self.trial_router is not None:self.trial_router.check_liveness()
             if not ready and self.now()-started > 15:
                 raise BotError('GATEWAY_AUTH_TIMEOUT')
             if self.now() >= next_heartbeat:
@@ -231,11 +253,12 @@ class QQGateway:
         if type(seconds) is not int or not 1 <= seconds <= 3600:
             raise BotError('INVALID_RUN_DURATION')
         self._deadline = self.now()+seconds
-        if self.adapter:
-            self._worker = threading.Thread(target=self._work, name='qq-readonly-worker')
-            self._worker.start()
         try:
+            if self.adapter:
+                self._worker = threading.Thread(target=self._work, name='qq-readonly-worker')
+                self._worker.start()
             for attempt in range(4):
+                if self.trial_router is not None:self.trial_router.check_liveness()
                 if self.stop.is_set() or self.now() >= self._deadline:
                     if not self.stop.is_set():
                         self.emit('QQ_RUN_DURATION_REACHED')
@@ -245,10 +268,12 @@ class QQGateway:
                 try:
                     with guard:
                         with self.connector(self.api.gateway()) as ws:
+                            if self.router is not None:self.router.connected()
                             guard.attach(ws)
                             try:
                                 self._pump(ws, guard)
                             finally:
+                                if self.router is not None:self.router.disconnected()
                                 self.emit('QQ_GATEWAY_CLOSING')
                                 guard.arm(self.now()+GATEWAY_CLOSE_SECONDS, 'GATEWAY_CLOSE_TIMEOUT')
                         if guard.expired:
@@ -284,6 +309,12 @@ class QQGateway:
                     self.stop.wait(min(2**attempt, max(0, self._deadline-self.now())))
         finally:
             self.stop.set()
-            if self._worker:
-                self._worker.join()  # Local reads + bounded HTTPS only; no model or orphan worker.
+            try:
+                # Close owned fake I/O before joining the receive worker. It may
+                # be inside a fixed reply while connection setup itself failed.
+                if self.router is not None:self.router.close()
+            finally:
+                if self._worker and self._worker.ident is not None:
+                    self._worker.join(3 if self.router is not None else None)
+                    if self._worker.is_alive():raise BotError('QQ_WORKER_STOP_FAILED')
             self.emit('QQ_STOPPED')

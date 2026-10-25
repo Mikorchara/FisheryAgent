@@ -4,6 +4,12 @@
 
 ## 已实现
 
+- 2026-10-25 BOT-3C-FAST：Monitoring-only Qwen本机/QQ试用准备，限时独立审批、防重复消费、保守费用预留、单次交付；仅离线验证，真实联网待另批，SDK资源门禁保留、进程隔离暂停。[说明与操作](deep-dive/BOT3C_FAST_QWEN_TRIAL.md)。
+
+- 2026-10-25 BOT-3C-2A：SDK租约/有限清理/粘性隔离，Handle/Commit/QQ防线；20新专项、810 Python / 116 Node通过，Scope v2仍candidate。硬退出仍需进程隔离，真实QQ AI关闭。[实施与评估](deep-dive/BOT3C2A_SDK_RESOURCE_GATE.md)。
+
+- 2026-10-25 BOT-3C-1（Prototype离线准备）：独立candidate预检、统一回复Fake装配、真实SDK内存HTTP取消、事实/解释分区；28专项、790 Python / 116 Node通过，真实授权/装配与SDK不合作清理仍阻塞。[准备与BOT-3C-2清单](deep-dive/BOT3C1_REAL_AI_PREPARATION.md)。
+
 - 2026-10-25 BOT-3B-2（仅 Prototype Fake）：1执行/2等待、10s排队/90s总期限、权限失效与I/O取消、单次提交及未知不重试；40专项、762 Python / 116 Node通过，保留 candidate 与真实 AI_DISABLED。[实现、验证与 BOT-3C 前置条件](deep-dive/BOT3B2_QQ_AI_SCHEDULING.md)。
 
 - 2026-10-25 BOT-3B-1（仅 Prototype 离线）：Monitoring-only、QQ AI 权限交集/失效、单轮 Fake Tool Calling 与同轮 SourceSummary；31 专项、722 Python / 116 Node 完整回归通过。模型正文隔离、真实 Provider/QQ 未开放。[实现与 BOT-3B-2](deep-dive/BOT3B1_QQ_AI_BOUNDARY.md)。

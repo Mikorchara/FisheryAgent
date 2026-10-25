@@ -1,5 +1,7 @@
 # BOT-3B-2：有界 AI 调度与单次 QQ 交付（离线）
 
+后续装配：[BOT-3C-FAST](BOT3C_FAST_QWEN_TRIAL.md)复用本页调度/回复owner，新增严格类型化、独立审批的试用路径；默认Fake和普通QQ CLI保持原边界。以下为3B-2阶段记录，不能当作真实联网通过证明。
+
 核验日期：2026-10-25。仅 Fishery_AI_Prototype；延续 [BOT-3B-1](BOT3B1_QQ_AI_BOUNDARY.md)。
 
 ## 1. 当前范围
@@ -105,6 +107,8 @@ $env:TEMP = Join-Path $PWD 'outputs/test-tmp'; $env:TMP = $env:TEMP
 未连接真实QQ/Provider/NPU，未读取密钥，未打开现有业务实例，未修改Management、旧Runtime、真实数据或Schema；未commit/push。测试只留下必要的非敏感记录，临时fixture和本机模拟连接按测试生命周期关闭。
 
 ## 7. BOT-3C 前置条件（尚未实施/授权）
+
+后续状态见 [BOT-3C-1 准备结果](BOT3C1_REAL_AI_PREPARATION.md)：已补Fake统一路由、独立候选预检和SDK内存HTTP测试；真实授权/装配及不合作SDK清理仍阻塞，以下真实联调条件尚未获批。
 
 - 人工审核本轮离线协议与 SourceSummary-only 回复策略；未核验模型正文的真实群展示须另行定义安全策略，不能直接拼入答复。
 - 单独批准指定模型、Provider、输出/费用/请求次数、群/成员、实例与设备；本轮不能自动读取实际密钥或业务实例。

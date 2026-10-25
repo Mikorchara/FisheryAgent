@@ -164,10 +164,11 @@ class QQAPI:
         if self._owned:
             self._client.close()
 
-    def _request(self, method, path, *, authenticated=True, body=None):
+    def _request(self, method, path, *, authenticated=True, body=None,before_post=None):
         headers = {'Authorization': 'QQBot '+self.token()} if authenticated else {}
         started = self._now()
         try:
+            if before_post is not None:before_post()  # After token refresh, immediately before HTTP submission.
             with self._client.stream(method, API+path, headers=headers, json=body) as response:
                 if not 200 <= response.status_code < 300:
                     if response.status_code == 401:
@@ -226,7 +227,7 @@ class QQAPI:
         response = self._request('GET', '/gateway')
         return gateway_url(response.get('url'), url_present='url' in response, stage='response')
 
-    def reply(self, reply, *, received_at, now):
+    def reply(self, reply, *, received_at, now,before_post=None):
         # Require an actual fresh incoming message context. No proactive entry.
         if not 0 <= (now-received_at).total_seconds() < 300:
             raise BotError('REPLY_EXPIRED')
@@ -235,7 +236,8 @@ class QQAPI:
         if reply.msg_seq != 1 or reply.msg_type != 0 or not 1 <= len(reply.content) <= 1800:
             raise BotError('INVALID_REPLY')
         value = self._request('POST', '/v2/groups/'+reply.group_id+'/messages', body={
-            'msg_type': 0, 'content': reply.content, 'msg_id': reply.msg_id, 'msg_seq': 1})
+            'msg_type': 0, 'content': reply.content, 'msg_id': reply.msg_id, 'msg_seq': 1},
+            before_post=before_post)
         if not isinstance(value.get('id'), str) or not value['id']:
             raise BotError('QQ_SEND_NOT_CONFIRMED')
         return True

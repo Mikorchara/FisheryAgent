@@ -4,7 +4,17 @@ EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 �
 
 ## 快速开始 / 常用指令
 
+### BOT-3C-FAST：Qwen + QQ 受控单轮试用
+
+独立维护入口 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot.trial --help`，按“计划 → 交互审批 → 只读检查 → 另行批准后单轮执行”操作。Provider/QQ分别批准，每个批准仅一次；普通QQ CLI仍AI_DISABLED，SDK清理失败门禁保留，进程隔离草稿禁用。[审批、费用与完整命令](deep-dive/BOT3C_FAST_QWEN_TRIAL.md)。本轮未执行真实联网。
+
+本机准备已提供独立 `outputs/qq-bot/ai.qwen-fast.provider.json`，仅绑定BOT-2C的sim-pond-1及原有一个成员。Prototype与独立Management的私有Store按项目根隔离，不能自动共享Key；当前窗口仅做路径/ACL元数据检查，未读Key。[第7节：实际路径、凭据复用条件及可复制PowerShell步骤](deep-dive/BOT3C_FAST_QWEN_TRIAL.md)。
+
 ### BOT-2B 指定 Monitoring 实例只读查询
+
+BOT-3C-2A：SDK清理失败会报SDK_CLEANUP_FAILED/TIMEOUT并隔离后续AI请求；不要循环重试或清空状态。当前仅完成资源门禁，仍未取得不合作线程的硬退出保证，真实QQ AI保持关闭。[状态区分、测试和进程隔离前置条件](deep-dive/BOT3C2A_SDK_RESOURCE_GATE.md)
+
+BOT-3C-1：在 Prototype 根执行 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot --check-ai-readiness`，仅核对维护者候选Scope，不读取密钥/实例或联网。退出0表示候选一致且**仍禁止真实AI**；`/问AI`保持AI_DISABLED。SDK不合作清理、真实Scope/费用/实例和QQ批准、真实装配仍是前置条件。[准备结果与人工验收清单](deep-dive/BOT3C1_REAL_AI_PREPARATION.md)
 
 BOT-3B-1 已补齐离线 AI 服务边界；BOT-3B-2 增加有界队列、取消及单次 Fake 交付，仍没有真实 QQ AI 启动开关；现有 `/问AI` 仍为 AI_DISABLED。独立 AI 模板只用于 Fake 候选验证，不能作为真实模型授权。[边界](deep-dive/BOT3B1_QQ_AI_BOUNDARY.md)、[调度/交付测试与 BOT-3C 前置条件](deep-dive/BOT3B2_QQ_AI_SCHEDULING.md)
 
