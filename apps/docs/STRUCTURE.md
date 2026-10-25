@@ -57,7 +57,6 @@ apps/
 │  │  ├─ test_credentials.py                                             # 虚构凭据来源与快照安全
 │  │  ├─ test_execution.py                                               # Fake SDK 取消、资源关闭与 Raw body 隔离
 │  │  ├─ test_sdk_resources.py                                           # 不合作I/O/close/Runner、租约隔离/TTL/取消竞态
-│  │  ├─ test_sdk_process_paused.py                                      # 进程隔离暂停入口及基础 JSON 测试，不代表生命周期验收
 │  │  └─ test_protocol_specs.py                                          # 三 Provider 参数编码 parity
 │  ├─ tools/                                                             # 通用Registry/Executor/Policy合同
 │  │  ├─ __init__.py                                                     # 无启动 I/O 的包标记
@@ -75,10 +74,6 @@ apps/
 │  ├─ project_env.py                                                     # 既有固定路径凭据写入器的独立实现；CAS/私有权限/原子保存
 │  ├─ execution.py                                                       # 请求上下文、取消及 Deadline
 │  ├─ sdk_resources.py                                                   # SDK资源租约、共享容量、退出/关闭事实与粘性故障隔离
-│  ├─ sdk_process_adapter.py                                             # 暂停的进程父端草稿，构造/启动明确拒绝，未接入
-│  ├─ sdk_process_worker.py                                              # 暂停的 SDK 子进程草稿，执行入口明确拒绝
-│  ├─ sdk_process_protocol.py                                            # 草稿版本化有界 JSON 帧及严格解码
-│  ├─ sdk_process_job.py                                                 # 未验收的 Windows Job 草稿，不在运行链路中使用
 │  ├─ history_projection.py                                              # 已保留完整 pair 的 B 默认投影与 A 回滚
 │  ├─ manual.py                                                          # 原 Raw 传输合同，无管理 UI 入口
 │  ├─ model_gateway.py                                                   # 新模型消息、Profile/Snapshot 与 Gateway

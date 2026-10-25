@@ -16,6 +16,8 @@ import httpx
 from openai import AsyncOpenAI
 
 from apps.ai_backend.model_gateway import GatewayError
+from apps.ai_backend.sdk_resources import CLEANUP_GRACE_S
+from apps.ai_service.channel import ChannelBudget
 from apps.ai_service.channel_trial import cost_reservation,TRIAL_CONTRACT
 from apps.ai_service.runtime.release_contracts import _hash
 from apps.qq_bot.ai_coordinator import QQAICoordinator
@@ -80,6 +82,9 @@ class QwenTrialTests(unittest.TestCase):
             body=json.loads(request.content);self.http.append(body)
             if self.response_mode=='blocked':
                 self.blocked.set();await asyncio.Event().wait()
+            if self.response_mode=='gated':
+                self.blocked.set()
+                while not self.release.is_set():await asyncio.sleep(.005)
             if self.response_mode=='error':return httpx.Response(503,json={'error':{'message':'fictional-private-error'}})
             first=len(self.http)==1
             message=({'role':'assistant','content':None,'tool_calls':[{'id':'synthetic-call','type':'function',
@@ -120,6 +125,18 @@ class QwenTrialTests(unittest.TestCase):
         adapter=QQAdapter(runtime.access,ReadOnlyQueries(runtime.monitoring,None),mode='QQ_PASSIVE_READY',clock=lambda:self.now)
         router=TrialQQAIRouter(adapter,scheduler)
         return runtime,api,scheduler,router
+
+    def wait_trial(self,scheduler,task):
+        """Observe the admitted Turn's deadline plus owned cleanup, not SDK speed.
+
+        This does not change the production deadline. Cancellation/timeout tests
+        retain their shorter explicit waits; only successful integration Turns
+        may legitimately need the existing 90-second execution contract.
+        """
+        with scheduler._cv:
+            job=scheduler._jobs.get(task)
+            remaining=max(0,job.plan.context.deadline-scheduler.now()) if job else 0
+        return scheduler.wait(task,remaining+CLEANUP_GRACE_S+3)
 
     def test_scope_plan_is_independent_exact_and_no_credential_or_network(self):
         before=hashlib.sha256(self.path.read_bytes()).hexdigest()
@@ -245,7 +262,7 @@ class QwenTrialTests(unittest.TestCase):
         code,receipt=router.receive(self.packet(text='/当前水质'),transport_app_id=self.access.app_id)
         self.assertTrue(receipt.api_accepted)
         raw=self.packet();code,task=router.receive(raw,transport_app_id=self.access.app_id)
-        self.assertEqual(code,'AI_ADMITTED');done=scheduler.wait(task,5)
+        self.assertEqual(code,'AI_ADMITTED');done=self.wait_trial(scheduler,task)
         self.assertEqual(done['state'],'DELIVERED');self.assertFalse(done['client_display_confirmed'])
         self.assertEqual(router.receive(raw,transport_app_id=self.access.app_id),('DUPLICATE',None))
         self.assertEqual(len(self.http),2);self.assertEqual(len(self.qq_posts),2)
@@ -258,7 +275,7 @@ class QwenTrialTests(unittest.TestCase):
     def test_qq_unknown_delivery_never_resends_or_reinfers(self):
         _,_,scheduler,router=self.qq('unknown')
         raw=self.packet();_,task=router.receive(raw,transport_app_id=self.access.app_id)
-        self.assertEqual(scheduler.wait(task,5)['state'],'DELIVERY_UNKNOWN')
+        self.assertEqual(self.wait_trial(scheduler,task)['state'],'DELIVERY_UNKNOWN')
         self.assertEqual(router.receive(raw,transport_app_id=self.access.app_id),('DUPLICATE',None))
         self.assertEqual(len(self.qq_posts),1);self.assertEqual(len(self.http),2)
 
@@ -338,7 +355,7 @@ class QwenTrialTests(unittest.TestCase):
 
     def test_second_ai_message_is_rejected_even_after_first_delivery_but_fixed_still_works(self):
         _,_,scheduler,router=self.qq()
-        _,task=router.receive(self.packet(),transport_app_id=self.access.app_id);scheduler.wait(task,5)
+        _,task=router.receive(self.packet(),transport_app_id=self.access.app_id);self.wait_trial(scheduler,task)
         self.assertEqual(router.receive(self.packet(),transport_app_id=self.access.app_id),('TRIAL_ALREADY_USED',None))
         self.assertEqual(router.receive(self.packet(text='/帮助'),transport_app_id=self.access.app_id)[0],'QQ_REPLY_API_ACCEPTED')
         self.assertEqual(len(self.http),2);self.assertEqual(len(self.qq_posts),2)
@@ -385,20 +402,33 @@ class QwenTrialTests(unittest.TestCase):
         class Socket:
             def __enter__(self):return self
             def __exit__(self,*args):return False
+        pump_errors=[];pump_results=[]
         def pump(gateway,*args):
-            gateway._dispatch(json.loads(self.packet(text='/帮助')));gateway._queue.join()
-            gateway._dispatch(json.loads(self.packet()));gateway._queue.join()
-            scheduler=gateway.router.scheduler
-            deadline=time.monotonic()+5
-            while not scheduler._finished and time.monotonic()<deadline:time.sleep(.01)
-            self.assertTrue(scheduler._finished)
-            self.assertEqual(next(iter(scheduler._finished.values()))['state'],'DELIVERED')
-            gateway.stop.set()
+            # An assertion escaping _pump is treated by Gateway as disconnect.
+            # Capture fixture errors and assert outside the production retry loop.
+            try:
+                for text in ('/帮助','/问AI 当前水质如何？'):
+                    gateway._dispatch(json.loads(self.packet(text=text)))
+                    with gateway._queue.all_tasks_done:
+                        ready=gateway._queue.all_tasks_done.wait_for(
+                            lambda:gateway._queue.unfinished_tasks==0,
+                            timeout=ChannelBudget().turn_timeout_s+CLEANUP_GRACE_S+3)
+                    if not ready:raise TimeoutError('FIXTURE_INGRESS_WAIT_TIMEOUT')
+                scheduler=gateway.router.scheduler
+                with scheduler._cv:
+                    tasks=tuple(scheduler._jobs)+tuple(scheduler._finished)
+                if len(tasks)!=1:raise AssertionError('FIXTURE_AI_TASK_MISSING')
+                pump_results.append(self.wait_trial(scheduler,tasks[0]))
+            except Exception as error:pump_errors.append(error)
+            finally:gateway.stop.set()
         api._token='fictional-qq-token';api._expires=time.monotonic()+3600
         before={t.ident for t in threading.enumerate() if t.name.startswith(('qq-ai-','qq-readonly-'))}
         with patch('apps.qq_bot.gateway.GatewayDeadline',lambda *_:Guard()), \
              patch('apps.qq_bot.gateway.QQGateway._pump',pump):
-            outcomes=run_qq(runtime,5,api=api,connector=lambda _:Socket(),emit=lambda *_a,**_kw:None)
+            # Match the existing trial CLI session, ending immediately on outcome.
+            outcomes=run_qq(runtime,120,api=api,connector=lambda _:Socket(),emit=lambda *_a,**_kw:None)
+        if pump_errors:raise pump_errors[0]
+        self.assertEqual(pump_results[0]['state'],'DELIVERED')
         self.assertEqual(len(outcomes),1);self.assertEqual(len(self.http),2);self.assertEqual(len(self.qq_posts),2)
         self.assertEqual(before,{t.ident for t in threading.enumerate() if t.name.startswith(('qq-ai-','qq-readonly-'))})
 
@@ -497,9 +527,98 @@ class QwenTrialTests(unittest.TestCase):
         self.addCleanup(client.close);api._client=client;api._token=None
         api._secret=lambda:SimpleNamespace(_for_adapter=lambda:'fictional-secret')
         _,task=router.receive(self.packet(),transport_app_id=self.access.app_id)
-        done=scheduler.wait(task,5)
+        done=self.wait_trial(scheduler,task)
         self.assertFalse(done['api_accepted']);self.assertEqual(self.qq_posts,[])
         self.assertEqual(len(self.http),2)
+
+    def test_record_scope_is_built_once_per_validation(self):
+        plan=self.plan()
+        with patch('apps.qq_bot.trial_configuration.scope',wraps=scope) as build:
+            validate_record(plan,clock=lambda:self.now)
+        self.assertEqual(build.call_count,1)
+
+    def test_live_check_builds_one_fresh_scope_without_cross_check_cache(self):
+        runtime=self.runtime('qq')
+        build=Mock(wraps=scope)
+        with patch('apps.qq_bot.trial_configuration.scope',build):
+            runtime.session.check();self.assertEqual(build.call_count,1)
+            runtime.session.check();self.assertEqual(build.call_count,2)
+
+    def test_approval_expiry_during_binding_check_is_rejected_at_boundary(self):
+        from apps.qq_bot.trial import inputs_snapshot
+        runtime=self.runtime()
+        def expiring(*args,**kwargs):
+            value=inputs_snapshot(*args,**kwargs)
+            self.now+=timedelta(minutes=11)
+            return value
+        with patch('apps.qq_bot.trial.inputs_snapshot',expiring),self.assertRaisesRegex(
+                BotError,'TRIAL_APPROVAL_EXPIRED'):
+            runtime.session.check()
+        self.assertEqual(self.http,[]);self.assertFalse(runtime.record.marker.exists())
+
+    def test_scope_content_change_without_metadata_change_is_rejected_immediately(self):
+        runtime=self.runtime();runtime.session.check()
+        original=Path.read_bytes
+        target=Path(__file__).resolve().parents[2]/'ai_service/channel_presentation.py'
+        def changed(path):
+            value=original(path)
+            return (b'!'+value[1:]) if path==target else value
+        with patch.object(Path,'read_bytes',changed),self.assertRaises((BotError,GatewayError)):
+            runtime.session.check()
+        self.assertEqual(self.http,[]);self.assertFalse(runtime.record.marker.exists())
+
+    def test_contract_wait_still_detects_total_deadline_and_closes_blocked_sdk(self):
+        self.response_mode='blocked';runtime,_,scheduler,router=self.qq()
+        tick=[scheduler.now()]
+        # Advance the scheduler's injected clock only: this isolates its total
+        # deadline from the separate authorization-expiry classifier.
+        scheduler.now=lambda:tick[0]
+        _,task=router.receive(self.packet(),transport_app_id=self.access.app_id)
+        self.assertTrue(self.blocked.wait(3))
+        with scheduler._cv:tick[0]=scheduler._jobs[task].plan.context.deadline+.01
+        done=self.wait_trial(scheduler,task)
+        self.assertEqual((done['state'],done['code']),('EXPIRED','AI_TOTAL_TIMEOUT'))
+        self.assertEqual(len(self.http),1);self.assertEqual(self.qq_posts,[])
+        self.assertEqual(runtime.session.handle.resource_info()['state'],'CLOSED')
+
+    def test_short_observation_timeout_does_not_cancel_a_valid_delayed_turn(self):
+        self.response_mode='gated';runtime,_,scheduler,router=self.qq()
+        raw=self.packet();_,task=router.receive(raw,transport_app_id=self.access.app_id)
+        try:
+            self.assertTrue(self.blocked.wait(3))
+            with self.assertRaisesRegex(TimeoutError,'AI_TASK_WAIT_TIMEOUT'):
+                scheduler.wait(task,.001)
+            self.assertEqual(scheduler.snapshot(task)['state'],'RUNNING')
+        finally:self.release.set()
+        self.assertEqual(self.wait_trial(scheduler,task)['state'],'DELIVERED')
+        self.assertEqual(router.receive(raw,transport_app_id=self.access.app_id),('DUPLICATE',None))
+        self.assertEqual(len(self.http),2);self.assertEqual(len(self.qq_posts),1)
+        self.assertEqual(runtime.session.handle.resource_info()['state'],'CLOSED')
+
+    def test_device_config_unbinding_cancels_live_mock_without_more_requests(self):
+        self.response_mode='blocked';runtime,_,scheduler,router=self.qq()
+        _,task=router.receive(self.packet(),transport_app_id=self.access.app_id)
+        self.assertTrue(self.blocked.wait(3))
+        config=read_json(self.inputs.monitoring_config);config['devices']=['sim-pond-2']
+        self.inputs.monitoring_config.write_text(json.dumps(config),encoding='utf-8')
+        done=scheduler.wait(task,5)
+        self.assertEqual(done['state'],'CANCELLED')
+        self.assertEqual(len(self.http),1);self.assertEqual(self.qq_posts,[])
+        self.assertEqual(runtime.session.handle.resource_info()['state'],'CLOSED')
+
+    def test_scope_edit_cancels_live_mock_without_metadata_cache(self):
+        self.response_mode='blocked';runtime,_,scheduler,router=self.qq()
+        _,task=router.receive(self.packet(),transport_app_id=self.access.app_id)
+        self.assertTrue(self.blocked.wait(3))
+        original=Path.read_bytes
+        target=Path(__file__).resolve().parents[2]/'ai_service/channel_presentation.py'
+        def changed(path):
+            value=original(path)
+            return (b'!'+value[1:]) if path==target else value
+        with patch.object(Path,'read_bytes',changed):done=scheduler.wait(task,5)
+        self.assertEqual(done['state'],'CANCELLED')
+        self.assertEqual(len(self.http),1);self.assertEqual(self.qq_posts,[])
+        self.assertEqual(runtime.session.handle.resource_info()['state'],'CLOSED')
 
     def test_local_cli_prepare_and_interactive_approve_use_exact_current_plan(self):
         plan_path=self.root/'cli-plan.json';approval_path=self.root/'cli-approval.json'

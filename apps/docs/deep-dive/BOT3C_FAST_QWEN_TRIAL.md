@@ -19,7 +19,7 @@ QQ @ /问AI → 原入口权限/去重/限流 → QQAICoordinator → 原 QQAIJo
 
 固定 `dashscope-qwen38-flash-r1 / qwen3.8-flash`、Normal、SINGLE_ROUND 1 Tool / 1 round / 2 model requests、空 History、一个批准设备、当前水质只读查询、SIMULATOR 来源。不新增 Agent、工具循环、Knowledge、历史 AI Tool、写操作或 Schema；不改变 Web 默认装配。
 
-模型未调用当前水质 Tool 时 Source Gate 拒绝成功，不自动重试来诱导调用。其他设备参数、Knowledge/写工具不存在对应可执行权限。原 `sdk_process_*` 草稿不使用，所有入口仍拒绝。
+模型未调用当前水质 Tool 时 Source Gate 拒绝成功，不自动重试来诱导调用。其他设备参数、Knowledge/写工具不存在对应可执行权限。原 `sdk_process_*` 草稿已在 BOT-CLEANUP-1 删除，仅保留历史设计；本机制继续使用原 SDK 资源门禁。
 
 ## 2. 独立 Scope、批准与失效
 
@@ -161,7 +161,7 @@ $qqHash = $qqApproved.approval_sha256
 
 ```powershell
 $env:TEMP = Join-Path $PWD 'outputs/test-tmp'; $env:TMP = $env:TEMP
-.\.venv\Scripts\python.exe -X utf8 -B -m unittest apps.qq_bot.tests.test_qwen_trial apps.qq_bot.tests.test_provider_sdk_preparation apps.qq_bot.tests.test_ai_preparation apps.qq_bot.tests.test_ai_scheduler apps.qq_bot.tests.test_sdk_resource_gate apps.ai_backend.tests.test_sdk_resources apps.ai_backend.tests.test_sdk_process_paused
+.\.venv\Scripts\python.exe -X utf8 -B -m unittest apps.qq_bot.tests.test_qwen_trial apps.qq_bot.tests.test_provider_sdk_preparation apps.qq_bot.tests.test_ai_preparation apps.qq_bot.tests.test_ai_scheduler apps.qq_bot.tests.test_sdk_resource_gate apps.ai_backend.tests.test_sdk_resources
 .\.venv\Scripts\python.exe -X utf8 -B scripts/dev/run_tests.py management
 ```
 

@@ -4,11 +4,13 @@
 
 ## 阅读入口
 
+- [BOT-CLEANUP-1 草稿清理与验证](deep-dive/BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)（移除4份暂停源码和6项专用测试；保留资源门禁，两个Scope不变）
+- [BOT-REGRESSION-1 FAST 稳定性修复](deep-dive/BOT_REGRESSION1_FAST_STABILITY.md)（5s夹具/断言误入重连、同次Scope构建3→1；保留90s预算与权限时间边界，新Scope需重新审批）
 - [BOT 当前阶段总结](deep-dive/BOT_STAGE_SUMMARY.md)（用户报告 FAST 真实端到端验收通过；模型自由文本仍不展示，普通 QQ CLI 仍禁用 AI）
 - [BOT Web 影响与清理审计](deep-dive/research/BOT_WEB_IMPACT_AUDIT.md)（共享 SDK 行为变化、兼容性证据、暂停草稿与后续同步边界）
 - [QQ / Qwen 简化验收入口](deep-dive/BOT_TEST_WORKFLOW.md)（PowerShell 7；默认不联网，原审批和单次消费保留）
 - [BOT-3C-FAST Qwen单轮试用准备](deep-dive/BOT3C_FAST_QWEN_TRIAL.md)（阶段实施记录与原 CLI；当前验收状态见上方总结）
-- [BOT-3C-2B 进程隔离暂停记录](deep-dive/BOT3C2B_SDK_PROCESS_ISOLATION.md)（4 个实现草稿未接入，执行入口明确禁用；保留 2A 门禁，等待 BOT-3C-FAST 范围确认）
+- [BOT-3C-2B 历史设计与暂停记录](deep-dive/BOT3C2B_SDK_PROCESS_ISOLATION.md)（草稿及专用测试已在 BOT-CLEANUP-1 删除，非可运行模块；2A 门禁保留）
 - [BOT-3C-2A SDK资源门禁与取消](deep-dive/BOT3C2A_SDK_RESOURCE_GATE.md)（租约、失败隔离、Commit/交付保护；硬退出仍需进程隔离，真实AI仍关闭）
 - [BOT-3C-1 真实 AI 联调前置准备](deep-dive/BOT3C1_REAL_AI_PREPARATION.md)（独立candidate、统一回复离线装配、真实SDK内存HTTP验证；真实AI仍关闭）
 - [BOT-3B-2 有界 AI 调度与单次交付](deep-dive/BOT3B2_QQ_AI_SCHEDULING.md)（仅 Fake：1执行/2等待、取消、交付未知不重试；真实 QQ AI 仍关闭）

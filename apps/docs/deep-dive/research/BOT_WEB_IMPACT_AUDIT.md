@@ -1,5 +1,9 @@
 # BOT 共享模块、Web 兼容性与清理审计
 
+2026-10-26 后续：BOT-CLEANUP-1 已按本页建议删除四个暂停草稿及专用测试，保留 SDK 资源门禁和历史设计；本页第3节记录清理前证据，不是当前文件清单。[清理与验证](../BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。
+
+后续状态：原 FAST 5 项失败已由 [BOT-REGRESSION-1](../BOT_REGRESSION1_FAST_STABILITY.md) 定位和最小修复；本页保留前次审计的失败数据与风险分析，当前测试结果及 Scope 以修复报告为准。
+
 日期：2026-10-25。源码审计：`8d90d07..ddb9ecf`；该范围 `apps/ scripts/` 共 78 文件、+10435/-164 行，并非每一行都属于 BOT。四个阶段提交为 `6f2fee2`、`fb140f0`、`7322f0d`、`ddb9ecf`。本轮开始工作树为空；没有读取真实数据或凭据，没有联网。
 
 范围外另有项目级 `pyproject.toml`：增加可选 `qq = [websockets>=15.0.1,<16]`、QQ 包发现及 examples 打包规则，排除 QQ 测试；没有给普通 Web 新增强制运行依赖。本轮未修改该配置或安装依赖。
@@ -49,7 +53,7 @@ Fake Gateway 失败探针记录到 `QQ_REPLY_API_ACCEPTED → AI_ADMITTED → GA
 
 新增进程级状态为 `SDK_RESOURCES`：最多 8 个 bridge 租约，失败后粘性隔离；Registry 不裁剪资源不安全的终态 Handle。通常 Web、Bot 分进程，因此不会自动互相污染；同进程部署则共享故障域。有限清理等待现在为 2s（此前 bridge 等待为 5s），错误码可能变成 SDK_CLEANUP_FAILED / SDK_CLEANUP_TIMEOUT，属于需要认识的兼容性差异。
 
-## 3. 暂停 SDK 子进程草稿
+## 3. 暂停 SDK 子进程草稿（清理前历史）
 
 | 文件 | 物理行数 | 运行引用 / 副作用 |
 |---|---:|---|
@@ -61,7 +65,7 @@ Fake Gateway 失败探针记录到 `QQ_REPLY_API_ACCEPTED → AI_ADMITTED → GA
 
 `rg -n 'sdk_process_|SDK_PROCESS_DEVELOPMENT_PAUSED' apps scripts` 的生产调用引用闭包限于上述草稿；`qq_bot/tests/test_qwen_trial.py` 另有“Scope 不含草稿”的反向断言。离线导入探针在阻断 socket、Popen、Thread.start 后导入 Web Service / QQ CLI / trial，输出 `PRODUCTION_IMPORTS_DRAFT_MODULES=0`；再显式导入四份草稿，输出 `DRAFT_IMPORT_STARTS_THREADS=0`、`WORKER_IMPORT_MUTATES_SYS_PATH=True`。`pyproject.toml` 自动发现 ai_backend 包，草稿仍可能随 wheel 分发，属于维护与误读负担，并非当前网络执行依赖。
 
-**建议下一轮在获得批准后删除这 4 个源码和 1 个专用测试**，删除/改写失效目录索引，保留 [暂停设计与代价](../BOT3C2B_SDK_PROCESS_ISOLATION.md) 并标明未实现。不要保留无法执行的“安全兜底”假象。本轮没有删除。
+原审计建议删除这 4 个源码和 1 个专用测试；BOT-CLEANUP-1 已获批准并执行，目录和现行命令同步更新。[暂停设计与代价](../BOT3C2B_SDK_PROCESS_ISOLATION.md) 继续保留为历史，SDK 资源门禁不在删除范围内。
 
 必须保留：`sdk_resources.py`、共享 Adapter 的资源确认、`execution.py` 的 Handle/Registry 防线、资源测试、QQ Scheduler/Commit/Delivery 门禁。草稿未参与 FAST Scope，所以未来删除不应改变 FAST 执行资格；仍需重新计算并比对指纹，不靠推测。
 
@@ -73,9 +77,9 @@ Fake Gateway 失败探针记录到 `QQ_REPLY_API_ACCEPTED → AI_ADMITTED → GA
 
 | 顺序 | 建议 | 收益 / 风险 |
 |---|---|---|
-| 0 | 先处理 FAST 5 项回归失败；测量完整快照/Scope 重算与 watchdog 重复校验开销，区分夹具时间设计和运行延迟 | 当前可复现的基线阻塞；先提供隔离复现，不靠放松门禁或扩大生产预算变绿 |
+| 0 | 复核 BOT-REGRESSION-1 的完整基线和新 Scope，再进入下一阶段 | 后续已修复短窗口/夹具和同次复核的重复计算；保留独立时间边界，不扩大生产预算 |
 | 1 | 本轮增加薄测试入口和当前状态导航；保留阶段报告 | 减少手抄审批命令，低风险；不复写审批/费用/工具逻辑 |
-| 2 | 单独批准后删除暂停草稿及 6 项专用测试 | 删除 649 行维护负担；应保留研究而不是假实现 |
+| 2 | BOT-CLEANUP-1 已按授权删除暂停草稿及 6 项专用测试 | 移除 649 行维护负担；历史设计与 C2A 防线保留 |
 | 3 | 修复历史文档状态和失效索引 | 本轮已把 README/BUILD_RUN/ROADMAP 中已不存在的 EVENT_ACK.md 导向现存事件说明/迁移源码；旧文档在核查前已删除，没有凭空恢复其内容。阶段报告继续保留历史属性 |
 | 4 | 后续考虑把试用实现指纹清单集中到渠道中立位置 | 减少 Service 与 QQ 源码布局的耦合；会影响 Scope，必须独立任务/重新审批 |
 | 5 | 随 BOT-3D 明确是否保留纯 Fake candidate 的公开测试入口 | Fake 夹具仍有回归价值；不要因已完成真实验收就删掉离线安全证据 |

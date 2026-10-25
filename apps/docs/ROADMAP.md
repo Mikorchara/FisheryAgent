@@ -4,6 +4,10 @@
 
 ## 已实现
 
+- 2026-10-26 BOT-CLEANUP-1：移除4份 SDK 进程隔离草稿及6项暂停测试，历史设计保留；两个Scope/资源门禁不变，868 Python / 116 Node通过，离线Wheel及导入检查通过。[清理与验证](deep-dive/BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。
+
+- 2026-10-25 BOT-REGRESSION-1：修复 FAST 5s观察/Gateway夹具和同次Scope构建，90s预算/失效门禁保持；五项三轮、Bot 275/Web 78专项及完整874 Python / 116 Node通过，[结果与新Scope](deep-dive/BOT_REGRESSION1_FAST_STABILITY.md)。不复用旧FAST批准，暂停SDK草稿仍保留。
+
 - 2026-10-25 BOT 阶段审计：区分 QQ 专用与 Web 共享 SDK 影响，保留资源门禁和暂停草稿；增加三个默认不联网的 PowerShell 7 薄验收入口。用户报告 FAST 真实端到端已通过，模型自由文本仍不展示。[当前总结](deep-dive/BOT_STAGE_SUMMARY.md)、[审计](deep-dive/research/BOT_WEB_IMPACT_AUDIT.md)、[测试入口](deep-dive/BOT_TEST_WORKFLOW.md)。下列 BOT 条目为阶段完成时记录，不是最新联网资格。
 
 - 2026-10-25 BOT-3C-FAST：Monitoring-only Qwen本机/QQ试用准备，限时独立审批、防重复消费、保守费用预留、单次交付；仅离线验证，真实联网待另批，SDK资源门禁保留、进程隔离暂停。[说明与操作](deep-dive/BOT3C_FAST_QWEN_TRIAL.md)。

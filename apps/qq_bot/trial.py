@@ -21,7 +21,7 @@ from .configuration import project_credentials,secret_supplier
 from .contracts import BotError
 from .monitoring_source import InstanceMonitoring
 from .trial_configuration import (ApprovalFile,TrialInputs,approve_plan,inputs_snapshot,
-    local_path,make_plan,prerequisite_valid,read_json,scope,validate_record,write_new)
+    local_path,make_plan,prerequisite_valid,read_json,validate_record,write_new)
 
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -51,14 +51,16 @@ def compose_trial(record,*,async_client_factory=None,clock=None):
     ref=capture.analysis.observation
     if ref is not None and ref.source_kind!='simulator':raise BotError('TRIAL_SOURCE_NOT_APPROVED')
     def validate():
-        record.check()
         if inputs_snapshot(record.inputs,monitoring)[-1]!=value['bindings_sha256']:
             raise BotError('TRIAL_BINDINGS_CHANGED')
-        if _hash(scope())!=value['scope_sha256']:raise BotError('TRIAL_SCOPE_CHANGED')
         if value['phase']=='qq':
             required=value['prerequisite']
             if prerequisite_valid(read_json(required['path']),value['scope_sha256'],value['bindings_sha256'])!=required['sha256']:
                 raise BotError('TRIAL_PROVIDER_PREREQUISITE_REQUIRED')
+        # Includes fresh source/SDK Scope, approval bytes, expiry and one-use
+        # marker. Run last, after binding/receipt I/O, rather than building the
+        # same Scope again in this check. Every boundary still calls validate.
+        record.check()
     session=QwenTrialSession(record.grant(),validate=validate,claim=record.claim,
         async_client_factory=async_client_factory,clock=clock)
     # Resolve the existing private credential location, not a key. The service

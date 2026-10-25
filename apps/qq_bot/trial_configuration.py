@@ -162,8 +162,12 @@ def validate_record(value,*,approved=False,clock=None):
         if (set(value)!=expected or type(value['schema_version']) is not int or value['schema_version']!=1
                 or value['contract']!=TRIAL_CONTRACT or value['qualification_id'] is not None
                 or value['status']!=('local_experimental' if approved else 'pending_operator_approval')
-                or value['pricing_region']!='cn-beijing' or value['scope']!=scope()
-                or value['scope_sha256']!=_hash(scope())):raise ValueError()
+                or value['pricing_region']!='cn-beijing'):raise ValueError()
+        # One fresh snapshot for this validation. Comparing value and digest does
+        # not require rereading every source/SDK file twice. Never cache across
+        # checks: same-size/mtime edits must still invalidate the next boundary.
+        current_scope=scope()
+        if value['scope']!=current_scope or value['scope_sha256']!=_hash(current_scope):raise ValueError()
         now=(clock or (lambda:datetime.now(timezone.utc)))()
         created=datetime.fromisoformat(value['created_at']);expires=datetime.fromisoformat(value['expires_at'])
         price=datetime.fromisoformat(value['price_reviewed_at'])

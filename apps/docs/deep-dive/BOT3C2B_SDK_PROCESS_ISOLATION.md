@@ -1,18 +1,20 @@
-# BOT-3C-2B：SDK I/O 进程隔离进度与暂停记录
+# BOT-3C-2B：SDK I/O 进程隔离历史设计与暂停记录
 
-后续：[BOT-3C-FAST](BOT3C_FAST_QWEN_TRIAL.md)已获准开展独立试用入口的代码/离线准备；本页记录2B暂停时的状态，进程隔离草稿及禁用入口未恢复，真实网络仍待另行批准。
+2026-10-26 更新：用户批准 BOT-CLEANUP-1，未进入生产链路的四份草稿及专用测试文件已删除。本文仅保留设计边界、未完成事项及当时的暂停证据，**不是当前可运行模块或命令说明**。[清理与验证](BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。BOT-3C-2A 资源门禁保留；没有获得线程硬退出保证。
+
+后续：[BOT-3C-FAST](BOT3C_FAST_QWEN_TRIAL.md)已实现独立试用入口；以下正文均为 2026-10-25 暂停时的历史快照，资格与人工验收现状见阶段总结。
 
 日期：2026-10-25。范围仅 `Fishery_AI_Prototype/apps/`；未同步 Management，未 commit/push。
 
-## 当前决定
+## 当时的暂停决定（历史）
 
 用户调整优先级，计划先讨论真实 Qwen + QQ 的受控单轮实验。BOT-3C-2B **已进入实现，现已暂停**，并非完成或通过进程隔离验收。本轮不开始 BOT-3C-FAST，也不连接 QQ 或 Provider。
 
 保留已有草稿，不回滚、覆盖或清理先前工作。为避免误启用，Adapter 构造、底层进程启动及 worker 执行入口均明确返回 `SDK_PROCESS_DEVELOPMENT_PAUSED`。没有环境变量或 CLI 开关启用该草稿；worker 命令直接退出 2，不读取启动输入、不创建 SDK、不连接网络。
 
-## 已写入的实现草稿
+## 当时的实现草稿（以下文件已删除）
 
-| 文件 | 草稿职责 | 当前可用性 |
+| 原文件 | 当时的草稿职责 | 暂停时状态（非当前存在） |
 |---|---|---|
 | `apps/ai_backend/sdk_process_adapter.py` | 父进程拥有 SDK 子进程、限额、期限、取消及退出确认；复用原 Adapter 的编码与组装 | 明确禁用，未注册到 Web/QQ |
 | `apps/ai_backend/sdk_process_worker.py` | 子进程内 SDK I/O、MockTransport 夹具及响应传输 | 所有执行入口拒绝 |
@@ -34,7 +36,7 @@
 
 当前线程路径的限制仍存在：不合作的底层 I/O 无法由 Python 请求线程可靠强制终止；失败门禁只会明确失败、拒绝后续执行，不等于已经杀死线程，也不保证远端停止计算或计费。
 
-## 测试状态
+## 暂停时测试状态（历史数字）
 
 本轮收尾专项 **31/31 通过**：暂停边界 6 项、SDK 资源门禁 17 项、QQ 资源门禁 3 项、真实 SDK + 内存 HTTP 5 项。全部离线。
 
@@ -42,18 +44,12 @@
 
 只读预检返回 `QQ_AI_PREFLIGHT_VALID_LIVE_BLOCKED`：`scope_matches=true`、`status=candidate`、`ai_enabled=false`、`can_execute_real=false`、`can_deliver_real=false`、`network_requests=0`，未检查凭据或打开业务实例。5 个草稿/测试 Python 文件的 AST 解析及 `git diff --check` 通过；未发现运行中的 `sdk_process_worker.py` 子进程。
 
-```powershell
-Set-Location -LiteralPath 'D:\CodexProject\Fishery_AI_Prototype'
-$env:TEMP = Join-Path $PWD 'outputs/test-tmp'; $env:TMP = $env:TEMP
-.\.venv\Scripts\python.exe -X utf8 -B -m unittest apps.ai_backend.tests.test_sdk_process_paused apps.ai_backend.tests.test_sdk_resources apps.qq_bot.tests.test_sdk_resource_gate apps.qq_bot.tests.test_provider_sdk_preparation
-.\.venv\Scripts\python.exe -X utf8 -B scripts/dev/run_tests.py management
-.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot --check-ai-readiness
-```
+当时专项命令还包含 `apps.ai_backend.tests.test_sdk_process_paused`，该模块已删除，不再提供这条失效命令作为当前操作。现行资源专项、完整回归与预检命令见 [清理报告](BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)；暂停测试的 6 项减少不代表移除了资源门禁测试。
 
-## 尚未完成，不作为本轮通过项
+## 暂停时未完成的设计检查（历史）
 
 Windows 子进程成功/取消/强制退出/崩溃/断 IPC/父进程退出、Job 清理、真实 SDK 流式协议、两次模型请求的 Tool Calling、资源故障后的再准入、性能和内存测量均未完成。
 
-草稿恢复开发前还须复核继承 Adapter 的无 Handle 调用路径，防止绕回原线程执行；完善真实 HTTP 请求计数、异常及清理失败优先级、重复清理和未确认退出资源的管理。当前通过入口拒绝保证这些未完成部分不会进入运行链路，没有为暂停而把它们宣称已解决。
+当时计划在恢复前复核继承 Adapter 的无 Handle 调用路径，防止绕回原线程执行；完善真实 HTTP 请求计数、异常及清理失败优先级、重复清理和未确认退出资源的管理。暂停时通过入口拒绝阻止未完成部分进入运行链路；源码现已删除。未来若重新立项，必须重新设计和验收，当前没有可启用的进程隔离入口。
 
 后续 BOT-3C-FAST 必须由用户另行确认范围、模型和费用、实例及数据披露、群/成员授权、Scope 与交付策略；不能通过删除现有阻塞项、关闭安全检查或修改候选资格来加速。本文仅记录暂停，不构成真实联调授权。
