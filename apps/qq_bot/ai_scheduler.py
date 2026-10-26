@@ -37,14 +37,14 @@ class QQAIJobScheduler:
     AI jobs, one unfinished job per frozen authorized session. No per-job threads.
     Exact Fake or independently approved Trial transport only. Ordinary CLI stays disabled.
     """
-    def __init__(self, coordinator, gateway, *, clock=None, monotonic=time.monotonic):
+    def __init__(self, coordinator, gateway, *, clock=None, monotonic=time.monotonic,receipt_sink=None):
         from .ai_trial_delivery import TrialQQTransport
         if type(gateway) not in (OfflineQQGateway,TrialQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
         if type(gateway) is TrialQQTransport and gateway.trial is not coordinator.service._channel_trial:
             raise BotError('TRIAL_QQ_COMPOSITION_REQUIRED')
         self.coordinator,self.gateway=coordinator,gateway
         self.now=monotonic
-        self.delivery=DeliveryOwner(coordinator,gateway,clock=clock,monotonic=monotonic)
+        self.delivery=DeliveryOwner(coordinator,gateway,clock=clock,monotonic=monotonic,receipt_sink=receipt_sink)
         self._cv=threading.Condition(threading.RLock())
         self._jobs={};self._finished=OrderedDict();self._finished_resources={};self._acceptances=deque(maxlen=32)
         self._stopping=False
@@ -114,6 +114,10 @@ class QQAIJobScheduler:
         receipt=job.receipt
         info=dict(task_id=task_id,state=state,code=code,
             api_accepted=bool(receipt and receipt.api_accepted),client_display_confirmed=False)
+        if receipt and receipt.explanation_code is not None:
+            info.update(explanation_code=receipt.explanation_code,
+                        explanation_in_payload=receipt.explanation_in_payload)
+        if receipt and receipt.report_error is not None:info['report_error']=receipt.report_error
         if job.plan.handle.resource_info() is not None:
             info['sdk_resources']=job.plan.handle.resource_info()
             self._finished_resources[task_id]=job.plan.handle._sdk_resource

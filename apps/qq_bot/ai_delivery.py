@@ -1,6 +1,6 @@
 """Single passive-reply ownership for exact offline or independently approved trial transports."""
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass,replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -26,6 +26,9 @@ class DeliveryReceipt:
     client_display_confirmed: bool = False
     accepted_at: str | None = None
     text_sha256: str | None = None
+    explanation_code: str | None = None
+    explanation_in_payload: bool = False
+    report_error: str | None = None
 
 
 class OfflineQQGateway:
@@ -118,7 +121,7 @@ class DeliveryOwner:
     Candidate can_deliver stays false. A separate phase-approved Trial transport
     does not promote candidates or remove authorization/source/resource checks.
     """
-    def __init__(self, coordinator, gateway, *, clock=None, monotonic=time.monotonic):
+    def __init__(self, coordinator, gateway, *, clock=None, monotonic=time.monotonic,receipt_sink=None):
         from .ai_trial_delivery import TrialQQTransport
         if type(gateway) not in (OfflineQQGateway,TrialQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
         if type(gateway) is TrialQQTransport and gateway.trial is not coordinator.service._channel_trial:
@@ -126,6 +129,8 @@ class DeliveryOwner:
         self.coordinator,self.gateway=coordinator,gateway
         self.clock=clock or (lambda:datetime.now(timezone.utc))
         self.now=monotonic
+        if receipt_sink is not None and not callable(receipt_sink):raise BotError('INVALID_DELIVERY_RECEIPT_SINK')
+        self.receipt_sink=receipt_sink
         self.passive=PassiveReplyOwner(gateway,clock=self.clock)
 
     def deliver(self, plan, result, cancelled):
@@ -138,12 +143,21 @@ class DeliveryOwner:
             try:self.coordinator.validate_delivery_candidate(plan,result)
             except GatewayError as error:raise BotError(error.code) from None
         validate()
-        rendered,_assessment=render_channel_reply(result)
         from .ai_trial_delivery import TrialQQTransport
         live_trial=type(self.gateway) is TrialQQTransport and not self.gateway.trial.offline_test
-        text=('受控 Qwen 单轮实验 · SIMULATOR\n' if live_trial else '离线验收 · 非真实 QQ 交付\n')+rendered
+        prefix='受控 Qwen 单轮实验 · SIMULATOR\n' if live_trial else '离线验收 · 非真实 QQ 交付\n'
+        rendered,assessment=render_channel_reply(result,max_chars=1600-len(prefix))
+        text=prefix+rendered
         # Sanitize mentions/control characters without silently truncating facts.
         text=plain(text,max(1,len(text)))
         if not 1<=len(text)<=1600:raise BotError('AI_REPLY_TOO_LONG')
         self.coordinator.claim_delivery(plan,result)
-        return self.passive.send(plan.context,text,cancelled,validate)
+        receipt=self.passive.send(plan.context,text,cancelled,validate)
+        receipt=replace(receipt,explanation_code=assessment.code,explanation_in_payload=assessment.allowed)
+        if self.receipt_sink is not None:
+            try:self.receipt_sink(receipt)
+            except Exception:
+                # Persistence cannot undo a submitted/accepted reply. Preserve
+                # its actual delivery state; never resend to repair a report.
+                receipt=replace(receipt,report_error='TRIAL_DELIVERY_CHECKPOINT_FAILED')
+        return receipt

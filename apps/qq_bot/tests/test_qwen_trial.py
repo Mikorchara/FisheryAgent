@@ -19,6 +19,7 @@ from apps.ai_backend.model_gateway import GatewayError
 from apps.ai_backend.sdk_resources import CLEANUP_GRACE_S
 from apps.ai_service.channel import ChannelBudget
 from apps.ai_service.channel_trial import cost_reservation,TRIAL_CONTRACT
+from apps.ai_service.channel_presentation import EXPLANATION_CONTRACT,QQ_SYSTEM_INSTRUCTION
 from apps.ai_service.runtime.release_contracts import _hash
 from apps.qq_bot.ai_coordinator import QQAICoordinator
 from apps.qq_bot.ai_delivery import DeliveryOwner
@@ -69,6 +70,8 @@ class QwenTrialTests(unittest.TestCase):
             write_new(prerequisite,dict(contract=TRIAL_CONTRACT,code='QWEN_PROVIDER_TRIAL_VERIFIED',
                 offline_test=False,scope_sha256=provider['scope_sha256'],bindings_sha256=provider['bindings_sha256'],
                 completed=True,model_requests=2,model_text_displayed=False,
+                explanation_contract=EXPLANATION_CONTRACT,explanation_validated=True,
+                explanation_code='EXPLANATION_CONTRACT_VALID',
                 sdk_resources={'state':'CLOSED','thread_exited':True,'local_io_closed':True,'cleanup_error':None}))
         return make_plan(self.inputs,phase=phase,max_cost_cny='2.00',prerequisite=prerequisite,clock=lambda:self.now)
 
@@ -92,8 +95,22 @@ class QwenTrialTests(unittest.TestCase):
                 {'role':'assistant','content':'溶解氧为 99 mg/L，全部正常。PRIVATE_MODEL_TEXT'})
             if first and self.response_mode=='injection':
                 message['tool_calls'][0]['function']['arguments']='{"device_id":"sim-pond-2"}'
+            if first and self.response_mode=='structured_no_tool':
+                message={'role':'assistant','content':json.dumps({'contract':EXPLANATION_CONTRACT,
+                    'source':'simulator','context':'window','metrics':['ph'],'rules':[],
+                    'advice':['verify_observation']})}
+            if not first and self.response_mode in ('structured','structured_bad'):
+                payload=json.loads(next(m['content'] for m in body['messages'] if m['role']=='tool'))
+                quality=payload['data_quality']
+                hits=[f['code'] for f in payload['findings'] if f['kind']=='WATER_RISK' and f['state']=='HIT']
+                plan={'contract':EXPLANATION_CONTRACT,'source':'simulator',
+                    'context':'window' if payload['status']=='OK' and (quality['quality'],quality['freshness'],quality['connectivity'])==('valid','fresh','online') else 'limited',
+                    'metrics':['dissolved_oxygen_mg_l','ph'],'rules':hits,
+                    'advice':['review_rules','verify_observation'] if hits else ['verify_observation']}
+                if self.response_mode=='structured_bad':plan['reading']=99
+                message['content']=json.dumps(plan)
             value={'id':'synthetic-response','object':'chat.completion','created':0,'model':runtime.model,
-                'choices':[{'index':0,'message':message,'finish_reason':'tool_calls' if first else 'stop'}],
+                'choices':[{'index':0,'message':message,'finish_reason':'tool_calls' if message.get('tool_calls') else 'stop'}],
                 'usage':{'prompt_tokens':20,'completion_tokens':10,'total_tokens':30}}
             if self.response_mode=='no_usage':value.pop('usage')
             return httpx.Response(200,json=value)
@@ -461,6 +478,7 @@ class QwenTrialTests(unittest.TestCase):
         self.assertEqual(len(self.http),1);self.assertEqual(runtime.session.handle.resource_info()['state'],'CLOSED')
 
     def test_sdk_cleanup_failure_stays_quarantined_and_prevents_new_request(self):
+        self.response_mode='structured'
         from apps.ai_backend.sdk_resources import SDKResourceBudget
         budget=SDKResourceBudget()
         original=self.factory
@@ -635,6 +653,226 @@ class QwenTrialTests(unittest.TestCase):
             code=main(['--approve','--plan',str(plan_path),'--output',str(approval_path),'--confirm-instance-read'])
         self.assertEqual(code,0,out.getvalue());self.assertEqual(read_json(approval_path)['status'],'local_experimental')
         self.assertEqual(self.http,[])
+
+    def test_structured_explanation_real_sdk_fake_qq_no_extra_calls_or_source_reads(self):
+        self.response_mode='structured';runtime,_,scheduler,router=self.qq()
+        with patch.object(runtime.monitoring,'capture_water',wraps=runtime.monitoring.capture_water) as read:
+            raw=self.packet();_,task=router.receive(raw,transport_app_id=self.access.app_id)
+            done=self.wait_trial(scheduler,task)
+        self.assertEqual(done['state'],'DELIVERED');self.assertTrue(done['explanation_in_payload'])
+        self.assertEqual(done['explanation_code'],'EXPLANATION_CONTRACT_VALID')
+        self.assertFalse(done['client_display_confirmed']);read.assert_called_once_with('sim-pond-1')
+        self.assertEqual(len(self.http),2);self.assertEqual(len(self.qq_posts),1)
+        text=self.qq_posts[0]['content']
+        for label in ('A. 系统事实','B. 模型解释','C. 来源与限制','业务规则命中','建议（未执行）','SIMULATOR'):
+            self.assertIn(label,text)
+        self.assertNotIn('"contract"',text);self.assertNotIn('PRIVATE_MODEL_TEXT',text)
+        self.assertLessEqual(len(text),1600);self.assertEqual(self.qq_posts[0]['msg_seq'],1)
+        self.assertEqual(self.http[0]['messages'][0]['content'],QQ_SYSTEM_INSTRUCTION)
+        self.assertEqual(router.receive(raw,transport_app_id=self.access.app_id),('DUPLICATE',None))
+        self.assertEqual(runtime.session.handle.resource_info()['state'],'CLOSED')
+
+    def test_invalid_structured_explanation_falls_back_once_and_never_echoes_reading(self):
+        self.response_mode='structured_bad';_,_,scheduler,router=self.qq()
+        raw=self.packet();_,task=router.receive(raw,transport_app_id=self.access.app_id)
+        done=self.wait_trial(scheduler,task)
+        self.assertEqual(done['state'],'DELIVERED');self.assertFalse(done['explanation_in_payload'])
+        self.assertEqual(done['explanation_code'],'EXPLANATION_CONTRACT_INVALID')
+        text=self.qq_posts[0]['content'];self.assertIn('溶解氧：2.2',text)
+        self.assertIn('未展示',text);self.assertNotIn('99',text)
+        self.assertEqual(len(self.http),2);self.assertEqual(len(self.qq_posts),1)
+        self.assertEqual(router.receive(raw,transport_app_id=self.access.app_id),('DUPLICATE',None))
+
+    def test_explanation_metadata_never_confuses_unknown_delivery_with_acceptance(self):
+        self.response_mode='structured';_,_,scheduler,router=self.qq('unknown')
+        raw=self.packet();_,task=router.receive(raw,transport_app_id=self.access.app_id)
+        done=self.wait_trial(scheduler,task)
+        self.assertEqual(done['state'],'DELIVERY_UNKNOWN');self.assertFalse(done['api_accepted'])
+        self.assertTrue(done['explanation_in_payload']);self.assertFalse(done['client_display_confirmed'])
+        self.assertEqual(len(self.qq_posts),1);self.assertEqual(len(self.http),2)
+        self.assertEqual(router.receive(raw,transport_app_id=self.access.app_id),('DUPLICATE',None))
+
+    def test_provider_explanation_receipt_records_only_contract_status(self):
+        self.response_mode='structured';runtime=self.runtime()
+        reply=provider_turn(runtime,'当前水质？');report=result_record(runtime,reply)
+        self.assertTrue(report['completed']);self.assertTrue(report['explanation_validated'])
+        self.assertEqual(report['explanation_contract'],EXPLANATION_CONTRACT)
+        self.assertFalse(report['model_text_displayed']);self.assertEqual(report['model_requests'],2)
+        serialized=json.dumps(report)
+        self.assertNotIn(reply.model_text,serialized);self.assertNotIn('PRIVATE_MODEL_TEXT',serialized)
+
+    def test_new_qq_trial_requires_a_valid_explanation_provider_receipt(self):
+        from apps.qq_bot.trial_configuration import prerequisite_valid
+        plan=self.plan()
+        value={'contract':TRIAL_CONTRACT,'code':'QWEN_PROVIDER_TRIAL_VERIFIED','offline_test':False,
+            'scope_sha256':plan['scope_sha256'],'bindings_sha256':plan['bindings_sha256'],
+            'completed':True,'model_requests':2,'model_text_displayed':False,
+            'explanation_contract':EXPLANATION_CONTRACT,'explanation_validated':True,
+            'explanation_code':'EXPLANATION_CONTRACT_VALID',
+            'sdk_resources':{'state':'CLOSED','thread_exited':True,'local_io_closed':True,'cleanup_error':None}}
+        prerequisite_valid(value,plan['scope_sha256'],plan['bindings_sha256'])
+        for patch_value in ({'explanation_validated':False},{'explanation_contract':'old'},
+                            {'explanation_code':'EXPLANATION_CONTRACT_INVALID'},
+                            {'contract':'qq-qwen-current-local-trial@1'}):
+            with self.subTest(change=patch_value),self.assertRaisesRegex(BotError,'PREREQUISITE'):
+                prerequisite_valid(value|patch_value,plan['scope_sha256'],plan['bindings_sha256'])
+
+    def test_structured_output_without_tool_source_never_gets_delivery(self):
+        self.response_mode='structured_no_tool';_,_,scheduler,router=self.qq()
+        _,task=router.receive(self.packet(),transport_app_id=self.access.app_id)
+        done=self.wait_trial(scheduler,task)
+        self.assertEqual(done['state'],'FAILED');self.assertFalse(done['api_accepted'])
+        self.assertEqual(len(self.http),1);self.assertEqual(self.qq_posts,[])
+
+    def test_structured_explanation_cannot_pass_a_failed_commit(self):
+        self.response_mode='structured';runtime,_,scheduler,router=self.qq()
+        with patch.object(runtime.service.traces,'record_assistant',side_effect=OSError('synthetic private trace error')):
+            _,task=router.receive(self.packet(),transport_app_id=self.access.app_id)
+            done=self.wait_trial(scheduler,task)
+        self.assertEqual(done['state'],'FAILED');self.assertEqual(done['code'],'TRACE_WRITE_ERROR')
+        self.assertEqual(len(self.http),2);self.assertEqual(self.qq_posts,[])
+
+    def reporting_cli(self,runtime,output):
+        args=['--run-qq','--approval',str(runtime.record.path),
+            '--approval-sha256',runtime.record.digest,'--output',str(output),
+            '--confirm-instance-read','--confirm-provider-network','--confirm-qq-network']
+        stdout=StringIO()
+        with patch('apps.qq_bot.trial.ApprovalFile',return_value=runtime.record), \
+                patch('apps.qq_bot.trial.compose_trial',return_value=runtime),redirect_stdout(stdout):
+            code=main(args)
+        return code,[json.loads(line) for line in stdout.getvalue().splitlines() if line.startswith('{')]
+
+    def test_qq_keyboard_interrupt_persists_finished_delivery_without_reexecution(self):
+        runtime=self.runtime('qq');output=self.root/'interrupted-result.json'
+        delivery={'state':'DELIVERED','code':'QQ_REPLY_API_ACCEPTED','api_accepted':True,
+            'client_display_confirmed':False,'explanation_code':'EXPLANATION_CONTRACT_VALID',
+            'explanation_in_payload':True}
+        def interrupted(*args,**kwargs):
+            runtime.qq_outcomes=(delivery,)
+            raise KeyboardInterrupt
+        with patch('apps.qq_bot.trial.run_qq',side_effect=interrupted) as run:
+            code,records=self.reporting_cli(runtime,output)
+        self.assertEqual(code,1);self.assertEqual(run.call_count,1)
+        self.assertTrue(output.is_file(),'handled Ctrl+C must save the report')
+        saved=read_json(output)
+        self.assertTrue(saved['completed']);self.assertEqual(saved['delivery'][0],delivery)
+        self.assertEqual(saved['code'],'QWEN_TRIAL_CANCELLED')
+        self.assertFalse(saved['client_display_confirmed']);self.assertTrue(records[-1]['report_saved'])
+        self.assertEqual(self.http,[])
+
+    def test_result_write_failure_is_explicit_and_never_retried(self):
+        runtime=self.runtime('qq');output=self.root/'unwritable-result.json'
+        with patch('apps.qq_bot.trial.run_qq',return_value=()), \
+                patch('apps.qq_bot.trial.write_new',side_effect=OSError('PRIVATE_PATH_OR_REQUEST')) as write:
+            code,records=self.reporting_cli(runtime,output)
+        self.assertEqual(code,1);self.assertEqual(write.call_count,1)
+        self.assertEqual(records[-1]['code'],'TRIAL_RESULT_WRITE_FAILED')
+        self.assertFalse(records[-1]['report_saved']);self.assertFalse(output.exists())
+        self.assertNotIn('PRIVATE_PATH_OR_REQUEST',json.dumps(records));self.assertEqual(self.http,[])
+
+    def gateway_reporting_cli(self,*,ending='duration',delivery='accepted',write_failure=None):
+        self.response_mode='structured'
+        runtime,api,old_scheduler,old_router=self.qq(delivery);old_router.close()
+        api._token='fictional-qq-token';api._expires=time.monotonic()+3600
+        output=self.root/'qq-final.json';checkpoint=output.with_name('qq-final.delivery.json')
+        pump_errors=[];before_stop=[]
+        class Guard:
+            expired=None
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+            def arm(self,*args):pass
+            def attach(self,*args):pass
+        class Socket:
+            def __enter__(self):return self
+            def __exit__(self,*args):return False
+        def pump(gateway,*args):
+            try:
+                gateway._dispatch(json.loads(self.packet()))
+                with gateway._queue.all_tasks_done:
+                    if not gateway._queue.all_tasks_done.wait_for(lambda:gateway._queue.unfinished_tasks==0,
+                            timeout=ChannelBudget().turn_timeout_s+CLEANUP_GRACE_S+3):
+                        raise TimeoutError('SYNTHETIC_INGRESS_TIMEOUT')
+                scheduler=gateway.router.scheduler
+                with scheduler._cv:task=next(iter((*scheduler._jobs,*scheduler._finished)))
+                self.wait_trial(scheduler,task)
+                before_stop.append(checkpoint.is_file())
+            except Exception as error:pump_errors.append(error)
+            if ending=='cancel':raise KeyboardInterrupt
+            if ending=='failure':raise BotError('QQ_SYNTHETIC_STOP_FAILED')
+            gateway.emit('QQ_RUN_DURATION_REACHED');gateway.stop.set()
+        def run(*args,**kwargs):
+            return run_qq(*args,**kwargs,api=api,connector=lambda _:Socket(),emit=lambda *_a,**_kw:None)
+        def write(path,value):
+            if write_failure=='checkpoint' and path==checkpoint:raise OSError('PRIVATE_DISK_FAILURE')
+            if write_failure=='final' and path==output:raise OSError('PRIVATE_DISK_FAILURE')
+            return write_new(path,value)
+        before={t.ident for t in threading.enumerate() if t.name.startswith(('qq-ai-','qq-readonly-'))}
+        with patch('apps.qq_bot.gateway.GatewayDeadline',lambda *_:Guard()), \
+                patch('apps.qq_bot.gateway.QQGateway._pump',pump), \
+                patch('apps.qq_bot.trial.run_qq',side_effect=run),patch('apps.qq_bot.trial.write_new',side_effect=write):
+            code,records=self.reporting_cli(runtime,output)
+        if pump_errors:raise pump_errors[0]
+        self.assertEqual(before,{t.ident for t in threading.enumerate() if t.name.startswith(('qq-ai-','qq-readonly-'))})
+        self.assertEqual(len(self.http),2);self.assertEqual(len(self.qq_posts),1)
+        self.assertTrue(all(c.is_closed() for c in self.clients))
+        return code,records,output,checkpoint,before_stop
+
+    def test_duration_stop_writes_final_and_earlier_delivery_checkpoint(self):
+        code,records,output,checkpoint,before_stop=self.gateway_reporting_cli()
+        self.assertEqual(code,0);self.assertEqual(before_stop,[True])
+        report=read_json(output);saved=read_json(checkpoint)
+        self.assertEqual(report['code'],'QWEN_QQ_TRIAL_STOPPED')
+        self.assertEqual(report['stop_reason'],'QQ_RUN_DURATION_REACHED')
+        self.assertTrue(report['completed']);self.assertTrue(report['api_accepted'])
+        self.assertFalse(report['client_display_confirmed']);self.assertTrue(records[-1]['report_saved'])
+        self.assertEqual(saved['receipt']['status'],'DELIVERED');self.assertTrue(saved['receipt']['api_accepted'])
+        self.assertEqual(saved['sdk_resources']['state'],'CLOSED')
+        self.assertNotIn('source_summary',saved);self.assertNotIn('model_text',json.dumps(saved))
+
+    def test_gateway_handled_ctrl_c_keeps_accepted_delivery_and_saves_final(self):
+        code,_,output,checkpoint,before_stop=self.gateway_reporting_cli(ending='cancel')
+        self.assertEqual(code,1);self.assertEqual(before_stop,[True]);self.assertTrue(checkpoint.exists())
+        report=read_json(output)
+        self.assertEqual(report['code'],'QWEN_TRIAL_CANCELLED');self.assertEqual(report['stop_reason'],'QQ_CANCELLED')
+        self.assertTrue(report['api_accepted']);self.assertFalse(report['client_display_confirmed'])
+
+    def test_failed_stop_preserves_prior_delivery_in_final(self):
+        code,_,output,_,_=self.gateway_reporting_cli(ending='failure')
+        self.assertEqual(code,1);report=read_json(output)
+        self.assertEqual(report['code'],'QQ_SYNTHETIC_STOP_FAILED');self.assertTrue(report['api_accepted'])
+        self.assertEqual(report['delivery'][0]['state'],'DELIVERED')
+
+    def test_unknown_delivery_checkpoint_and_final_stay_unknown_without_retry(self):
+        code,_,output,checkpoint,_=self.gateway_reporting_cli(delivery='unknown')
+        self.assertEqual(code,0);report=read_json(output)
+        self.assertFalse(report['completed']);self.assertFalse(report['api_accepted'])
+        self.assertEqual(report['delivery'][0]['state'],'DELIVERY_UNKNOWN')
+        self.assertEqual(read_json(checkpoint)['receipt']['status'],'DELIVERY_UNKNOWN')
+
+    def test_checkpoint_write_failure_is_not_a_delivery_failure_or_retry(self):
+        code,_,output,checkpoint,before_stop=self.gateway_reporting_cli(write_failure='checkpoint')
+        self.assertEqual(code,1);self.assertEqual(before_stop,[False]);self.assertFalse(checkpoint.exists())
+        report=read_json(output)
+        self.assertEqual(report['code'],'TRIAL_DELIVERY_CHECKPOINT_FAILED')
+        self.assertTrue(report['api_accepted']);self.assertEqual(report['delivery'][0]['state'],'DELIVERED')
+
+    def test_final_write_failure_keeps_checkpoint_and_explicit_stdout_evidence(self):
+        code,records,output,checkpoint,_=self.gateway_reporting_cli(write_failure='final')
+        self.assertEqual(code,1);self.assertFalse(output.exists());self.assertTrue(checkpoint.exists())
+        self.assertEqual(records[-1]['code'],'TRIAL_RESULT_WRITE_FAILED')
+        self.assertEqual(records[-1]['operation_code'],'QWEN_QQ_TRIAL_STOPPED')
+        self.assertFalse(records[-1]['report_saved']);self.assertTrue(records[-1]['api_accepted'])
+
+    def test_existing_result_or_checkpoint_is_never_overwritten_or_executed(self):
+        runtime=self.runtime('qq')
+        for occupied in ('result','checkpoint'):
+            output=self.root/(occupied+'-existing.json')
+            path=output if occupied=='result' else output.with_name(output.stem+'.delivery.json')
+            write_new(path,{'sentinel':'must remain'});original=path.read_bytes()
+            with patch('apps.qq_bot.trial.run_qq',side_effect=AssertionError('no execution')):
+                code,records=self.reporting_cli(runtime,output)
+            self.assertEqual(code,1);self.assertEqual(records[-1]['code'],'TRIAL_OUTPUT_EXISTS')
+            self.assertEqual(path.read_bytes(),original);self.assertEqual(self.http,[])
 
 
 if __name__=='__main__':unittest.main()

@@ -1,5 +1,7 @@
 # BOT 阶段总结与后续边界
 
+**2026-10-26 BOT-3D-1更新**：已离线实现“Qwen选择解释要点→程序按同轮SourceSummary渲染中文”，结构化合同失效退回事实，原始模型正文不展示。新v3 candidate与FAST Scope需重新审批，QQ前置还须新Provider报告证明解释合同通过；本轮未联网。[合同、测试与人工验收](BOT3D1_BOUNDED_EXPLANATION.md)。下文保留此前阶段总结与真实验收边界。
+
 核查日期：2026-10-25（UTC+8）。仓库：Fishery_AI_Prototype，`main`，核查起点 `ddb9ecf`，工作树原为空。
 
 ## 1. 目前已经做到哪里
@@ -78,7 +80,7 @@ Web 与 Bot 通常为不同 Python 进程，资源隔离门禁不跨进程传播
 
 1. 复核 BOT-REGRESSION-1 的完整结果，再做三个薄测试入口的人工检查；FAST 实现指纹已变，更换源码后旧计划/批准和 Provider 前置回执不可复用。
 2. BOT-CLEANUP-1 已按授权移除暂停草稿和专用测试，保留研究结论与 C2A 防线；清理后基线见 [验证记录](BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。
-3. BOT-3D 先研究解释文本的证据约束、输出长度和失败降级，再单独实现多轮会话；不要同时引入记忆、更多工具和主动推送。
+3. BOT-3D-1已完成受限解释的离线实现，下一步单独批准新Provider/QQ人工验收；任意自由正文和多轮会话尚未开放，不同时引入记忆、更多工具和主动推送。
 4. 成熟代码按共享依赖集合选择性同步 Management，独立回归；不复制批准文件、业务实例、trace 或凭据。
 
 详见 [Web 影响与清理审计](research/BOT_WEB_IMPACT_AUDIT.md)、[日常测试入口](BOT_TEST_WORKFLOW.md)。

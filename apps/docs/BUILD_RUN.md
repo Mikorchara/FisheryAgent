@@ -6,6 +6,10 @@ EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 �
 
 ### BOT 日常验收（PowerShell 7）
 
+QQ试用收到回复后优先等待`run-seconds`自动结束，确认最终`result.json`存在且`summary.json`中`report_saved=true`。中断报告缺失已补充处理，新增单次`result.delivery.json`交付快照；Ctrl+C/关窗仍不能承诺最终报告必定写完。[根因、状态和历史取证](deep-dive/BOT3D1_RESULT_REPORTING.md)。
+
+BOT-3D-1已实现受限中文解释：Qwen选择要点，程序按同轮可信来源渲染；不放行原始正文。新v3 candidate及FAST Scope需要重新计划、审批和Provider回执，旧真实实验不授权新代码。[解释合同、失败降级与人工验收](deep-dive/BOT3D1_BOUNDED_EXPLANATION.md)。
+
 在 Prototype 根执行；不带 `-Run` 默认只做指定实例的只读检查，AI 入口额外生成 pending 计划，不读取密钥、不联网、不创建批准：
 
 ```powershell
@@ -15,7 +19,7 @@ EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 �
 
 人工决定执行时分别用 `Test-QQBot.ps1 -Run`、`Test-QwenProvider.ps1 -Run`；QQ AI 用 `Test-QQAI.ps1 -Run -ProviderReport '上次成功Provider的绝对路径/result.json'`，必须明确指定真实成功回执，并独立批准 QQ。脚本保留原人工挑战、费用/期限/Scope 复核及一次性消费。[完整参数、失败处理与示例](deep-dive/BOT_TEST_WORKFLOW.md)。
 
-当前用户报告 Qwen + Monitoring + QQ 单轮端到端已成功，SDK 正常关闭且客户端可见；本轮只做离线审计/回归。模型自由文本仍不展示，普通 `apps.qq_bot --connect` 的 `/问AI` 仍是 AI_DISABLED。[当前阶段与证据边界](deep-dive/BOT_STAGE_SUMMARY.md)。
+此前用户报告FAST端到端成功；随后人工收到BOT-3D-1完整A/B/C，但中断导致QQ最终报告缺失。本次修复仅离线复验，历史Backend trace和客户端人工观察不能补造API接受回执。模型自由文本仍不展示，普通`apps.qq_bot --connect`的`/问AI`仍是AI_DISABLED。[阶段总结](deep-dive/BOT_STAGE_SUMMARY.md)、[本次报告修复与指纹](deep-dive/BOT3D1_RESULT_REPORTING.md)。
 
 原 FAST 的 5 项 Fake QQ 失败已在 BOT-REGRESSION-1 最小修复：不改真实期限，成功路径按任务合同观察，合并同次复核的重复 Scope 构建。[完整结果与诊断](deep-dive/BOT_REGRESSION1_FAST_STABILITY.md)。FAST 实现指纹已变，以前的计划/批准和 Provider 前置回执不可复用，真实实验必须重新生成并审批。
 

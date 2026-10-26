@@ -77,6 +77,8 @@ function Invoke-BotNative([string]$Python, [string[]]$Arguments, [switch]$Approv
                     switch -CaseSensitive ($item['code']) {
                         'QQ_GATEWAY_READY' { Write-Host 'QQ 已连接；等待授权成员的测试消息。' }
                         'QQ_REPLY_ACCEPTED' { Write-Host 'QQ API 已接受回复；请在客户端确认显示。' }
+                        'QQ_REPLY_API_ACCEPTED' { Write-Host 'QQ API 已接受 AI 回复；请在客户端确认显示。' }
+                        'QQ_TRIAL_DELIVERY_CHECKPOINT_SAVED' { Write-Host '本轮交付状态已保存；会话结束时还将保存最终报告。' }
                         'QQ_STOPPED' { Write-Host 'QQ 会话已停止。' }
                     }
                 }
@@ -100,6 +102,26 @@ function Invoke-BotChecked([string]$Python, [string[]]$Arguments, [switch]$Appro
 function Confirm-BotNetwork([string]$Word, [string]$Description) {
     if ((Read-Host ($Description + '；继续请输入 ' + $Word)) -cne $Word) {
         Stop-BotWorkflow 'WORKFLOW_OPERATOR_CANCELLED'
+    }
+}
+
+function Copy-BotReportSummary($Summary, $Report, [string]$Kind) {
+    # Project only safe status fields. Disk report, not the last progress line,
+    # is authoritative after a completed native invocation.
+    foreach ($key in @('model_requests','model_text_displayed','explanation_contract','explanation_code',
+        'explanation_validated','stop_reason','backend_completed','report_error')) {
+        if ($Report.Contains($key)) { $Summary[$key] = $Report[$key] }
+    }
+    if ($Report['usage']) {
+        $Summary['usage'] = @{ input_tokens = $Report['usage']['input_tokens']; output_tokens = $Report['usage']['output_tokens'] }
+    }
+    if ($Report['sdk_resources']) {
+        $r = $Report['sdk_resources']
+        $Summary['sdk_resources'] = @{ state = $r['state']; thread_exited = $r['thread_exited']; local_io_closed = $r['local_io_closed']; cleanup_error = $r['cleanup_error'] }
+    }
+    $Summary['api_accepted'] = $false
+    if ($Kind -eq 'qqai') {
+        $Summary.api_accepted = @($Report['delivery'] | Where-Object { $_['state'] -ceq 'DELIVERED' -and $_['api_accepted'] -eq $true }).Count -gt 0
     }
 }
 
@@ -194,7 +216,7 @@ function Invoke-BotTestWorkflow {
             Write-Host ('Preset {0} / 模型 {1}；SIMULATOR；实例 {2} / 设备 {3}' -f $summary.preset_id, $summary.model, $plan['instance_id'], $plan['device_id'])
             Write-Host ('群/成员摘要 {0}/{1}；有效至 {2}' -f $summary.group_tag, $summary.member_tag, $summary.expires_at)
             Write-Host ('1 Turn / 最多 2 模型请求 / 每次输出 512 tokens / 90s；费用上限 {0} CNY，预留 {1} CNY' -f $summary.max_cost_cny, $summary.reservation_cny)
-            Write-Host '模型自由文本不展示；SDK 线程无法保证强制退出，远端计算/计费是否停止未知。'
+            Write-Host '仅展示通过封闭合同的AI解释要点，原始模型正文不展示；SDK线程无法保证强制退出，远端计算/计费是否停止未知。'
             if (-not $Run) { $summary.status = 'PLAN_READY_NO_APPROVAL_NO_NETWORK' }
             else {
                 Confirm-BotNetwork 'QWEN' '批准本次真实 Qwen 网络请求及模拟观测数据披露（仍须下一步逐项审批）'
@@ -209,37 +231,83 @@ function Invoke-BotTestWorkflow {
                 $approvedArgs = @('--approval', $approvalPath, '--approval-sha256', $digest, '--confirm-instance-read')
                 [void](Invoke-BotChecked $python ($trialArgs + '--check' + $approvedArgs))
                 $summary['approval'] = $approvalPath; $summary['result'] = $resultPath
+                $summary['delivery_checkpoint'] = Join-Path $directory 'result.delivery.json'
+                $summary['report_saved'] = $false
+                $summary['native_exit_code'] = $null
+                $summary.status = 'RUNNING'
                 $execute = $trialArgs + @('--run-' + $phase) + $approvedArgs +
                     @('--output', $resultPath, '--confirm-provider-network')
                 if ($Kind -eq 'qqai') { $execute += @('--confirm-qq-network', '--run-seconds', [string]$RunSeconds) }
                 $ran = Invoke-BotNative $python $execute
-                $report = $ran.Record
-                # Strict allowlist: do not copy arbitrary report/model/message fields.
-                $summary['model_requests'] = $report['model_requests']
-                $summary['model_text_displayed'] = $report['model_text_displayed']
-                if ($report['usage']) {
-                    $summary['usage'] = @{ input_tokens = $report['usage']['input_tokens']; output_tokens = $report['usage']['output_tokens'] }
+                $summary.native_exit_code = $ran.ExitCode
+                $summary['native_final_code'] = $ran.Record['code']
+                if ($ran.Record['code'] -ceq 'TRIAL_RESULT_WRITE_FAILED') {
+                    $summary.status = 'REPORT_WRITE_FAILED'
+                    Stop-BotWorkflow 'TRIAL_RESULT_WRITE_FAILED'
                 }
-                if ($report['sdk_resources']) {
-                    $r = $report['sdk_resources']
-                    $summary['sdk_resources'] = @{ state = $r['state']; thread_exited = $r['thread_exited']; local_io_closed = $r['local_io_closed']; cleanup_error = $r['cleanup_error'] }
+                if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
+                    if ($ran.ExitCode -ne 0) { Stop-BotWorkflow ([string]$ran.Record['code']) }
+                    Stop-BotWorkflow 'WORKFLOW_RESULT_MISSING'
                 }
-                $summary['api_accepted'] = $false
-                if ($Kind -eq 'qqai') {
-                    $summary.api_accepted = @($report['delivery'] | Where-Object { $_['state'] -ceq 'DELIVERED' -and $_['api_accepted'] -eq $true }).Count -gt 0
+                $report = Read-BotJson $resultPath
+                if ($ran.Record['report_saved'] -ne $true -or $report['code'] -cne $ran.Record['code'] -or
+                    $report['scope_sha256'] -cne $plan['scope_sha256'] -or $report['phase'] -cne $phase -or
+                    $report['completed'] -ne $ran.Record['completed']) { Stop-BotWorkflow 'WORKFLOW_RESULT_MISMATCH' }
+                $summary.report_saved = $true
+                Copy-BotReportSummary $summary $report $Kind
+                if ($ran.ExitCode -ne 0) {
+                    if ($Kind -eq 'qqai' -and $summary.api_accepted) {
+                        $summary.status = if ($report['code'] -ceq 'QWEN_TRIAL_CANCELLED') {
+                            'QQ_API_ACCEPTED_SESSION_CANCELLED' } else { 'QQ_API_ACCEPTED_SESSION_FAILED' }
+                    }
+                    Stop-BotWorkflow ([string]$report['code'])
                 }
-                if ($ran.ExitCode -ne 0) { Stop-BotWorkflow ([string]$report['code']) }
-                if ($report['completed'] -ne $true) { Stop-BotWorkflow 'WORKFLOW_NOT_COMPLETED_NO_RETRY' }
+                $expectedCode = if ($Kind -eq 'provider') { 'QWEN_PROVIDER_TRIAL_VERIFIED' } else { 'QWEN_QQ_TRIAL_STOPPED' }
+                if ($report['code'] -cne $expectedCode) { Stop-BotWorkflow 'WORKFLOW_RESULT_MISMATCH' }
+                if ($report['completed'] -ne $true) {
+                    if ($Kind -eq 'qqai' -and @($report['delivery'] | Where-Object { $_['state'] -ceq 'DELIVERY_UNKNOWN' }).Count -gt 0) {
+                        $summary.status = 'QQ_DELIVERY_UNKNOWN_NO_RETRY'
+                    }
+                    Stop-BotWorkflow 'WORKFLOW_NOT_COMPLETED_NO_RETRY'
+                }
                 $summary.status = if ($Kind -eq 'provider') { 'PROVIDER_VERIFIED' } else { 'QQ_API_ACCEPTED_CHECK_CLIENT' }
+                if ($Kind -eq 'provider' -and $report['explanation_validated'] -ne $true) {
+                    $summary.status = 'PROVIDER_VERIFIED_FACTS_ONLY_QQ_NOT_READY'
+                    Write-Host '模型与工具调用已完成，但解释合同未通过，仅保留可信事实；此报告不能用于QQ AI阶段。'
+                }
             }
         }
         $exitCode = 0
+    } catch [System.Management.Automation.PipelineStoppedException] {
+        $summary.status = 'INTERRUPTED_REPORT_UNCONFIRMED'
+        $summary['code'] = 'WORKFLOW_INTERRUPTED_NO_RETRY'
     } catch {
         $code = $_.Exception.Message
         if ($code -cnotmatch '^[A-Z0-9_]{1,80}$') { $code = 'WORKFLOW_STOPPED' }
         $summary['code'] = $code
+        if ($summary.status -in @('STOPPED','RUNNING')) { $summary.status = 'FAILED' }
         Write-Host ('已停止：' + $code + '。不自动重试、不清理或复用批准。')
     } finally {
+        # PowerShell may interrupt a native pipeline before it returns a value.
+        # A create-only delivery checkpoint can survive that interruption; it
+        # does not manufacture the missing final result or client confirmation.
+        if ($summary.status -eq 'RUNNING') { $summary.status = 'INTERRUPTED_REPORT_UNCONFIRMED' }
+        if ($summary.Contains('delivery_checkpoint') -and $Kind -eq 'qqai') {
+            try {
+                if (Test-Path -LiteralPath $summary.delivery_checkpoint -PathType Leaf) {
+                    $checkpoint = Read-BotJson $summary.delivery_checkpoint
+                    if ($checkpoint['contract'] -ceq 'qq-trial-delivery-checkpoint@1' -and
+                        $checkpoint['scope_sha256'] -ceq $summary.scope_sha256 -and $checkpoint['phase'] -ceq 'qq') {
+                        $summary['delivery_checkpoint_saved'] = $true
+                        $summary['checkpoint_api_accepted'] = $checkpoint['receipt']['api_accepted'] -eq $true
+                        $summary['checkpoint_delivery_state'] = $checkpoint['receipt']['status']
+                        if ($summary.status -eq 'INTERRUPTED_REPORT_UNCONFIRMED') {
+                            $summary.status = 'INTERRUPTED_CHECKPOINT_SAVED_CHECK_CLIENT'
+                        }
+                    }
+                }
+            } catch { $summary['checkpoint_check_code'] = 'WORKFLOW_CHECKPOINT_UNCONFIRMED' }
+        }
         if ($directory) {
             try { Write-BotJsonNew (Join-Path $directory 'summary.json') $summary }
             catch { $exitCode = 1; Write-Host '摘要保存失败；请保留本次目录，停止后续操作。' }

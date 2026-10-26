@@ -27,6 +27,7 @@ from .runtime.sources import SourceRequirement
 from .contracts import PreparedAssistantTurn
 from .channel import (ChannelAuthorization, ChannelAssistantResult, OfflineChannelProvider,
                       SourceSummary, candidate_decision)
+from .channel_presentation import QQ_PROMPT_ID,QQ_SYSTEM_INSTRUCTION
 from .business_tools.current_water_quality import CURRENT_WATER_QUALITY
 from apps.ai_backend.tools import ToolDefinition
 from apps.ai_backend.tool_conversation import ToolExecutionMode
@@ -404,7 +405,9 @@ class ManagementAssistantService:
                 coordinator = ToolCallingService(gateway, registry, traces, policy=policy,
                     execution_mode=mode,model_transport=decision.model_transport)
                 result = AssistantService(coordinator,execution_mode=mode,
-                    history_projection=DEFAULT_HISTORY_PROJECTION).send(turn, runtime)
+                    history_projection=DEFAULT_HISTORY_PROJECTION,
+                    single_round_prompt=(QQ_PROMPT_ID,QQ_SYSTEM_INSTRUCTION) if authorization is not None else None
+                    ).send(turn, runtime)
                 if authorization is not None:
                     self._check_channel(authorization,prepared.policy_revision)
                     summary=(SourceSummary.from_result(result,authorization)

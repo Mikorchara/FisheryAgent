@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from apps.ai_backend.model_gateway import GatewayError
-from apps.ai_service.channel_presentation import assess_explanation,render_channel_reply
+from apps.ai_service.channel_presentation import assess_explanation,render_channel_reply,QQ_PROMPT_ID
 from apps.ai_service.channel_scope import candidate_record,check_candidate,monitoring_trial_scope
 from apps.qq_bot.ai_preflight import prepared_scope,readiness_report
 from apps.qq_bot.ai_routing import OfflineGatewayAPI,OfflineQQAIRouter
@@ -34,7 +34,7 @@ class PreparationTests(unittest.TestCase):
         scope=prepared_scope()
         self.assertIsNone(scope['data_bindings']['knowledge'])
         self.assertEqual(scope['runtime']['tools'],['get_current_water_quality'])
-        self.assertEqual(scope['runtime']['prompt_id'],'ASSISTANT_V2@1')
+        self.assertEqual(scope['runtime']['prompt_id'],QQ_PROMPT_ID)
         self.assertEqual(scope['runtime']['identity'][3],'qwen3.8-flash')
         self.assertEqual(scope['execution']['model_requests'],2)
         self.assertFalse(scope['execution']['history']);self.assertEqual(scope['execution']['retries'],0)
@@ -253,8 +253,10 @@ class RoutingAndPresentationTests(unittest.TestCase):
         from apps.ai_service.channel_presentation import ExplanationAssessment
         result=replace(self.result(),model_text='PRIVATE_UNVERIFIED_MODEL_PROSE')
         with patch('apps.ai_service.channel_presentation.assess_explanation',return_value=ExplanationAssessment('fake',True)):
-            text,_=render_channel_reply(result)
+            text,assessment=render_channel_reply(result)
         self.assertNotIn('PRIVATE_UNVERIFIED',text)
+        self.assertFalse(assessment.allowed)
+        self.assertEqual(assessment.code,'EXPLANATION_CONTRACT_INVALID')
 
     def test_source_actions_and_stale_normality_conflicts_are_diagnostic_only(self):
         source=self.result().source

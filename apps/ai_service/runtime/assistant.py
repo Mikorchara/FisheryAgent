@@ -226,7 +226,8 @@ class AssistantService:
     def __init__(self, coordinator: ToolCallingService, *,
                  history_projection: ProjectionId = DEFAULT_HISTORY_PROJECTION,
                  execution_mode: ToolExecutionMode = ToolExecutionMode.SINGLE_ROUND,
-                 turn_timeout_s: float | None = None):
+                 turn_timeout_s: float | None = None,
+                 single_round_prompt: tuple[str,str] | None = None):
         if coordinator.policy.mode != "assistant":
             raise AssistantError()
         if (not isinstance(execution_mode, ToolExecutionMode)
@@ -238,13 +239,21 @@ class AssistantService:
             raise AssistantError("INVALID_TURN_TIMEOUT")
         if not isinstance(history_projection, ProjectionId):
             raise AssistantError("INVALID_HISTORY_PROJECTION")
+        if single_round_prompt is not None and (
+                execution_mode!=ToolExecutionMode.SINGLE_ROUND or type(single_round_prompt) is not tuple
+                or len(single_round_prompt)!=2 or any(type(v) is not str or not v.strip() for v in single_round_prompt)
+                or not re.fullmatch('[A-Z0-9_@.-]{1,96}',single_round_prompt[0])
+                or len(single_round_prompt[1].encode('utf-8'))>8192):
+            raise AssistantError('INVALID_ASSISTANT_PROMPT')
         self.coordinator = coordinator
         self._history_projection = history_projection
         self._execution_mode = execution_mode
         self._turn_timeout_s = turn_timeout_s
+        self._single_round_prompt = single_round_prompt
 
     @property
     def prompt_id(self):
+        if self._single_round_prompt is not None:return self._single_round_prompt[0]
         return (MULTI_ROUND_PROMPT_ID if self._execution_mode == ToolExecutionMode.BOUNDED_MULTI_ROUND
                 else SINGLE_ROUND_PROMPT_ID)
 
@@ -270,6 +279,10 @@ class AssistantService:
         builder = AssistantContextBuilder()
         native = (builder.build(request) if self._execution_mode == ToolExecutionMode.SINGLE_ROUND else
                   builder.build(request, execution_mode=self._execution_mode))
+        if self._single_round_prompt is not None:
+            # Server-owned channel instruction, never a request/Tool parameter.
+            native=replace(native,model_request=replace(native.model_request,messages=(
+                ModelMessage('system',self._single_round_prompt[1]),*native.model_request.messages[1:])))
         context, _ = project_retained_history(request, native, self._history_projection)
         handle = current_handle()
         run = self.coordinator.run_request(context.model_request, runtime,

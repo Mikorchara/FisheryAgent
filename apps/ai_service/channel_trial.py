@@ -20,12 +20,13 @@ from apps.ai_backend.sdk_resources import SDK_RESOURCES
 from apps.ai_backend.tool_conversation import ToolExecutionMode
 from .channel import ChannelBudget
 from .channel_scope import monitoring_trial_scope
+from .channel_presentation import EXPLANATION_CONTRACT
 from .execution import ExecutionDecision
 from .runtime.assistant import assistant_profile
 from .runtime.release_contracts import AssistantExecutionProfile, _hash
 
 
-TRIAL_CONTRACT='qq-qwen-current-local-trial@1'
+TRIAL_CONTRACT='qq-qwen-current-explanation-trial@1'
 PRESET='dashscope-qwen38-flash-r1'
 PRICE_URL='https://help.aliyun.com/zh/model-studio/model-pricing'
 MODEL_URL='https://help.aliyun.com/zh/model-studio/qwen3-8-flash'
@@ -73,7 +74,8 @@ def fast_trial_scope(profile,policy,registry):
             'output_tokens_per_request':512,'model_requests':2,'max_turns':1,
             'max_request_bytes':MAX_REQUEST_BYTES,'reservation_cny':str(cost_reservation()),
             'price_url':PRICE_URL,'model_url':MODEL_URL},
-        presentation='TRUSTED_FACTS_ONLY_UNVERIFIED_MODEL_TEXT_WITHHELD',
+        presentation={'contract':EXPLANATION_CONTRACT,'raw_model_text':'NEVER',
+            'mode':'SOURCE_BOUND_TEMPLATE_PLAN','general_fact_verifier':False},
         isolation='EXISTING_THREAD_RESOURCE_GATE_HARD_EXIT_NOT_GUARANTEED')
 
 

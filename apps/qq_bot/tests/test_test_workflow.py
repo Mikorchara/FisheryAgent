@@ -172,17 +172,39 @@ function Invoke-BotNative([string]$Python,[string[]]$Arguments,[switch]$Approval
     if ($mode -eq '--approve') { $record['approval_sha256']='b'*64 }
     if ($mode -in @('--run-provider','--run-qq')) {
         $record=@{code='QWEN_PROVIDER_TRIAL_VERIFIED';completed=$true;model_requests=2;model_text_displayed=$false;
+            phase='provider';scope_sha256=('a'*64);
+            explanation_contract='qq-water-explanation@1';explanation_code='EXPLANATION_CONTRACT_VALID';explanation_validated=$true;
             raw_model_text='MODEL_TEXT_SENTINEL';secret='FAKE_KEY_SENTINEL';usage=@{input_tokens=80;output_tokens=10};
             sdk_resources=@{state='CLOSED';thread_exited=$true;local_io_closed=$true;cleanup_error=$null}}
+        if (__FAIL__ -eq 'explanation') { $record['explanation_validated']=$false; $record['explanation_code']='EXPLANATION_CONTRACT_INVALID' }
         if ($mode -eq '--run-qq') {
+            $record['phase']='qq';$record['code']='QWEN_QQ_TRIAL_STOPPED'
             $record['delivery']=@(@{state='DELIVERED';api_accepted=$true})
             if (__FAIL__ -eq 'unknown') { $record['delivery']=@(@{state='DELIVERY_UNKNOWN';api_accepted=$false}); $record['completed']=$false }
+            if (__FAIL__ -eq 'cancelled') { $record['code']='QWEN_TRIAL_CANCELLED' }
         }
+        $out=$Arguments[[Array]::IndexOf($Arguments,'--output')+1]
+        if (__FAIL__ -eq 'pipeline_interrupt') {
+            Write-BotJsonNew (Join-Path ([IO.Path]::GetDirectoryName($out)) 'result.delivery.json') @{
+                contract='qq-trial-delivery-checkpoint@1';phase='qq';scope_sha256=('a'*64);
+                receipt=@{status='DELIVERED';api_accepted=$true};client_display_confirmed=$false;automatic_retry=$false}
+            Write-BotJsonNew __CALLS__ @{commands=$script:commands.ToArray();confirmations=$script:confirmations.ToArray()}
+            throw [System.Management.Automation.PipelineStoppedException]::new()
+        }
+        if (__FAIL__ -eq 'write_failure') { return @{ExitCode=1;Record=@{code='TRIAL_RESULT_WRITE_FAILED';report_saved=$false};Codes=@('TRIAL_RESULT_WRITE_FAILED')} }
+        if (__FAIL__ -eq 'progress_only') { return @{ExitCode=0;Record=@{code='QQ_STOPPED'};Codes=@('QQ_REPLY_API_ACCEPTED','QQ_STOPPED')} }
+        if (__FAIL__ -ne 'missing_result') {
+            $file=$record.Clone()
+            if (__FAIL__ -eq 'mismatch') { $file['scope_sha256']='c'*64 }
+            Write-BotJsonNew $out $file
+        }
+        $record['report_saved']=$true
+        if (__FAIL__ -eq 'cancelled') { return @{ExitCode=1;Record=$record;Codes=@('QWEN_TRIAL_CANCELLED')} }
     }
     return @{ExitCode=0;Record=$record;Codes=@('OK')}
 }
 $rc=Invoke-BotTestWorkflow -Kind __KIND__ -ProjectRoot __ROOT__ __RUN__ -AccessFile __ACCESS__ -MonitoringConfig __SOURCE__ -AIConfig __AI__ -PolicyDirectory __POLICY__ -ProviderReport __PREREQ__ -ReportRoot __REPORTS__
-Write-BotJsonNew __CALLS__ @{commands=$script:commands.ToArray();confirmations=$script:confirmations.ToArray()}
+if (-not (Test-Path -LiteralPath __CALLS__)) { Write-BotJsonNew __CALLS__ @{commands=$script:commands.ToArray();confirmations=$script:confirmations.ToArray()} }
 exit $rc
 '''
         values = {'COMMON': DEV / 'qq_bot_test_common.ps1', 'CONFIRM': confirmation, 'FAIL': fail,
@@ -243,6 +265,62 @@ exit $rc
         summary = self.summary()
         self.assertTrue(summary['api_accepted'])
         self.assertFalse(summary['client_display_confirmed'])
+        self.assertTrue(summary['report_saved']);self.assertEqual(summary['native_exit_code'],0)
+        self.assertTrue(Path(summary['result']).is_file())
+
+    def test_progress_or_stdout_success_without_result_file_is_not_success(self):
+        for failure in ('missing_result','progress_only'):
+            self.reports=self.root/('reports-'+failure)
+            result,trace=self.fake_workflow(kind='qqai',fail=failure)
+            self.assertNotEqual(result.returncode,0)
+            self.assertEqual(trace['commands'].count('--run-qq'),1)
+            summary=self.summary()
+            self.assertEqual(summary['code'],'WORKFLOW_RESULT_MISSING')
+            self.assertFalse(summary['report_saved']);self.assertFalse(Path(summary['result']).exists())
+
+    def test_disk_stdout_mismatch_stops_without_retry(self):
+        result,trace=self.fake_workflow(kind='qqai',fail='mismatch')
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual(self.summary()['code'],'WORKFLOW_RESULT_MISMATCH')
+        self.assertEqual(trace['commands'].count('--run-qq'),1)
+
+    def test_handled_stop_keeps_api_acceptance_separate_from_native_exit(self):
+        result,trace=self.fake_workflow(kind='qqai',fail='cancelled')
+        self.assertNotEqual(result.returncode,0)
+        summary=self.summary()
+        self.assertEqual(summary['status'],'QQ_API_ACCEPTED_SESSION_CANCELLED')
+        self.assertTrue(summary['report_saved']);self.assertTrue(summary['api_accepted'])
+        self.assertFalse(summary['client_display_confirmed']);self.assertEqual(summary['native_exit_code'],1)
+        self.assertEqual(trace['commands'].count('--run-qq'),1)
+
+    def test_report_write_failure_is_explicit_without_repeating_run(self):
+        result,trace=self.fake_workflow(kind='qqai',fail='write_failure')
+        self.assertNotEqual(result.returncode,0)
+        summary=self.summary()
+        self.assertEqual(summary['status'],'REPORT_WRITE_FAILED')
+        self.assertEqual(summary['code'],'TRIAL_RESULT_WRITE_FAILED');self.assertFalse(summary['report_saved'])
+        self.assertEqual(trace['commands'].count('--run-qq'),1)
+
+    def test_pipeline_interruption_retains_checkpoint_without_fabricating_result(self):
+        result,trace=self.fake_workflow(kind='qqai',fail='pipeline_interrupt')
+        # PowerShell can unwind a stopped pipeline with host exit 0, skipping
+        # the script's explicit exit. The durable status must still deny success.
+        summary=self.summary()
+        self.assertEqual(summary['status'],'INTERRUPTED_CHECKPOINT_SAVED_CHECK_CLIENT')
+        self.assertTrue(summary['delivery_checkpoint_saved']);self.assertTrue(summary['checkpoint_api_accepted'])
+        self.assertFalse(summary['report_saved']);self.assertFalse(Path(summary['result']).exists())
+        self.assertFalse(summary['client_display_confirmed'])
+        self.assertEqual(trace['commands'].count('--run-qq'),1);self.assert_safe(result.stdout+json.dumps(summary))
+
+    def test_provider_facts_fallback_is_not_qq_explanation_prerequisite(self):
+        result,trace=self.fake_workflow(fail='explanation')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        summary=self.summary()
+        self.assertEqual(summary['status'],'PROVIDER_VERIFIED_FACTS_ONLY_QQ_NOT_READY')
+        self.assertFalse(summary['explanation_validated'])
+        self.assertEqual(trace['commands'].count('--run-provider'),1)
+        self.assertNotIn('--run-qq',trace['commands'])
+        self.assert_safe(result.stdout+json.dumps(summary))
 
     def test_native_capture_is_bounded_and_hides_non_json_diagnostics(self):
         child = self.root / 'synthetic-child.py'

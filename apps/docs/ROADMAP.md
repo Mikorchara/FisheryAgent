@@ -4,6 +4,10 @@
 
 ## 已实现
 
+- 2026-10-26 BOT-3D-1报告修复：处理中断/失败停止报告、提前保存交付快照、PS核实result；Bot308项、完整901 Python / 116 Node通过。历史记录只读取证、不补造或重跑；FAST指纹变化，后续新试用须重新审批。[调查与验证](deep-dive/BOT3D1_RESULT_REPORTING.md)。
+
+- 2026-10-26 BOT-3D-1：封闭JSON解释计划→同轮来源校验→固定中文，失效退回事实；不新增模型请求/工具。v3 candidate与FAST指纹更新，887 Python / 116 Node、Bot 294项通过；旧批准不可复用，真实Qwen/QQ待另批。[合同与验收](deep-dive/BOT3D1_BOUNDED_EXPLANATION.md)。
+
 - 2026-10-26 BOT-CLEANUP-1：移除4份 SDK 进程隔离草稿及6项暂停测试，历史设计保留；两个Scope/资源门禁不变，868 Python / 116 Node通过，离线Wheel及导入检查通过。[清理与验证](deep-dive/BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。
 
 - 2026-10-25 BOT-REGRESSION-1：修复 FAST 5s观察/Gateway夹具和同次Scope构建，90s预算/失效门禁保持；五项三轮、Bot 275/Web 78专项及完整874 Python / 116 Node通过，[结果与新Scope](deep-dive/BOT_REGRESSION1_FAST_STABILITY.md)。不复用旧FAST批准，暂停SDK草稿仍保留。

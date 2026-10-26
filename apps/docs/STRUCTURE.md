@@ -43,6 +43,7 @@ apps/
 │     ├─ test_ai_coordinator.py                                          # Fake单轮、权限失效、同轮来源、注入与旧功能隔离
 │     ├─ test_ai_scheduler.py                                            # 有界并发/期限/I/O取消/单次交付及线程回收
 │     ├─ test_ai_preparation.py                                          # 独立Scope、统一Gateway离线装配、展示与真实门禁拒绝
+│     ├─ test_explanation.py                                             # 封闭解释合同、同轮事实引用、缺测/过期/注入/长度降级
 │     ├─ test_qwen_trial.py                                              # 独立审批、真实SDK内存HTTP、Fake QQ、预算与取消
 │     ├─ test_test_workflow.py                                           # PowerShell 7薄入口、合成实例、审批失败/期限/单次交付及脱敏
 │     ├─ test_provider_sdk_preparation.py                                # 真实SDK+内存HTTP的取消/期限/编码/零重试
@@ -154,7 +155,7 @@ apps/
 │  ├─ channel.py                                                         # 内部渠道授权、离线candidate、Fake Provider与SourceSummary
 │  ├─ channel_scope.py                                                   # 独立真实试用Scope构造与维护者candidate检查
 │  ├─ channel_trial.py                                                   # 独立限时Qwen试用合同、费用预算、原SDK Adapter子类
-│  ├─ channel_presentation.py                                            # 来源事实/解释分区、有限矛盾诊断，正文仍拒绝展示
+│  ├─ channel_presentation.py                                            # QQ封闭解释计划、来源校验与中文模板；原始模型正文不展示
 │  ├─ content_binding.py                                                 # 动态知识源的精确本地 Scope 变体，不继承旧真实资格
 │  ├─ execution.py                                                       # Normal 多轮发布、数据绑定、Scope 与确认 revision
 │  ├─ history_execution.py                                               # 历史单工具Scope、1024预算与独立试用门禁

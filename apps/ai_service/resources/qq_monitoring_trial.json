@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "release_id": "qq-monitoring-normal-trial-v2",
+  "release_id": "qq-monitoring-normal-trial-v3",
   "status": "candidate",
   "scope": {
-    "contract": "qq-monitoring-normal-trial@2",
+    "contract": "qq-monitoring-normal-trial@3",
     "runtime": {
       "preset_id": "dashscope-qwen38-flash-r1",
       "preset_variant": "off",
@@ -25,8 +25,8 @@
       },
       "thinking": "off",
       "response_mode": "normal",
-      "prompt_id": "ASSISTANT_V2@1",
-      "prompt_sha256": "4452b6353dd3a20d34e0c2d741601ebdcfb155427e49245dcf48ac64ed8b60e8",
+      "prompt_id": "QQ_CURRENT_EXPLANATION@1",
+      "prompt_sha256": "044201297306e245f6a1f07bd9481a59f5cc1fb8d22b5c8bf82f083c5e3fd101",
       "history_projection": "UNTRUSTED_TRANSCRIPT_V1",
       "history_version": "1",
       "tools": [
@@ -73,9 +73,15 @@
       "httpx_version": "0.28.1"
     },
     "source_requirement": "CURRENT_OBSERVATION_QUERY",
-    "presentation": "qq-current-facts-withheld-explanation@1"
+    "presentation": {
+      "contract": "qq-current-facts-bounded-explanation@1",
+      "output_contract": "qq-water-explanation@1",
+      "source_sha256": "49758653fb026192bd44ab869f22374308236c95b61c90ab05d03b4c823c5b2c",
+      "raw_model_text": "NEVER",
+      "general_fact_verifier": false
+    }
   },
-  "scope_sha256": "af2ddb61aacd36e4706b381781974d92dd031bd1e3b6ed2f650607e3bee2e23d",
+  "scope_sha256": "2d89b74fe451f793c09e21fff90dc624d9fd2ee34a02c393284f2e61066350be",
   "qualification_id": null,
   "validated_at": null,
   "trial_approval_id": null

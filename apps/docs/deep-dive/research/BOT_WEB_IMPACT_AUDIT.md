@@ -1,5 +1,7 @@
 # BOT 共享模块、Web 兼容性与清理审计
 
+2026-10-26 后续：[BOT-3D-1](../BOT3D1_BOUNDED_EXPLANATION.md)增加服务端内部单轮Prompt注入点，仅渠道授权装配传入；默认Web单轮/多轮Prompt、公开DTO、工具循环及SDK门禁均未改。90项Web相关定向回归通过；真实Web联网/长稳态本轮未测，不能据离线通过声称全部运行场景无影响。本页以下内容保留原BOT审计依据。
+
 2026-10-26 后续：BOT-CLEANUP-1 已按本页建议删除四个暂停草稿及专用测试，保留 SDK 资源门禁和历史设计；本页第3节记录清理前证据，不是当前文件清单。[清理与验证](../BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。
 
 后续状态：原 FAST 5 项失败已由 [BOT-REGRESSION-1](../BOT_REGRESSION1_FAST_STABILITY.md) 定位和最小修复；本页保留前次审计的失败数据与风险分析，当前测试结果及 Scope 以修复报告为准。

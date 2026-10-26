@@ -4,9 +4,11 @@
 
 ## 阅读入口
 
+- [BOT-3D-1 QQ停止与报告缺失修复](deep-dive/BOT3D1_RESULT_REPORTING.md)（Ctrl+C路径、提前保存交付快照、核实result文件；用户客户端确认与程序状态分开，不重跑历史实验）
+- [BOT-3D-1 受限解释与可信展示](deep-dive/BOT3D1_BOUNDED_EXPLANATION.md)（模型选择要点、程序核对同轮来源并生成中文；原始正文不展示，新Scope需重新审批）
 - [BOT-CLEANUP-1 草稿清理与验证](deep-dive/BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)（移除4份暂停源码和6项专用测试；保留资源门禁，两个Scope不变）
 - [BOT-REGRESSION-1 FAST 稳定性修复](deep-dive/BOT_REGRESSION1_FAST_STABILITY.md)（5s夹具/断言误入重连、同次Scope构建3→1；保留90s预算与权限时间边界，新Scope需重新审批）
-- [BOT 当前阶段总结](deep-dive/BOT_STAGE_SUMMARY.md)（用户报告 FAST 真实端到端验收通过；模型自由文本仍不展示，普通 QQ CLI 仍禁用 AI）
+- [BOT 当前阶段总结](deep-dive/BOT_STAGE_SUMMARY.md)（FAST历史真实验收与本轮受限解释分开；普通QQ CLI仍禁用AI）
 - [BOT Web 影响与清理审计](deep-dive/research/BOT_WEB_IMPACT_AUDIT.md)（共享 SDK 行为变化、兼容性证据、暂停草稿与后续同步边界）
 - [QQ / Qwen 简化验收入口](deep-dive/BOT_TEST_WORKFLOW.md)（PowerShell 7；默认不联网，原审批和单次消费保留）
 - [BOT-3C-FAST Qwen单轮试用准备](deep-dive/BOT3C_FAST_QWEN_TRIAL.md)（阶段实施记录与原 CLI；当前验收状态见上方总结）

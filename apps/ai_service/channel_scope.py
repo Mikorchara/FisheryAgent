@@ -9,8 +9,7 @@ from apps.ai_backend.model_gateway import GatewayError
 from apps.ai_backend.sdk_resources import RESOURCE_CONTRACT
 from .business_tools.current_water_quality import CURRENT_WATER_QUALITY, WATER_TOOL_PROJECTION
 from .channel import ChannelBudget
-from .channel_presentation import PRESENTATION_CONTRACT
-from .runtime.assistant import SINGLE_ROUND_PROMPT_ID, SYSTEM_INSTRUCTION
+from .channel_presentation import PRESENTATION_CONTRACT,EXPLANATION_CONTRACT,QQ_PROMPT_ID,QQ_SYSTEM_INSTRUCTION
 from .runtime.release_contracts import _hash, release_scope
 
 
@@ -20,11 +19,11 @@ def monitoring_trial_scope(profile,policy,registry,*,budget=ChannelBudget()):
             or profile.default_response_mode!='normal' or profile.default_reasoning.mode.value!='off'):
         raise GatewayError('INVALID_QQ_MONITORING_TRIAL_SCOPE')
     runtime=release_scope(profile,policy,registry,DEFAULT_HISTORY_PROJECTION)
-    runtime.update(prompt_id=SINGLE_ROUND_PROMPT_ID,prompt_sha256=_hash(SYSTEM_INSTRUCTION))
+    runtime.update(prompt_id=QQ_PROMPT_ID,prompt_sha256=_hash(QQ_SYSTEM_INSTRUCTION))
     adapter=Path(__file__).parents[1]/'ai_backend/openai_compatible_adapter.py'
     resources=adapter.with_name('sdk_resources.py')
     execution=adapter.with_name('execution.py')
-    return dict(contract='qq-monitoring-normal-trial@2',runtime=runtime,
+    return dict(contract='qq-monitoring-normal-trial@3',runtime=runtime,
         data_bindings={'water':WATER_TOOL_PROJECTION,'knowledge':None,'sources':['simulator']},
         execution={'mode':'SINGLE_ROUND','model_requests':2,'tool_calls':1,'tool_rounds':1,
             'history':False,'streaming':False,'retries':0,'budget':asdict(budget),
@@ -36,11 +35,14 @@ def monitoring_trial_scope(profile,policy,registry,*,budget=ChannelBudget()):
             'resources_sha256':hashlib.sha256(resources.read_bytes()).hexdigest(),
             'execution_sha256':hashlib.sha256(execution.read_bytes()).hexdigest(),
             'openai_version':version('openai'),'httpx_version':version('httpx')},
-        source_requirement='CURRENT_OBSERVATION_QUERY',presentation=PRESENTATION_CONTRACT)
+        source_requirement='CURRENT_OBSERVATION_QUERY',presentation={
+            'contract':PRESENTATION_CONTRACT,'output_contract':EXPLANATION_CONTRACT,
+            'source_sha256':hashlib.sha256(adapter.parents[1].joinpath('ai_service/channel_presentation.py').read_bytes()).hexdigest(),
+            'raw_model_text':'NEVER','general_fact_verifier':False})
 
 
 def candidate_record(scope):
-    return dict(schema_version=1,release_id='qq-monitoring-normal-trial-v2',status='candidate',
+    return dict(schema_version=1,release_id='qq-monitoring-normal-trial-v3',status='candidate',
         scope=scope,scope_sha256=_hash(scope),qualification_id=None,validated_at=None,trial_approval_id=None)
 
 

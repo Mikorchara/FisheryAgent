@@ -3,12 +3,14 @@ from collections import deque
 from dataclasses import asdict, dataclass, field
 from typing import Callable
 import threading
+import math
+import re
 
 from apps.ai_backend.model_gateway import GatewayError, ModelResponse
 from apps.ai_backend.tool_conversation import ToolExecutionStep, ToolExecutionMode
 from apps.monitoring.contracts import METRICS
 from .business_tools.current_water_quality import CURRENT_WATER_QUALITY, WATER_TOOL_PROJECTION
-from .runtime.assistant import SINGLE_ROUND_PROMPT_ID, SYSTEM_INSTRUCTION
+from .channel_presentation import QQ_PROMPT_ID,QQ_SYSTEM_INSTRUCTION,PRESENTATION_CONTRACT
 from .runtime.release_contracts import _hash, release_scope, AssistantExecutionProfile
 from .runtime.sources import SourceRequirement
 from .execution import ExecutionDecision
@@ -88,12 +90,12 @@ def candidate_decision(profile,policy,registry,*,device_id,epoch,policy_revision
                        authorization=None):
     """A new current-only composition, with no fabricated Knowledge or qualification."""
     scope=release_scope(profile,policy,registry,DEFAULT_HISTORY_PROJECTION)
-    scope.update(prompt_id=SINGLE_ROUND_PROMPT_ID,prompt_sha256=_hash(SYSTEM_INSTRUCTION))
+    scope.update(prompt_id=QQ_PROMPT_ID,prompt_sha256=_hash(QQ_SYSTEM_INSTRUCTION))
     contract=dict(version='channel-current-offline@1',runtime=scope,
         data_bindings={'water':WATER_TOOL_PROJECTION,'knowledge':None},
         device_id=device_id,epoch=epoch,policy_revision=policy_revision,
         environment='OFFLINE_FAKE_ONLY',requirement=SourceRequirement.CURRENT_OBSERVATION_QUERY.value,
-        history=[],budget={'tool_calls':1,'tool_rounds':1,'model_requests':2})
+        history=[],budget={'tool_calls':1,'tool_rounds':1,'model_requests':2},presentation=PRESENTATION_CONTRACT)
     if authorization:
         contract.update(binding_revision=authorization.binding_revision,
             permission_revision=authorization.permission_revision,budget_limits=asdict(authorization.budget))
@@ -111,6 +113,13 @@ class SourceMetric:
 
 
 @dataclass(frozen=True)
+class SourceRule:
+    code: str
+    severity: str
+    message: str
+
+
+@dataclass(frozen=True)
 class SourceSummary:
     instance_id: str
     device_id: str
@@ -124,6 +133,7 @@ class SourceSummary:
     connectivity: str
     metrics: tuple[SourceMetric, ...]
     current_evidence_usable: bool
+    rule_hits: tuple[SourceRule,...] = ()
 
     @classmethod
     def from_result(cls,result,authorization):
@@ -143,10 +153,17 @@ class SourceSummary:
             payload.get('metrics',{}).get(key,{}).get('quality','missing'))
             for key,(_label,unit,_low,_high) in METRICS.items())
         usable=(quality['quality']=='valid' and quality['freshness']=='fresh'
-                and quality['connectivity']=='online' and payload['status']=='OK')
+                and quality['connectivity']=='online' and payload['status']=='OK'
+                and all(m.quality=='valid' and type(m.value) in (float,int) and math.isfinite(m.value) for m in metrics))
+        hits=tuple(SourceRule(f['code'],f['severity'],f['message']) for f in payload.get('findings',())
+            if f.get('kind')=='WATER_RISK' and f.get('state')=='HIT')
+        if (len(hits)>3 or len({f.code for f in hits})!=len(hits)
+                or any(not re.fullmatch('[A-Z0-9_]{1,64}',f.code) or type(f.message) is not str
+                    or not 1<=len(f.message)<=160 for f in hits)):
+            raise GatewayError('CHANNEL_SOURCE_INVALID')
         return cls(authorization.instance_id,authorization.device_id,payload['source_kind'],payload['status'],
             water.get('observed_at'),water.get('retrieved_at'),payload['evaluated_at'],quality['quality'],
-            quality['freshness'],quality['connectivity'],metrics,usable)
+            quality['freshness'],quality['connectivity'],metrics,usable,hits)
 
     def presentation(self):
         lines=[f'本轮只读事实 · {self.instance_id} · {self.device_id} · SIMULATOR',
@@ -158,7 +175,9 @@ class SourceSummary:
         for metric in self.metrics:
             value=metric.value if metric.quality=='valid' and metric.value is not None else '数据不足'
             lines.append(f'{METRICS[metric.id][0]}：{value} {metric.unit}（{metric.quality}）')
-        lines.append('合成观测仅用于测试；查询不等于重新采样。模型自由文本尚未核验，不作为本阶段可发送答复。')
+        for finding in self.rule_hits:
+            lines.append(f'业务规则命中 {finding.code}：{finding.message}（{finding.severity}，本地实验）')
+        lines.append('合成观测仅用于测试；查询不等于重新采样。模型自由文本尚未核验，不直接展示；解释另经合同校验。')
         return '\n'.join(lines)
 
 

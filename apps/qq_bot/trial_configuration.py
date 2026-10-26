@@ -16,6 +16,7 @@ from apps.ai_service.business_tools.current_water_quality import WATER_DEFINITIO
 from apps.ai_service.channel import ChannelBudget
 from apps.ai_service.channel_trial import (QwenTrialApproval,TRIAL_CONTRACT,PRESET,PRICE_URL,
     cost_reservation,fast_trial_scope,money)
+from apps.ai_service.channel_presentation import EXPLANATION_CONTRACT
 from apps.ai_service.runtime.assistant import assistant_profile
 from apps.ai_service.runtime.release_contracts import _hash
 from apps.ai_service.runtime.policy import UserToolPolicyStore
@@ -115,6 +116,9 @@ def prerequisite_valid(value,expected_scope,bindings):
             or value.get('scope_sha256')!=expected_scope or value.get('bindings_sha256')!=bindings
             or value.get('completed') is not True or value.get('model_requests')!=2
             or value.get('model_text_displayed') is not False
+            or value.get('explanation_contract')!=EXPLANATION_CONTRACT
+            or value.get('explanation_validated') is not True
+            or value.get('explanation_code')!='EXPLANATION_CONTRACT_VALID'
             or value.get('sdk_resources',{}).get('state')!='CLOSED'
             or value.get('sdk_resources',{}).get('thread_exited') is not True
             or value.get('sdk_resources',{}).get('local_io_closed') is not True
@@ -153,7 +157,7 @@ _PLAN_KEYS={'schema_version','contract','status','phase','created_at','expires_a
     'scope_sha256','bindings_sha256','instance_id','device_id','app_id','max_cost_cny','price_reviewed_at',
     'pricing_region','prerequisite','qualification_id'}
 _CONSENTS={'provider_and_cost','simulator_data_disclosure','sdk_thread_hard_exit_risk',
-    'beijing_price_and_context_confirmed','local_operator_only'}
+    'beijing_price_and_context_confirmed','local_operator_only','bounded_explanation_display'}
 
 
 def validate_record(value,*,approved=False,clock=None):
