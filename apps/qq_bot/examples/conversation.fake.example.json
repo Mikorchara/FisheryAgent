@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "trigger_mode": "command",
+  "memory_enabled": false,
+  "max_turns": 6,
+  "idle_seconds": 900,
+  "max_sessions": 64,
+  "session_bytes": 24576,
+  "total_bytes": 1048576,
+  "projection_bytes": 4096
+}

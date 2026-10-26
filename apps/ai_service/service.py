@@ -28,6 +28,8 @@ from .contracts import PreparedAssistantTurn
 from .channel import (ChannelAuthorization, ChannelAssistantResult, OfflineChannelProvider,
                       SourceSummary, candidate_decision)
 from .channel_presentation import QQ_PROMPT_ID,QQ_SYSTEM_INSTRUCTION
+from .channel_conversation import (ChannelHistoryAuthority,ChannelHistorySnapshot,conversation_decision,
+    PROMPT_ID as DIALOGUE_PROMPT_ID,INSTRUCTION as DIALOGUE_INSTRUCTION)
 from .business_tools.current_water_quality import CURRENT_WATER_QUALITY
 from apps.ai_backend.tools import ToolDefinition
 from apps.ai_backend.tool_conversation import ToolExecutionMode
@@ -71,6 +73,7 @@ class ManagementAssistantService:
                 or offline_channel_provider is not None or knowledge is not None):
             raise GatewayError('INVALID_QWEN_TRIAL_COMPOSITION')
         self._channel_trial=channel_trial
+        self._channel_history_authority=None
         self.knowledge = knowledge
         from apps.knowledge.service import KnowledgeContentService
         if isinstance(self.knowledge,KnowledgeContentService):
@@ -275,7 +278,21 @@ class ManagementAssistantService:
                 handle.cancel()
             raise GatewayError('CHANNEL_AUTHORIZATION_CHANGED') from None
 
-    def prepare_channel_turn(self, question, authorization):
+    def bind_offline_conversations(self,authority):
+        if (type(authority) is not ChannelHistoryAuthority or self._channel_trial is not None
+                or type(self._offline_channel_provider) is not OfflineChannelProvider
+                or self._channel_history_authority not in (None,authority)):
+            raise GatewayError('QQ_CONVERSATION_FAKE_ONLY')
+        self._channel_history_authority=authority
+
+    def _history_decision(self,profile,policy,registry,authorization,snapshot,policy_revision):
+        if (type(snapshot) is not ChannelHistorySnapshot or snapshot.authority is not self._channel_history_authority
+                or self._channel_trial is not None or type(self._offline_channel_provider) is not OfflineChannelProvider):
+            raise GatewayError('QQ_CONVERSATION_FAKE_ONLY')
+        return conversation_decision(profile,policy,registry,authorization,snapshot,
+            epoch=self.epoch,policy_revision=policy_revision)
+
+    def prepare_channel_turn(self, question, authorization, *, history_snapshot=None):
         """Server API: exact Fake provider or separately approved one-turn Qwen trial."""
         if type(authorization) is not ChannelAuthorization:
             raise GatewayError('INVALID_CHANNEL_AUTHORIZATION')
@@ -300,14 +317,16 @@ class ManagementAssistantService:
             return result
         registry=ToolRegistry((ToolDefinition(entry.model_definition,guarded_water),))
         profile=assistant_profile(authorization.preset_id)
-        decision=(self._channel_trial.decision(profile,policy,registry,authorization,
+        decision=(self._history_decision(profile,policy,registry,authorization,history_snapshot,snapshot.revision)
+            if history_snapshot is not None else self._channel_trial.decision(profile,policy,registry,authorization,
             epoch=self.epoch,policy_revision=snapshot.revision) if self._channel_trial is not None else
             candidate_decision(profile,policy,registry,device_id=authorization.device_id,
                 epoch=self.epoch,policy_revision=snapshot.revision,authorization=authorization))
-        request=AssistantRequest(authorization.preset_id,question,(),
+        if history_snapshot is not None and question!=history_snapshot.question:raise GatewayError('INVALID_CHANNEL_HISTORY')
+        request=AssistantRequest(authorization.preset_id,question,history_snapshot.history if history_snapshot else (),
                                  source_requirement=SourceRequirement.CURRENT_OBSERVATION_QUERY)
         return PreparedAssistantTurn(request,authorization.device_id,self.epoch,profile,policy,registry,
-                                     decision,snapshot.revision,snapshot.source,authorization)
+                                     decision,snapshot.revision,snapshot.source,authorization,history_snapshot)
 
     def execute_channel_turn(self,prepared,handle):
         if not isinstance(prepared,PreparedAssistantTurn) or prepared.channel_authorization is None:
@@ -319,14 +338,18 @@ class ManagementAssistantService:
             raise GatewayError('CHANNEL_AUTHORIZATION_REQUIRED')
         authorization=prepared.channel_authorization
         self._check_channel(authorization,prepared.policy_revision)
-        expected=(self._channel_trial.decision(prepared.profile,prepared.policy,prepared.registry,authorization,
+        history=prepared.channel_history
+        expected=(self._history_decision(prepared.profile,prepared.policy,prepared.registry,authorization,history,prepared.policy_revision)
+            if history is not None else self._channel_trial.decision(prepared.profile,prepared.policy,prepared.registry,authorization,
             epoch=self.epoch,policy_revision=prepared.policy_revision) if self._channel_trial is not None else
             candidate_decision(prepared.profile,prepared.policy,prepared.registry,
                 device_id=prepared.device_id,epoch=self.epoch,policy_revision=prepared.policy_revision,
                 authorization=authorization))
         if (prepared.execution!=expected or prepared.profile!=assistant_profile(authorization.preset_id)
                 or prepared.device_id!=authorization.device_id
-                or prepared.request.preset_id!=authorization.preset_id or prepared.request.history
+                or prepared.request.preset_id!=authorization.preset_id
+                or (prepared.request.history if history is None else
+                    prepared.request.history!=history.history or prepared.request.question!=history.question)
                 or prepared.request.source_requirement!=SourceRequirement.CURRENT_OBSERVATION_QUERY
                 or prepared.registry.registered_names()!=(CURRENT_WATER_QUALITY,)
                 or prepared.policy.exposed_tools!=(CURRENT_WATER_QUALITY,)):
@@ -343,7 +366,8 @@ class ManagementAssistantService:
             if ((self._channel_trial is None and type(self._offline_channel_provider) is not OfflineChannelProvider)
                     or prepared.execution.profile.release_status!=('local_experimental' if self._channel_trial else 'candidate')
                     or prepared.execution.profile.mode!=ToolExecutionMode.SINGLE_ROUND
-                    or prepared.request.history or prepared.policy.exposed_tools!=(CURRENT_WATER_QUALITY,)):
+                    or (prepared.request.history and prepared.channel_history is None)
+                    or prepared.policy.exposed_tools!=(CURRENT_WATER_QUALITY,)):
                 raise GatewayError('INVALID_CHANNEL_CANDIDATE')
         current = self.management_policy.snapshot()
         if (current.source == 'MANAGEMENT_OVERRIDE' or prepared.policy_source == 'MANAGEMENT_OVERRIDE') \
@@ -406,7 +430,8 @@ class ManagementAssistantService:
                     execution_mode=mode,model_transport=decision.model_transport)
                 result = AssistantService(coordinator,execution_mode=mode,
                     history_projection=DEFAULT_HISTORY_PROJECTION,
-                    single_round_prompt=(QQ_PROMPT_ID,QQ_SYSTEM_INSTRUCTION) if authorization is not None else None
+                    single_round_prompt=((DIALOGUE_PROMPT_ID,DIALOGUE_INSTRUCTION) if prepared.channel_history else
+                        (QQ_PROMPT_ID,QQ_SYSTEM_INSTRUCTION)) if authorization is not None else None
                     ).send(turn, runtime)
                 if authorization is not None:
                     self._check_channel(authorization,prepared.policy_revision)

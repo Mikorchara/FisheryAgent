@@ -13,6 +13,7 @@ from apps.monitoring.service import MonitoringService
 from apps.ai_backend.tools.registry import ToolRegistry
 from .execution import ExecutionDecision
 from .channel import ChannelAuthorization
+from .channel_conversation import ChannelHistorySnapshot
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ class PreparedAssistantTurn:
     policy_revision: str | None = field(default=None, repr=False)
     policy_source: str | None = field(default=None, repr=False)
     channel_authorization: ChannelAuthorization | None = field(default=None, repr=False)
+    channel_history: ChannelHistorySnapshot | None = field(default=None, repr=False)
 
 
 class AssistantBackend(Protocol):

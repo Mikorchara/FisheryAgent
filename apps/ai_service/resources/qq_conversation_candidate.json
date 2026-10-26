@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "status": "candidate",
+  "environment": "OFFLINE_FAKE_ONLY",
+  "scope": {
+    "contract": "qq-conversation-fake@1",
+    "environment": "OFFLINE_FAKE_ONLY",
+    "runtime": {
+      "preset_id": "dashscope-qwen38-flash-r1",
+      "preset_variant": "off",
+      "contract_version": "1.0.2",
+      "identity": [
+        "dashscope",
+        "openai_chat",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "qwen3.8-flash"
+      ],
+      "protocol_spec": {
+        "spec_id": "dashscope_chat",
+        "version": "1",
+        "max_output_tokens_field": "max_tokens",
+        "thinking_encoding": "enable_thinking",
+        "effort_field": "reasoning_effort",
+        "stream_field": "stream",
+        "usage_options_field": "stream_options"
+      },
+      "thinking": "off",
+      "response_mode": "normal",
+      "prompt_id": "QQ_CURRENT_DIALOGUE@1",
+      "prompt_sha256": "e4f710db295f949a08f17745685c8cfc15d4fb0622de40a44f4b25918dde50e5",
+      "history_projection": "UNTRUSTED_TRANSCRIPT_V1",
+      "history_version": "1",
+      "tools": [
+        "get_current_water_quality"
+      ],
+      "tool_definitions_sha256": "d54f8935a103602673149f7e7078bfd197b4c282a734984254938424d3996e28"
+    },
+    "conversation": {
+      "trigger_mode": "mention_ai",
+      "memory_enabled": true,
+      "max_turns": 6,
+      "idle_seconds": 900,
+      "max_sessions": 64,
+      "session_bytes": 24576,
+      "total_bytes": 1048576,
+      "projection_bytes": 4096
+    },
+    "execution": {
+      "mode": "SINGLE_ROUND",
+      "tool_calls": 1,
+      "tool_rounds": 1,
+      "model_requests": 2,
+      "max_output_tokens": 512,
+      "turn_timeout_s": 90,
+      "retries": 0
+    },
+    "history_projection": "UNTRUSTED_TRANSCRIPT_V1",
+    "source_requirement": "CURRENT_OBSERVATION_QUERY",
+    "output_contract": "qq-water-explanation@1",
+    "commit": "API_ACCEPTED_SAFE_TEXT_CAS@1",
+    "raw_user_history": false,
+    "raw_model_text": false,
+    "implementation": {
+      "ai_service/channel_conversation.py": "921eccb92eb5806628c972d0b1fb795d26035ed75e08ddd5219e467907ca7f1f",
+      "ai_service/service.py": "cb14b9a036c542db6b893f4ea432910d1978287d5b1847377d9950fcf92b3dfd",
+      "ai_service/contracts.py": "51cc7fcbc2be5a5e8e28a8be914edbe5a73cad39119581b2716a34c15da0f8c9",
+      "ai_service/channel.py": "bd65e1eb2c9adaab80db76908fa72e673138d941ec83f97051ce942937da921b",
+      "ai_service/channel_presentation.py": "49758653fb026192bd44ab869f22374308236c95b61c90ab05d03b4c823c5b2c",
+      "ai_service/runtime/assistant.py": "10f02295724d4ec68a596fb4b07dfe9b5ef75f95cbe08792e5cdbfcfa402a49d",
+      "ai_service/business_tools/current_water_quality.py": "79c935778a27eba4ae4c4f57f697b9018b6216d1a41ae8eadb9b8f3500efc368",
+      "ai_backend/history_projection.py": "33b2abacd670d4f0a6777d7aaf7a2dc639c58d914c44fb2bfd87d44c887f658b",
+      "ai_backend/openai_compatible_adapter.py": "0ed6e0eac5be9f69965e55593309a94fad97d3614ecb91af4be9cde4e91cce46",
+      "ai_backend/execution.py": "d62aba2a43ccbcf04abc10d9c507292fdc16bcc16d55e16255973ffe4d1e4d41",
+      "ai_backend/sdk_resources.py": "251dea3a275cfce89b27e15aa794005dfa3a714d4d0555f3fc3232fe4e1bfe74",
+      "qq_bot/conversations.py": "b19876736fefa8a1befa0c1ebb7ef11009e7de097fa7adb50ed76089c8a39c7c",
+      "qq_bot/intent.py": "59d9be47eb33d6be7a4f0c2c801038e25bd72a6737d0f888346c798fe96eb407",
+      "qq_bot/ai_coordinator.py": "15a8771db090364fe5266b1f214f6d758f803ada6034e28e632b67aaeda75e08",
+      "qq_bot/ai_configuration.py": "2d0f88c71bde102ee9e7b5d5c731fd04ce58f78349e2fd8ef5eb936877a2a96f",
+      "qq_bot/ai_routing.py": "3f5e86650ececfe9c96323fc4fd0ccfd813c5973f8ab9a38fd1ebc519f38d0c6",
+      "qq_bot/gateway.py": "de21f4905e2edb597571ade088d9214181c029b444fb79c0ccd02a4513d85740",
+      "qq_bot/ai_delivery.py": "d076863ea6bb3d1dc7a71b0bf84e01d63640209e64c6a84772d9c50dc420c6b6",
+      "qq_bot/ai_scheduler.py": "fef8b25f7cca695ed90285942935c49257b349a330f25c9909331692626cd2e0"
+    }
+  },
+  "scope_sha256": "4f17f63e7678c133890c1a6a73f4ba9793e18275637f3013eede4f3e7e8f6e88",
+  "qualification_id": null,
+  "can_execute_real": false,
+  "can_deliver_real": false
+}

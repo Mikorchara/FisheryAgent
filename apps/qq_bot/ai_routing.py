@@ -7,6 +7,9 @@ from .ai_scheduler import QQAIJobScheduler
 from .adapter import QQAdapter
 from .configuration import app_identifier
 from .contracts import BotError,decode
+from .intent import classify,GatewayMention
+from .ai_delivery import OfflineQQGateway
+from apps.ai_backend.model_gateway import GatewayError
 
 
 class OfflineGatewayAPI:
@@ -28,17 +31,44 @@ class OfflineQQAIRouter:
         self._closed=threading.Event()
         self._revoked=set()
         self._ingress=QQAdapter(adapter.config,None,clock=self.owner.clock)
+        if self.coordinator.conversations is not None and type(scheduler.gateway) is not OfflineQQGateway:
+            raise BotError('QQ_CONVERSATION_FAKE_ONLY')
 
-    def receive(self,raw,*,transport_app_id):
+    def bind_gateway(self,owner):
+        if self.coordinator._mention_owner not in (None,owner):raise BotError('QQ_GATEWAY_ALREADY_BOUND')
+        self.coordinator._mention_owner=owner
+
+    def mention_context(self,raw,owner,message):
+        import hashlib
+        if self.coordinator._mention_owner is not owner:raise BotError('AI_AUTHENTICATED_MENTION_REQUIRED')
+        return GatewayMention(owner,self.adapter.config.app_id,message.message_id,hashlib.sha256(raw).hexdigest())
+
+    def receive(self,raw,*,transport_app_id,mention=None):
         outcome=self._ingress.admit_offline(raw,transport_app_id=transport_app_id,
-            operation=lambda _message,_access:self._receive(raw,transport_app_id=transport_app_id))
+            operation=lambda _message,_access:self._receive(raw,transport_app_id=transport_app_id,mention=mention))
         return outcome if isinstance(outcome,tuple) else (outcome.code,None)
 
-    def _receive(self,raw,*,transport_app_id):
+    def _receive(self,raw,*,transport_app_id,mention=None):
         message=decode(raw)
         if message.group_id in self._revoked:return 'GROUP_DENIED',None
-        if message.content.split(maxsplit=1)[0]=='/问AI':
-            try:return 'AI_ADMITTED',self.scheduler.submit(raw,transport_app_id=transport_app_id)
+        head=message.content.split(maxsplit=1)[0];store=self.coordinator.conversations
+        ai=head=='/问AI'
+        if store is not None:
+            fixed=classify(message.content).kind=='fixed' and not ai
+            unknown_slash=message.content.startswith('/') and head not in ('/问AI','/清空会话') and not fixed
+            if not fixed and not unknown_slash and (ai or head=='/清空会话' or store.options.trigger_mode=='mention_ai'):
+                try:
+                    if not ai and head!='/清空会话':self.coordinator.validate_mention(raw,message,mention,transport_app_id)
+                    key,topic=self.coordinator.conversation_context(message)
+                    text=(message.content.split(maxsplit=1)[1] if len(message.content.split(maxsplit=1))==2 else '') if ai else message.content
+                    intent=classify(text,topic=topic,command_priority=not ai)
+                    if intent.kind=='clear':
+                        key=self.coordinator.clear_conversation(message);self.scheduler.cancel_conversation(key)
+                    if intent.kind!='water':return self._fixed(message,transport_app_id,intent.text,ai_key=key)
+                    ai=True
+                except (BotError,GatewayError) as error:return error.code,None
+        if ai:
+            try:return 'AI_ADMITTED',self.scheduler.submit(raw,transport_app_id=transport_app_id,mention=mention)
             except BotError as error:
                 # Only explicit AI-authorized users get safe busy/disabled errors.
                 # Replays, identity denial and transport failures are never replied to twice.
@@ -55,7 +85,7 @@ class OfflineQQAIRouter:
         if result.reply is None:return result.code,None
         return self._fixed(message,transport_app_id,result.reply.content)
 
-    def _fixed(self,message,app_id,text):
+    def _fixed(self,message,app_id,text,*,ai_key=None):
         access=self.adapter.config
         def validate():
             if self._closed.is_set():raise BotError('AI_CANCELLED')
@@ -68,6 +98,8 @@ class OfflineQQAIRouter:
             if message.group_id in self._revoked:raise BotError('AI_NOT_AUTHORIZED')
             if not 0<=(self.owner.clock()-message.timestamp).total_seconds()<285:
                 raise BotError('AI_REPLY_EXPIRED')
+            if ai_key is not None and self.coordinator.conversation_context(message)[0]!=ai_key:
+                raise BotError('CHANNEL_AUTHORIZATION_CHANGED')
         context=QQAIMessageContext(app_id,message.group_id,message.member_id,message.message_id,
             message.timestamp,0,'')  # Fixed commands never acquire an AI execution plan.
         receipt=self.owner.send(context,text,self._closed,validate)
@@ -85,7 +117,10 @@ class OfflineQQAIRouter:
         self.adapter.config=access
         self._ingress.config=access
     def close(self):
-        self._closed.set();self.scheduler.close()
+        self._closed.set()
+        try:self.scheduler.close()
+        finally:
+            if self.coordinator.conversations is not None:self.coordinator.conversations.close()
 
 
 class TrialQQAIRouter(OfflineQQAIRouter):

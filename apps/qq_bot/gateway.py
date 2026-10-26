@@ -105,18 +105,21 @@ class QQGateway:
         self._session, self._seq, self._bot_id = None, None, None
         self._discovered, self._revoked = set(), set()
         self._deadline = 0
+        self._dispatch_context=threading.local()
+        if self.router is not None and self.router.coordinator.conversations is not None:self.router.bind_gateway(self)
 
     def _work(self):
         while not self.stop.is_set():
             try:
-                raw, message = self._queue.get(timeout=.2)
+                item = self._queue.get(timeout=.2)
+                raw,message=item[:2];mention=item[2] if len(item)==3 else None
             except Empty:
                 continue
             try:
                 if self.stop.is_set() or message.group_id in self._revoked:
                     continue
                 if self.router is not None:
-                    code,_result=self.router.receive(raw,transport_app_id=self.app_id)
+                    code,_result=self.router.receive(raw,transport_app_id=self.app_id,mention=mention)
                     self.emit(code)
                     continue  # Router owns ALL replies; never also call api.reply.
                 result = self.adapter.receive(raw, transport_app_id=self.app_id)
@@ -153,11 +156,20 @@ class QQGateway:
             if message.group_id in self._revoked:
                 self.emit('QQ_GROUP_REMOVED')
                 return
-            self._queue.put_nowait((raw, message))
+            mention=None
+            if (self.router is not None and self.router.coordinator.conversations is not None
+                    and getattr(self._dispatch_context,'authenticated',False)):
+                mention=self.router.mention_context(raw,self,message)
+            self._queue.put_nowait((raw, message,mention))
         except Full:
             self.emit('QQ_QUEUE_FULL')
         except BotError as error:
             self.emit(error.code)
+
+    def _dispatch_authenticated(self,packet):
+        self._dispatch_context.authenticated=True
+        try:self._dispatch(packet)
+        finally:self._dispatch_context.authenticated=False
 
     def _pump(self, ws, guard=None):
         def arm(deadline, code):
@@ -243,7 +255,7 @@ class QQGateway:
                 # Official Resume replays missed Dispatch frames BEFORE RESUMED.
                 # Only a connection with an existing authenticated session may do this.
                 elif (ready or resuming) and (self._seq is None or seq > self._seq):
-                    self._dispatch(packet)
+                    self._dispatch_authenticated(packet)
                     self._seq = seq
                 elif not (ready or resuming):
                     raise BotError('QQ_EVENT_BEFORE_AUTH')

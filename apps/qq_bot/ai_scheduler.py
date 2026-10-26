@@ -60,12 +60,12 @@ class QQAIJobScheduler:
     def __enter__(self):return self
     def __exit__(self,*args):self.close()
 
-    def submit(self, raw, *, transport_app_id):
+    def submit(self, raw, *, transport_app_id,mention=None):
         with self._cv:
             if self._stopping:raise BotError('AI_SCHEDULER_STOPPED')
             if self._resource_fault:raise BotError('AI_RESOURCE_QUARANTINED')
             if not self.gateway.connected:raise BotError('AI_GATEWAY_DISCONNECTED')
-            plan=self.coordinator.prepare(raw,transport_app_id=transport_app_id)
+            plan=self.coordinator.prepare(raw,transport_app_id=transport_app_id,mention=mention)
             if (len(self._jobs)>=3 or sum(j.state=='QUEUED' for j in self._jobs.values())>=2):
                 self.coordinator.discard(plan);raise BotError('BUSY')
             if any(j.plan.context.session_key==plan.context.session_key for j in self._jobs.values()):
@@ -108,6 +108,12 @@ class QQAIJobScheduler:
         with self._cv:
             values=tuple(self._acceptances);self._acceptances.clear();return values
 
+    def cancel_conversation(self,key):
+        with self._cv:
+            ids=tuple(j.plan.id for j in self._jobs.values() if j.plan.prepared.channel_history is not None
+                and j.plan.prepared.channel_history.identity==key.identity)
+        for task_id in ids:self.cancel(task_id)
+
     def _finish(self, job, state, code):
         # Caller owns the condition. Execution/delivery must already have returned.
         task_id=job.plan.id
@@ -118,6 +124,7 @@ class QQAIJobScheduler:
             info.update(explanation_code=receipt.explanation_code,
                         explanation_in_payload=receipt.explanation_in_payload)
         if receipt and receipt.report_error is not None:info['report_error']=receipt.report_error
+        if receipt and receipt.history_code is not None:info['history_code']=receipt.history_code
         if job.plan.handle.resource_info() is not None:
             info['sdk_resources']=job.plan.handle.resource_info()
             self._finished_resources[task_id]=job.plan.handle._sdk_resource

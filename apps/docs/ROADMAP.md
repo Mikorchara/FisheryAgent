@@ -4,6 +4,9 @@
 
 ## 已实现
 
+- 2026-10-26 BOT-3D-2B：获批实现Fake-only Mention、6Turn/15分钟有界RAM、可信历史快照和API接受后提交；专项51、Bot359、完整952 Python / 116 Node通过。真实多轮仍关闭，FAST须新审批。[实现与2C前置条件](deep-dive/BOT3D2B_MENTION_CONVERSATIONS.md)。
+- 2026-10-26 BOT-3D-2A调查完成：13边界探针、217项相关回归通过；经用户批准后进入上述离线2B，逐Turn真实许可留2C。[设计、证据与分步计划](deep-dive/research/BOT3D2A_MENTION_CONVERSATION_DESIGN.md)。
+
 - 2026-10-26 BOT-3D-1报告修复：处理中断/失败停止报告、提前保存交付快照、PS核实result；Bot308项、完整901 Python / 116 Node通过。历史记录只读取证、不补造或重跑；FAST指纹变化，后续新试用须重新审批。[调查与验证](deep-dive/BOT3D1_RESULT_REPORTING.md)。
 
 - 2026-10-26 BOT-3D-1：封闭JSON解释计划→同轮来源校验→固定中文，失效退回事实；不新增模型请求/工具。v3 candidate与FAST指纹更新，887 Python / 116 Node、Bot 294项通过；旧批准不可复用，真实Qwen/QQ待另批。[合同与验收](deep-dive/BOT3D1_BOUNDED_EXPLANATION.md)。

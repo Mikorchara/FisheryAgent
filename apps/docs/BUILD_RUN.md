@@ -6,6 +6,8 @@ EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 �
 
 ### BOT 日常验收（PowerShell 7）
 
+BOT-3D-2B已完成Fake-only Mention/记忆装配；普通QQ入口仍默认AI_DISABLED，没有真实Mention AI或多Turn启动参数。离线复验：`.\.venv\Scripts\python.exe -X utf8 -B -m unittest apps.qq_bot.tests.test_conversations apps.qq_bot.tests.test_mention_conversation -v`。[配置、预算、交付与后续2C](deep-dive/BOT3D2B_MENTION_CONVERSATIONS.md)。不要给旧试用批准自行增加history或Turn数；本轮FAST指纹变化，旧批准和Provider回执不授权新代码。
+
 QQ试用收到回复后优先等待`run-seconds`自动结束，确认最终`result.json`存在且`summary.json`中`report_saved=true`。中断报告缺失已补充处理，新增单次`result.delivery.json`交付快照；Ctrl+C/关窗仍不能承诺最终报告必定写完。[根因、状态和历史取证](deep-dive/BOT3D1_RESULT_REPORTING.md)。
 
 BOT-3D-1已实现受限中文解释：Qwen选择要点，程序按同轮可信来源渲染；不放行原始正文。新v3 candidate及FAST Scope需要重新计划、审批和Provider回执，旧真实实验不授权新代码。[解释合同、失败降级与人工验收](deep-dive/BOT3D1_BOUNDED_EXPLANATION.md)。

@@ -29,6 +29,7 @@ class DeliveryReceipt:
     explanation_code: str | None = None
     explanation_in_payload: bool = False
     report_error: str | None = None
+    history_code: str | None = None
 
 
 class OfflineQQGateway:
@@ -160,4 +161,5 @@ class DeliveryOwner:
                 # Persistence cannot undo a submitted/accepted reply. Preserve
                 # its actual delivery state; never resend to repair a report.
                 receipt=replace(receipt,report_error='TRIAL_DELIVERY_CHECKPOINT_FAILED')
-        return receipt
+        history_code=self.coordinator.accept_delivery(plan,result,text,receipt,cancelled)
+        return replace(receipt,history_code=history_code) if history_code is not None else receipt

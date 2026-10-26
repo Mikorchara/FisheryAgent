@@ -57,7 +57,8 @@ def fast_trial_scope(profile,policy,registry):
     scope=monitoring_trial_scope(profile,policy,registry,budget=ChannelBudget())
     root=Path(__file__).parents[1]
     paths=('ai_service/channel_trial.py','ai_service/service.py','ai_service/channel.py',
-        'ai_service/channel_presentation.py','qq_bot/trial.py','qq_bot/trial_configuration.py',
+        'ai_service/channel_presentation.py','ai_service/channel_conversation.py','ai_service/contracts.py',
+        'qq_bot/conversations.py','qq_bot/intent.py','qq_bot/trial.py','qq_bot/trial_configuration.py',
         'qq_bot/ai_trial_delivery.py','qq_bot/ai_coordinator.py','qq_bot/ai_scheduler.py',
         'qq_bot/ai_delivery.py','qq_bot/ai_routing.py','qq_bot/gateway.py','qq_bot/transport.py',
         'qq_bot/monitoring_source.py','qq_bot/ai_configuration.py','qq_bot/adapter.py',

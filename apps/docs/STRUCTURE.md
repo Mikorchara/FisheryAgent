@@ -16,6 +16,8 @@ apps/
 │  ├─ ai_trial_delivery.py                                              # 试用QQAPI传输及最终发送前权限检查
 │  ├─ monitoring_source.py                                              # 严格本机实例配置、设备白名单、只读装配与安全错误
 │  ├─ ai_configuration.py                                              # 独立AI许可与预算，默认关闭，当前工具白名单
+│  ├─ conversations.py                                                 # Fake-only有界RAM、完整身份键、历史快照与交付后提交
+│  ├─ intent.py                                                        # 确定性意图、程序答复及认证Mention内部凭证
 │  ├─ ai_coordinator.py                                                # 离线准入/执行/权限复核，冻结消息上下文与单次claim
 │  ├─ ai_scheduler.py                                                  # 一个AI/一个交付/一个监督线程；1执行2等待及取消
 │  ├─ ai_delivery.py                                                   # 单次提交owner与精确MockTransport，接受/拒绝/未知
@@ -27,6 +29,7 @@ apps/
 │  ├─ examples/access.example.json                                      # 虚构App/群/成员白名单模板，不含凭据
 │  ├─ examples/monitoring.example.json                                  # 指定实例模板；占位符须人工填写，不自动选择业务数据
 │  ├─ examples/ai.example.json                                          # 默认关闭的离线AI候选配置，不含密钥
+│  ├─ examples/conversation.fake.example.json                           # 独立Fake会话配置；默认Command/无记忆，非真实CLI参数
 │  ├─ examples/real-trial.request.example.json                           # 人工申请清单，非运行配置，不可直接启用AI
 │  ├─ contracts.py                                                      # 不可变群/成员/设备能力配置及受限消息解析
 │  ├─ adapter.py                                                        # 时效、去重、限频、会话计数和容量/并发拒绝
@@ -41,6 +44,8 @@ apps/
 │     ├─ test_configuration_cli.py                                      # 私有Store路由、CLI安全与临时实例
 │     ├─ test_monitoring_source.py                                      # 隔离实例只读查询、权限、事件语义、预算与Fake装配
 │     ├─ test_ai_coordinator.py                                          # Fake单轮、权限失效、同轮来源、注入与旧功能隔离
+│     ├─ test_conversations.py                                          # RAM限额/过期/身份隔离/清空代次与候选Scope
+│     ├─ test_mention_conversation.py                                   # Fake认证Gateway两轮、每轮查询、交付CAS与失败隔离
 │     ├─ test_ai_scheduler.py                                            # 有界并发/期限/I/O取消/单次交付及线程回收
 │     ├─ test_ai_preparation.py                                          # 独立Scope、统一Gateway离线装配、展示与真实门禁拒绝
 │     ├─ test_explanation.py                                             # 封闭解释合同、同轮事实引用、缺测/过期/注入/长度降级
@@ -104,6 +109,7 @@ apps/
 │  ├─ resources/                                                         # 固定包内业务资源
 │  │  ├─ assistant_execution.json                                        # Qwen/Ollama 独立本地实验 Scope，默认关闭
 │  │  ├─ qq_monitoring_trial.json                                        # 真实Monitoring-only试用candidate指纹，无真实授权
+│  │  ├─ qq_conversation_candidate.json                                  # Mention+记忆Fake-only candidate，无真实执行/交付资格
 │  │  ├─ assistant_normal_candidate.json                                 # Qwen Normal 三工具精确 candidate，未开放
 │  │  ├─ assistant_unified_tools.json                                    # 独立Normal/Streaming三工具本地许可与显式授权子集
 │  │  ├─ water_history_candidate.json                                    # 历史单工具local_experimental，默认关闭
@@ -154,6 +160,7 @@ apps/
 │  ├─ contracts.py                                                       # 进程内 PreparedAssistantTurn 与 AssistantBackend 合同
 │  ├─ channel.py                                                         # 内部渠道授权、离线candidate、Fake Provider与SourceSummary
 │  ├─ channel_scope.py                                                   # 独立真实试用Scope构造与维护者candidate检查
+│  ├─ channel_conversation.py                                            # QQ服务器历史快照授权、独立Fake Prompt与Scope
 │  ├─ channel_trial.py                                                   # 独立限时Qwen试用合同、费用预算、原SDK Adapter子类
 │  ├─ channel_presentation.py                                            # QQ封闭解释计划、来源校验与中文模板；原始模型正文不展示
 │  ├─ content_binding.py                                                 # 动态知识源的精确本地 Scope 变体，不继承旧真实资格

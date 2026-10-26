@@ -11,6 +11,9 @@ from apps.ai_service.runtime.release_contracts import _hash
 from .adapter import QQAdapter
 from .ai_configuration import QQAIConfig
 from .contracts import BotError
+from .conversations import ConversationStore,ConversationKey,prepared_scope
+from .intent import classify,GatewayMention
+from apps.ai_service.channel import OfflineChannelProvider
 
 
 @dataclass(frozen=True)
@@ -43,7 +46,7 @@ class QQAICoordinator:
     secrets or providers. Service accepts the exact Fake Provider or a separately
     approved QwenTrialSession; ordinary QQ composition still has no AI Service.
     """
-    def __init__(self,access,monitoring,service,*,config=QQAIConfig(),clock=None,monotonic=time.monotonic):
+    def __init__(self,access,monitoring,service,*,config=QQAIConfig(),clock=None,monotonic=time.monotonic,conversations=None):
         if service.monitoring is not monitoring or type(config) is not QQAIConfig:
             raise BotError('INVALID_QQ_AI_COMPOSITION')
         self.access,self.monitoring,self.service,self.config=access,monitoring,service,config
@@ -55,6 +58,12 @@ class QQAICoordinator:
         self._scheduler=None
         self._lock=RLock()
         self._requests=service.request_registry(limit=8)
+        self.conversations=conversations;self._conversation_state=None;self._mention_owner=None
+        if conversations is not None:
+            if (type(conversations) is not ConversationStore or service._channel_trial is not None
+                    or type(service._offline_channel_provider) is not OfflineChannelProvider):
+                raise BotError('QQ_CONVERSATION_FAKE_ONLY')
+            service.bind_offline_conversations(conversations.authority)
 
     @property
     def revision(self):
@@ -68,6 +77,7 @@ class QQAICoordinator:
             if access is not None:
                 self.access=access;self._ingress.config=access
             self._generation+=1
+            if self.conversations is not None:self.conversations.invalidate()
             handles=[task['plan'].handle for task in self._tasks.values()]
         for handle in handles:
             handle.abort_io();handle.cancel()
@@ -89,13 +99,54 @@ class QQAICoordinator:
             raise BotError('AI_DEVICE_NOT_AUTHORIZED')
         return grant
 
-    def prepare(self,raw,*,transport_app_id):
+    def _sync_conversations(self):
+        policy=self.service.management_policy.snapshot()
+        digest=_hash(prepared_scope(self.conversations.options,self.config.preset_id))
+        state=(self.revision,self.monitoring.binding_revision,policy.revision,digest)
+        if self._conversation_state is not None and self._conversation_state!=state:self.conversations.invalidate()
+        self._conversation_state=state
+        if 'get_current_water_quality' not in policy.selected_tools or self.config.budget.max_output_tokens>512:
+            raise BotError('AI_NOT_AUTHORIZED')
+        return state
+
+    def conversation_context(self,message,*,grant=None):
+        if self.conversations is None:raise BotError('QQ_CONVERSATION_DISABLED')
+        with self._lock:
+            grant=grant or self._permission(message)
+            permission,binding,policy,digest=self._sync_conversations()
+            key=ConversationKey(self.access.app_id,message.group_id,message.member_id,
+                self.monitoring.config.instance_id,grant.device_id,permission,binding,policy,digest,self.service.epoch)
+            return key,self.conversations.topic(key)
+
+    def validate_mention(self,raw,message,mention,app_id):
+        import hashlib
+        if (type(mention) is not GatewayMention or self._mention_owner is None
+                or mention.owner is not self._mention_owner or mention.app_id!=app_id
+                or mention.message_id!=message.message_id or mention.raw_sha256!=hashlib.sha256(raw).hexdigest()):
+            raise BotError('AI_AUTHENTICATED_MENTION_REQUIRED')
+
+    def clear_conversation(self,message):
+        with self._lock:
+            key,_=self.conversation_context(message);self.conversations.clear(key);return key
+
+    def prepare(self,raw,*,transport_app_id,mention=None):
         def operation(message,access):
             command,*rest=message.content.split(maxsplit=1)
-            if command!='/问AI' or not rest or not rest[0].strip():
+            if self.conversations is None and (command!='/问AI' or not rest or not rest[0].strip()):
                 raise BotError('AI_EXPLICIT_COMMAND_REQUIRED')
             with self._lock:
                 grant=self._permission(message)
+                history=None;history_key=None;history_focus=None
+                question=rest[0].strip() if command=='/问AI' and rest else ''
+                if self.conversations is not None:
+                    if command!='/问AI':
+                        if self.conversations.options.trigger_mode!='mention_ai':raise BotError('AI_EXPLICIT_COMMAND_REQUIRED')
+                        self.validate_mention(raw,message,mention,transport_app_id)
+                        question=message.content
+                    key,topic=self.conversation_context(message,grant=grant)
+                    intent=classify(question,topic=topic,command_priority=False)
+                    if intent.kind!='water':raise BotError('AI_WATER_QUESTION_REQUIRED')
+                    history_key,history_focus=key,intent.focus;question=intent.question
                 trial=self.service._channel_trial
                 if trial is not None:
                     try:trial.check_admission()
@@ -107,7 +158,9 @@ class QQAICoordinator:
                 deadline=self._now()+min(self.config.budget.turn_timeout_s,remaining)
                 for key,task in list(self._tasks.items()):
                     if task['deadline']<=self._now() and task['state'] in ('ADMITTED','COMPLETED','FAILED','CANCELLED'):
-                        task['plan'].handle.cancel();del self._tasks[key]
+                        task['plan'].handle.cancel()
+                        if task['plan'].prepared.channel_history is not None:self.conversations.release(task['plan'].prepared.channel_history)
+                        del self._tasks[key]
                 if len(self._tasks)>=8:
                     raise BotError('AI_CAPACITY_REACHED')
                 def check():
@@ -116,10 +169,13 @@ class QQAICoordinator:
                         if (self.revision!=revision or self.monitoring.binding_revision!=binding
                                 or self._now()>=deadline):
                             raise BotError('CHANNEL_AUTHORIZATION_CHANGED')
+                        if history is not None:history.authority.validate(history,history.scope_sha256)
                 authorization=ChannelAuthorization(self.monitoring.config.instance_id,grant.device_id,
                     binding,revision,self.config.preset_id,grant.tools,self.config.budget,check)
                 try:
-                    prepared=self.service.prepare_channel_turn(rest[0].strip(),authorization)
+                    if history_key is not None:history=self.conversations.snapshot(history_key,focus=history_focus)
+                    prepared=self.service.prepare_channel_turn(question,authorization,history_snapshot=history) if history else \
+                        self.service.prepare_channel_turn(question,authorization)
                     session_key=_hash([transport_app_id,message.group_id,message.member_id,
                         authorization.instance_id,binding,grant.device_id])
                     context=QQAIMessageContext(transport_app_id,message.group_id,message.member_id,
@@ -127,6 +183,7 @@ class QQAICoordinator:
                     plan=QQAIPlan(uuid.uuid4().hex,prepared,self._requests.create(),context)
                     if trial is not None:trial.reserve_admission(plan.handle)
                 except GatewayError as error:
+                    if history is not None:self.conversations.release(history)
                     raise BotError(error.code) from None
                 self._tasks[plan.id]=dict(plan=plan,deadline=deadline,state='ADMITTED',result=None)
                 return plan
@@ -165,7 +222,28 @@ class QQAICoordinator:
             task=self._tasks.get(plan.id)
             if task is None or task['plan'] is not plan or task['state'] in ('CANCELLED','FAILED'):
                 raise BotError('INVALID_AI_PLAN')
-        self.service.validate_channel_turn(plan.prepared)
+        try:self.service.validate_channel_turn(plan.prepared)
+        except Exception:
+            if self.conversations is not None:
+                with self._lock:self._sync_conversations()
+            raise
+
+    def accept_delivery(self,plan,result,text,receipt,cancelled):
+        snapshot=plan.prepared.channel_history
+        if snapshot is None:return None
+        if receipt.status!='DELIVERED' or not receipt.api_accepted:return 'HISTORY_NOT_COMMITTED_DELIVERY'
+        with self._lock:
+            try:
+                if cancelled.is_set():raise BotError('AI_CANCELLED')
+                plan.handle.check();self.validate_delivery_candidate(plan,result)
+                source=result.source
+                return self.conversations.commit(snapshot,turn_id=plan.context.delivery_key,text=text,
+                    text_sha256=receipt.text_sha256,accepted_at=receipt.accepted_at,
+                    source_times=tuple(t for t in (source.observed_at,source.received_at,source.evaluated_at) if t),
+                    source_flags=(source.source_kind,source.quality,source.freshness,source.connectivity))
+            except Exception:
+                self.conversations.abort_snapshot(snapshot)
+                return 'HISTORY_NOT_COMMITTED'
 
     def validate_delivery_candidate(self,plan,result):
         """Validation only, never a network permission or a can_deliver override."""
@@ -211,4 +289,5 @@ class QQAICoordinator:
                 if task['plan'] is not plan:
                     raise BotError('INVALID_AI_PLAN')
                 del self._tasks[plan.id]
+                if plan.prepared.channel_history is not None:self.conversations.release(plan.prepared.channel_history)
                 task['plan'].handle.cancel()
