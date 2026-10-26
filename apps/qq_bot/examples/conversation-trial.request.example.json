@@ -1,0 +1,8 @@
+{
+  "access_file": "D:\\CodexProject\\Fishery_AI_Prototype\\outputs\\qq-bot\\access.json",
+  "monitoring_config": "D:\\CodexProject\\Fishery_AI_Prototype\\outputs\\qq-bot\\monitoring.bot2c.json",
+  "ai_config": "D:\\CodexProject\\Fishery_AI_Prototype\\outputs\\qq-bot\\ai.qwen-trial.json",
+  "policy_directory": "D:\\CodexProject\\Fishery_AI_Prototype\\outputs\\qq-bot\\trial-policies",
+  "group_id": "configured-group-openid",
+  "member_id": "configured-member-openid"
+}

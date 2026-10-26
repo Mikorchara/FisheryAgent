@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "contract": "qq-qwen-conversation-turn-trial@1",
+  "status": "candidate",
+  "qualification_id": null,
+  "scope": {
+    "contract": "qq-qwen-conversation-turn-trial@1",
+    "runtime": {
+      "preset_id": "dashscope-qwen38-flash-r1",
+      "preset_variant": "off",
+      "contract_version": "1.0.2",
+      "identity": [
+        "dashscope",
+        "openai_chat",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "qwen3.8-flash"
+      ],
+      "protocol_spec": {
+        "spec_id": "dashscope_chat",
+        "version": "1",
+        "max_output_tokens_field": "max_tokens",
+        "thinking_encoding": "enable_thinking",
+        "effort_field": "reasoning_effort",
+        "stream_field": "stream",
+        "usage_options_field": "stream_options"
+      },
+      "thinking": "off",
+      "response_mode": "normal",
+      "prompt_id": "QQ_CURRENT_DIALOGUE@1",
+      "prompt_sha256": "e4f710db295f949a08f17745685c8cfc15d4fb0622de40a44f4b25918dde50e5",
+      "history_projection": "UNTRUSTED_TRANSCRIPT_V1",
+      "history_version": "1",
+      "tools": [
+        "get_current_water_quality"
+      ],
+      "tool_definitions_sha256": "d54f8935a103602673149f7e7078bfd197b4c282a734984254938424d3996e28"
+    },
+    "conversation": {
+      "trigger_mode": "mention_ai",
+      "memory_enabled": true,
+      "max_turns": 6,
+      "idle_seconds": 900,
+      "max_sessions": 64,
+      "session_bytes": 24576,
+      "total_bytes": 1048576,
+      "projection_bytes": 4096
+    },
+    "implementation": {
+      "ai_service/channel_trial.py": "6e82ef4771b2f2aed8df1ceb5c9f8bf3a133c6c7edd9bbdf4ce16a7a2725a599",
+      "ai_service/service.py": "b5d35fd66e808678a5bb7f3ec3bc8add373203e49c86ffeb81f2f906e52c434b",
+      "ai_service/channel.py": "bd65e1eb2c9adaab80db76908fa72e673138d941ec83f97051ce942937da921b",
+      "ai_service/channel_presentation.py": "49758653fb026192bd44ab869f22374308236c95b61c90ab05d03b4c823c5b2c",
+      "ai_service/channel_conversation.py": "53a7b30e748e975fa0409a6267cc969af00c1eb2e3991e1d8dc8307661fb1c30",
+      "ai_service/contracts.py": "51cc7fcbc2be5a5e8e28a8be914edbe5a73cad39119581b2716a34c15da0f8c9",
+      "qq_bot/conversations.py": "31af72e79cb8be96cd8cac034b2656a607ca0b475f826de761edfa0fec264e6d",
+      "qq_bot/intent.py": "59d9be47eb33d6be7a4f0c2c801038e25bd72a6737d0f888346c798fe96eb407",
+      "ai_service/channel_conversation_trial.py": "63c0a5ea65aaf58174287dfc753d9f778d376b81c7477e69b9559f59a29c1d2f",
+      "qq_bot/conversation_trial.py": "9aa41d37f1589f73231dd14742a2d3d0984fe1a899519fa9a16d8087fd4818ae",
+      "qq_bot/conversation_trial_cli.py": "6c12eef4ac63bdd7f020cdc6611707e3ec5545c3773f944b5eb8eb8eda4de6e5",
+      "qq_bot/trial.py": "f4dcbd098f64984ab62a9b7ec7bba07596c314856f0b0dfeb5fc04e5520587eb",
+      "qq_bot/trial_configuration.py": "da0bd341db88f290e83352227fbd190ed08ef723f4aee2d0c537c5c2f938f888",
+      "qq_bot/ai_trial_delivery.py": "356ac5f3891727fc6a3f83c91ec6c85e9059760e9f95b58bd5e068dd7e4eaa62",
+      "qq_bot/ai_coordinator.py": "5b2ca25721e0d1c7a7b6aad714dd00d4aad6ce76766a1a24ed46811da298cbbd",
+      "qq_bot/ai_scheduler.py": "70127342f1f10b1ed3c45dcf0333e0845613d1f760f451e6b0bfa12717ae2ea9",
+      "qq_bot/ai_delivery.py": "af35b6eebd90a6d676e47f53df40d6715cd34f1a07ffcb72406282c9cb4e0fd4",
+      "qq_bot/ai_routing.py": "e8e6a8487d46c209a5c2821a9dba50188babadf24a9c96fa1c57a6389b5d273e",
+      "qq_bot/gateway.py": "38706a7244e211dcd7413229f1d4fe670de3be4f94b837b13a573144d9c56863",
+      "qq_bot/transport.py": "2eb3dde06ecd76274b84fb0f47a7c03441afaa4ce19a1b62466f7941f5912909",
+      "qq_bot/monitoring_source.py": "e65249746fdbef27ac2b1949b0d675f074f4ab85ced0bd84dd59258385b05d1c",
+      "qq_bot/ai_configuration.py": "2d0f88c71bde102ee9e7b5d5c731fd04ce58f78349e2fd8ef5eb936877a2a96f",
+      "qq_bot/adapter.py": "1a6057beab784dee3e95861d27544c6615b1591444b1b877dfd4e52ede43fcf6",
+      "ai_service/business_tools/current_water_quality.py": "79c935778a27eba4ae4c4f57f697b9018b6216d1a41ae8eadb9b8f3500efc368",
+      "ai_service/business_tools/registry.py": "11ca99271c1366bbd71745184316f72824caa8f4b0c0dd86d32607f2f70da730",
+      "ai_service/runtime/assistant.py": "10f02295724d4ec68a596fb4b07dfe9b5ef75f95cbe08792e5cdbfcfa402a49d",
+      "ai_service/runtime/sources.py": "d1f5c69d41876b33c75f3880f8307ad491d84e0db9bdea2c20afa692821a1b37",
+      "ai_service/management_policy.py": "283f89200edc6c73202c09653a809ad8a9d8a36bbfb8a456d656c1b8be3ecf33",
+      "ai_service/runtime/resources/presets.json": "30aa3ce86c42ffaf6e50adee6fbe3e3ab44cc5dccd2adfef7dd4d4d4207fce19"
+    },
+    "sdk": {
+      "adapter": "apps.ai_backend.openai_compatible_adapter.OpenAICompatibleAdapter",
+      "adapter_sha256": "0ed6e0eac5be9f69965e55593309a94fad97d3614ecb91af4be9cde4e91cce46",
+      "resource_contract": "sdk-resource-quarantine@1",
+      "resources_sha256": "251dea3a275cfce89b27e15aa794005dfa3a714d4d0555f3fc3232fe4e1bfe74",
+      "execution_sha256": "d62aba2a43ccbcf04abc10d9c507292fdc16bcc16d55e16255973ffe4d1e4d41",
+      "openai_version": "2.54.0",
+      "httpx_version": "0.28.1"
+    },
+    "transport": {
+      "adapter": "apps.ai_service.channel_trial.TrialQwenAdapter",
+      "delegate": "apps.ai_backend.openai_compatible_adapter.OpenAICompatibleAdapter",
+      "sdk": "AsyncOpenAI",
+      "follow_redirects": false,
+      "trust_env": false,
+      "retries": 0
+    },
+    "cost": {
+      "currency": "CNY",
+      "region": "cn-beijing",
+      "input_per_million": "0.8",
+      "output_per_million": "2.7",
+      "reserved_input_tokens_per_request": 1000000,
+      "output_tokens_per_request": 512,
+      "model_requests": 2,
+      "max_turns": 1,
+      "max_request_bytes": 32768,
+      "reservation_cny": "1.602765",
+      "price_url": "https://help.aliyun.com/zh/model-studio/model-pricing",
+      "model_url": "https://help.aliyun.com/zh/model-studio/qwen3-8-flash"
+    },
+    "process": {
+      "max_model_turns": 2,
+      "independent_approval_per_turn": true,
+      "max_seconds": 600
+    },
+    "execution": {
+      "mode": "SINGLE_ROUND",
+      "model_requests": 2,
+      "tool_calls": 1,
+      "tool_rounds": 1,
+      "max_output_tokens": 512,
+      "turn_timeout_s": 90,
+      "retries": 0
+    },
+    "history": "SERVER_SNAPSHOT_UNTRUSTED_TRANSCRIPT_V1",
+    "commit": "API_ACCEPTED_SAFE_TEXT_CAS@1",
+    "presentation": {
+      "contract": "qq-water-explanation@1",
+      "raw_model_text": "NEVER",
+      "mode": "SOURCE_BOUND_TEMPLATE_PLAN",
+      "general_fact_verifier": false
+    },
+    "source_requirement": "CURRENT_OBSERVATION_QUERY",
+    "isolation": "EXISTING_THREAD_RESOURCE_GATE_HARD_EXIT_NOT_GUARANTEED"
+  },
+  "scope_sha256": "a204da6968ff312ab058a319b054b063d17dd3d1a69f1ebb6eb0ca5b97c75636",
+  "real_execution_requires": "PER_TURN_OPERATOR_APPROVAL"
+}

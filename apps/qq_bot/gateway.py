@@ -87,9 +87,9 @@ class QQGateway:
                 raise BotError('OFFLINE_GATEWAY_COMPOSITION_REQUIRED')
         if trial_router is not None:
             from .ai_routing import TrialQQAIRouter
-            from .ai_trial_delivery import TrialQQTransport
+            from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport
             if (offline_router is not None or type(trial_router) is not TrialQQAIRouter
-                    or type(trial_router.scheduler.gateway) is not TrialQQTransport
+                    or type(trial_router.scheduler.gateway) not in (TrialQQTransport,ConversationQQTransport)
                     or trial_router.scheduler.gateway.api is not api or trial_router.adapter is not adapter):
                 raise BotError('TRIAL_QQ_COMPOSITION_REQUIRED')
             trial_router.check_liveness()
@@ -105,6 +105,7 @@ class QQGateway:
         self._session, self._seq, self._bot_id = None, None, None
         self._discovered, self._revoked = set(), set()
         self._deadline = 0
+        self._active_guard=None
         self._dispatch_context=threading.local()
         if self.router is not None and self.router.coordinator.conversations is not None:self.router.bind_gateway(self)
 
@@ -170,6 +171,11 @@ class QQGateway:
         self._dispatch_context.authenticated=True
         try:self._dispatch(packet)
         finally:self._dispatch_context.authenticated=False
+
+    def request_stop(self):
+        """Cancel only this owned connection; do not wait for console input or recv."""
+        self.stop.set();guard=self._active_guard
+        if guard is not None and guard._socket is not None:guard.arm(self.now(),'QQ_CANCELLED')
 
     def _pump(self, ws, guard=None):
         def arm(deadline, code):
@@ -276,6 +282,7 @@ class QQGateway:
                         self.emit('QQ_RUN_DURATION_REACHED')
                     break
                 guard = GatewayDeadline(self.emit, self.now)
+                self._active_guard=guard
                 self.emit('QQ_GATEWAY_CONNECTING', attempt=attempt+1)
                 try:
                     with guard:

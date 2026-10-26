@@ -4,7 +4,8 @@
 
 ## 阅读入口
 
-- [BOT-3D-2B Mention与有界记忆离线实现](deep-dive/BOT3D2B_MENTION_CONVERSATIONS.md)（服务器历史快照、API接受后提交、Fake两轮；真实入口与逐Turn许可未开放）
+- [BOT-3D-2C-1 逐Turn真实类型装配（离线）](deep-dive/BOT3D2C1_REAL_CONVERSATION_TRIAL.md)（同进程两次独立批准、私有Service、API接受后记忆；C-2联网仍待人工授权）
+- [BOT-3D-2B Mention与有界记忆离线实现](deep-dive/BOT3D2B_MENTION_CONVERSATIONS.md)（Fake阶段记录；服务器快照与交付后记忆，后续真实类型装配见2C-1）
 - [BOT-3D-2A Mention与会话记忆设计](deep-dive/research/BOT3D2A_MENTION_CONVERSATION_DESIGN.md)（设计依据；获批的离线2B实现见上，真实逐Turn许可留2C）
 - [BOT-3D-1 QQ停止与报告缺失修复](deep-dive/BOT3D1_RESULT_REPORTING.md)（Ctrl+C路径、提前保存交付快照、核实result文件；用户客户端确认与程序状态分开，不重跑历史实验）
 - [BOT-3D-1 受限解释与可信展示](deep-dive/BOT3D1_BOUNDED_EXPLANATION.md)（模型选择要点、程序核对同轮来源并生成中文；原始正文不展示，新Scope需重新审批）

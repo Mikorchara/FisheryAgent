@@ -4,6 +4,7 @@
 
 ## 已实现
 
+- 2026-10-26 BOT-3D-2C-1：独立双轮逐Turn合同、每轮私有Service共享Store、可取消审批与报告；新增31项，Bot390、完整983 Python / 116 Node通过。仅Fake验证，C-2联网待授权。[装配、预算与验收](deep-dive/BOT3D2C1_REAL_CONVERSATION_TRIAL.md)。
 - 2026-10-26 BOT-3D-2B：获批实现Fake-only Mention、6Turn/15分钟有界RAM、可信历史快照和API接受后提交；专项51、Bot359、完整952 Python / 116 Node通过。真实多轮仍关闭，FAST须新审批。[实现与2C前置条件](deep-dive/BOT3D2B_MENTION_CONVERSATIONS.md)。
 - 2026-10-26 BOT-3D-2A调查完成：13边界探针、217项相关回归通过；经用户批准后进入上述离线2B，逐Turn真实许可留2C。[设计、证据与分步计划](deep-dive/research/BOT3D2A_MENTION_CONVERSATION_DESIGN.md)。
 

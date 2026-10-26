@@ -38,8 +38,8 @@ class QQAIJobScheduler:
     Exact Fake or independently approved Trial transport only. Ordinary CLI stays disabled.
     """
     def __init__(self, coordinator, gateway, *, clock=None, monotonic=time.monotonic,receipt_sink=None):
-        from .ai_trial_delivery import TrialQQTransport
-        if type(gateway) not in (OfflineQQGateway,TrialQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
+        from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport
+        if type(gateway) not in (OfflineQQGateway,TrialQQTransport,ConversationQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
         if type(gateway) is TrialQQTransport and gateway.trial is not coordinator.service._channel_trial:
             raise BotError('TRIAL_QQ_COMPOSITION_REQUIRED')
         self.coordinator,self.gateway=coordinator,gateway
@@ -136,7 +136,7 @@ class QQAIJobScheduler:
             self._acceptances.append(dict(task_id=task_id,accepted_at=receipt.accepted_at,
                 text_sha256=receipt.text_sha256,client_display_confirmed=False))
         self._jobs.pop(task_id,None)
-        self.coordinator.discard(job.plan)
+        self.coordinator.discard(job.plan,outcome=info)
         job.result=None;self._cv.notify_all()
 
     def _settle_cancel(self, job):

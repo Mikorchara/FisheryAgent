@@ -61,8 +61,8 @@
     "raw_user_history": false,
     "raw_model_text": false,
     "implementation": {
-      "ai_service/channel_conversation.py": "921eccb92eb5806628c972d0b1fb795d26035ed75e08ddd5219e467907ca7f1f",
-      "ai_service/service.py": "cb14b9a036c542db6b893f4ea432910d1978287d5b1847377d9950fcf92b3dfd",
+      "ai_service/channel_conversation.py": "53a7b30e748e975fa0409a6267cc969af00c1eb2e3991e1d8dc8307661fb1c30",
+      "ai_service/service.py": "b5d35fd66e808678a5bb7f3ec3bc8add373203e49c86ffeb81f2f906e52c434b",
       "ai_service/contracts.py": "51cc7fcbc2be5a5e8e28a8be914edbe5a73cad39119581b2716a34c15da0f8c9",
       "ai_service/channel.py": "bd65e1eb2c9adaab80db76908fa72e673138d941ec83f97051ce942937da921b",
       "ai_service/channel_presentation.py": "49758653fb026192bd44ab869f22374308236c95b61c90ab05d03b4c823c5b2c",
@@ -72,17 +72,20 @@
       "ai_backend/openai_compatible_adapter.py": "0ed6e0eac5be9f69965e55593309a94fad97d3614ecb91af4be9cde4e91cce46",
       "ai_backend/execution.py": "d62aba2a43ccbcf04abc10d9c507292fdc16bcc16d55e16255973ffe4d1e4d41",
       "ai_backend/sdk_resources.py": "251dea3a275cfce89b27e15aa794005dfa3a714d4d0555f3fc3232fe4e1bfe74",
-      "qq_bot/conversations.py": "b19876736fefa8a1befa0c1ebb7ef11009e7de097fa7adb50ed76089c8a39c7c",
+      "qq_bot/conversations.py": "31af72e79cb8be96cd8cac034b2656a607ca0b475f826de761edfa0fec264e6d",
       "qq_bot/intent.py": "59d9be47eb33d6be7a4f0c2c801038e25bd72a6737d0f888346c798fe96eb407",
-      "qq_bot/ai_coordinator.py": "15a8771db090364fe5266b1f214f6d758f803ada6034e28e632b67aaeda75e08",
+      "qq_bot/ai_coordinator.py": "5b2ca25721e0d1c7a7b6aad714dd00d4aad6ce76766a1a24ed46811da298cbbd",
       "qq_bot/ai_configuration.py": "2d0f88c71bde102ee9e7b5d5c731fd04ce58f78349e2fd8ef5eb936877a2a96f",
-      "qq_bot/ai_routing.py": "3f5e86650ececfe9c96323fc4fd0ccfd813c5973f8ab9a38fd1ebc519f38d0c6",
-      "qq_bot/gateway.py": "de21f4905e2edb597571ade088d9214181c029b444fb79c0ccd02a4513d85740",
-      "qq_bot/ai_delivery.py": "d076863ea6bb3d1dc7a71b0bf84e01d63640209e64c6a84772d9c50dc420c6b6",
-      "qq_bot/ai_scheduler.py": "fef8b25f7cca695ed90285942935c49257b349a330f25c9909331692626cd2e0"
+      "qq_bot/ai_routing.py": "e8e6a8487d46c209a5c2821a9dba50188babadf24a9c96fa1c57a6389b5d273e",
+      "qq_bot/gateway.py": "38706a7244e211dcd7413229f1d4fe670de3be4f94b837b13a573144d9c56863",
+      "qq_bot/ai_delivery.py": "af35b6eebd90a6d676e47f53df40d6715cd34f1a07ffcb72406282c9cb4e0fd4",
+      "qq_bot/ai_scheduler.py": "70127342f1f10b1ed3c45dcf0333e0845613d1f760f451e6b0bfa12717ae2ea9",
+      "ai_service/channel_conversation_trial.py": "63c0a5ea65aaf58174287dfc753d9f778d376b81c7477e69b9559f59a29c1d2f",
+      "qq_bot/conversation_trial.py": "9aa41d37f1589f73231dd14742a2d3d0984fe1a899519fa9a16d8087fd4818ae",
+      "qq_bot/conversation_trial_cli.py": "6c12eef4ac63bdd7f020cdc6611707e3ec5545c3773f944b5eb8eb8eda4de6e5"
     }
   },
-  "scope_sha256": "4f17f63e7678c133890c1a6a73f4ba9793e18275637f3013eede4f3e7e8f6e88",
+  "scope_sha256": "01cd536a361fca5aa327329943138e908d6b4841c3a2238b33ecb361a1fbd3cb",
   "qualification_id": null,
   "can_execute_real": false,
   "can_deliver_real": false

@@ -118,6 +118,14 @@ class ConversationStore:
             self._prune();s=self._sessions.get(key)
             return s.turns[-1].focus if self.options.memory_enabled and s and s.turns else None
 
+    def state(self,key):
+        """Opaque local approval binding; no chat content leaves RAM."""
+        from apps.ai_service.runtime.release_contracts import _hash
+        with self._lock:
+            s=self._session(key)
+            return dict(key_sha256=_hash(key.identity),revision=s.revision,turns=len(s.turns),
+                history_sha256=_hash([(t.id,t.text_sha256,t.accepted_at,t.focus) for t in s.turns]))
+
     def snapshot(self,key,*,focus):
         if type(key) is not ConversationKey or focus not in FOCUS:raise GatewayError('INVALID_CONVERSATION_KEY')
         with self._lock:

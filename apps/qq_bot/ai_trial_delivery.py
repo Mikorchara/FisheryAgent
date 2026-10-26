@@ -35,3 +35,15 @@ class TrialQQTransport:
             self.trial.check();before_post()
         validate()
         return self.api.reply(reply,received_at=context.timestamp,now=clock(),before_post=validate)
+
+
+class ConversationQQTransport(TrialQQTransport):
+    """A process connection permit; each AI reply also checks its immutable Turn."""
+    def __init__(self,api,trial):
+        from .conversation_trial import ConversationTrial
+        if type(api) is not QQAPI or type(trial) is not ConversationTrial or api.app_id!=trial.access.app_id:
+            raise BotError('CONVERSATION_TRIAL_COMPOSITION_REQUIRED')
+        if trial.offline_test and type(api._client._transport) is not httpx.MockTransport:
+            raise BotError('TRIAL_OFFLINE_HTTP_REQUIRED')
+        trial.check();self.api,self.trial=api,trial
+        self._connected=threading.Event();self._closed=threading.Event()

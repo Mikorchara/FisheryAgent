@@ -22,6 +22,7 @@ class QQAIPlan:
     prepared: object = field(repr=False)
     handle: object = field(repr=False)
     context: object = field(repr=False)
+    service: object = field(default=None,repr=False)
 
 
 @dataclass(frozen=True,repr=False)
@@ -46,7 +47,7 @@ class QQAICoordinator:
     secrets or providers. Service accepts the exact Fake Provider or a separately
     approved QwenTrialSession; ordinary QQ composition still has no AI Service.
     """
-    def __init__(self,access,monitoring,service,*,config=QQAIConfig(),clock=None,monotonic=time.monotonic,conversations=None):
+    def __init__(self,access,monitoring,service,*,config=QQAIConfig(),clock=None,monotonic=time.monotonic,conversations=None,conversation_trial=None):
         if service.monitoring is not monitoring or type(config) is not QQAIConfig:
             raise BotError('INVALID_QQ_AI_COMPOSITION')
         self.access,self.monitoring,self.service,self.config=access,monitoring,service,config
@@ -59,7 +60,12 @@ class QQAICoordinator:
         self._lock=RLock()
         self._requests=service.request_registry(limit=8)
         self.conversations=conversations;self._conversation_state=None;self._mention_owner=None
-        if conversations is not None:
+        self.conversation_trial=conversation_trial
+        if conversation_trial is not None:
+            from .conversation_trial import ConversationTrial
+            if type(conversation_trial) is not ConversationTrial:raise BotError('CONVERSATION_TRIAL_COMPOSITION_REQUIRED')
+            conversation_trial.bind(self)
+        elif conversations is not None:
             if (type(conversations) is not ConversationStore or service._channel_trial is not None
                     or type(service._offline_channel_provider) is not OfflineChannelProvider):
                 raise BotError('QQ_CONVERSATION_FAKE_ONLY')
@@ -85,6 +91,7 @@ class QQAICoordinator:
     def _permission(self,message):
         if not self.config.enabled:
             raise BotError('AI_DISABLED')
+        if self.conversation_trial is not None:self.conversation_trial.check_message(message)
         trial=self.service._channel_trial
         if trial is not None:
             try:trial.check_message(message)
@@ -101,7 +108,10 @@ class QQAICoordinator:
 
     def _sync_conversations(self):
         policy=self.service.management_policy.snapshot()
-        digest=_hash(prepared_scope(self.conversations.options,self.config.preset_id))
+        if self.conversation_trial is not None:
+            from apps.ai_service.channel_conversation_trial import prepared_scope as trial_scope
+            digest=_hash(trial_scope(self.conversations.options))
+        else:digest=_hash(prepared_scope(self.conversations.options,self.config.preset_id))
         state=(self.revision,self.monitoring.binding_revision,policy.revision,digest)
         if self._conversation_state is not None and self._conversation_state!=state:self.conversations.invalidate()
         self._conversation_state=state
@@ -172,18 +182,24 @@ class QQAICoordinator:
                         if history is not None:history.authority.validate(history,history.scope_sha256)
                 authorization=ChannelAuthorization(self.monitoring.config.instance_id,grant.device_id,
                     binding,revision,self.config.preset_id,grant.tools,self.config.budget,check)
+                service=self.service
                 try:
+                    if self.conversation_trial is not None:self.conversation_trial.require_turn()
                     if history_key is not None:history=self.conversations.snapshot(history_key,focus=history_focus)
-                    prepared=self.service.prepare_channel_turn(question,authorization,history_snapshot=history) if history else \
-                        self.service.prepare_channel_turn(question,authorization)
+                    if self.conversation_trial is not None:
+                        service=self.conversation_trial.begin(history);trial=service._channel_trial
+                    prepared=service.prepare_channel_turn(question,authorization,history_snapshot=history) if history else \
+                        service.prepare_channel_turn(question,authorization)
                     session_key=_hash([transport_app_id,message.group_id,message.member_id,
                         authorization.instance_id,binding,grant.device_id])
                     context=QQAIMessageContext(transport_app_id,message.group_id,message.member_id,
                         message.message_id,message.timestamp,deadline,session_key)
-                    plan=QQAIPlan(uuid.uuid4().hex,prepared,self._requests.create(),context)
+                    plan=QQAIPlan(uuid.uuid4().hex,prepared,self._requests.create(),context,service)
                     if trial is not None:trial.reserve_admission(plan.handle)
-                except GatewayError as error:
+                except (GatewayError,BotError) as error:
                     if history is not None:self.conversations.release(history)
+                    if self.conversation_trial is not None and service is not self.service:
+                        self.conversation_trial.admission_failed(service._channel_trial,error.code)
                     raise BotError(error.code) from None
                 self._tasks[plan.id]=dict(plan=plan,deadline=deadline,state='ADMITTED',result=None)
                 return plan
@@ -201,7 +217,7 @@ class QQAICoordinator:
         try:
             plan.prepared.channel_authorization.check()
             plan.handle.limit_turn(max(.001,task['deadline']-self._now()))
-            result=self.service.execute_channel_turn(plan.prepared,plan.handle)
+            result=(plan.service or self.service).execute_channel_turn(plan.prepared,plan.handle)
             plan.prepared.channel_authorization.check()
             with self._lock:
                 task.update(state='COMPLETED',result=result)
@@ -214,7 +230,7 @@ class QQAICoordinator:
     def check_delivery(self,plan,result):
         """Fake candidates never authorize QQ; a separate phase-specific trial may."""
         self.validate_delivery_candidate(plan,result)
-        trial=self.service._channel_trial
+        trial=(plan.service or self.service)._channel_trial
         return bool(trial is not None and trial.approval.phase=='qq' and not trial.offline_test)
 
     def validate_plan(self,plan):
@@ -222,7 +238,7 @@ class QQAICoordinator:
             task=self._tasks.get(plan.id)
             if task is None or task['plan'] is not plan or task['state'] in ('CANCELLED','FAILED'):
                 raise BotError('INVALID_AI_PLAN')
-        try:self.service.validate_channel_turn(plan.prepared)
+        try:(plan.service or self.service).validate_channel_turn(plan.prepared)
         except Exception:
             if self.conversations is not None:
                 with self._lock:self._sync_conversations()
@@ -252,8 +268,9 @@ class QQAICoordinator:
             if task is None or task['plan'] is not plan or task['result'] is not result or task['state']!='COMPLETED':
                 raise BotError('INVALID_AI_DELIVERY')
         plan.handle.assert_resources_closed()
-        self.service.validate_channel_turn(plan.prepared)
-        trial=self.service._channel_trial
+        service=plan.service or self.service
+        service.validate_channel_turn(plan.prepared)
+        trial=service._channel_trial
         expected_status='local_experimental' if trial is not None else 'candidate'
         expected_offline=trial is None or trial.offline_test
         if (not result.completed or result.source is None or result.offline_only!=expected_offline
@@ -282,7 +299,7 @@ class QQAICoordinator:
         with self._lock:
             if self._scheduler is owner:self._scheduler=None
 
-    def discard(self,plan):
+    def discard(self,plan,*,outcome=None):
         with self._lock:
             task=self._tasks.get(plan.id)
             if task is not None:
@@ -290,4 +307,6 @@ class QQAICoordinator:
                     raise BotError('INVALID_AI_PLAN')
                 del self._tasks[plan.id]
                 if plan.prepared.channel_history is not None:self.conversations.release(plan.prepared.channel_history)
+                if self.conversation_trial is not None:
+                    self.conversation_trial.finish(plan,outcome or {'state':'CANCELLED','code':'AI_ADMISSION_ABORTED'})
                 task['plan'].handle.cancel()

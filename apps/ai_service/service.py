@@ -69,11 +69,13 @@ class ManagementAssistantService:
             raise GatewayError('OFFLINE_CHANNEL_PROVIDER_REQUIRED')
         self._offline_channel_provider=offline_channel_provider
         from .channel_trial import QwenTrialSession
-        if channel_trial is not None and (type(channel_trial) is not QwenTrialSession
+        from .channel_conversation_trial import ConversationQwenTurn
+        if channel_trial is not None and (type(channel_trial) not in (QwenTrialSession,ConversationQwenTurn)
                 or offline_channel_provider is not None or knowledge is not None):
             raise GatewayError('INVALID_QWEN_TRIAL_COMPOSITION')
         self._channel_trial=channel_trial
         self._channel_history_authority=None
+        if type(channel_trial) is ConversationQwenTurn:self._channel_history_authority=channel_trial.authority
         self.knowledge = knowledge
         from apps.knowledge.service import KnowledgeContentService
         if isinstance(self.knowledge,KnowledgeContentService):
@@ -286,6 +288,11 @@ class ManagementAssistantService:
         self._channel_history_authority=authority
 
     def _history_decision(self,profile,policy,registry,authorization,snapshot,policy_revision):
+        from .channel_conversation_trial import ConversationQwenTurn
+        if type(self._channel_trial) is ConversationQwenTurn:
+            if type(snapshot) is not ChannelHistorySnapshot:raise GatewayError('INVALID_CHANNEL_HISTORY')
+            return self._channel_trial.history_decision(profile,policy,registry,authorization,snapshot,
+                epoch=self.epoch,policy_revision=policy_revision)
         if (type(snapshot) is not ChannelHistorySnapshot or snapshot.authority is not self._channel_history_authority
                 or self._channel_trial is not None or type(self._offline_channel_provider) is not OfflineChannelProvider):
             raise GatewayError('QQ_CONVERSATION_FAKE_ONLY')

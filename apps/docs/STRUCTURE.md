@@ -13,10 +13,12 @@ apps/
 │  ├─ cli.py                                                            # 离线/配置/发现/显式联网；指定实例须单独批准
 │  ├─ trial.py                                                          # 独立Qwen试用CLI：计划/审批/检查/本机与QQ显式执行
 │  ├─ trial_configuration.py                                            # 防覆盖审批、持久单次消费与配置/实例绑定
+│  ├─ conversation_trial.py                                             # 同进程两轮独立批准、私有Service装配与会话状态绑定
+│  ├─ conversation_trial_cli.py                                         # 独立Check/Run、可取消本机审批、Gateway线程与安全报告
 │  ├─ ai_trial_delivery.py                                              # 试用QQAPI传输及最终发送前权限检查
 │  ├─ monitoring_source.py                                              # 严格本机实例配置、设备白名单、只读装配与安全错误
 │  ├─ ai_configuration.py                                              # 独立AI许可与预算，默认关闭，当前工具白名单
-│  ├─ conversations.py                                                 # Fake-only有界RAM、完整身份键、历史快照与交付后提交
+│  ├─ conversations.py                                                 # 有界RAM、完整身份键、历史快照、审批状态摘要与交付后提交
 │  ├─ intent.py                                                        # 确定性意图、程序答复及认证Mention内部凭证
 │  ├─ ai_coordinator.py                                                # 离线准入/执行/权限复核，冻结消息上下文与单次claim
 │  ├─ ai_scheduler.py                                                  # 一个AI/一个交付/一个监督线程；1执行2等待及取消
@@ -30,6 +32,7 @@ apps/
 │  ├─ examples/monitoring.example.json                                  # 指定实例模板；占位符须人工填写，不自动选择业务数据
 │  ├─ examples/ai.example.json                                          # 默认关闭的离线AI候选配置，不含密钥
 │  ├─ examples/conversation.fake.example.json                           # 独立Fake会话配置；默认Command/无记忆，非真实CLI参数
+│  ├─ examples/conversation-trial.request.example.json                  # 双轮试用的本机配置引用示例，无密钥、无自动授权
 │  ├─ examples/real-trial.request.example.json                           # 人工申请清单，非运行配置，不可直接启用AI
 │  ├─ contracts.py                                                      # 不可变群/成员/设备能力配置及受限消息解析
 │  ├─ adapter.py                                                        # 时效、去重、限频、会话计数和容量/并发拒绝
@@ -46,6 +49,7 @@ apps/
 │     ├─ test_ai_coordinator.py                                          # Fake单轮、权限失效、同轮来源、注入与旧功能隔离
 │     ├─ test_conversations.py                                          # RAM限额/过期/身份隔离/清空代次与候选Scope
 │     ├─ test_mention_conversation.py                                   # Fake认证Gateway两轮、每轮查询、交付CAS与失败隔离
+│     ├─ test_conversation_trial.py                                     # 真实类型双轮/逐次审批/SDK Mock HTTP/报告与PS Check
 │     ├─ test_ai_scheduler.py                                            # 有界并发/期限/I/O取消/单次交付及线程回收
 │     ├─ test_ai_preparation.py                                          # 独立Scope、统一Gateway离线装配、展示与真实门禁拒绝
 │     ├─ test_explanation.py                                             # 封闭解释合同、同轮事实引用、缺测/过期/注入/长度降级
@@ -110,6 +114,7 @@ apps/
 │  │  ├─ assistant_execution.json                                        # Qwen/Ollama 独立本地实验 Scope，默认关闭
 │  │  ├─ qq_monitoring_trial.json                                        # 真实Monitoring-only试用candidate指纹，无真实授权
 │  │  ├─ qq_conversation_candidate.json                                  # Mention+记忆Fake-only candidate，无真实执行/交付资格
+│  │  ├─ qq_conversation_trial.json                                      # 独立逐Turn真实试用candidate；仍须本机审批与一次性消费
 │  │  ├─ assistant_normal_candidate.json                                 # Qwen Normal 三工具精确 candidate，未开放
 │  │  ├─ assistant_unified_tools.json                                    # 独立Normal/Streaming三工具本地许可与显式授权子集
 │  │  ├─ water_history_candidate.json                                    # 历史单工具local_experimental，默认关闭
@@ -161,6 +166,7 @@ apps/
 │  ├─ channel.py                                                         # 内部渠道授权、离线candidate、Fake Provider与SourceSummary
 │  ├─ channel_scope.py                                                   # 独立真实试用Scope构造与维护者candidate检查
 │  ├─ channel_conversation.py                                            # QQ服务器历史快照授权、独立Fake Prompt与Scope
+│  ├─ channel_conversation_trial.py                                      # 新双轮试用Scope与每Turn历史决策，复用原Qwen Session/SDK
 │  ├─ channel_trial.py                                                   # 独立限时Qwen试用合同、费用预算、原SDK Adapter子类
 │  ├─ channel_presentation.py                                            # QQ封闭解释计划、来源校验与中文模板；原始模型正文不展示
 │  ├─ content_binding.py                                                 # 动态知识源的精确本地 Scope 变体，不继承旧真实资格
@@ -342,3 +348,5 @@ Phase I 的五个 runtime 准备模块和三份重复测试已移除；当前 Se
 [scripts/manual_real_tests/](../../scripts/manual_real_tests/README.md) 为用户人工真实连接统一索引；`run_qualification.py`只委托管理单案例CLI，新增Normal三工具候选四案例，不参与应用启动。`scripts/dev/run_local.ps1` + `local_session.py` 负责已有CLI的临时令牌/双进程生命周期，不装配AI或修改Policy。`run_tests.py management` 包含Monitoring/Simulator/Backend/AI业务/管理HTTP/SSE和Node；`product`含义不变。资格层保持离线，不能当作真实Provider证据。见[R2D-2A记录](deep-dive/R2D2A_PRODUCT_INTEGRATION.md)。
 
 `scripts/dev/Test-QQBot.ps1`、`Test-QwenProvider.ps1`、`Test-QQAI.ps1` 为 PowerShell 7 人工验收入口，公共串联逻辑位于 `qq_bot_test_common.ps1`。默认 Check，复用原 CLI 的权限/审批/费用/单次执行；不参与应用启动。见 [操作说明](deep-dive/BOT_TEST_WORKFLOW.md)。
+
+`scripts/dev/Test-QQConversation.ps1` 为独立双轮入口，复用上述路径/目录/联网确认辅助函数；Check不打开数据库，Run逐Turn人工审批，同进程私有Service共享RAM。见 [2C-1与待授权C-2](deep-dive/BOT3D2C1_REAL_CONVERSATION_TRIAL.md)。
