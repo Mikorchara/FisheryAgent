@@ -108,6 +108,29 @@ class RunConsentTests(unittest.TestCase):
             return append(record)
         with patch.object(ledger,'_append',side_effect=check):self.reserve(ledger)
 
+    def test_short_observer_lock_does_not_spuriously_reject_admission(self):
+        import threading
+        ledger=self.ledger();lock=ledger._io;reader_ready=threading.Event();attempt=threading.Event()
+        def reader():
+            with lock:reader_ready.set();attempt.wait(2)
+        thread=threading.Thread(target=reader);thread.start();self.assertTrue(reader_ready.wait(2))
+        class ObservedLock:
+            def acquire(self,*args,**kwargs):attempt.set();return lock.acquire(*args,**kwargs)
+            def release(self):return lock.release()
+            def __enter__(self):lock.acquire();return self
+            def __exit__(self,*_):lock.release()
+        try:
+            with patch.object(ledger,'_io',ObservedLock()):lease=self.reserve(ledger)
+            ledger.check_lease(lease);self.assertEqual(ledger.report()['consumed_turns'],1)
+        finally:attempt.set();thread.join(2)
+
+    def test_io_lock_budget_exhaustion_returns_busy_without_consumption(self):
+        ledger=self.ledger()
+        with patch.object(ledger,'_io') as lock:
+            lock.acquire.return_value=False
+            with self.assertRaisesRegex(BotError,'RUN_ADMISSION_BUSY'):self.reserve(ledger)
+        self.assertEqual(ledger.report()['consumed_turns'],0)
+
     def test_missing_or_changed_journal_stops_run(self):
         ledger=self.ledger();self.reserve(ledger)
         with patch.object(ledger,'_journal_intact',return_value=False):

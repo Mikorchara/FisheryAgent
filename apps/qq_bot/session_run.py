@@ -28,6 +28,11 @@ class SessionRun:
     def __init__(self,inputs,directory,*,async_client_factory,limits=RunLimits(),members=None,
                  clock=None,monotonic=time.monotonic):
         if async_client_factory is None:raise BotError('SESSION_RUN_OFFLINE_ONLY')
+        self._initialize(inputs,directory,async_client_factory=async_client_factory,limits=limits,
+            members=members,clock=clock,monotonic=monotonic)
+
+    def _initialize(self,inputs,directory,*,async_client_factory,limits,members,clock,monotonic):
+        """Shared run mechanics; public constructors own their distinct authorization gates."""
         self.clock=clock or (lambda:datetime.now(timezone.utc));self.now=monotonic
         self.inputs,self.directory=inputs,local_path(directory)
         if not self.directory.is_dir() or any(self.directory.iterdir()):raise BotError('RUN_DIRECTORY_NOT_EMPTY')
@@ -44,14 +49,26 @@ class SessionRun:
         self.config=QQAIConfig(True,PRESET,ChannelBudget(),(QQAIGrant(inputs.group_id,selected,grant.device_id),))
         self.options=ConversationOptions(trigger_mode='mention_ai',memory_enabled=True)
         self.store=ConversationStore(self.options,monotonic=monotonic)
-        self.scope=prepared_scope(self.options);self.scope_sha256=_hash(self.scope)
+        self.scope=self.scope_for_options();self.scope_sha256=_hash(self.scope)
         self._binding_digest=_hash([self.bindings,selected,asdict(limits)])
-        self.ledger=RunLedger(self.directory,scope_sha256=self.scope_sha256,
-            bindings_sha256=self._binding_digest,limits=limits,clock=self.clock,monotonic=monotonic)
+        self.ledger=self._new_ledger(limits)
         self.base_service=ManagementAssistantService(self.monitoring,credentials=None,
             traces=JsonlTraceSink(self.directory/'unused-base.trace.jsonl'),policy_directory=inputs.policy_directory)
-        self.factory=async_client_factory;self.offline_test=True;self._lock=threading.RLock()
+        self.factory=async_client_factory;self.offline_test=async_client_factory is not None;self._lock=threading.RLock()
         self.coordinator=None;self.sessions=[];self.turns=[];self._active={};self._closed=False
+
+    def scope_for_options(self):return prepared_scope(self.options)
+
+    def _new_ledger(self,limits):
+        return RunLedger(self.directory,scope_sha256=self.scope_sha256,
+            bindings_sha256=self._binding_digest,limits=limits,clock=self.clock,monotonic=self.now)
+
+    def _turn_credentials(self):return None
+
+    def _create_turn(self,lease,snapshot,validate):
+        return SessionQwenTurn(lease,authority=self.store.authority,conversation_epoch=self.base_service.epoch,
+            options=self.options,snapshot=snapshot,validate=validate,claim=lambda:self.ledger.check_lease(lease),
+            async_client_factory=self.factory,clock=self.clock,monotonic=self.now)
 
     def plan(self):
         plan=self.ledger.plan()
@@ -77,7 +94,7 @@ class SessionRun:
         try:
             SDK_RESOURCES.assert_healthy()
             if inputs_snapshot(self.inputs,self.monitoring)[-1]!=self.bindings:raise BotError('RUN_BINDINGS_CHANGED')
-            if _hash(prepared_scope(self.options))!=self.scope_sha256:raise BotError('RUN_SCOPE_CHANGED')
+            if _hash(self.scope_for_options())!=self.scope_sha256:raise BotError('RUN_SCOPE_CHANGED')
             if self.coordinator is not None and (self.coordinator.config!=self.config or self.coordinator.access!=self.access):
                 raise BotError('RUN_PERMISSION_CHANGED')
         except Exception as error:
@@ -107,12 +124,10 @@ class SessionRun:
             self.check();self.ledger.check_lease(lease)
             self.store.authority.validate(snapshot,self.scope_sha256)
         try:
-            session=SessionQwenTurn(lease,authority=self.store.authority,conversation_epoch=self.base_service.epoch,
-                options=self.options,snapshot=snapshot,validate=validate,claim=lambda:self.ledger.check_lease(lease),
-                async_client_factory=self.factory,clock=self.clock,monotonic=self.now)
+            session=self._create_turn(lease,snapshot,validate)
             with self._lock:
                 self._active[lease.sequence]['session']=session;self.sessions.append(session)
-            return ManagementAssistantService(self.monitoring,credentials=None,
+            return ManagementAssistantService(self.monitoring,credentials=self._turn_credentials(),
                 traces=JsonlTraceSink(self.directory/f'turn-{lease.sequence}.trace.jsonl'),
                 policy_directory=self.inputs.policy_directory,channel_trial=session)
         except Exception as error:
@@ -155,7 +170,7 @@ class SessionRun:
     def checkpoint_for(self,plan,receipt):
         try:
             sequence=plan.service._channel_trial.approval.sequence
-            write_new(self.directory/f'turn-{sequence}.delivery.json',dict(contract=CONTRACT,
+            write_new(self.directory/f'turn-{sequence}.delivery.json',dict(contract=self.scope['contract'],
                 turn=sequence,receipt=asdict(receipt),client_display_confirmed=False,automatic_retry=False))
         except Exception:
             self.ledger.halt('RUN_CHECKPOINT_FAILED');raise BotError('RUN_CHECKPOINT_FAILED') from None
@@ -187,8 +202,8 @@ class SessionRun:
         self._closed=True;self.store.close();self.ledger.close()
 
     def report(self,code='RUN_SNAPSHOT'):
-        return dict(contract=CONTRACT,code=code,scope_sha256=self.scope_sha256,
+        return dict(contract=self.scope['contract'],code=code,scope_sha256=self.scope_sha256,
             quota=self.ledger.report(),turns=sorted(self.turns,key=lambda t:t['turn']),
-            offline_test=True,real_execution=False,ram_cleared=self._closed,
+            offline_test=self.offline_test,real_execution=not self.offline_test,ram_cleared=self._closed,
             client_display_confirmed=False,automatic_retry=False)
 

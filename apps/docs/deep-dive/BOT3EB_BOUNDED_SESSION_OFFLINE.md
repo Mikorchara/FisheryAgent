@@ -1,5 +1,7 @@
 # BOT-3E-B：受控持续会话授权（离线实现）
 
+后续C阶段的独立真实类型与PS Session模式已完成Mock装配，见[3E-C说明](BOT3EC_REAL_SESSION_ASSEMBLY.md)。本文件保留B阶段事实；B的类型与Scope继续Fake-only，真实联网仍须另行批准。
+
 日期：2026-10-27。项目：Fishery_AI_Prototype，起点`main / e8c9654`。
 
 ## 1. 当前边界
@@ -55,6 +57,8 @@ Service和RequestHandle每轮独立，SDK请求计数每轮最多2；多个成�
 准入顺序：原鉴权/时效/去重 → Scheduler容量/单飞 → Run有效 → RAM预留 → 脱敏日志flush/fsync确认 → 签发Lease → 私有Service/Handle入队。BUSY、伪造Mention、非法或未授权消息没有Run消费。
 
 RAM费用锁只修改计数/消息键，不执行文件I/O、模型或网络。单独的I/O锁以非阻塞方式串行化新预留；竞争期间返回`RUN_ADMISSION_BUSY`，不补开线程或无限等待。磁盘写入在费用锁外完成。
+
+C阶段后续修正：监督只读检查也短暂持有该I/O锁，立即抢锁可能造成误BUSY；当前采用费用锁外一次至多100ms等待，仍繁忙则返回原BUSY模板且不扣费。B阶段的上述非阻塞描述保留为当时记录，当前实现与验证见[3E-C](BOT3EC_REAL_SESSION_ASSEMBLY.md)。
 
 一旦进入预留，即保守占用1轮、2请求槽及完整单轮金额，不因后续排队超时、取消、模型失败、未知送达或服务创建失败退款。写入结果未知时也不恢复额度，并永久停止本Run。成功交付次数与准入消费分开统计。
 

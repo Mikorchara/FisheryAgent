@@ -49,6 +49,23 @@ class LeaseAuthority:
         self._check(lease)
 
 
+def memory_sdk_factory(factory):
+    """Strict memory HTTP with an owned close path, also for typed live-path tests."""
+    def create(runtime,remaining):
+        client=factory(runtime,remaining)
+        class OwnedClient:
+            @property
+            def chat(owner):
+                if (type(client) is not AsyncOpenAI or type(client._client._transport) is not httpx.MockTransport
+                        or client.max_retries!=0 or client._client.trust_env or client._client.follow_redirects):
+                    raise GatewayError('SESSION_RUN_MEMORY_HTTP_REQUIRED')
+                return client.chat
+            async def close(owner):await client.close()
+            def is_closed(owner):return client.is_closed()
+        return OwnedClient()
+    return create
+
+
 def session_scope(profile,policy,registry,options):
     base=previous_scope(profile,policy,registry,asdict(options))
     root=Path(__file__).parents[1]
@@ -94,26 +111,18 @@ class SessionQwenTurn(QwenTrialSession):
         lease.authority.validate(lease)
         self.authority,self.conversation_epoch=authority,conversation_epoch
         self.options,self.snapshot=options,snapshot
-        def factory(runtime,remaining):
-            client=async_client_factory(runtime,remaining)
-            class OwnedClient:
-                @property
-                def chat(owner):
-                    if (type(client) is not AsyncOpenAI or type(client._client._transport) is not httpx.MockTransport
-                            or client.max_retries!=0 or client._client.trust_env or client._client.follow_redirects):
-                        raise GatewayError('SESSION_RUN_MEMORY_HTTP_REQUIRED')
-                    return client.chat
-                async def close(owner):await client.close()
-                def is_closed(owner):return client.is_closed()
-            return OwnedClient()
         kwargs={} if monotonic is None else {'monotonic':monotonic}
-        self._initialize(lease,validate=validate,claim=claim,async_client_factory=factory,clock=clock,**kwargs)
+        self._initialize(lease,validate=validate,claim=claim,async_client_factory=memory_sdk_factory(async_client_factory),clock=clock,**kwargs)
 
     def decision(self,*args,**kwargs):raise GatewayError('SESSION_RUN_HISTORY_REQUIRED')
 
     def history_decision(self,profile,policy,registry,authorization,snapshot,*,epoch,policy_revision):
         self.check();self.approval.authority.validate(self.approval)
         digest=_hash(session_scope(profile,policy,registry,self.options))
+        return self._bound_history_decision(profile,policy,registry,authorization,snapshot,
+            epoch=epoch,policy_revision=policy_revision,digest=digest,reason='OFFLINE_BOUNDED_RUN_LEASE')
+
+    def _bound_history_decision(self,profile,policy,registry,authorization,snapshot,*,epoch,policy_revision,digest,reason):
         if digest!=self.approval.scope_sha256:raise GatewayError('SESSION_RUN_BINDING_CHANGED')
         snapshot.authority.validate(snapshot,digest)
         expected=(authorization.instance_id,authorization.device_id,authorization.permission_revision,
@@ -128,5 +137,5 @@ class SessionQwenTurn(QwenTrialSession):
         revision=_hash([self.approval.approval_id,digest,self.approval.bindings_sha256,epoch,
             snapshot.identity,snapshot.revision,snapshot.focus,[asdict(t) for t in snapshot.history]])
         return ExecutionDecision(AssistantExecutionProfile(ToolExecutionMode.SINGLE_ROUND,revision,
-            'candidate','OFFLINE_BOUNDED_RUN_LEASE'),True,max_output_tokens=512)
+            self.release_status,reason),True,max_output_tokens=512)
 

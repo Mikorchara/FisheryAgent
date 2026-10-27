@@ -89,8 +89,8 @@ class PassiveReplyOwner:
     may be composed; each path still validates immediately before submission.
     """
     def __init__(self,gateway,*,clock=None):
-        from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport
-        if type(gateway) not in (OfflineQQGateway,TrialQQTransport,ConversationQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
+        from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport,SessionQQTransport
+        if type(gateway) not in (OfflineQQGateway,TrialQQTransport,ConversationQQTransport,SessionQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
         self.gateway=gateway
         self.clock=clock or (lambda:datetime.now(timezone.utc))
         self._claims={};self._lock=threading.Lock()
@@ -123,12 +123,14 @@ class DeliveryOwner:
     does not promote candidates or remove authorization/source/resource checks.
     """
     def __init__(self, coordinator, gateway, *, clock=None, monotonic=time.monotonic,receipt_sink=None):
-        from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport
-        if type(gateway) not in (OfflineQQGateway,TrialQQTransport,ConversationQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
+        from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport,SessionQQTransport
+        if type(gateway) not in (OfflineQQGateway,TrialQQTransport,ConversationQQTransport,SessionQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
         if type(gateway) is TrialQQTransport and gateway.trial is not coordinator.service._channel_trial:
             raise BotError('TRIAL_QQ_COMPOSITION_REQUIRED')
         if type(gateway) is ConversationQQTransport and gateway.trial is not coordinator.conversation_trial:
             raise BotError('CONVERSATION_TRIAL_COMPOSITION_REQUIRED')
+        if type(gateway) is SessionQQTransport and gateway.trial is not coordinator.session_run:
+            raise BotError('SESSION_TRIAL_COMPOSITION_REQUIRED')
         self.coordinator,self.gateway=coordinator,gateway
         self.clock=clock or (lambda:datetime.now(timezone.utc))
         self.now=monotonic
@@ -146,9 +148,10 @@ class DeliveryOwner:
             try:self.coordinator.validate_delivery_candidate(plan,result)
             except GatewayError as error:raise BotError(error.code) from None
         validate()
-        from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport
-        live_trial=type(self.gateway) in (TrialQQTransport,ConversationQQTransport) and not self.gateway.trial.offline_test
+        from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport,SessionQQTransport
+        live_trial=type(self.gateway) in (TrialQQTransport,ConversationQQTransport,SessionQQTransport) and not self.gateway.trial.offline_test
         prefix='受控 Qwen 单轮实验 · SIMULATOR\n' if live_trial else '离线验收 · 非真实 QQ 交付\n'
+        if live_trial and type(self.gateway) is SessionQQTransport:prefix='受控 Qwen 持续会话 · SIMULATOR\n'
         rendered,assessment=render_channel_reply(result,max_chars=1600-len(prefix))
         text=prefix+rendered
         # Sanitize mentions/control characters without silently truncating facts.

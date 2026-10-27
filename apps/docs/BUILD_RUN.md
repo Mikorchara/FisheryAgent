@@ -6,11 +6,13 @@ EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 �
 
 ### BOT 日常验收（PowerShell 7）
 
-BOT-3E-B已完成[持续授权离线实现](deep-dive/BOT3EB_BOUNDED_SESSION_OFFLINE.md)。离线合同检查：`.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot.session_run_cli --check-contract`；默认5轮/1800秒/8.02元候选总预算，不读密钥、不打开实例、不联网、不创建批准。真实持续会话与PS新模式留3E-C，原脚本仍逐轮审批，不能用旧批准或放大旧参数启用。
+BOT-3E-C已完成[真实类型化持续会话装配的离线验证](deep-dive/BOT3EC_REAL_SESSION_ASSEMBLY.md)。配置检查：`.\scripts\dev\Test-QQConversation.ps1 -Mode Session -Check`；复用明确的旧request，默认5轮/1800秒/8.02元候选总预算，不打开库、不读密钥、不联网或消费批准。真实`-Mode Session -Run`须3E-D另行批准，启动时只审批一次。旧默认TwoTurn继续逐轮审批，不能复用旧批准或放大旧参数开启持续运行。
+
+BOT-3E-B的Fake-only合同仍可独立检查：`.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot.session_run_cli --check-contract`。[B阶段记录](deep-dive/BOT3EB_BOUNDED_SESSION_OFFLINE.md)。新真实试用Scope与Fake-only candidate独立。
 
 BOT-3D-2C-1新增独立双轮试用入口：`.\scripts\dev\Test-QQConversation.ps1 -Check`，只检查本机request引用与合同，不打开数据库、不读密钥、不联网。默认request为 `outputs/qq-bot/conversation.request.json`，先按[双轮说明](deep-dive/BOT3D2C1_REAL_CONVERSATION_TRIAL.md)人工填写。`-Run`需另行批准C-2，并在同一进程内逐Turn两次挑战确认；普通QQ CLI和旧FAST许可不扩大。
 
-BOT-3D-2B的Fake Mention/记忆仍可离线复验：`.\.venv\Scripts\python.exe -X utf8 -B -m unittest apps.qq_bot.tests.test_conversations apps.qq_bot.tests.test_mention_conversation -v`。[2B阶段记录](deep-dive/BOT3D2B_MENTION_CONVERSATIONS.md)。普通QQ入口仍默认AI_DISABLED，不支持真实Mention或多Turn参数；只有上述独立2C-1入口能请求新逐Turn试用。不要给旧批准增加history或Turn数；共享实现指纹已变，旧批准和Provider回执不授权新代码。
+BOT-3D-2B的Fake Mention/记忆仍可离线复验：`.\.venv\Scripts\python.exe -X utf8 -B -m unittest apps.qq_bot.tests.test_conversations apps.qq_bot.tests.test_mention_conversation -v`。[2B阶段记录](deep-dive/BOT3D2B_MENTION_CONVERSATIONS.md)。普通QQ入口仍默认AI_DISABLED，不支持真实Mention或多Turn参数；真实执行只能经独立双轮或持续会话试用入口及其对应审批。不要给旧批准增加history或Turn数；共享实现指纹已变，旧批准和Provider回执不授权新代码。
 
 QQ试用收到回复后优先等待`run-seconds`自动结束，确认最终`result.json`存在且`summary.json`中`report_saved=true`。中断报告缺失已补充处理，新增单次`result.delivery.json`交付快照；Ctrl+C/关窗仍不能承诺最终报告必定写完。[根因、状态和历史取证](deep-dive/BOT3D1_RESULT_REPORTING.md)。
 

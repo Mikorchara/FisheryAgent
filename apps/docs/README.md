@@ -4,8 +4,9 @@
 
 ## 阅读入口
 
+- [BOT-3E-C 真实持续会话装配与简化启动](deep-dive/BOT3EC_REAL_SESSION_ASSEMBLY.md)（独立Scope/类型、一次Run审批、PS显式Session模式；本轮只做Mock验证，联网留3E-D）
 - [BOT-3E-B 有界持续会话离线实现](deep-dive/BOT3EB_BOUNDED_SESSION_OFFLINE.md)（新RunConsent、额度日志、跨进程所有权及Fake多轮；真实入口仍禁用）
-- [BOT-3E-A 持续会话授权审计与设计](deep-dive/research/BOT3EA_BOUNDED_SESSION_CONSENT_DESIGN.md)（107项基础复验；5轮保守预留8.013825元；新审批/成本合同待审，未实施B/C）
+- [BOT-3E-A 持续会话授权审计与设计](deep-dive/research/BOT3EA_BOUNDED_SESSION_CONSENT_DESIGN.md)（A阶段设计记录；后续B/C实现见上，5轮保守预留仍为8.013825元）
 - [BOT-3D-2C-1 逐Turn真实类型装配（离线）](deep-dive/BOT3D2C1_REAL_CONVERSATION_TRIAL.md)（代码与离线证据；用户已反馈C-2真实双轮验收通过，本轮未重读原始私有回执）
 - [BOT-3D-2B Mention与有界记忆离线实现](deep-dive/BOT3D2B_MENTION_CONVERSATIONS.md)（Fake阶段记录；服务器快照与交付后记忆，后续真实类型装配见2C-1）
 - [BOT-3D-2A Mention与会话记忆设计](deep-dive/research/BOT3D2A_MENTION_CONVERSATION_DESIGN.md)（设计依据；获批的离线2B实现见上，真实逐Turn许可留2C）

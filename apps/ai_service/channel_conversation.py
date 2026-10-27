@@ -84,7 +84,8 @@ def conversation_scope(profile,policy,registry,options):
         'qq_bot/conversations.py','qq_bot/intent.py','qq_bot/ai_coordinator.py','qq_bot/ai_configuration.py',
         'qq_bot/ai_routing.py','qq_bot/gateway.py','qq_bot/ai_delivery.py','qq_bot/ai_scheduler.py',
         'ai_service/channel_conversation_trial.py','qq_bot/conversation_trial.py','qq_bot/conversation_trial_cli.py',
-        'ai_service/channel_session_run.py','qq_bot/run_consent.py','qq_bot/session_run.py','qq_bot/session_run_cli.py')
+        'ai_service/channel_session_run.py','qq_bot/run_consent.py','qq_bot/session_run.py','qq_bot/session_run_cli.py',
+        'ai_service/channel_session_trial.py','qq_bot/session_run_trial.py','qq_bot/session_run_trial_cli.py')
     return dict(contract=CONTRACT,environment='OFFLINE_FAKE_ONLY',runtime=runtime,conversation=options,
         execution={'mode':'SINGLE_ROUND','tool_calls':1,'tool_rounds':1,'model_requests':2,
             'max_output_tokens':512,'turn_timeout_s':90,'retries':0},

@@ -103,8 +103,8 @@ class RunOwner:
 class RunLedger:
     """Only this live object can mint its consent/leases. No load/resume API.
 
-    _lock protects quota in RAM. The nonblocking _io lock serializes durable
-    writes and ownership checks outside the quota lock. Any uncertain write
+    _lock protects quota in RAM. The _io lock serializes durable writes and
+    ownership checks outside that lock, with one bounded admission wait. Any uncertain write
     permanently poisons this Run; reserved capacity is never refunded.
     """
     def __init__(self,directory,*,scope_sha256,bindings_sha256,limits=RunLimits(),clock=None,monotonic=time.monotonic):
@@ -194,7 +194,10 @@ class RunLedger:
         self.check();return max(0,min(self._deadline-self.now(),(self._consent.expires_at-self.clock()).total_seconds()))
 
     def reserve(self,*,message_key,fingerprint,member_id,instance_id,device_id,app_id,group_id):
-        if not self._io.acquire(blocking=False):raise BotError('RUN_ADMISSION_BUSY')
+        # A watchdog/lease read briefly owns this same lock. Do not randomly
+        # reject a valid slot just because that read was scheduled first.
+        # One bounded wait, never a model retry or an unbounded quota-lock wait.
+        if not self._io.acquire(timeout=.1):raise BotError('RUN_ADMISSION_BUSY')
         try:
             self.check()
             with self._lock:

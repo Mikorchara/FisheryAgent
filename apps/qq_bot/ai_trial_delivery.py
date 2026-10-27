@@ -47,3 +47,15 @@ class ConversationQQTransport(TrialQQTransport):
             raise BotError('TRIAL_OFFLINE_HTTP_REQUIRED')
         trial.check();self.api,self.trial=api,trial
         self._connected=threading.Event();self._closed=threading.Event()
+
+
+class SessionQQTransport(TrialQQTransport):
+    """Independent RunConsent transport; exact Fake-only hosts cannot compose it."""
+    def __init__(self,api,trial):
+        from .session_run_trial import SessionTrialRun
+        if type(api) is not QQAPI or type(trial) is not SessionTrialRun or api.app_id!=trial.access.app_id:
+            raise BotError('SESSION_TRIAL_COMPOSITION_REQUIRED')
+        if trial.offline_test and type(api._client._transport) is not httpx.MockTransport:
+            raise BotError('TRIAL_OFFLINE_HTTP_REQUIRED')
+        trial.check();self.api,self.trial=api,trial
+        self._connected=threading.Event();self._closed=threading.Event()

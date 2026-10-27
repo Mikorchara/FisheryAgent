@@ -38,10 +38,12 @@ class QQAIJobScheduler:
     Exact Fake or independently approved Trial transport only. Ordinary CLI stays disabled.
     """
     def __init__(self, coordinator, gateway, *, clock=None, monotonic=time.monotonic,receipt_sink=None):
-        from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport
-        if type(gateway) not in (OfflineQQGateway,TrialQQTransport,ConversationQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
+        from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport,SessionQQTransport
+        if type(gateway) not in (OfflineQQGateway,TrialQQTransport,ConversationQQTransport,SessionQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
         if type(gateway) is TrialQQTransport and gateway.trial is not coordinator.service._channel_trial:
             raise BotError('TRIAL_QQ_COMPOSITION_REQUIRED')
+        if type(gateway) is SessionQQTransport and gateway.trial is not coordinator.session_run:
+            raise BotError('SESSION_TRIAL_COMPOSITION_REQUIRED')
         self.coordinator,self.gateway=coordinator,gateway
         self.now=monotonic
         self.delivery=DeliveryOwner(coordinator,gateway,clock=clock,monotonic=monotonic,receipt_sink=receipt_sink)
@@ -71,7 +73,10 @@ class QQAIJobScheduler:
                 if any(j.plan.context.session_key==session_key for j in self._jobs.values()):
                     raise BotError('AI_SESSION_BUSY')
             kwargs={'capacity_check':capacity} if self.coordinator.session_run is not None else {}
-            plan=self.coordinator.prepare(raw,transport_app_id=transport_app_id,mention=mention,**kwargs)
+            try:plan=self.coordinator.prepare(raw,transport_app_id=transport_app_id,mention=mention,**kwargs)
+            except BotError as error:
+                if error.code=='RUN_ADMISSION_BUSY':raise BotError('BUSY') from None
+                raise
             if (len(self._jobs)>=3 or sum(j.state=='QUEUED' for j in self._jobs.values())>=2):
                 self.coordinator.discard(plan);raise BotError('BUSY')
             if any(j.plan.context.session_key==plan.context.session_key for j in self._jobs.values()):
@@ -259,10 +264,13 @@ class QQAIJobScheduler:
         with self._cv:
             self._stopping=True;ids=tuple(self._jobs);self._cv.notify_all()
         for task_id in ids:self.cancel(task_id,reason='AI_SHUTDOWN')
-        self.gateway.close()
+        close_error=None
+        try:self.gateway.close()
+        except Exception as error:close_error=_code(error)
         deadline=time.monotonic()+timeout
         for thread in self._threads:
             if thread.ident is not None:thread.join(max(0,deadline-time.monotonic()))
         if any(t.is_alive() for t in self._threads):raise BotError('AI_SHUTDOWN_INCOMPLETE')
         if self._resource_fault:raise BotError('AI_SDK_RESOURCE_UNSAFE')
         self.coordinator.release_scheduler(self)
+        if close_error:raise BotError(close_error)

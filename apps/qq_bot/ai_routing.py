@@ -32,9 +32,11 @@ class OfflineQQAIRouter:
         self._revoked=set()
         self._ingress=QQAdapter(adapter.config,None,clock=self.owner.clock)
         if self.coordinator.conversations is not None and type(scheduler.gateway) is not OfflineQQGateway:
-            from .ai_trial_delivery import ConversationQQTransport
-            if (type(scheduler.gateway) is not ConversationQQTransport
-                    or scheduler.gateway.trial is not self.coordinator.conversation_trial):
+            from .ai_trial_delivery import ConversationQQTransport,SessionQQTransport
+            valid=(type(scheduler.gateway) is ConversationQQTransport
+                and scheduler.gateway.trial is self.coordinator.conversation_trial) or (
+                type(scheduler.gateway) is SessionQQTransport and scheduler.gateway.trial is self.coordinator.session_run)
+            if not valid:
                 raise BotError('QQ_CONVERSATION_FAKE_ONLY')
 
     def bind_gateway(self,owner):
@@ -129,11 +131,12 @@ class OfflineQQAIRouter:
 class TrialQQAIRouter(OfflineQQAIRouter):
     """Same ingress, scheduler and reply owner, with a separate phase-approved transport."""
     def __init__(self,adapter,scheduler):
-        from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport
+        from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport,SessionQQTransport
         valid=(type(scheduler.gateway) is TrialQQTransport
             and scheduler.gateway.trial is scheduler.coordinator.service._channel_trial) or (
             type(scheduler.gateway) is ConversationQQTransport
-            and scheduler.gateway.trial is scheduler.coordinator.conversation_trial)
+            and scheduler.gateway.trial is scheduler.coordinator.conversation_trial) or (
+            type(scheduler.gateway) is SessionQQTransport and scheduler.gateway.trial is scheduler.coordinator.session_run)
         if not valid:
             raise BotError('TRIAL_QQ_COMPOSITION_REQUIRED')
         super().__init__(adapter,scheduler)

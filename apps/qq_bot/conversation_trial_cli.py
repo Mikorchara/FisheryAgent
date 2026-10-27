@@ -32,9 +32,16 @@ def console_approval(plan,stopped):
     print(f"本轮费用上限 {plan['max_cost_cny']} 元；有效至 {plan['expires_at']}；会话代次 {plan['state']['revision']}，已接受历史 {plan['state']['turns']} 轮。",flush=True)
     print('批准SIMULATOR及投影历史披露、原SDK线程剩余风险和北京区价格/上下文口径；不展示原始模型正文。',flush=True)
     print('请审阅本轮plan文件；取消请直接Enter，批准请输入 '+challenge,flush=True)
+    return console_challenge(challenge,stopped,plan['expires_at'])
+
+
+def console_challenge(challenge,stopped,expires_at):
+    """Shared interruptible console reader; no business lock or input thread."""
+    if os.name!='nt' or not sys.stdin.isatty():raise BotError('CONVERSATION_INTERACTIVE_WINDOWS_CONSOLE_REQUIRED')
+    import msvcrt
     chars=[]
     while not stopped.wait(.05):
-        if datetime.now(timezone.utc)>=datetime.fromisoformat(plan['expires_at']):return False
+        if datetime.now(timezone.utc)>=datetime.fromisoformat(expires_at):return False
         if not msvcrt.kbhit():continue
         char=msvcrt.getwch()
         if char=='\x03':raise KeyboardInterrupt()

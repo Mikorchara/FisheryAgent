@@ -63,6 +63,7 @@ def fast_trial_scope(profile,policy,registry):
         'qq_bot/ai_trial_delivery.py','qq_bot/ai_coordinator.py','qq_bot/ai_scheduler.py',
         'qq_bot/ai_delivery.py','qq_bot/ai_routing.py','qq_bot/gateway.py','qq_bot/transport.py',
         'ai_service/channel_session_run.py','qq_bot/run_consent.py','qq_bot/session_run.py','qq_bot/session_run_cli.py',
+        'ai_service/channel_session_trial.py','qq_bot/session_run_trial.py','qq_bot/session_run_trial_cli.py',
         'qq_bot/monitoring_source.py','qq_bot/ai_configuration.py','qq_bot/adapter.py',
         'ai_service/business_tools/current_water_quality.py','ai_service/business_tools/registry.py',
         'ai_service/runtime/assistant.py','ai_service/runtime/sources.py','ai_service/management_policy.py',

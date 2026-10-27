@@ -105,6 +105,31 @@ function Confirm-BotNetwork([string]$Word, [string]$Description) {
     }
 }
 
+function Test-BotSessionReport($Report, $Checked, [int]$NativeExit) {
+    # Disk evidence is required; progress lines never substitute for a final report.
+    if ($Report['contract'] -cne 'qq-qwen-bounded-session-real-trial@1' -or
+        $Report['scope_sha256'] -cne $Checked['scope_sha256'] -or $Report['report_saved'] -ne $true -or
+        $Report['ram_cleared'] -ne $true -or $Report['quota']['max_turns'] -ne $Checked['max_turns']) {
+        Stop-BotWorkflow 'WORKFLOW_SESSION_RESULT_MISMATCH'
+    }
+    $quota = $Report['quota']
+    $spent = [decimal]::Parse([string]$quota['reserved_cost_cny'], [Globalization.CultureInfo]::InvariantCulture)
+    $cap = [decimal]::Parse([string]$Checked['total_budget_cny'], [Globalization.CultureInfo]::InvariantCulture)
+    if ($quota['consumed_turns'] -lt 0 -or $quota['consumed_turns'] -gt $Checked['max_turns'] -or
+        $quota['reserved_model_requests'] -ne (2 * $quota['consumed_turns']) -or $spent -lt 0 -or $spent -gt $cap) {
+        Stop-BotWorkflow 'WORKFLOW_SESSION_RESULT_MISMATCH'
+    }
+    if ($NativeExit -ne 0 -or $Report['code'] -cne 'SESSION_TRIAL_STOPPED' -or $Report['completed'] -ne $true) {
+        $code = [string]$Report['code']
+        if ($code -ceq 'SESSION_TRIAL_STOPPED') { $code = 'WORKFLOW_SESSION_INCOMPLETE_NO_RETRY' }
+        if ($code -cnotmatch '^[A-Z0-9_]{1,80}$') { $code = 'WORKFLOW_SESSION_FAILED' }
+        Stop-BotWorkflow $code
+    }
+    if ($Report['delivery_unknown_turns'] -gt 0) { return 'SESSION_ENDED_WITH_UNKNOWN_NO_RETRY' }
+    if ($Report['api_accepted_turns'] -gt 0) { return 'SESSION_ENDED_API_ACCEPTED_CHECK_CLIENT' }
+    return 'SESSION_ENDED_NO_VERIFIED_AI_REPLY'
+}
+
 function Copy-BotReportSummary($Summary, $Report, [string]$Kind) {
     # Project only safe status fields. Disk report, not the last progress line,
     # is authoritative after a completed native invocation.

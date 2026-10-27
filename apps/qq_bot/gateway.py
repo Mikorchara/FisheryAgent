@@ -87,9 +87,9 @@ class QQGateway:
                 raise BotError('OFFLINE_GATEWAY_COMPOSITION_REQUIRED')
         if trial_router is not None:
             from .ai_routing import TrialQQAIRouter
-            from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport
+            from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport,SessionQQTransport
             if (offline_router is not None or type(trial_router) is not TrialQQAIRouter
-                    or type(trial_router.scheduler.gateway) not in (TrialQQTransport,ConversationQQTransport)
+                    or type(trial_router.scheduler.gateway) not in (TrialQQTransport,ConversationQQTransport,SessionQQTransport)
                     or trial_router.scheduler.gateway.api is not api or trial_router.adapter is not adapter):
                 raise BotError('TRIAL_QQ_COMPOSITION_REQUIRED')
             trial_router.check_liveness()

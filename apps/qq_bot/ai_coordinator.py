@@ -65,7 +65,8 @@ class QQAICoordinator:
         self._conversation_host=conversation_trial or session_run
         if session_run is not None:
             from .session_run import SessionRun
-            if type(session_run) is not SessionRun or conversation_trial is not None:
+            from .session_run_trial import SessionTrialRun
+            if type(session_run) not in (SessionRun,SessionTrialRun) or conversation_trial is not None:
                 raise BotError('SESSION_RUN_COMPOSITION_REQUIRED')
             session_run.bind(self)
         elif conversation_trial is not None:
@@ -117,8 +118,7 @@ class QQAICoordinator:
     def _sync_conversations(self):
         policy=self.service.management_policy.snapshot()
         if self.session_run is not None:
-            from apps.ai_service.channel_session_run import prepared_scope as run_scope
-            digest=_hash(run_scope(self.conversations.options))
+            digest=_hash(self.session_run.scope_for_options())
         elif self.conversation_trial is not None:
             from apps.ai_service.channel_conversation_trial import prepared_scope as trial_scope
             digest=_hash(trial_scope(self.conversations.options))

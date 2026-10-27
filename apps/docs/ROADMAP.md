@@ -4,6 +4,7 @@
 
 ## 当前审阅与待批准
 
+- 2026-10-27 BOT-3E-C：独立真实Scope/类型、一次Run审批与PS Session模式完成Mock验证；修正读锁误BUSY和异常收尾，新增40项，最终1077 Python / 116 Node通过（含Bot484）。旧双轮默认不变，联网留3E-D另批。[装配与人工步骤](deep-dive/BOT3EC_REAL_SESSION_ASSEMBLY.md)。
 - 2026-10-27 BOT-3E-B：离线RunConsent、原子预留/日志、Windows所有权及Fake持续会话完成；新增54项，最终1037 Python / 116 Node通过。新Scope仍Fake-only candidate，真实装配与PS新模式留3E-C。[实现、故障与验收](deep-dive/BOT3EB_BOUNDED_SESSION_OFFLINE.md)。
 - 2026-10-27 BOT-3E-A完成审计：107项基础回归通过；持续许可需新审批/Scope/原子额度与跨进程所有权合同，按停止条件暂不实施B/C。现有算法5轮预留8.013825元，预算规则待审。[方案与测试边界](deep-dive/research/BOT3EA_BOUNDED_SESSION_CONSENT_DESIGN.md)。
 - 用户在本次任务附件反馈BOT-3D-2C真实双轮、客户端回复及清空验收通过；Usage费用为估算、账单未确认。本轮未读取原始私有运行记录，不据此扩大长期许可。
