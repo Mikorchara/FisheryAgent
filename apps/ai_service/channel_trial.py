@@ -62,6 +62,7 @@ def fast_trial_scope(profile,policy,registry):
         'qq_bot/conversation_trial.py','qq_bot/conversation_trial_cli.py','qq_bot/trial.py','qq_bot/trial_configuration.py',
         'qq_bot/ai_trial_delivery.py','qq_bot/ai_coordinator.py','qq_bot/ai_scheduler.py',
         'qq_bot/ai_delivery.py','qq_bot/ai_routing.py','qq_bot/gateway.py','qq_bot/transport.py',
+        'ai_service/channel_session_run.py','qq_bot/run_consent.py','qq_bot/session_run.py','qq_bot/session_run_cli.py',
         'qq_bot/monitoring_source.py','qq_bot/ai_configuration.py','qq_bot/adapter.py',
         'ai_service/business_tools/current_water_quality.py','ai_service/business_tools/registry.py',
         'ai_service/runtime/assistant.py','ai_service/runtime/sources.py','ai_service/management_policy.py',
@@ -176,9 +177,16 @@ class TrialQwenAdapter(OpenAICompatibleAdapter):
 
 class QwenTrialSession:
     """Server-owned approval/one-turn lease. JSON booleans cannot instantiate execution."""
+    release_status='local_experimental'
+
     def __init__(self,approval,*,validate,claim,async_client_factory=None,clock=None,monotonic=time.monotonic):
         if type(approval) is not QwenTrialApproval or not callable(validate) or not callable(claim):
             raise GatewayError('INVALID_QWEN_TRIAL_COMPOSITION')
+        self._initialize(approval,validate=validate,claim=claim,async_client_factory=async_client_factory,
+            clock=clock,monotonic=monotonic)
+
+    def _initialize(self,approval,*,validate,claim,async_client_factory=None,clock=None,monotonic=time.monotonic):
+        """Shared SDK guards only; each public constructor validates its exact grant type."""
         self.approval=approval;self._validate=validate;self._claim=claim
         self.clock=clock or (lambda:datetime.now(timezone.utc));self.now=monotonic
         self._deadline=self.now()+max(0,(approval.expires_at-self.clock()).total_seconds())

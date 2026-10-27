@@ -70,12 +70,13 @@ class ManagementAssistantService:
         self._offline_channel_provider=offline_channel_provider
         from .channel_trial import QwenTrialSession
         from .channel_conversation_trial import ConversationQwenTurn
-        if channel_trial is not None and (type(channel_trial) not in (QwenTrialSession,ConversationQwenTurn)
+        from .channel_session_run import SessionQwenTurn
+        if channel_trial is not None and (type(channel_trial) not in (QwenTrialSession,ConversationQwenTurn,SessionQwenTurn)
                 or offline_channel_provider is not None or knowledge is not None):
             raise GatewayError('INVALID_QWEN_TRIAL_COMPOSITION')
         self._channel_trial=channel_trial
         self._channel_history_authority=None
-        if type(channel_trial) is ConversationQwenTurn:self._channel_history_authority=channel_trial.authority
+        if type(channel_trial) in (ConversationQwenTurn,SessionQwenTurn):self._channel_history_authority=channel_trial.authority
         self.knowledge = knowledge
         from apps.knowledge.service import KnowledgeContentService
         if isinstance(self.knowledge,KnowledgeContentService):
@@ -289,7 +290,8 @@ class ManagementAssistantService:
 
     def _history_decision(self,profile,policy,registry,authorization,snapshot,policy_revision):
         from .channel_conversation_trial import ConversationQwenTurn
-        if type(self._channel_trial) is ConversationQwenTurn:
+        from .channel_session_run import SessionQwenTurn
+        if type(self._channel_trial) in (ConversationQwenTurn,SessionQwenTurn):
             if type(snapshot) is not ChannelHistorySnapshot:raise GatewayError('INVALID_CHANNEL_HISTORY')
             return self._channel_trial.history_decision(profile,policy,registry,authorization,snapshot,
                 epoch=self.epoch,policy_revision=policy_revision)
@@ -371,7 +373,7 @@ class ManagementAssistantService:
         if prepared.channel_authorization is not None:
             self.validate_channel_turn(prepared)
             if ((self._channel_trial is None and type(self._offline_channel_provider) is not OfflineChannelProvider)
-                    or prepared.execution.profile.release_status!=('local_experimental' if self._channel_trial else 'candidate')
+                    or prepared.execution.profile.release_status!=(self._channel_trial.release_status if self._channel_trial else 'candidate')
                     or prepared.execution.profile.mode!=ToolExecutionMode.SINGLE_ROUND
                     or (prepared.request.history and prepared.channel_history is None)
                     or prepared.policy.exposed_tools!=(CURRENT_WATER_QUALITY,)):

@@ -65,7 +65,13 @@ class QQAIJobScheduler:
             if self._stopping:raise BotError('AI_SCHEDULER_STOPPED')
             if self._resource_fault:raise BotError('AI_RESOURCE_QUARANTINED')
             if not self.gateway.connected:raise BotError('AI_GATEWAY_DISCONNECTED')
-            plan=self.coordinator.prepare(raw,transport_app_id=transport_app_id,mention=mention)
+            def capacity(session_key):
+                if (len(self._jobs)>=3 or sum(j.state=='QUEUED' for j in self._jobs.values())>=2):
+                    raise BotError('BUSY')
+                if any(j.plan.context.session_key==session_key for j in self._jobs.values()):
+                    raise BotError('AI_SESSION_BUSY')
+            kwargs={'capacity_check':capacity} if self.coordinator.session_run is not None else {}
+            plan=self.coordinator.prepare(raw,transport_app_id=transport_app_id,mention=mention,**kwargs)
             if (len(self._jobs)>=3 or sum(j.state=='QUEUED' for j in self._jobs.values())>=2):
                 self.coordinator.discard(plan);raise BotError('BUSY')
             if any(j.plan.context.session_key==plan.context.session_key for j in self._jobs.values()):
@@ -232,6 +238,11 @@ class QQAIJobScheduler:
             with self._cv:
                 if self._stopping:return
                 jobs=tuple(self._jobs.values())
+            run=self.coordinator.session_run
+            if run is not None:
+                try:run.check()
+                except Exception:
+                    self.cancel_all(reason='AI_AUTH_CHANGED')
             for job in jobs:
                 reason=None
                 if self.now()>=job.plan.context.deadline:reason='AI_TOTAL_TIMEOUT'

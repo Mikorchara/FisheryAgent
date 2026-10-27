@@ -157,6 +157,9 @@ class DeliveryOwner:
         self.coordinator.claim_delivery(plan,result)
         receipt=self.passive.send(plan.context,text,cancelled,validate)
         receipt=replace(receipt,explanation_code=assessment.code,explanation_in_payload=assessment.allowed)
+        if self.coordinator.session_run is not None:
+            try:self.coordinator.session_run.checkpoint_for(plan,receipt)
+            except Exception:receipt=replace(receipt,report_error='RUN_CHECKPOINT_FAILED')
         if self.receipt_sink is not None:
             try:self.receipt_sink(receipt)
             except Exception:

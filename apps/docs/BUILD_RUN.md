@@ -6,6 +6,8 @@ EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 �
 
 ### BOT 日常验收（PowerShell 7）
 
+BOT-3E-B已完成[持续授权离线实现](deep-dive/BOT3EB_BOUNDED_SESSION_OFFLINE.md)。离线合同检查：`.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot.session_run_cli --check-contract`；默认5轮/1800秒/8.02元候选总预算，不读密钥、不打开实例、不联网、不创建批准。真实持续会话与PS新模式留3E-C，原脚本仍逐轮审批，不能用旧批准或放大旧参数启用。
+
 BOT-3D-2C-1新增独立双轮试用入口：`.\scripts\dev\Test-QQConversation.ps1 -Check`，只检查本机request引用与合同，不打开数据库、不读密钥、不联网。默认request为 `outputs/qq-bot/conversation.request.json`，先按[双轮说明](deep-dive/BOT3D2C1_REAL_CONVERSATION_TRIAL.md)人工填写。`-Run`需另行批准C-2，并在同一进程内逐Turn两次挑战确认；普通QQ CLI和旧FAST许可不扩大。
 
 BOT-3D-2B的Fake Mention/记忆仍可离线复验：`.\.venv\Scripts\python.exe -X utf8 -B -m unittest apps.qq_bot.tests.test_conversations apps.qq_bot.tests.test_mention_conversation -v`。[2B阶段记录](deep-dive/BOT3D2B_MENTION_CONVERSATIONS.md)。普通QQ入口仍默认AI_DISABLED，不支持真实Mention或多Turn参数；只有上述独立2C-1入口能请求新逐Turn试用。不要给旧批准增加history或Turn数；共享实现指纹已变，旧批准和Provider回执不授权新代码。
