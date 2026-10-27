@@ -67,6 +67,7 @@ def memory_sdk_factory(factory):
 
 
 def session_scope(profile,policy,registry,options):
+    from .channel_validation import implementation_sha256
     base=previous_scope(profile,policy,registry,asdict(options))
     root=Path(__file__).parents[1]
     paths=('ai_service/channel_session_run.py','qq_bot/run_consent.py','qq_bot/session_run.py',
@@ -79,7 +80,7 @@ def session_scope(profile,policy,registry,options):
         process={'max_seconds':1800,'max_turns':5,'max_members':4,'ai_workers':1,'waiting':2,
             'approval':'ONE_PROCESS_NONCE_OWNER@1','resume':False,'ledger':'FSYNC_RESERVE_BEFORE_IO@1'},
         execution=base['execution'],history=base['history'],commit=base['commit'],
-        implementation={**base['implementation'],**{p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths}})
+        implementation={**base['implementation'],**{p:implementation_sha256(root/p) for p in paths}})
 
 
 def prepared_scope(options):

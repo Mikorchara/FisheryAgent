@@ -61,6 +61,9 @@ apps/
 │     ├─ test_ai_scheduler.py                                            # 有界并发/期限/I/O取消/单次交付及线程回收
 │     ├─ test_ai_preparation.py                                          # 独立Scope、统一Gateway离线装配、展示与真实门禁拒绝
 │     ├─ test_explanation.py                                             # 封闭解释合同、同轮事实引用、缺测/过期/注入/长度降级
+│     ├─ test_chat_presentation.py                                       # Chat重点、跨指标风险/缺测、北京时间与安全降级
+│     ├─ test_validation_boundary.py                                     # 无TTL词法区间、线程隔离、同mtime变化与异常清空
+│     ├─ test_session_validation_integration.py                           # I/O边界撤权、SDK隔离、额度、真实发送文本/历史哈希
 │     ├─ test_qwen_trial.py                                              # 独立审批、真实SDK内存HTTP、Fake QQ、预算与取消
 │     ├─ test_test_workflow.py                                           # PowerShell 7薄入口、合成实例、审批失败/期限/单次交付及脱敏
 │     ├─ test_provider_sdk_preparation.py                                # 真实SDK+内存HTTP的取消/期限/编码/零重试
@@ -125,6 +128,7 @@ apps/
 │  │  ├─ qq_conversation_trial.json                                      # 独立逐Turn真实试用candidate；仍须本机审批与一次性消费
 │  │  ├─ qq_session_run_candidate.json                                  # 有界持续会话Fake-only Scope，无真实执行资格
 │  │  ├─ qq_session_run_trial.json                                      # 独立真实持续试用candidate准备，须当前进程本机RunConsent
+│  │  ├─ qq_session_run_trial_detailed.json                             # Detailed持续试用独立candidate；不能复用Chat批准
 │  │  ├─ assistant_normal_candidate.json                                 # Qwen Normal 三工具精确 candidate，未开放
 │  │  ├─ assistant_unified_tools.json                                    # 独立Normal/Streaming三工具本地许可与显式授权子集
 │  │  ├─ water_history_candidate.json                                    # 历史单工具local_experimental，默认关闭
@@ -181,6 +185,8 @@ apps/
 │  ├─ channel_session_trial.py                                          # 真实试用Scope、RunAuthorization/Lease身份绑定及原SDK执行
 │  ├─ channel_trial.py                                                   # 独立限时Qwen试用合同、费用预算、原SDK Adapter子类
 │  ├─ channel_presentation.py                                            # QQ封闭解释计划、来源校验与中文模板；原始模型正文不展示
+│  ├─ channel_chat_presentation.py                                       # Session简洁展示、可信focus/全量风险与北京时间；不追加查询
+│  ├─ channel_validation.py                                              # QQ同步校验区间内证据/实现摘要复用；退出即清空，不跨I/O
 │  ├─ content_binding.py                                                 # 动态知识源的精确本地 Scope 变体，不继承旧真实资格
 │  ├─ execution.py                                                       # Normal 多轮发布、数据绑定、Scope 与确认 revision
 │  ├─ history_execution.py                                               # 历史单工具Scope、1024预算与独立试用门禁

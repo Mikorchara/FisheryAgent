@@ -79,6 +79,7 @@ def conversation_scope(profile,policy,registry,options):
     root=Path(__file__).parents[1]
     paths=('ai_service/channel_conversation.py','ai_service/service.py','ai_service/contracts.py',
         'ai_service/channel.py','ai_service/channel_presentation.py','ai_service/runtime/assistant.py',
+        'ai_service/channel_validation.py',
         'ai_service/business_tools/current_water_quality.py','ai_backend/history_projection.py',
         'ai_backend/openai_compatible_adapter.py','ai_backend/execution.py','ai_backend/sdk_resources.py',
         'qq_bot/conversations.py','qq_bot/intent.py','qq_bot/ai_coordinator.py','qq_bot/ai_configuration.py',

@@ -25,6 +25,7 @@ from .trial_configuration import TrialInputs,read_json,local_path,write_new
 def console_approval(plan,stopped):
     budget=plan['limits'];summary=plan['configuration'];challenge='APPROVE '+_hash(plan)[:12]
     print(f"持续会话一次审批：{summary['provider']} / {summary['model']}；Scope {plan['scope_sha256']}",flush=True)
+    print('展示模式：'+summary['presentation_mode']+'（仅本机配置，无群聊切换指令）',flush=True)
     print(f"实例 {summary['instance_id']} / 设备 {summary['device_id']}；群摘要 {summary['group_ref']}；成员摘要 {summary['member_refs']}",flush=True)
     print('明确数据根：'+summary['data_root'],flush=True)
     print(f"最长 {budget['seconds']} 秒 / 最多 {budget['max_turns']} Turn / {plan['max_model_requests']} 请求；每请求512输出Token、每轮90秒、零重试。",flush=True)
@@ -122,6 +123,7 @@ def main(argv=None):
     parser.add_argument('--max-turns',type=int,default=5);parser.add_argument('--run-seconds',type=int,default=1800)
     parser.add_argument('--total-budget-cny',default='8.02');parser.add_argument('--valid-minutes',type=int,default=10)
     parser.add_argument('--member',action='append')
+    parser.add_argument('--presentation',choices=('chat','detailed'),default='chat')
     for flag in ('confirm-instance-read','confirm-provider-network','confirm-qq-network','enable-mention-ai'):
         parser.add_argument('--'+flag,action='store_true')
     args=parser.parse_args(argv)
@@ -129,14 +131,15 @@ def main(argv=None):
         inputs=TrialInputs.parse(read_json(local_path(args.request_file)))
         limits=RunLimits(args.max_turns,args.run_seconds,args.total_budget_cny)
         members=tuple(args.member) if args.member is not None else None
-        checked=check_configuration(inputs,limits=limits,members=members)
+        checked=check_configuration(inputs,limits=limits,members=members,presentation_mode=args.presentation)
         if args.check:print(json.dumps(checked,ensure_ascii=False));return 0
         if not all((args.confirm_instance_read,args.confirm_provider_network,args.confirm_qq_network,args.enable_mention_ai)):
             raise BotError('SESSION_EXPLICIT_NETWORK_AND_MENTION_CONSENT_REQUIRED')
         if args.directory is None:raise BotError('SESSION_REPORT_DIRECTORY_REQUIRED')
         directory=local_path(args.directory)
         if not directory.is_relative_to(ROOT/'outputs'):raise BotError('SESSION_REPORT_MUST_BE_IN_OUTPUTS')
-        host=SessionTrialRun(inputs,directory,limits=limits,members=members,valid_minutes=args.valid_minutes)
+        host=SessionTrialRun(inputs,directory,limits=limits,members=members,valid_minutes=args.valid_minutes,
+                             presentation_mode=args.presentation)
         print(json.dumps(checked,ensure_ascii=False),flush=True)
         report=run_session(host);print(json.dumps(report,ensure_ascii=False),flush=True)
         return 0 if report['completed'] and report['report_saved'] else 1

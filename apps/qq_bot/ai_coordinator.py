@@ -2,6 +2,8 @@
 from dataclasses import asdict,dataclass,field
 from datetime import datetime,timezone
 from threading import RLock
+from contextlib import nullcontext
+from functools import wraps
 import time
 import uuid
 
@@ -14,6 +16,16 @@ from .contracts import BotError
 from .conversations import ConversationStore,ConversationKey,prepared_scope
 from .intent import classify,GatewayMention
 from apps.ai_service.channel import OfflineChannelProvider
+
+
+def _validation_only(function):
+    """No Tool/model/QQ I/O or history writes may be added inside these methods."""
+    @wraps(function)
+    def invoke(self,*args,**kwargs):
+        scope=getattr(self.session_run,'validation_scope',None)
+        with (scope() if scope is not None else nullcontext()):
+            return function(self,*args,**kwargs)
+    return invoke
 
 
 @dataclass(frozen=True)
@@ -130,6 +142,7 @@ class QQAICoordinator:
             raise BotError('AI_NOT_AUTHORIZED')
         return state
 
+    @_validation_only
     def conversation_context(self,message,*,grant=None):
         if self.conversations is None:raise BotError('QQ_CONVERSATION_DISABLED')
         with self._lock:
@@ -252,6 +265,7 @@ class QQAICoordinator:
         trial=(plan.service or self.service)._channel_trial
         return bool(trial is not None and trial.approval.phase=='qq' and not trial.offline_test)
 
+    @_validation_only
     def validate_plan(self,plan):
         with self._lock:
             task=self._tasks.get(plan.id)
@@ -280,6 +294,7 @@ class QQAICoordinator:
                 self.conversations.abort_snapshot(snapshot)
                 return 'HISTORY_NOT_COMMITTED'
 
+    @_validation_only
     def validate_delivery_candidate(self,plan,result):
         """Validation only, never a network permission or a can_deliver override."""
         with self._lock:

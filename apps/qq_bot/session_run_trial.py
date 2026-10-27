@@ -10,6 +10,8 @@ from apps.ai_service.channel_session_trial import (CONTRACT,prepared_scope,check
     RunAuthorizationAuthority,SessionTrialQwenTurn)
 from apps.ai_service.runtime.assistant import assistant_profile
 from apps.ai_service.runtime.release_contracts import _hash
+from apps.ai_service.channel_validation import validation_once
+from apps.ai_service.channel_chat_presentation import validate_mode
 from .configuration import project_credentials
 from .contracts import BotError,identifier
 from .conversations import ConversationOptions
@@ -31,14 +33,15 @@ def selected_members(inputs,access,grant,members):
     return selected
 
 
-def check_configuration(inputs,*,limits=RunLimits(),members=None):
+def check_configuration(inputs,*,limits=RunLimits(),members=None,presentation_mode='chat'):
     """Metadata/Policy/Scope only; no database, credential resolution or approval."""
     if type(limits) is not RunLimits:raise BotError('INVALID_RUN_LIMITS')
     access,ai,source,grant,_=inputs_snapshot(inputs)
     selected=selected_members(inputs,access,grant,members)
     options=ConversationOptions(trigger_mode='mention_ai',memory_enabled=True)
-    scope=prepared_scope(options)
-    check_preparation(read_json(ROOT/'apps/ai_service/resources/qq_session_run_trial.json'),scope)
+    validate_mode(presentation_mode)
+    scope=prepared_scope(options,presentation_mode)
+    check_preparation(read_json(_preparation_path(presentation_mode)),scope)
     return dict(code='SESSION_TRIAL_CHECKED_APPROVAL_REQUIRED',contract=CONTRACT,
         scope_sha256=_hash(scope),preset=PRESET,provider=assistant_profile(PRESET).service_id,
         model=assistant_profile(PRESET).model,instance_id=source.instance_id,device_id=grant.device_id,
@@ -48,7 +51,14 @@ def check_configuration(inputs,*,limits=RunLimits(),members=None):
         reservation_per_turn_cny=str(cost_reservation()),total_reservation_cny=str(cost_reservation()*limits.max_turns),
         max_model_requests=2*limits.max_turns,requests_per_turn=2,output_tokens_per_request=512,
         seconds_per_turn=90,retries=0,qualification_id=None,status='candidate',
+        presentation_mode=presentation_mode,
         credential_checked=False,business_instance_opened=False,network_requests=0,approval_created=False)
+
+
+def _preparation_path(mode):
+    validate_mode(mode)
+    name='qq_session_run_trial.json' if mode=='chat' else 'qq_session_run_trial_detailed.json'
+    return ROOT/'apps/ai_service/resources'/name
 
 
 class SessionTrialLedger(RunLedger):
@@ -61,9 +71,10 @@ class SessionTrialLedger(RunLedger):
 
 class SessionTrialRun(SessionRun):
     def __init__(self,inputs,directory,*,limits=RunLimits(),members=None,valid_minutes=10,
-                 async_client_factory=None,clock=None,monotonic=time.monotonic):
+                 async_client_factory=None,clock=None,monotonic=time.monotonic,presentation_mode='chat'):
         if type(valid_minutes) is not int or not 1<=valid_minutes<=10:raise BotError('INVALID_RUN_APPROVAL_DURATION')
-        configuration=check_configuration(inputs,limits=limits,members=members)
+        self.presentation_mode=validate_mode(presentation_mode)
+        configuration=check_configuration(inputs,limits=limits,members=members,presentation_mode=presentation_mode)
         self._authorization=None;self._approval_digest=None
         self._authority=RunAuthorizationAuthority(self._validate_authorization)
         self._initialize(inputs,directory,async_client_factory=async_client_factory,limits=limits,
@@ -75,7 +86,12 @@ class SessionTrialRun(SessionRun):
             'consents_required':list(CONSENTS),'max_model_requests':limits.max_turns*2,
             'source':'SIMULATOR','history':'PROJECTED_UNTRUSTED_TRANSCRIPT_V1'}
 
-    def scope_for_options(self):return prepared_scope(self.options)
+    def scope_for_options(self):return prepared_scope(self.options,self.presentation_mode)
+    def validation_scope(self):return self._authority.boundary.scope()
+    def _check_configuration(self):
+        if self.presentation_mode!=self.scope['presentation']['mode']:
+            raise BotError('RUN_SCOPE_CHANGED')
+        return validation_once(('run-configuration',id(self)),super()._check_configuration)
     def _new_ledger(self,limits):
         return SessionTrialLedger(self.directory,scope_sha256=self.scope_sha256,
             bindings_sha256=self._binding_digest,limits=limits,clock=self.clock,monotonic=self.now)
@@ -90,7 +106,7 @@ class SessionTrialRun(SessionRun):
             raise BotError('INVALID_SESSION_TRIAL_APPROVAL')
         if (inputs_snapshot(self.inputs,self.monitoring)[-1]!=self.bindings
                 or _hash(self.scope_for_options())!=self.scope_sha256):raise BotError('RUN_BINDINGS_CHANGED')
-        check_configuration(self.inputs,limits=self.ledger.limits,members=self.members)
+        check_configuration(self.inputs,limits=self.ledger.limits,members=self.members,presentation_mode=self.presentation_mode)
         SDK_RESOURCES.assert_healthy()
         value=dict(contract=CONTRACT,plan=plan,status='local_experimental',qualification_id=None,
             approved_at=self.clock().isoformat(),consents={k:True for k in CONSENTS},
@@ -106,9 +122,13 @@ class SessionTrialRun(SessionRun):
 
     def _validate_authorization(self,value):
         super().check()
-        check_preparation(read_json(ROOT/'apps/ai_service/resources/qq_session_run_trial.json'),self.scope)
-        if value is not self._authorization or _hash(read_json(self.directory/'approval.json'))!=self._approval_digest:
+        if value is not self._authorization:
             self.ledger.halt('RUN_APPROVAL_CHANGED');raise BotError('RUN_APPROVAL_CHANGED')
+        def check_files():
+            check_preparation(read_json(_preparation_path(self.presentation_mode)),self.scope)
+            if _hash(read_json(self.directory/'approval.json'))!=self._approval_digest:
+                self.ledger.halt('RUN_APPROVAL_CHANGED');raise BotError('RUN_APPROVAL_CHANGED')
+        validation_once(('run-approval',id(self)),check_files)
 
     def check(self):
         self.ledger.check()
@@ -126,7 +146,8 @@ class SessionTrialRun(SessionRun):
         return SessionTrialQwenTurn(lease,run_authorization=self._authorization,
             authority=self.store.authority,conversation_epoch=self.base_service.epoch,
             options=self.options,snapshot=snapshot,validate=validate,claim=lambda:self.ledger.check_lease(lease),
-            async_client_factory=self.factory,clock=self.clock,monotonic=self.now)
+            async_client_factory=self.factory,clock=self.clock,monotonic=self.now,
+            presentation_mode=self.presentation_mode)
 
     def report(self,code='RUN_SNAPSHOT'):
         report=super().report(code)

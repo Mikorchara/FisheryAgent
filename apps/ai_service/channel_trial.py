@@ -53,6 +53,7 @@ def cost_reservation():
 
 
 def fast_trial_scope(profile,policy,registry):
+    from .channel_validation import implementation_sha256
     if profile!=assistant_profile(PRESET):raise GatewayError('TRIAL_PRESET_NOT_ALLOWED')
     scope=monitoring_trial_scope(profile,policy,registry,budget=ChannelBudget())
     root=Path(__file__).parents[1]
@@ -67,9 +68,9 @@ def fast_trial_scope(profile,policy,registry):
         'qq_bot/monitoring_source.py','qq_bot/ai_configuration.py','qq_bot/adapter.py',
         'ai_service/business_tools/current_water_quality.py','ai_service/business_tools/registry.py',
         'ai_service/runtime/assistant.py','ai_service/runtime/sources.py','ai_service/management_policy.py',
-        'ai_service/runtime/resources/presets.json')
+        'ai_service/runtime/resources/presets.json','ai_service/channel_validation.py')
     return dict(contract=TRIAL_CONTRACT,project_root=str(root.parent.resolve()),base_scope=scope,
-        implementation={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths},
+        implementation={p:implementation_sha256(root/p) for p in paths},
         transport={'adapter':'apps.ai_service.channel_trial.TrialQwenAdapter',
             'delegate':'apps.ai_backend.openai_compatible_adapter.OpenAICompatibleAdapter',
             'sdk':'AsyncOpenAI','follow_redirects':False,'trust_env':False,'retries':0},

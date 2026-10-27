@@ -4,6 +4,7 @@
 
 ## 阅读入口
 
+- [BOT-3F-B1/B2 聊天展示与 QQ 校验优化](deep-dive/BOT3FB12_CHAT_VALIDATION_OPTIMIZATION.md)（Session 默认 Chat，旧调用保留 A/B/C；词法校验复用与新 Scope，联网另批）
 - [BOT-3E-C 真实持续会话装配与简化启动](deep-dive/BOT3EC_REAL_SESSION_ASSEMBLY.md)（独立Scope/类型、一次Run审批、PS显式Session模式；本轮只做Mock验证，联网留3E-D）
 - [BOT-3E-B 有界持续会话离线实现](deep-dive/BOT3EB_BOUNDED_SESSION_OFFLINE.md)（新RunConsent、额度日志、跨进程所有权及Fake多轮；真实入口仍禁用）
 - [BOT-3E-A 持续会话授权审计与设计](deep-dive/research/BOT3EA_BOUNDED_SESSION_CONSENT_DESIGN.md)（A阶段设计记录；后续B/C实现见上，5轮保守预留仍为8.013825元）

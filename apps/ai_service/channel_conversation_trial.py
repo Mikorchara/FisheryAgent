@@ -16,6 +16,7 @@ CONTRACT='qq-qwen-conversation-turn-trial@1'
 
 
 def trial_scope(profile,policy,registry,options):
+    from .channel_validation import implementation_sha256
     options=validate_options(options)
     if options['trigger_mode']!='mention_ai' or options['memory_enabled'] is not True:
         raise GatewayError('CONVERSATION_TRIAL_MENTION_REQUIRED')
@@ -27,7 +28,7 @@ def trial_scope(profile,policy,registry,options):
     extra=('ai_service/channel_conversation_trial.py','qq_bot/conversation_trial.py',
         'qq_bot/conversation_trial_cli.py','qq_bot/ai_trial_delivery.py')
     return dict(contract=CONTRACT,runtime=runtime,conversation=options,
-        implementation={**base['implementation'],**{p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in extra}},
+        implementation={**base['implementation'],**{p:implementation_sha256(root/p) for p in extra}},
         sdk=base['base_scope']['backend'],transport=base['transport'],cost=base['cost'],
         process={'max_model_turns':2,'independent_approval_per_turn':True,'max_seconds':600},
         execution={'mode':'SINGLE_ROUND','model_requests':2,'tool_calls':1,'tool_rounds':1,

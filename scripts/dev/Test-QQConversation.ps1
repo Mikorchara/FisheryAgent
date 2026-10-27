@@ -6,7 +6,8 @@ param(
     [string]$RequestFile, [string]$MaxCostCny = '2.00',
     [ValidateRange(1,10)][int]$ValidMinutes = 10,
     [ValidateRange(1,1800)][int]$RunSeconds = 300, [string]$ReportRoot,
-    [ValidateRange(1,5)][int]$MaxTurns = 5, [string]$TotalBudgetCny = '8.02', [string[]]$Members
+    [ValidateRange(1,5)][int]$MaxTurns = 5, [string]$TotalBudgetCny = '8.02', [string[]]$Members,
+    [ValidateSet('chat','detailed')][string]$Presentation = 'chat'
 )
 . (Join-Path $PSScriptRoot 'qq_bot_test_common.ps1')
 $ErrorActionPreference = 'Stop'
@@ -17,7 +18,8 @@ try {
     if ($Run -and $Check) { Stop-BotWorkflow 'WORKFLOW_MODE_CONFLICT' }
     if ($Mode -eq 'TwoTurn' -and $RunSeconds -gt 600) { Stop-BotWorkflow 'WORKFLOW_TWO_TURN_DURATION_LIMIT' }
     if ($Mode -eq 'TwoTurn' -and ($PSBoundParameters.ContainsKey('MaxTurns') -or
-            $PSBoundParameters.ContainsKey('TotalBudgetCny') -or $PSBoundParameters.ContainsKey('Members'))) {
+            $PSBoundParameters.ContainsKey('TotalBudgetCny') -or $PSBoundParameters.ContainsKey('Members') -or
+            $PSBoundParameters.ContainsKey('Presentation'))) {
         Stop-BotWorkflow 'WORKFLOW_SESSION_OPTIONS_REQUIRE_SESSION_MODE'
     }
     $root = Get-BotFullPath (Join-Path $PSScriptRoot '../..')
@@ -32,7 +34,7 @@ try {
         if (-not $PSBoundParameters.ContainsKey('RunSeconds')) { $RunSeconds = 1800 }
         $arguments = @('-X','utf8','-B','-m','apps.qq_bot.session_run_trial_cli','--request-file',$request,
             '--max-turns',"$MaxTurns",'--total-budget-cny',$TotalBudgetCny,
-            '--valid-minutes',"$ValidMinutes",'--run-seconds',"$RunSeconds")
+            '--valid-minutes',"$ValidMinutes",'--run-seconds',"$RunSeconds",'--presentation',$Presentation.ToLowerInvariant())
         foreach ($member in $Members) { $arguments += @('--member',$member) }
         $checked = (Invoke-BotChecked -Python $python -Arguments ($arguments + '--check')).Record
         Write-Host ('配置引用：' + $request + '；数据根：' + $checked.data_root)
@@ -40,6 +42,7 @@ try {
         Write-Host ('群摘要：' + $checked.group_ref + '；成员摘要：' + ($checked.member_refs -join ', '))
         Write-Host ('最多 ' + $checked.max_turns + ' Turn / ' + $checked.max_model_requests + ' 请求 / ' + $checked.seconds + ' 秒；总预留 ' + $checked.total_reservation_cny + ' 元；总预算 ' + $checked.total_budget_cny + ' 元')
         Write-Host ('Scope：' + $checked.scope_sha256 + '；candidate准备一致，仍须本次进程的人工批准。')
+        Write-Host ('展示模式：' + $checked.presentation_mode + '；旧 TwoTurn 继续原 A/B/C。')
         if (-not $Run) { Write-Host '离线检查通过；未打开数据库、读取密钥、联网或消费批准。'; exit 0 }
         if (-not $ReportRoot) { $ReportRoot = Join-Path $root 'outputs/qq-bot/test-runs' }
         $directory = New-BotRunDirectory -Root $root -ReportRoot $ReportRoot

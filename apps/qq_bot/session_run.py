@@ -93,13 +93,18 @@ class SessionRun:
         self.ledger.check()
         try:
             SDK_RESOURCES.assert_healthy()
-            if inputs_snapshot(self.inputs,self.monitoring)[-1]!=self.bindings:raise BotError('RUN_BINDINGS_CHANGED')
-            if _hash(self.scope_for_options())!=self.scope_sha256:raise BotError('RUN_SCOPE_CHANGED')
+            self._check_configuration()
             if self.coordinator is not None and (self.coordinator.config!=self.config or self.coordinator.access!=self.access):
                 raise BotError('RUN_PERMISSION_CHANGED')
         except Exception as error:
             code=getattr(error,'code','RUN_CONFIGURATION_UNAVAILABLE')
             self.ledger.halt(code);raise BotError(code) from None
+
+    def _check_configuration(self):
+        # Fake-only Run keeps its original checks. The typed Session trial may
+        # deduplicate this immutable evidence within one synchronous validation.
+        if inputs_snapshot(self.inputs,self.monitoring)[-1]!=self.bindings:raise BotError('RUN_BINDINGS_CHANGED')
+        if _hash(self.scope_for_options())!=self.scope_sha256:raise BotError('RUN_SCOPE_CHANGED')
 
     def check_message(self,message):
         self.check()

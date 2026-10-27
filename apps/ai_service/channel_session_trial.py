@@ -8,6 +8,8 @@ from .channel_session_run import SessionQwenTurn,TurnLease,memory_sdk_factory,se
 from .channel_trial import PRESET
 from .runtime.assistant import assistant_profile
 from .runtime.release_contracts import _hash
+from .channel_validation import ValidationBoundary, implementation_sha256, CONTRACT as VALIDATION_CONTRACT
+from .channel_chat_presentation import CONTRACT as CHAT_CONTRACT, validate_mode
 
 CONTRACT='qq-qwen-bounded-session-real-trial@1'
 
@@ -24,7 +26,8 @@ class RunAuthorization:
 
 class RunAuthorizationAuthority:
     """Only exact server-issued object identity grants execution, never JSON flags."""
-    def __init__(self,check):self._check=check;self._authorization=None
+    def __init__(self,check):
+        self._check=check;self._authorization=None;self.boundary=ValidationBoundary()
     def _issue(self,*,consent_id,scope_sha256,bindings_sha256,lease_authority):
         if self._authorization is not None:raise GatewayError('SESSION_TRIAL_ALREADY_APPROVED')
         self._authorization=RunAuthorization(self,object(),consent_id,scope_sha256,bindings_sha256,lease_authority)
@@ -32,33 +35,36 @@ class RunAuthorizationAuthority:
     def validate(self,value):
         if type(value) is not RunAuthorization or value is not self._authorization or value.authority is not self:
             raise GatewayError('SESSION_TRIAL_RUN_AUTHORIZATION_REQUIRED')
-        self._check(value)
+        with self.boundary.scope():self._check(value)
 
 
-def trial_scope(profile,policy,registry,options):
+def trial_scope(profile,policy,registry,options,presentation_mode='chat'):
+    validate_mode(presentation_mode)
     base=offline_scope(profile,policy,registry,options)
     root=Path(__file__).resolve().parents[2]
     paths=('apps/ai_service/channel_session_trial.py','apps/qq_bot/session_run_trial.py',
         'apps/qq_bot/session_run_trial_cli.py','scripts/dev/Test-QQConversation.ps1',
         'scripts/dev/qq_bot_test_common.ps1','apps/qq_bot/configuration.py',
-        'apps/ai_service/runtime/locations.py','apps/ai_backend/credentials.py','apps/ai_backend/secure_files.py')
+        'apps/ai_service/runtime/locations.py','apps/ai_backend/credentials.py','apps/ai_backend/secure_files.py',
+        'apps/ai_service/channel_chat_presentation.py')
     return dict(contract=CONTRACT,environment='EXPLICIT_PROCESS_OPERATOR_TRIAL',
         runtime=base['runtime'],sdk=base['sdk'],transport=base['transport'],cost=base['cost'],
         execution=base['execution'],conversation=base['conversation'],history=base['history'],
-        commit=base['commit'],presentation=base['presentation'],process=base['process'],
+        commit=base['commit'],presentation={'legacy':base['presentation'],'session':CHAT_CONTRACT,
+            'mode':presentation_mode},process=base['process'],validation=VALIDATION_CONTRACT,
         approval={'type':'RunAuthorization','binding':'PROCESS_NONCE_AND_RUN_LEDGER',
             'operator':'LOCAL_UNAUTHENTICATED','old_approvals':'REJECT','resume':False,
             'consents':'PROVIDER_QQ_SCOPE_COST_SOURCE_HISTORY_SDK_RISK@1'},
         implementation=base['implementation'],entry_implementation={
-            p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths})
+            p:implementation_sha256(root/p) for p in paths})
 
 
-def prepared_scope(options):
+def prepared_scope(options,presentation_mode='chat'):
     from apps.ai_backend.tools import ToolDefinition,ToolRegistry
     from apps.ai_backend.tools.policy import ToolPolicy
     from .business_tools.current_water_quality import WATER_DEFINITION
     return trial_scope(assistant_profile(PRESET),ToolPolicy('assistant',True,('get_current_water_quality',)),
-        ToolRegistry((ToolDefinition(WATER_DEFINITION,lambda:None),)),options)
+        ToolRegistry((ToolDefinition(WATER_DEFINITION,lambda:None),)),options,presentation_mode)
 
 
 def preparation_record(scope):
@@ -76,7 +82,7 @@ class SessionTrialQwenTurn(SessionQwenTurn):
     release_status='local_experimental'
 
     def __init__(self,lease,*,run_authorization,authority,conversation_epoch,options,snapshot,
-                 validate,claim,async_client_factory=None,clock=None,monotonic=None):
+                 validate,claim,async_client_factory=None,clock=None,monotonic=None,presentation_mode='chat'):
         if type(run_authorization) is not RunAuthorization or type(lease) is not TurnLease:
             raise GatewayError('SESSION_TRIAL_RUN_AUTHORIZATION_REQUIRED')
         run_authorization.authority.validate(run_authorization);lease.authority.validate(lease)
@@ -88,6 +94,7 @@ class SessionTrialQwenTurn(SessionQwenTurn):
         if snapshot.identity[:5]!=(lease.app_id,lease.group_id,lease.member_id,lease.instance_id,lease.device_id):
             raise GatewayError('SESSION_TRIAL_HISTORY_IDENTITY_CHANGED')
         self.run_authorization=run_authorization
+        self.presentation_mode=validate_mode(presentation_mode)
         self.authority,self.conversation_epoch=authority,conversation_epoch
         self.options,self.snapshot=options,snapshot
         def check():
@@ -97,8 +104,15 @@ class SessionTrialQwenTurn(SessionQwenTurn):
         self._initialize(lease,validate=check,claim=claim,async_client_factory=factory,clock=clock,**kwargs)
 
     def history_decision(self,profile,policy,registry,authorization,snapshot,*,epoch,policy_revision):
-        self.check();self.approval.authority.validate(self.approval)
-        digest=_hash(trial_scope(profile,policy,registry,self.options))
-        return self._bound_history_decision(profile,policy,registry,authorization,snapshot,
-            epoch=epoch,policy_revision=policy_revision,digest=digest,reason='EXPLICIT_PROCESS_RUNCONSENT')
+        with self.run_authorization.authority.boundary.scope():
+            self.check();self.approval.authority.validate(self.approval)
+            # Actual registry/profile/policy are rebuilt; only implementation file
+            # bytes may be reused within this validation-only boundary.
+            digest=_hash(trial_scope(profile,policy,registry,self.options,self.presentation_mode))
+            return self._bound_history_decision(profile,policy,registry,authorization,snapshot,
+                epoch=epoch,policy_revision=policy_revision,digest=digest,reason='EXPLICIT_PROCESS_RUNCONSENT')
+
+    def check(self):
+        with self.run_authorization.authority.boundary.scope():
+            return super().check()
 
