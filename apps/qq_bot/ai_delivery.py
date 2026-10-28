@@ -152,7 +152,10 @@ class DeliveryOwner:
         live_trial=type(self.gateway) in (TrialQQTransport,ConversationQQTransport,SessionQQTransport) and not self.gateway.trial.offline_test
         prefix='受控 Qwen 单轮实验 · SIMULATOR\n' if live_trial else '离线验收 · 非真实 QQ 交付\n'
         if live_trial and type(self.gateway) is SessionQQTransport:prefix='受控 Qwen 持续会话 · SIMULATOR\n'
-        if type(self.gateway) is SessionQQTransport and self.gateway.trial.presentation_mode=='chat':
+        if self.coordinator.hybrid:
+            if type(self.gateway) is not OfflineQQGateway:raise BotError('HYBRID_FAKE_GATEWAY_REQUIRED')
+            rendered,assessment=result.publication.text,result.publication
+        elif type(self.gateway) is SessionQQTransport and self.gateway.trial.presentation_mode=='chat':
             from apps.ai_service.channel_chat_presentation import render_chat_reply
             if live_trial:prefix=''  # The compact text carries SIMULATOR itself.
             snapshot=plan.prepared.channel_history

@@ -4,6 +4,12 @@
 
 ## 阅读入口
 
+- [BOT-3G-C1 本地Hybrid研究实验](deep-dive/BOT3GC1_LOCAL_HYBRID_RESEARCH.md)（48题、分组重复/独立五轮Run、受保护审阅与统计；离线验证，真实Qwen须新审批，不连接QQ）
+- [BOT-3G-B Hybrid离线实现](deep-dive/BOT3GB_HYBRID_OFFLINE.md)（General/Water、原Agent、混合RAM历史与Run额度；仅Fake发布，不开放真实General/QQ/Qwen）
+- [BOT-3G Hybrid Agent与Prompt设计](deep-dive/research/BOT3G_HYBRID_AGENT_DESIGN.md)（固定指令+其余授权自然语言进入原Agent；Mock已验证，Source/General输出合同待审）
+- [BOT-3G Hybrid来源与输出独立合同](deep-dive/research/BOT3G_HYBRID_SOURCE_OUTPUT_CONTRACT.md)（工具可选、一般文本语义风险、1/2请求与混合历史；未开放真实入口）
+- [BOT-3G-A 水质意图现状基线](deep-dive/research/BOT3GA_WATER_INTENT_CHAT_DESIGN.md)（36表达/72项投影及原收费差异；关键词扩充路线已由Hybrid设计替代）
+- [BOT-3F-C 真实双轮验收与性能复核](deep-dive/BOT3FC_REAL_ACCEPTANCE_PERFORMANCE_REVIEW.md)（两轮交付/历史/SDK通过、正文哈希匹配；客户端约6～7秒，真实HTTP分段证据不足）
 - [BOT-3F-B1/B2 聊天展示与 QQ 校验优化](deep-dive/BOT3FB12_CHAT_VALIDATION_OPTIMIZATION.md)（Session 默认 Chat，旧调用保留 A/B/C；词法校验复用与新 Scope，联网另批）
 - [BOT-3E-C 真实持续会话装配与简化启动](deep-dive/BOT3EC_REAL_SESSION_ASSEMBLY.md)（独立Scope/类型、一次Run审批、PS显式Session模式；本轮只做Mock验证，联网留3E-D）
 - [BOT-3E-B 有界持续会话离线实现](deep-dive/BOT3EB_BOUNDED_SESSION_OFFLINE.md)（新RunConsent、额度日志、跨进程所有权及Fake多轮；真实入口仍禁用）

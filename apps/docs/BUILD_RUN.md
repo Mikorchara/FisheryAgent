@@ -6,6 +6,14 @@ EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 �
 
 ### BOT 日常验收（PowerShell 7）
 
+BOT-3G-C1新增[本地Hybrid研究入口](deep-dive/BOT3GC1_LOCAL_HYBRID_RESEARCH.md)：48题、十个独立五轮内Run；不连接QQ，真实Qwen执行须操作者亲自新审批。先在Prototype根执行一行检查（不打开实例/密钥，不联网或消费许可）：
+
+```powershell
+.\scripts\dev\Test-HybridProvider.ps1 -Check -RequestFile '.\outputs\qq-bot\conversation.request.json' -InstanceRoot 'D:\CodexProject\Fishery_AI_Prototype\outputs\bot2c-instance' -TotalBudgetCny '80'
+```
+
+`-Run`、分组、重复采样、费用预留与私有报告说明见上述文档；本轮没有自动执行真实实验。BOT-3G-B的[QQ Fake-only Hybrid](deep-dive/BOT3GB_HYBRID_OFFLINE.md)继续保留：可离线运行 `.\.venv\Scripts\python.exe -X utf8 -B -m unittest apps.qq_bot.tests.test_hybrid_run -v`。原QQ脚本没有`-Mode Hybrid`，本地General审阅不授予QQ自动发布资格。
+
 BOT-3F-B1/B2：新持续会话默认 Chat；本机可用 `-Mode Session -Presentation detailed -Check` 核对完整 A/B/C 模式。两种模式各自绑定新 Scope，旧批准不可复用；旧 TwoTurn/FAST 展示不变，没有群聊切换指令。[实现、性能与重新验收](deep-dive/BOT3FB12_CHAT_VALIDATION_OPTIMIZATION.md)。本轮未开展真实联网。
 
 BOT-3E-C已完成[真实类型化持续会话装配的离线验证](deep-dive/BOT3EC_REAL_SESSION_ASSEMBLY.md)。配置检查：`.\scripts\dev\Test-QQConversation.ps1 -Mode Session -Check`；复用明确的旧request，默认5轮/1800秒/8.02元候选总预算，不打开库、不读密钥、不联网或消费批准。真实`-Mode Session -Run`须3E-D另行批准，启动时只审批一次。旧默认TwoTurn继续逐轮审批，不能复用旧批准或放大旧参数开启持续运行。

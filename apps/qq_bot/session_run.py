@@ -48,7 +48,7 @@ class SessionRun:
         self.access=replace(access,groups=(replace(group,members=selected),))
         self.config=QQAIConfig(True,PRESET,ChannelBudget(),(QQAIGrant(inputs.group_id,selected,grant.device_id),))
         self.options=ConversationOptions(trigger_mode='mention_ai',memory_enabled=True)
-        self.store=ConversationStore(self.options,monotonic=monotonic)
+        self.store=self._new_store(monotonic)
         self.scope=self.scope_for_options();self.scope_sha256=_hash(self.scope)
         self._binding_digest=_hash([self.bindings,selected,asdict(limits)])
         self.ledger=self._new_ledger(limits)
@@ -58,6 +58,10 @@ class SessionRun:
         self.coordinator=None;self.sessions=[];self.turns=[];self._active={};self._closed=False
 
     def scope_for_options(self):return prepared_scope(self.options)
+
+    def _new_store(self,monotonic):return ConversationStore(self.options,monotonic=monotonic)
+
+    def _verified_execution(self,session,report):return report['model_requests']==2
 
     def _new_ledger(self,limits):
         return RunLedger(self.directory,scope_sha256=self.scope_sha256,
@@ -158,7 +162,7 @@ class SessionRun:
                 and resources.get('local_io_closed') is True and resources.get('cleanup_error') is None)
             verified=bool(outcome.get('state')=='DELIVERED' and outcome.get('api_accepted') is True
                 and outcome.get('history_code')=='HISTORY_COMMITTED' and not outcome.get('report_error')
-                and safe and report['model_requests']==2)
+                and safe and self._verified_execution(session,report))
             entry=dict(turn=sequence,verified=verified,outcome=dict(outcome),
                 backend_completed=plan.handle.state=='COMPLETED',**report)
             self.turns.append(entry)

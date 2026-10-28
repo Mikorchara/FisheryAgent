@@ -55,13 +55,14 @@ class ChannelHistorySnapshot:
 
 class ChannelHistoryAuthority:
     """Bound once to the Fake Service; the owning Store checks ticket identity."""
+    snapshot_type = ChannelHistorySnapshot
     def __init__(self,options,check):
         self.options=tuple(sorted(validate_options(options).items()))
         if not callable(check):raise GatewayError('INVALID_CONVERSATION_AUTHORITY')
         self._check=check
 
     def validate(self,snapshot,expected_scope):
-        if (type(snapshot) is not ChannelHistorySnapshot or snapshot.authority is not self
+        if (type(snapshot) is not self.snapshot_type or snapshot.authority is not self
                 or snapshot.options!=self.options or snapshot.scope_sha256!=expected_scope
                 or type(snapshot.history) is not tuple
                 or any(type(t) is not AssistantHistoryTurn for t in snapshot.history)

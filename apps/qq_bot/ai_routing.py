@@ -59,17 +59,17 @@ class OfflineQQAIRouter:
         head=message.content.split(maxsplit=1)[0];store=self.coordinator.conversations
         ai=head=='/问AI'
         if store is not None:
-            fixed=classify(message.content).kind=='fixed' and not ai
+            fixed=self.coordinator.classify(message.content).kind=='fixed' and not ai
             unknown_slash=message.content.startswith('/') and head not in ('/问AI','/清空会话') and not fixed
             if not fixed and not unknown_slash and (ai or head=='/清空会话' or store.options.trigger_mode=='mention_ai'):
                 try:
                     if not ai and head!='/清空会话':self.coordinator.validate_mention(raw,message,mention,transport_app_id)
                     key,topic=self.coordinator.conversation_context(message)
                     text=(message.content.split(maxsplit=1)[1] if len(message.content.split(maxsplit=1))==2 else '') if ai else message.content
-                    intent=classify(text,topic=topic,command_priority=not ai)
+                    intent=self.coordinator.classify(text,topic=topic,command_priority=not ai)
                     if intent.kind=='clear':
                         key=self.coordinator.clear_conversation(message);self.scheduler.cancel_conversation(key)
-                    if intent.kind!='water':return self._fixed(message,transport_app_id,intent.text,ai_key=key)
+                    if not self.coordinator.is_agent_intent(intent):return self._fixed(message,transport_app_id,intent.text,ai_key=key)
                     ai=True
                 except (BotError,GatewayError) as error:return error.code,None
         if ai:

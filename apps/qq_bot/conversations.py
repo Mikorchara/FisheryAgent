@@ -80,6 +80,11 @@ class _Session:
 
 
 class ConversationStore:
+    snapshot_type = ChannelHistorySnapshot
+    turn_type = _Turn
+
+    def valid_focus(self, focus):return focus in FOCUS
+
     def __init__(self,options=ConversationOptions(),*,monotonic=time.monotonic):
         if type(options) is not ConversationOptions:raise GatewayError('INVALID_CONVERSATION_OPTIONS')
         self._options=options;self._now=monotonic;self._last=None;self._serial=0
@@ -127,13 +132,13 @@ class ConversationStore:
                 history_sha256=_hash([(t.id,t.text_sha256,t.accepted_at,t.focus) for t in s.turns]))
 
     def snapshot(self,key,*,focus):
-        if type(key) is not ConversationKey or focus not in FOCUS:raise GatewayError('INVALID_CONVERSATION_KEY')
+        if type(key) is not ConversationKey or not self.valid_focus(focus):raise GatewayError('INVALID_CONVERSATION_KEY')
         with self._lock:
             if len(self._issued)>=8:raise GatewayError('CONVERSATION_SNAPSHOT_CAPACITY')
             s=self._session(key)
             pairs=[t.projection() for t in s.turns] if self.options.memory_enabled else []
             while pairs and _history_bytes(pairs)>self.options.projection_bytes:pairs.pop(0)
-            snap=ChannelHistorySnapshot(self.authority,object(),key.identity,s.revision,focus,tuple(pairs),self.authority.options)
+            snap=self.snapshot_type(self.authority,object(),key.identity,s.revision,focus,tuple(pairs),self.authority.options)
             self._issued[snap.ticket]=(snap,key);s.active+=1
             return snap
 
@@ -187,7 +192,7 @@ class ConversationStore:
             if not self.options.memory_enabled:return 'HISTORY_DISABLED'
             s=self._sessions[self._issued[snapshot.ticket][1]]
             if any(t.id==turn_id for t in s.turns):return 'HISTORY_ALREADY_COMMITTED'
-            turn=_Turn(turn_id,snapshot.focus,text,text_sha256,accepted_at,source_times,source_flags)
+            turn=self.turn_type(turn_id,snapshot.focus,text,text_sha256,accepted_at,source_times,source_flags)
             if turn.size>self.options.session_bytes or turn.size>self.options.total_bytes:
                 raise GatewayError('CONVERSATION_CONTENT_BUDGET')
             proposed=s.turns+[turn]

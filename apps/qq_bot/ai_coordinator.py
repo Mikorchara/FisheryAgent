@@ -78,7 +78,8 @@ class QQAICoordinator:
         if session_run is not None:
             from .session_run import SessionRun
             from .session_run_trial import SessionTrialRun
-            if type(session_run) not in (SessionRun,SessionTrialRun) or conversation_trial is not None:
+            from .hybrid_run import HybridRun
+            if type(session_run) not in (SessionRun,SessionTrialRun,HybridRun) or conversation_trial is not None:
                 raise BotError('SESSION_RUN_COMPOSITION_REQUIRED')
             session_run.bind(self)
         elif conversation_trial is not None:
@@ -94,6 +95,19 @@ class QQAICoordinator:
     @property
     def revision(self):
         return _hash([self.config.revision,asdict(self.access),self._generation])
+
+    @property
+    def hybrid(self):
+        from .hybrid_run import HybridRun
+        return type(self.session_run) is HybridRun
+
+    def classify(self,text,**kwargs):
+        if self.hybrid:
+            from .hybrid_intent import classify as hybrid_classify
+            return hybrid_classify(text,**kwargs)
+        return classify(text,**kwargs)
+
+    def is_agent_intent(self,intent):return intent.kind==('agent' if self.hybrid else 'water')
 
     def reconfigure(self,config,*,access=None):
         if type(config) is not QQAIConfig:
@@ -178,8 +192,8 @@ class QQAICoordinator:
                         self.validate_mention(raw,message,mention,transport_app_id)
                         question=message.content
                     key,topic=self.conversation_context(message,grant=grant)
-                    intent=classify(question,topic=topic,command_priority=False)
-                    if intent.kind!='water':raise BotError('AI_WATER_QUESTION_REQUIRED')
+                    intent=self.classify(question,topic=topic,command_priority=False)
+                    if not self.is_agent_intent(intent):raise BotError('AI_WATER_QUESTION_REQUIRED')
                     history_key,history_focus=key,intent.focus;question=intent.question
                 trial=self.service._channel_trial
                 if trial is not None:
@@ -285,6 +299,12 @@ class QQAICoordinator:
             try:
                 if cancelled.is_set():raise BotError('AI_CANCELLED')
                 plan.handle.check();self.validate_delivery_candidate(plan,result)
+                if self.hybrid:
+                    if not result.publication.history_allowed:return 'HISTORY_NOT_COMMITTED_PRESENTATION'
+                    times,flags=result.history_metadata()
+                    return self.conversations.commit(snapshot,turn_id=plan.context.delivery_key,text=text,
+                        text_sha256=receipt.text_sha256,accepted_at=receipt.accepted_at,
+                        source_times=times,source_flags=flags)
                 source=result.source
                 return self.conversations.commit(snapshot,turn_id=plan.context.delivery_key,text=text,
                     text_sha256=receipt.text_sha256,accepted_at=receipt.accepted_at,
@@ -307,12 +327,20 @@ class QQAICoordinator:
         trial=service._channel_trial
         expected_status=trial.release_status if trial is not None else 'candidate'
         expected_offline=trial is None or trial.offline_test
-        if (not result.completed or result.source is None or result.offline_only!=expected_offline
+        if self.hybrid:
+            from apps.ai_service.channel_hybrid import HybridResult
+            if (type(result) is not HybridResult or not result.offline_only or result.publication is None
+                    or result.publication.branch!=result.branch
+                    or (result.branch=='general' and (result.source is not None or result.model_requests!=1 or result.tool_executions!=0))
+                    or (result.branch=='water' and (result.source is None or result.model_requests!=2 or result.tool_executions!=1))
+                    or result.branch not in ('general','water')):
+                raise BotError('INVALID_HYBRID_RESULT')
+        if (not result.completed or (result.source is None and not self.hybrid) or result.offline_only!=expected_offline
                 or result.release_status!=expected_status or result.can_deliver is not False
                 or result.scope_revision!=plan.prepared.execution.profile.revision):
             raise BotError('INVALID_AI_DELIVERY')
         if trial is not None and (trial.approval.phase!='qq' or trial.handle is not plan.handle
-                or result.source.source_kind!='simulator'):
+                or (result.source is not None and result.source.source_kind!='simulator')):
             raise BotError('TRIAL_QQ_DELIVERY_NOT_APPROVED')
 
     def claim_delivery(self,plan,result):

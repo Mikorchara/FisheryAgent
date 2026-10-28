@@ -38,6 +38,7 @@ class QQAIJobScheduler:
     Exact Fake or independently approved Trial transport only. Ordinary CLI stays disabled.
     """
     def __init__(self, coordinator, gateway, *, clock=None, monotonic=time.monotonic,receipt_sink=None):
+        if coordinator.hybrid and type(gateway) is not OfflineQQGateway:raise BotError('HYBRID_FAKE_GATEWAY_REQUIRED')
         from .ai_trial_delivery import TrialQQTransport,ConversationQQTransport,SessionQQTransport
         if type(gateway) not in (OfflineQQGateway,TrialQQTransport,ConversationQQTransport,SessionQQTransport):raise BotError('OFFLINE_DELIVERY_REQUIRED')
         if type(gateway) is TrialQQTransport and gateway.trial is not coordinator.service._channel_trial:

@@ -72,12 +72,15 @@ class ManagementAssistantService:
         from .channel_conversation_trial import ConversationQwenTurn
         from .channel_session_run import SessionQwenTurn
         from .channel_session_trial import SessionTrialQwenTurn
-        if channel_trial is not None and (type(channel_trial) not in (QwenTrialSession,ConversationQwenTurn,SessionQwenTurn,SessionTrialQwenTurn)
+        from .channel_hybrid import HybridQwenTurn
+        from .channel_hybrid_research import ResearchHybridTurn
+        if channel_trial is not None and (type(channel_trial) not in (QwenTrialSession,ConversationQwenTurn,SessionQwenTurn,SessionTrialQwenTurn,HybridQwenTurn,ResearchHybridTurn)
                 or offline_channel_provider is not None or knowledge is not None):
             raise GatewayError('INVALID_QWEN_TRIAL_COMPOSITION')
         self._channel_trial=channel_trial
         self._channel_history_authority=None
         if type(channel_trial) in (ConversationQwenTurn,SessionQwenTurn,SessionTrialQwenTurn):self._channel_history_authority=channel_trial.authority
+        if type(channel_trial) in (HybridQwenTurn,ResearchHybridTurn):self._channel_history_authority=channel_trial.authority
         self.knowledge = knowledge
         from apps.knowledge.service import KnowledgeContentService
         if isinstance(self.knowledge,KnowledgeContentService):
@@ -290,6 +293,12 @@ class ManagementAssistantService:
         self._channel_history_authority=authority
 
     def _history_decision(self,profile,policy,registry,authorization,snapshot,policy_revision):
+        from .channel_hybrid import HybridQwenTurn, HybridHistorySnapshot
+        from .channel_hybrid_research import ResearchHybridTurn
+        if type(self._channel_trial) in (HybridQwenTurn,ResearchHybridTurn):
+            if type(snapshot) is not HybridHistorySnapshot:raise GatewayError('INVALID_HYBRID_HISTORY')
+            return self._channel_trial.history_decision(profile,policy,registry,authorization,snapshot,
+                epoch=self.epoch,policy_revision=policy_revision)
         from .channel_conversation_trial import ConversationQwenTurn
         from .channel_session_run import SessionQwenTurn
         from .channel_session_trial import SessionTrialQwenTurn
@@ -302,6 +311,14 @@ class ManagementAssistantService:
             raise GatewayError('QQ_CONVERSATION_FAKE_ONLY')
         return conversation_decision(profile,policy,registry,authorization,snapshot,
             epoch=self.epoch,policy_revision=policy_revision)
+
+    def _hybrid_channel(self):
+        from .channel_hybrid import HybridQwenTurn
+        from .channel_hybrid_research import ResearchHybridTurn
+        return type(self._channel_trial) in (HybridQwenTurn,ResearchHybridTurn)
+
+    def _channel_source_requirement(self):
+        return SourceRequirement.AUTO if self._hybrid_channel() else SourceRequirement.CURRENT_OBSERVATION_QUERY
 
     def prepare_channel_turn(self, question, authorization, *, history_snapshot=None):
         """Server API: exact Fake provider or separately approved one-turn Qwen trial."""
@@ -335,7 +352,7 @@ class ManagementAssistantService:
                 epoch=self.epoch,policy_revision=snapshot.revision,authorization=authorization))
         if history_snapshot is not None and question!=history_snapshot.question:raise GatewayError('INVALID_CHANNEL_HISTORY')
         request=AssistantRequest(authorization.preset_id,question,history_snapshot.history if history_snapshot else (),
-                                 source_requirement=SourceRequirement.CURRENT_OBSERVATION_QUERY)
+                                 source_requirement=self._channel_source_requirement())
         return PreparedAssistantTurn(request,authorization.device_id,self.epoch,profile,policy,registry,
                                      decision,snapshot.revision,snapshot.source,authorization,history_snapshot)
 
@@ -361,7 +378,7 @@ class ManagementAssistantService:
                 or prepared.request.preset_id!=authorization.preset_id
                 or (prepared.request.history if history is None else
                     prepared.request.history!=history.history or prepared.request.question!=history.question)
-                or prepared.request.source_requirement!=SourceRequirement.CURRENT_OBSERVATION_QUERY
+                or prepared.request.source_requirement!=self._channel_source_requirement()
                 or prepared.registry.registered_names()!=(CURRENT_WATER_QUALITY,)
                 or prepared.policy.exposed_tools!=(CURRENT_WATER_QUALITY,)):
             raise GatewayError('INVALID_CHANNEL_CANDIDATE')
@@ -439,13 +456,29 @@ class ManagementAssistantService:
                 traces=trial.guard_traces(self.traces) if trial else self.traces
                 coordinator = ToolCallingService(gateway, registry, traces, policy=policy,
                     execution_mode=mode,model_transport=decision.model_transport)
+                prompt=((DIALOGUE_PROMPT_ID,DIALOGUE_INSTRUCTION) if prepared.channel_history else
+                        (QQ_PROMPT_ID,QQ_SYSTEM_INSTRUCTION)) if authorization is not None else None
+                if self._hybrid_channel():
+                    from .channel_hybrid import PROMPT_ID, INSTRUCTION
+                    prompt=(PROMPT_ID,INSTRUCTION)
                 result = AssistantService(coordinator,execution_mode=mode,
                     history_projection=DEFAULT_HISTORY_PROJECTION,
-                    single_round_prompt=((DIALOGUE_PROMPT_ID,DIALOGUE_INSTRUCTION) if prepared.channel_history else
-                        (QQ_PROMPT_ID,QQ_SYSTEM_INSTRUCTION)) if authorization is not None else None
+                    single_round_prompt=prompt
                     ).send(turn, runtime)
                 if authorization is not None:
                     self._check_channel(authorization,prepared.policy_revision)
+                    if self._hybrid_channel():
+                        from .channel_hybrid import build_result
+                        from .channel_hybrid_research import ResearchHybridTurn
+                        if type(trial) is ResearchHybridTurn:trial.inspect_execution(result)
+                        converted=build_result(result,authorization,decision.profile.revision)
+                        if type(trial) is ResearchHybridTurn:
+                            converted=replace(converted,release_status=trial.release_status,offline_only=trial.offline_test)
+                            if converted.publication and converted.branch=='general' and converted.publication.allowed:
+                                converted=replace(converted,publication=replace(converted.publication,
+                                    code='GENERAL_LOCAL_REVIEW_ACCEPTED_UNVERIFIED'))
+                        trial.source=converted.source;trial.hybrid_result=converted
+                        return converted
                     summary=(SourceSummary.from_result(result,authorization)
                              if result.status.value=='completed' else None)
                     if trial is not None:trial.source=summary
