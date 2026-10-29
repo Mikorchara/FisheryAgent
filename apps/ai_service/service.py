@@ -74,13 +74,14 @@ class ManagementAssistantService:
         from .channel_session_trial import SessionTrialQwenTurn
         from .channel_hybrid import HybridQwenTurn
         from .channel_hybrid_research import ResearchHybridTurn
-        if channel_trial is not None and (type(channel_trial) not in (QwenTrialSession,ConversationQwenTurn,SessionQwenTurn,SessionTrialQwenTurn,HybridQwenTurn,ResearchHybridTurn)
+        from .channel_hybrid_trial import HybridTrialQwenTurn
+        if channel_trial is not None and (type(channel_trial) not in (QwenTrialSession,ConversationQwenTurn,SessionQwenTurn,SessionTrialQwenTurn,HybridQwenTurn,ResearchHybridTurn,HybridTrialQwenTurn)
                 or offline_channel_provider is not None or knowledge is not None):
             raise GatewayError('INVALID_QWEN_TRIAL_COMPOSITION')
         self._channel_trial=channel_trial
         self._channel_history_authority=None
         if type(channel_trial) in (ConversationQwenTurn,SessionQwenTurn,SessionTrialQwenTurn):self._channel_history_authority=channel_trial.authority
-        if type(channel_trial) in (HybridQwenTurn,ResearchHybridTurn):self._channel_history_authority=channel_trial.authority
+        if type(channel_trial) in (HybridQwenTurn,ResearchHybridTurn,HybridTrialQwenTurn):self._channel_history_authority=channel_trial.authority
         self.knowledge = knowledge
         from apps.knowledge.service import KnowledgeContentService
         if isinstance(self.knowledge,KnowledgeContentService):
@@ -295,7 +296,8 @@ class ManagementAssistantService:
     def _history_decision(self,profile,policy,registry,authorization,snapshot,policy_revision):
         from .channel_hybrid import HybridQwenTurn, HybridHistorySnapshot
         from .channel_hybrid_research import ResearchHybridTurn
-        if type(self._channel_trial) in (HybridQwenTurn,ResearchHybridTurn):
+        from .channel_hybrid_trial import HybridTrialQwenTurn
+        if type(self._channel_trial) in (HybridQwenTurn,ResearchHybridTurn,HybridTrialQwenTurn):
             if type(snapshot) is not HybridHistorySnapshot:raise GatewayError('INVALID_HYBRID_HISTORY')
             return self._channel_trial.history_decision(profile,policy,registry,authorization,snapshot,
                 epoch=self.epoch,policy_revision=policy_revision)
@@ -315,7 +317,8 @@ class ManagementAssistantService:
     def _hybrid_channel(self):
         from .channel_hybrid import HybridQwenTurn
         from .channel_hybrid_research import ResearchHybridTurn
-        return type(self._channel_trial) in (HybridQwenTurn,ResearchHybridTurn)
+        from .channel_hybrid_trial import HybridTrialQwenTurn
+        return type(self._channel_trial) in (HybridQwenTurn,ResearchHybridTurn,HybridTrialQwenTurn)
 
     def _channel_source_requirement(self):
         return SourceRequirement.AUTO if self._hybrid_channel() else SourceRequirement.CURRENT_OBSERVATION_QUERY
@@ -460,6 +463,9 @@ class ManagementAssistantService:
                         (QQ_PROMPT_ID,QQ_SYSTEM_INSTRUCTION)) if authorization is not None else None
                 if self._hybrid_channel():
                     from .channel_hybrid import PROMPT_ID, INSTRUCTION
+                    from .channel_hybrid_trial import HybridTrialQwenTurn
+                    if type(trial) is HybridTrialQwenTurn:
+                        from .channel_hybrid_trial import PROMPT_ID, INSTRUCTION
                     prompt=(PROMPT_ID,INSTRUCTION)
                 result = AssistantService(coordinator,execution_mode=mode,
                     history_projection=DEFAULT_HISTORY_PROJECTION,
@@ -471,7 +477,12 @@ class ManagementAssistantService:
                         from .channel_hybrid import build_result
                         from .channel_hybrid_research import ResearchHybridTurn
                         if type(trial) is ResearchHybridTurn:trial.inspect_execution(result)
-                        converted=build_result(result,authorization,decision.profile.revision)
+                        from .channel_hybrid_trial import HybridTrialQwenTurn
+                        if type(trial) is HybridTrialQwenTurn:
+                            from .hybrid_trial_presentation import present
+                            converted=build_result(result,authorization,decision.profile.revision,presenter=present)
+                            converted=replace(converted,release_status=trial.release_status,offline_only=trial.offline_test)
+                        else:converted=build_result(result,authorization,decision.profile.revision)
                         if type(trial) is ResearchHybridTurn:
                             converted=replace(converted,release_status=trial.release_status,offline_only=trial.offline_test)
                             if converted.publication and converted.branch=='general' and converted.publication.allowed:

@@ -24,6 +24,9 @@ from .trial_configuration import TrialInputs,read_json,local_path,write_new
 
 def console_approval(plan,stopped):
     budget=plan['limits'];summary=plan['configuration'];challenge='APPROVE '+_hash(plan)[:12]
+    if summary.get('general_publication_requires_operator_consent'):
+        challenge='APPROVE HYBRID '+_hash(plan)[:12]
+        print('单独批准实验性General自动发布：'+summary['residual_risk'],flush=True)
     print(f"持续会话一次审批：{summary['provider']} / {summary['model']}；Scope {plan['scope_sha256']}",flush=True)
     print('展示模式：'+summary['presentation_mode']+'（仅本机配置，无群聊切换指令）',flush=True)
     print(f"实例 {summary['instance_id']} / 设备 {summary['device_id']}；群摘要 {summary['group_ref']}；成员摘要 {summary['member_refs']}",flush=True)
@@ -37,13 +40,14 @@ def console_approval(plan,stopped):
 
 
 def run_session(host,*,prompt=console_approval,api=None,connector=None,emit=audit):
-    if type(host) is not SessionTrialRun:raise BotError('SESSION_TRIAL_COMPOSITION_REQUIRED')
+    from .hybrid_trial import HybridTrialRun
+    if type(host) not in (SessionTrialRun,HybridTrialRun):raise BotError('SESSION_TRIAL_COMPOSITION_REQUIRED')
     if host.offline_test and (api is None or connector is None):raise BotError('TRIAL_OFFLINE_GATEWAY_REQUIRED')
     gateway=router=scheduler=worker=None;stopped=threading.Event();failure=[]
     code='SESSION_TRIAL_STOPPED';stop_reason='QQ_SESSION_ENDED';recorded=0;exhausted=False
     try:
         plan=host.plan();write_new(host.directory/'plan.json',plan)
-        write_new(host.directory/'session.json',dict(contract=CONTRACT,scope=host.scope,scope_sha256=host.scope_sha256))
+        write_new(host.directory/'session.json',dict(contract=host.contract,scope=host.scope,scope_sha256=host.scope_sha256))
         # No QQAPI, credential supplier or worker before this single local approval.
         if not prompt(plan,stopped):raise BotError('SESSION_OPERATOR_CANCELLED')
         host.approve(plan,confirmed=True)
@@ -115,7 +119,7 @@ def run_session(host,*,prompt=console_approval,api=None,connector=None,emit=audi
     return report
 
 
-def main(argv=None):
+def main(argv=None,*,hybrid=False):
     parser=argparse.ArgumentParser(description='Bounded Qwen/QQ session trial; Check never reads keys/instances/network')
     mode=parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--check',action='store_true');mode.add_argument('--run',action='store_true')
@@ -124,27 +128,33 @@ def main(argv=None):
     parser.add_argument('--total-budget-cny',default='8.02');parser.add_argument('--valid-minutes',type=int,default=10)
     parser.add_argument('--member',action='append')
     parser.add_argument('--presentation',choices=('chat','detailed'),default='chat')
+    if hybrid:parser.add_argument('--confirm-general-experimental',action='store_true')
     for flag in ('confirm-instance-read','confirm-provider-network','confirm-qq-network','enable-mention-ai'):
         parser.add_argument('--'+flag,action='store_true')
     args=parser.parse_args(argv)
+    host_type,check,contract=SessionTrialRun,check_configuration,CONTRACT
+    if hybrid:
+        from .hybrid_trial import HybridTrialRun,check_configuration as hybrid_check
+        host_type,check,contract=HybridTrialRun,hybrid_check,HybridTrialRun.contract
     try:
         inputs=TrialInputs.parse(read_json(local_path(args.request_file)))
         limits=RunLimits(args.max_turns,args.run_seconds,args.total_budget_cny)
         members=tuple(args.member) if args.member is not None else None
-        checked=check_configuration(inputs,limits=limits,members=members,presentation_mode=args.presentation)
+        checked=check(inputs,limits=limits,members=members,presentation_mode=args.presentation)
         if args.check:print(json.dumps(checked,ensure_ascii=False));return 0
         if not all((args.confirm_instance_read,args.confirm_provider_network,args.confirm_qq_network,args.enable_mention_ai)):
             raise BotError('SESSION_EXPLICIT_NETWORK_AND_MENTION_CONSENT_REQUIRED')
+        if hybrid and not args.confirm_general_experimental:raise BotError('HYBRID_GENERAL_CONSENT_REQUIRED')
         if args.directory is None:raise BotError('SESSION_REPORT_DIRECTORY_REQUIRED')
         directory=local_path(args.directory)
         if not directory.is_relative_to(ROOT/'outputs'):raise BotError('SESSION_REPORT_MUST_BE_IN_OUTPUTS')
-        host=SessionTrialRun(inputs,directory,limits=limits,members=members,valid_minutes=args.valid_minutes,
+        host=host_type(inputs,directory,limits=limits,members=members,valid_minutes=args.valid_minutes,
                              presentation_mode=args.presentation)
         print(json.dumps(checked,ensure_ascii=False),flush=True)
         report=run_session(host);print(json.dumps(report,ensure_ascii=False),flush=True)
         return 0 if report['completed'] and report['report_saved'] else 1
     except (Exception,KeyboardInterrupt) as error:
-        failure=dict(contract=CONTRACT,code=_error_code(error),report_saved=False,automatic_retry=False)
+        failure=dict(contract=contract,code=_error_code(error),report_saved=False,automatic_retry=False)
         if args.run and args.directory is not None:
             try:
                 directory=local_path(args.directory)

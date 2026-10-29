@@ -4,6 +4,9 @@
 
 ## 阅读入口
 
+- [BOT-3G-FINAL 实验性真实QQ Hybrid](deep-dive/BOT3G_FINAL_HYBRID_QQ_TRIAL.md)（独立Prompt/Scope、一次Run审批、General/Water混合记忆；Check离线，Run须操作者单独批准General风险与联网）
+
+- [BOT-3G-C1-D 48题真实Hybrid综合评估](deep-dive/BOT3GC1D_REAL_HYBRID_EVALUATION.md)（84次HTTP/36次Tool；General 0/12、Water 34/36；原文缺失限制、逐题初审与候选对照计划；不开放真实QQ）
 - [BOT-3G-C1 本地Hybrid研究实验](deep-dive/BOT3GC1_LOCAL_HYBRID_RESEARCH.md)（48题、分组重复/独立五轮Run、受保护审阅与统计；离线验证，真实Qwen须新审批，不连接QQ）
 - [BOT-3G-B Hybrid离线实现](deep-dive/BOT3GB_HYBRID_OFFLINE.md)（General/Water、原Agent、混合RAM历史与Run额度；仅Fake发布，不开放真实General/QQ/Qwen）
 - [BOT-3G Hybrid Agent与Prompt设计](deep-dive/research/BOT3G_HYBRID_AGENT_DESIGN.md)（固定指令+其余授权自然语言进入原Agent；Mock已验证，Source/General输出合同待审）

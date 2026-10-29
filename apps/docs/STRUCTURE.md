@@ -18,6 +18,8 @@ apps/
 │  ├─ run_consent.py                                                   # 进程限定RunConsent、Decimal额度、Windows所有权与fsync日志
 │  ├─ session_run.py                                                   # Fake持续会话、每轮私有Service、分级故障和有界收尾
 │  ├─ hybrid_run.py                                                    # 独立Fake-only Hybrid Run；复用账本、SDK、私有Turn及费用披露
+│  ├─ hybrid_trial.py                                                  # 独立真实Hybrid试用Host；一次General风险批准，原RunLedger/Service/SDK
+│  ├─ hybrid_trial_cli.py                                              # 新Check/Run入口，复用原Session控制器和唯一QQ发送Owner
 │  ├─ hybrid_intent.py                                                 # 固定免费分支，其余授权自然语言交给原Agent
 │  ├─ hybrid_conversations.py                                          # General/Water混合RAM投影，复用TTL/容量/revision/CAS
 │  ├─ hybrid_research.py                                               # 本地研究Run、明确实例/授权/只读数据、捕获历史及元数据统计
@@ -66,6 +68,7 @@ apps/
 │     ├─ test_session_run.py                                            # Fake五轮/多人/每轮新Tool/交付记忆/分级故障与收尾
 │     ├─ test_hybrid_run.py                                             # Hybrid 1/2请求、实际Tool分支、发布/历史/预算及故障隔离
 │     ├─ test_hybrid_research.py                                        # 本地真实类型+Mock SDK、批量预算/取消/报告及纯离线PS检查
+│     ├─ test_hybrid_trial.py                                           # 真实QQ Hybrid类型+Mock HTTP；@2、混合记忆、额度、交付与故障回归
 │     ├─ test_session_run_trial.py                                      # 真实类型+Mock SDK/Gateway、一次审批多轮、PS与报告边界
 │     ├─ test_ai_scheduler.py                                            # 有界并发/期限/I/O取消/单次交付及线程回收
 │     ├─ test_ai_preparation.py                                          # 独立Scope、统一Gateway离线装配、展示与真实门禁拒绝
@@ -139,6 +142,7 @@ apps/
 │  │  ├─ qq_session_run_trial.json                                      # 独立真实持续试用candidate准备，须当前进程本机RunConsent
 │  │  ├─ qq_session_run_trial_detailed.json                             # Detailed持续试用独立candidate；不能复用Chat批准
 │  │  ├─ qq_hybrid_candidate.json                                      # 独立Hybrid Fake-only Scope，真实执行/交付均关闭
+│  │  ├─ qq_hybrid_real_trial.json                                     # 新真实Hybrid candidate准备；运行须独立进程授权和General风险批准
 │  │  ├─ local_hybrid_research_trial.json                              # 独立本地研究candidate；须当前进程新批准，无QQ发布许可
 │  │  ├─ assistant_normal_candidate.json                                 # Qwen Normal 三工具精确 candidate，未开放
 │  │  ├─ assistant_unified_tools.json                                    # 独立Normal/Streaming三工具本地许可与显式授权子集
@@ -196,7 +200,9 @@ apps/
 │  ├─ channel_session_trial.py                                          # 真实试用Scope、RunAuthorization/Lease身份绑定及原SDK执行
 │  ├─ channel_hybrid.py                                                # Hybrid候选Scope/Prompt/Turn、真实执行步骤与来源分支
 │  ├─ channel_hybrid_research.py                                       # 本地独立Scope/身份授权/provider Turn与SDK混合计时；无QQ交付
+│  ├─ channel_hybrid_trial.py                                          # QQ_HYBRID_DIALOGUE@2、独立真实Scope/身份授权/私有Turn；复用原SDK
 │  ├─ hybrid_presentation.py                                           # General发布防护、Water旧封闭计划与安全降级；非事实验证器
+│  ├─ hybrid_trial_presentation.py                                     # 新General @2严格JSON分型及有限否定句保护；原Water封闭校验
 │  ├─ channel_trial.py                                                   # 独立限时Qwen试用合同、费用预算、原SDK Adapter子类
 │  ├─ channel_presentation.py                                            # QQ封闭解释计划、来源校验与中文模板；原始模型正文不展示
 │  ├─ channel_chat_presentation.py                                       # Session简洁展示、可信focus/全量风险与北京时间；不追加查询
@@ -384,3 +390,5 @@ Phase I 的五个 runtime 准备模块和三份重复测试已移除；当前 Se
 `scripts/dev/Test-QQConversation.ps1` 为独立双轮入口，复用上述路径/目录/联网确认辅助函数；Check不打开数据库，Run逐Turn人工审批，同进程私有Service共享RAM。见 [2C-1与待授权C-2](deep-dive/BOT3D2C1_REAL_CONVERSATION_TRIAL.md)。
 
 `scripts/dev/Test-HybridProvider.ps1` 为独立本地Hybrid研究入口，Check不读取库/密钥/网络，Run逐项批准多个独立五轮内Run；不启动QQ、不复用旧许可。见 [C1研究实验](deep-dive/BOT3GC1_LOCAL_HYBRID_RESEARCH.md)。
+
+`scripts/dev/Test-QQHybrid.ps1` 为独立真实QQ Hybrid实验入口；Check纯离线，Run须新一次`APPROVE HYBRID`风险/网络批准，原Session控制器与唯一发送Owner不变。见 [最终装配与人工验收](deep-dive/BOT3G_FINAL_HYBRID_QQ_TRIAL.md)。

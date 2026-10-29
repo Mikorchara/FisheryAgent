@@ -70,20 +70,27 @@ class SessionTrialLedger(RunLedger):
 
 
 class SessionTrialRun(SessionRun):
+    # Subclasses must supply their own reviewed preparation/consent/typed Turn.
+    consents = CONSENTS
+    contract = CONTRACT
+    configuration_check = staticmethod(check_configuration)
+    preparation_path = staticmethod(_preparation_path)
+    preparation_check = staticmethod(check_preparation)
+    authorization_authority = RunAuthorizationAuthority
     def __init__(self,inputs,directory,*,limits=RunLimits(),members=None,valid_minutes=10,
                  async_client_factory=None,clock=None,monotonic=time.monotonic,presentation_mode='chat'):
         if type(valid_minutes) is not int or not 1<=valid_minutes<=10:raise BotError('INVALID_RUN_APPROVAL_DURATION')
         self.presentation_mode=validate_mode(presentation_mode)
-        configuration=check_configuration(inputs,limits=limits,members=members,presentation_mode=presentation_mode)
+        configuration=self.configuration_check(inputs,limits=limits,members=members,presentation_mode=presentation_mode)
         self._authorization=None;self._approval_digest=None
-        self._authority=RunAuthorizationAuthority(self._validate_authorization)
+        self._authority=self.authorization_authority(self._validate_authorization)
         self._initialize(inputs,directory,async_client_factory=async_client_factory,limits=limits,
             members=members,clock=clock,monotonic=monotonic)
         self._pending_plan={**super().plan(),'created_at':self.clock().isoformat(),
             'configuration':configuration,
             'approval_deadline':(self.clock()+timedelta(minutes=valid_minutes)).isoformat(),
             'operator_source':'LOCAL_UNAUTHENTICATED','qualification_id':None,
-            'consents_required':list(CONSENTS),'max_model_requests':limits.max_turns*2,
+            'consents_required':list(self.consents),'max_model_requests':limits.max_turns*2,
             'source':'SIMULATOR','history':'PROJECTED_UNTRUSTED_TRANSCRIPT_V1'}
 
     def scope_for_options(self):return prepared_scope(self.options,self.presentation_mode)
@@ -106,10 +113,10 @@ class SessionTrialRun(SessionRun):
             raise BotError('INVALID_SESSION_TRIAL_APPROVAL')
         if (inputs_snapshot(self.inputs,self.monitoring)[-1]!=self.bindings
                 or _hash(self.scope_for_options())!=self.scope_sha256):raise BotError('RUN_BINDINGS_CHANGED')
-        check_configuration(self.inputs,limits=self.ledger.limits,members=self.members,presentation_mode=self.presentation_mode)
+        self.configuration_check(self.inputs,limits=self.ledger.limits,members=self.members,presentation_mode=self.presentation_mode)
         SDK_RESOURCES.assert_healthy()
-        value=dict(contract=CONTRACT,plan=plan,status='local_experimental',qualification_id=None,
-            approved_at=self.clock().isoformat(),consents={k:True for k in CONSENTS},
+        value=dict(contract=self.contract,plan=plan,status='local_experimental',qualification_id=None,
+            approved_at=self.clock().isoformat(),consents={k:True for k in self.consents},
             operator_source='LOCAL_UNAUTHENTICATED')
         try:
             write_new(self.directory/'approval.json',value);self._approval_digest=_hash(value)
@@ -125,7 +132,7 @@ class SessionTrialRun(SessionRun):
         if value is not self._authorization:
             self.ledger.halt('RUN_APPROVAL_CHANGED');raise BotError('RUN_APPROVAL_CHANGED')
         def check_files():
-            check_preparation(read_json(_preparation_path(self.presentation_mode)),self.scope)
+            self.preparation_check(read_json(self.preparation_path(self.presentation_mode)),self.scope)
             if _hash(read_json(self.directory/'approval.json'))!=self._approval_digest:
                 self.ledger.halt('RUN_APPROVAL_CHANGED');raise BotError('RUN_APPROVAL_CHANGED')
         validation_once(('run-approval',id(self)),check_files)

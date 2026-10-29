@@ -79,7 +79,8 @@ class QQAICoordinator:
             from .session_run import SessionRun
             from .session_run_trial import SessionTrialRun
             from .hybrid_run import HybridRun
-            if type(session_run) not in (SessionRun,SessionTrialRun,HybridRun) or conversation_trial is not None:
+            from .hybrid_trial import HybridTrialRun
+            if type(session_run) not in (SessionRun,SessionTrialRun,HybridRun,HybridTrialRun) or conversation_trial is not None:
                 raise BotError('SESSION_RUN_COMPOSITION_REQUIRED')
             session_run.bind(self)
         elif conversation_trial is not None:
@@ -99,7 +100,8 @@ class QQAICoordinator:
     @property
     def hybrid(self):
         from .hybrid_run import HybridRun
-        return type(self.session_run) is HybridRun
+        from .hybrid_trial import HybridTrialRun
+        return type(self.session_run) in (HybridRun,HybridTrialRun)
 
     def classify(self,text,**kwargs):
         if self.hybrid:
@@ -184,6 +186,9 @@ class QQAICoordinator:
                 raise BotError('AI_EXPLICIT_COMMAND_REQUIRED')
             with self._lock:
                 grant=self._permission(message)
+                from .hybrid_trial import HybridTrialRun
+                if type(self.session_run) is HybridTrialRun:
+                    self.validate_mention(raw,message,mention,transport_app_id)
                 history=None;history_key=None;history_focus=None
                 question=rest[0].strip() if command=='/问AI' and rest else ''
                 if self.conversations is not None:
@@ -329,7 +334,7 @@ class QQAICoordinator:
         expected_offline=trial is None or trial.offline_test
         if self.hybrid:
             from apps.ai_service.channel_hybrid import HybridResult
-            if (type(result) is not HybridResult or not result.offline_only or result.publication is None
+            if (type(result) is not HybridResult or result.offline_only!=expected_offline or result.publication is None
                     or result.publication.branch!=result.branch
                     or (result.branch=='general' and (result.source is not None or result.model_requests!=1 or result.tool_executions!=0))
                     or (result.branch=='water' and (result.source is None or result.model_requests!=2 or result.tool_executions!=1))

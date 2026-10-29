@@ -74,7 +74,7 @@ class TestWorkflowTests(unittest.TestCase):
 
     def test_parse_all_public_scripts_and_helper(self):
         for path in (DEV / 'Test-QQBot.ps1', DEV / 'Test-QwenProvider.ps1', DEV / 'Test-QQAI.ps1',
-                     DEV / 'qq_bot_test_common.ps1'):
+                     DEV / 'Test-QQConversation.ps1', DEV / 'Test-QQHybrid.ps1', DEV / 'qq_bot_test_common.ps1'):
             with self.subTest(path=path.name):
                 result = self.ps('-Command', '$tokens=$null;$errors=$null;'
                     f'[void][System.Management.Automation.Language.Parser]::ParseFile({quoted(path)},[ref]$tokens,[ref]$errors);'
@@ -338,6 +338,83 @@ exit $rc
             'catch{Write-Host $_.Exception.Message;exit 1}')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('WORKFLOW_OUTPUT_LIMIT', result.stdout)
+
+    def native_child(self, source, *, approval=False, preferences=''):
+        child = self.root / 'synthetic-diagnostic.py'
+        child.write_text(source, encoding='utf-8')
+        return self.ps('-Command', f'. {quoted(DEV / "qq_bot_test_common.ps1")};'+preferences+
+            f'try{{$r=Invoke-BotChecked -Python {quoted(ROOT / ".venv/Scripts/python.exe")} '
+            f'-Arguments @({quoted(child)}) '+('-ApprovalPrompt' if approval else '')+';'
+            'Write-Host $r.Record.code;exit $r.ExitCode}catch{Write-Host $_.Exception.Message;exit 1}')
+
+    def test_native_no_status_reports_only_safe_diagnostic_classes(self):
+        cases = (
+            ("print('Traceback (most recent call last):');print('  PRIVATE_MEMBER_SENTINEL');"
+             "print('ModuleNotFoundError: FAKE_KEY_SENTINEL');raise SystemExit(1)", 'PYTHON_MODULE_NOT_FOUND', 1),
+            ("print('ImportError: FAKE_KEY_SENTINEL');raise SystemExit(1)", 'PYTHON_IMPORT_ERROR', 1),
+            ("print('SyntaxError: FAKE_KEY_SENTINEL');raise SystemExit(1)", 'PYTHON_SYNTAX_ERROR', 1),
+            ("print('Traceback (most recent call last):');print('ValueError: FAKE_KEY_SENTINEL');raise SystemExit(1)", 'PYTHON_EXCEPTION', 1),
+            ("print('private.py: error: argument --request-file: FAKE_KEY_SENTINEL');raise SystemExit(2)", 'ARGUMENT_ERROR', 2),
+            ("raise SystemExit(0)", 'NO_OUTPUT', 0),
+            ("raise SystemExit(1)", 'NO_OUTPUT', 1),
+            ("print('FAKE_KEY_SENTINEL');raise SystemExit(3)", 'UNCLASSIFIED', 3),
+            ("print('{\"code\":[\"FAKE_KEY_SENTINEL\"]}');raise SystemExit(1)", 'INVALID_STATUS', 1),
+        )
+        for source, category, native_exit in cases:
+            with self.subTest(category=category, native_exit=native_exit):
+                result = self.native_child(source)
+                self.assertEqual(result.returncode, 1, result.stdout+result.stderr)
+                line = next(s for s in result.stdout.splitlines() if 'WORKFLOW_NATIVE_DIAGNOSTIC' in s)
+                record = json.loads(line[line.index('{'):])
+                self.assertEqual(record['category'], category)
+                self.assertEqual(record['exit_code'], native_exit)
+                self.assertNotIn('private.py', result.stdout+result.stderr)
+                self.assert_safe(result.stdout+result.stderr)
+
+    def test_native_launch_failure_is_safe_and_does_not_reuse_stale_exit(self):
+        result = self.ps('-Command', f'. {quoted(DEV / "qq_bot_test_common.ps1")};$LASTEXITCODE=99;'
+            f'try{{Invoke-BotNative -Python {quoted(self.root / "FAKE_KEY_SENTINEL.exe")} -Arguments @()}}'
+            'catch{Write-Host $_.Exception.Message;exit 1}')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('WORKFLOW_NATIVE_LAUNCH_FAILED', result.stdout)
+        self.assertIn('"exit_code":null', result.stdout)
+        self.assert_safe(result.stdout+result.stderr)
+
+    def test_native_status_and_exit_ignore_profile_error_preference(self):
+        result = self.native_child("import json,sys\nprint('FAKE_KEY_SENTINEL',file=sys.stderr)\n"
+            "print(json.dumps({'code':'SYNTHETIC_SAFE_FAILURE'}))\nraise SystemExit(2)",
+            preferences="$PSNativeCommandUseErrorActionPreference=$true;$ErrorActionPreference='Stop';")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('SYNTHETIC_SAFE_FAILURE', result.stdout)
+        self.assertNotIn('WORKFLOW_NATIVE_NO_STATUS', result.stdout)
+        self.assert_safe(result.stdout+result.stderr)
+
+    def test_native_approval_regex_supports_exact_old_and_hybrid_challenges(self):
+        result = self.native_child("import json\n"
+            "print('请输入 APPROVE abcdef123456')\nprint('请输入 APPROVE HYBRID 123456abcdef')\n"
+            "print('APPROVE HYBRID 123456abcdef0 FAKE_KEY_SENTINEL')\n"
+            "print('XAPPROVE abcdef123456 FAKE_KEY_SENTINEL')\n"
+            "print('APPROVE OTHER abcdef123456 FAKE_KEY_SENTINEL')\n"
+            "print(json.dumps({'code':'SYNTHETIC_OK'}))\n", approval=True)
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        challenges = [s for s in result.stdout.splitlines() if '审批挑战' in s]
+        self.assertEqual(len(challenges), 2)
+        self.assertTrue(challenges[0].endswith('APPROVE abcdef123456'))
+        self.assertTrue(challenges[1].endswith('APPROVE HYBRID 123456abcdef'))
+        self.assert_safe(result.stdout+result.stderr)
+
+    def test_utf8_json_with_gbk_console_and_encoding_restored(self):
+        child=self.root/'unicode-child.py'
+        child.write_text("import json\nprint(json.dumps({'code':'SYNTHETIC_OK','text':'中文模拟数据'},ensure_ascii=False))\n",encoding='utf8')
+        result=self.ps('-Command',f'. {quoted(DEV / "qq_bot_test_common.ps1")};'
+            '[Console]::OutputEncoding=[Text.Encoding]::GetEncoding(936);'
+            f'$r=Invoke-BotChecked -Python {quoted(ROOT / ".venv/Scripts/python.exe")} '
+            f'-Arguments @("-X","utf8",{quoted(child)});'
+            'if($r.Record.text -cne "中文模拟数据"){exit 2};'
+            'if([Console]::OutputEncoding.CodePage -ne 936){exit 3};'
+            'Write-Host "UTF8_JSON_OK_ENCODING_RESTORED";exit $r.ExitCode')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('UTF8_JSON_OK_ENCODING_RESTORED',result.stdout)
 
 
 if __name__ == '__main__':

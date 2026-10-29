@@ -125,7 +125,7 @@ class HybridResult(ChannelAssistantResult):
                 (source.source_kind, source.quality, source.freshness, source.connectivity))
 
 
-def build_result(result, authorization, revision):
+def build_result(result, authorization, revision, *, presenter=present):
     from dataclasses import replace
     tools = [step for step in result.execution.steps if isinstance(step, ToolExecutionStep)]
     models = sum(isinstance(step, ModelExecutionStep) for step in result.execution.steps)
@@ -137,5 +137,5 @@ def build_result(result, authorization, revision):
     if completed:
         if (branch == 'general' and models != 1) or (branch == 'water' and (models != 2 or len(tools) != 1)):
             raise GatewayError('HYBRID_EXECUTION_SHAPE_INVALID')
-        value = replace(value, publication=present(value))
+        value = replace(value, publication=presenter(value))
     return value

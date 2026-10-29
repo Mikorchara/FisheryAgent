@@ -4,6 +4,10 @@
 
 ## 当前审阅与待批准
 
+- 2026-10-29 Hybrid Check：补齐启动 JSON 与脱敏原生错误分类，兼容 `APPROVE HYBRID`；Bot 657、Web/SDK 41、Node 116 通过。Scope 快照刷新，旧批准不可复用；原始失败未重现，[诊断与命令](deep-dive/BOT3G_FINAL_HYBRID_QQ_TRIAL.md#8-2026-10-29check-原生状态诊断修复)。
+
+- 2026-10-29 BOT-3G-FINAL：独立真实Hybrid试用装配、Prompt/输出@2和`Test-QQHybrid.ps1`；General风险须本机单独批准，代码验证只用Mock，真实QQ/Qwen留操作者执行。[边界与验收](deep-dive/BOT3G_FINAL_HYBRID_QQ_TRIAL.md)。
+
 - 2026-10-28 BOT-3G-C1：本地独立Hybrid研究Scope/入口、48题分组重复、多个五轮内Run、私有捕获及失败统计完成离线准备；真实Qwen须新人工批准，不连接QQ，不放行General自动发布。[装配、预算与步骤](deep-dive/BOT3GC1_LOCAL_HYBRID_RESEARCH.md)。
 - 2026-10-28 BOT-3G-B：独立Fake-only Hybrid复用原Agent，General 1请求/0Tool、Water 2请求/1Tool；混合RAM历史与原额度/SDK/交付门禁保留，真实发布待审。[实现与回归](deep-dive/BOT3GB_HYBRID_OFFLINE.md)。
 - 2026-10-27 BOT-3F-B1/B2：Session 默认 Chat，旧 FAST/TwoTurn 保持 A/B/C；同步校验复用后 fresh QQ 中位数 2307→1049 ms、Scope 151→76 次，600 样本通过。1105 Python / 116 Node，联网与新 Scope 另批。[实现与对照](deep-dive/BOT3FB12_CHAT_VALIDATION_OPTIMIZATION.md)。

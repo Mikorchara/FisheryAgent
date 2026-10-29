@@ -6,6 +6,15 @@ EVT-3A 起 Monitoring 使用 Schema v2：新空实例直接创建 v2，旧 v1 �
 
 ### BOT 日常验收（PowerShell 7）
 
+BOT-3G-FINAL新增独立[QQ Hybrid实验入口](deep-dive/BOT3G_FINAL_HYBRID_QQ_TRIAL.md)。Prototype根执行以下Check，不打开数据库/密钥、不联网；实际试用改为`-Run`，并在终端一次输入本次`APPROVE HYBRID <摘要>`，明确批准General实验风险与QQ/Qwen网络：
+
+```powershell
+.\scripts\dev\Test-QQHybrid.ps1 -Check -RequestFile '.\outputs\qq-bot\conversation.request.json'
+.\scripts\dev\Test-QQHybrid.ps1 -Run -RequestFile '.\outputs\qq-bot\conversation.request.json'
+```
+
+默认5轮/10请求/30分钟，保守预留8.013825元、预算8.02元；普通自然语言也可能收费，失败不退额度。固定指令/问候/帮助/清空免费。General为有限防护的实验回答，非现场事实；Ctrl+C或到期退出并核实最终报告。旧QQ/Water Session/FAST模式不变。
+
 BOT-3G-C1新增[本地Hybrid研究入口](deep-dive/BOT3GC1_LOCAL_HYBRID_RESEARCH.md)：48题、十个独立五轮内Run；不连接QQ，真实Qwen执行须操作者亲自新审批。先在Prototype根执行一行检查（不打开实例/密钥，不联网或消费许可）：
 
 ```powershell

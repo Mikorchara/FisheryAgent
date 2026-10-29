@@ -59,18 +59,44 @@ function Invoke-BotNative([string]$Python, [string[]]$Arguments, [switch]$Approv
     # Keep stdin attached to the user's console. Never pipe APPROVE into Python.
     # Consume bounded output in memory; neither raw stdout nor stderr is logged.
     $last = $null; $codes = [Collections.Generic.List[string]]::new(); $total = 0
+    $lines = 0; $jsonLines = 0; $diagnostic = 'UNCLASSIFIED'; $exitCode = $null
     $oldPreference = $ErrorActionPreference
+    $nativeOutputEncoding = [Console]::OutputEncoding
     try {
         $ErrorActionPreference = 'Continue'
+        # All public Python entries use -X utf8. PowerShell otherwise decodes
+        # their pipe using the console code page (often GBK in user terminals).
+        [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+        # Exit codes are handled below, independently of the operator's profile.
+        $PSNativeCommandUseErrorActionPreference = $false
         & $Python @Arguments 2>&1 | ForEach-Object {
-            $line = $_.ToString(); $total += $line.Length
+            $line = $_.ToString(); $total += $line.Length; $lines++
             if ($line.Length -gt 65536 -or $total -gt 1048576) { Stop-BotWorkflow 'WORKFLOW_OUTPUT_LIMIT' }
-            if ($ApprovalPrompt -and $line -match 'APPROVE [a-f0-9]{12}') {
+            if ($_ -is [System.Management.Automation.ErrorRecord] -and
+                $_.Exception.GetType().Name -in @('CommandNotFoundException','ApplicationFailedException')) {
+                $diagnostic = 'LAUNCH_FAILED'
+            }
+            # Recognize only fixed diagnostic classes; never retain/print their
+            # message, module name, path, source line or exception traceback.
+            if ($diagnostic -eq 'UNCLASSIFIED') {
+                if ($line -cmatch '^ModuleNotFoundError:') { $diagnostic = 'PYTHON_MODULE_NOT_FOUND' }
+                elseif ($line -cmatch '^ImportError:') { $diagnostic = 'PYTHON_IMPORT_ERROR' }
+                elseif ($line -cmatch '^(SyntaxError|IndentationError|TabError):') { $diagnostic = 'PYTHON_SYNTAX_ERROR' }
+                elseif ($line -cmatch '^[^\r\n]{1,256}: error: (argument |unrecognized arguments:|the following arguments are required:)') { $diagnostic = 'ARGUMENT_ERROR' }
+                elseif ($line -ceq 'Traceback (most recent call last):') { $diagnostic = 'PYTHON_EXCEPTION' }
+            } elseif ($diagnostic -eq 'PYTHON_EXCEPTION') {
+                if ($line -cmatch '^ModuleNotFoundError:') { $diagnostic = 'PYTHON_MODULE_NOT_FOUND' }
+                elseif ($line -cmatch '^ImportError:') { $diagnostic = 'PYTHON_IMPORT_ERROR' }
+                elseif ($line -cmatch '^(SyntaxError|IndentationError|TabError):') { $diagnostic = 'PYTHON_SYNTAX_ERROR' }
+            }
+            if ($ApprovalPrompt -and $line -cmatch '(?<![A-Za-z0-9_])APPROVE (?:HYBRID )?[a-f0-9]{12}(?![A-Za-z0-9_])') {
                 Write-Host ('请在此输入审批挑战：' + $Matches[0])
             }
             try {
                 $item = $line | ConvertFrom-Json -AsHashtable -ErrorAction Stop
-                if ($item -is [System.Collections.IDictionary] -and $item['code'] -cmatch '^[A-Z0-9_]{1,80}$') {
+                $jsonLines++
+                if ($item -is [System.Collections.IDictionary] -and $item['code'] -is [string] -and
+                    $item['code'] -cmatch '^[A-Z0-9_]{1,80}$') {
                     $last = $item
                     if ($codes.Count -ge 2048) { Stop-BotWorkflow 'WORKFLOW_OUTPUT_LIMIT' }
                     $codes.Add([string]$item['code'])
@@ -84,12 +110,42 @@ function Invoke-BotNative([string]$Python, [string[]]$Arguments, [switch]$Approv
                 }
             } catch {
                 if ($_.Exception.Message -eq 'WORKFLOW_OUTPUT_LIMIT') { throw }
-                # Non-JSON native diagnostics are deliberately suppressed.
+                # Raw native diagnostics remain suppressed, including secrets.
             }
         }
-        $exitCode = $LASTEXITCODE
-    } finally { $ErrorActionPreference = $oldPreference }
-    if ($null -eq $last) { Stop-BotWorkflow 'WORKFLOW_NATIVE_NO_STATUS' }
+        # Native execution updates the automatic exit variable in its owning
+        # scope. A local assignment here would shadow the actual native value.
+        $exitCode = if ($diagnostic -eq 'LAUNCH_FAILED') { $null } else { $LASTEXITCODE }
+    } catch {
+        # PowerShell can wrap a pipeline's limit error in ApplicationFailedException.
+        # Preserve the safety failure instead of misclassifying it as a launch error.
+        $nativeError = $_.Exception
+        for ($depth = 0; $null -ne $nativeError -and $depth -lt 8; $depth++) {
+            if ($nativeError -is [System.Management.Automation.PipelineStoppedException]) { throw }
+            if ($nativeError.Message -ceq 'WORKFLOW_OUTPUT_LIMIT') { Stop-BotWorkflow 'WORKFLOW_OUTPUT_LIMIT' }
+            $nativeError = $nativeError.InnerException
+        }
+        $last = $null; $exitCode = $null
+        $diagnostic = if ($_.Exception.GetType().Name -in @('CommandNotFoundException','ApplicationFailedException')) {
+            'LAUNCH_FAILED'
+        } else { 'INVOCATION_FAILED' }
+    } finally {
+        [Console]::OutputEncoding = $nativeOutputEncoding
+        $ErrorActionPreference = $oldPreference
+    }
+    if ($null -eq $last) {
+        if ($diagnostic -eq 'UNCLASSIFIED') {
+            if ($null -eq $exitCode) { $diagnostic = 'LAUNCH_FAILED' }
+            elseif ($lines -eq 0) { $diagnostic = 'NO_OUTPUT' }
+            elseif ($jsonLines -gt 0) { $diagnostic = 'INVALID_STATUS' }
+        }
+        # Safe metadata only. Do not print arguments, arbitrary exception names,
+        # environment/config values, raw stdout/stderr or the Python response.
+        Write-Host ('原生程序安全诊断：' + (@{code='WORKFLOW_NATIVE_DIAGNOSTIC';diagnostic_version=1;
+            category=$diagnostic;exit_code=$exitCode;output_lines=$lines;json_lines=$jsonLines} | ConvertTo-Json -Compress))
+        if ($diagnostic -ne 'UNCLASSIFIED') { Stop-BotWorkflow ('WORKFLOW_NATIVE_' + $diagnostic) }
+        Stop-BotWorkflow 'WORKFLOW_NATIVE_NO_STATUS'
+    }
     return @{ ExitCode = $exitCode; Record = $last; Codes = $codes.ToArray() }
 }
 
@@ -105,9 +161,11 @@ function Confirm-BotNetwork([string]$Word, [string]$Description) {
     }
 }
 
-function Test-BotSessionReport($Report, $Checked, [int]$NativeExit) {
+function Test-BotSessionReport($Report, $Checked, [int]$NativeExit,
+    [ValidateSet('qq-qwen-bounded-session-real-trial@1','qq-qwen-hybrid-experimental-run@1')]
+    [string]$ExpectedContract = 'qq-qwen-bounded-session-real-trial@1') {
     # Disk evidence is required; progress lines never substitute for a final report.
-    if ($Report['contract'] -cne 'qq-qwen-bounded-session-real-trial@1' -or
+    if ($Report['contract'] -cne $ExpectedContract -or
         $Report['scope_sha256'] -cne $Checked['scope_sha256'] -or $Report['report_saved'] -ne $true -or
         $Report['ram_cleared'] -ne $true -or $Report['quota']['max_turns'] -ne $Checked['max_turns']) {
         Stop-BotWorkflow 'WORKFLOW_SESSION_RESULT_MISMATCH'
