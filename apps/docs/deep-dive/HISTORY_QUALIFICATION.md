@@ -173,7 +173,7 @@ $historyBatch.batch.plans | ConvertTo-Json -Depth 15
 - 资格CLI继续构造获批的**关闭candidate**配置快照，不把产品local_experimental批准改写成技术/人工资格。其Scope、三个计划hash保持原值；产品revision另行包含发布状态、开关、Policy、设备和epoch。未来再运行仍需新的明确网络授权。
 - Profile切换只影响下一条消息、清除确认，保留成功pairs；pending期间冻结。错误/截断/Stop/Trace失败不提交，History不含Tool协议、Ledger或原始历史数据。
 
-启动、网页步骤与关闭命令以[BUILD_RUN](../BUILD_RUN.md#r2d-1g历史水质单工具本地试用)为唯一操作入口。关闭开关并重启、刷新页面即可回滚；不删除数据库/报告/用户Policy。本轮Fake SDK覆盖实际管理HTTP中的OK/NO_DATA/PARTIAL、真实编码、权限与Scope拒绝、Stop/超时/失败/重放、设备冻结及原六路径；前端覆盖Profile选择与确认/History。最终真实网页验收由用户进行，本轮不自动联网。
+启动、网页步骤与关闭命令以[BUILD_RUN](PROTOTYPE_RUN_REFERENCE.md#r2d-1g历史水质单工具本地试用)为唯一操作入口。关闭开关并重启、刷新页面即可回滚；不删除数据库/报告/用户Policy。本轮Fake SDK覆盖实际管理HTTP中的OK/NO_DATA/PARTIAL、真实编码、权限与Scope拒绝、Stop/超时/失败/重放、设备冻结及原六路径；前端覆盖Profile选择与确认/History。最终真实网页验收由用户进行，本轮不自动联网。
 
 ### 本轮实现与离线结果
 
@@ -194,7 +194,7 @@ $historyBatch.batch.plans | ConvertTo-Json -Depth 15
 
 现移除执行Profile控件和旧 selection state。历史查询为明确的下一条业务操作，显示所需开关、授权、模型和模式；成功后恢复普通提问。失败保留原操作、不自动换模式。配置不可用时确认框与发送同步禁用/清空；revision变更须重新勾选。服务端只接受有限业务action，不允许浏览器指定内部Profile、Scope或预算。
 
-三工具候选 `management-normal-three-tools@1` 使用正式多轮Prompt/History及原Registry/循环，精确Qwen OFF、Normal、2/2/3、1024 tokens、retry=0、120秒。Scope额外绑定历史数据合同和来源版本；candidate、enabled=false，既不加入普通请求，也不开放Streaming。离线Fake证明模型响应可以选择任一工具、按首个真实结果继续选择第二个、提前Final及拒绝第三个调用；不证明真实LLM的选择稳定性。开放条件和启动操作见[BUILD_RUN](../BUILD_RUN.md#r2d-1h可用状态与三工具候选)。
+三工具候选 `management-normal-three-tools@1` 使用正式多轮Prompt/History及原Registry/循环，精确Qwen OFF、Normal、2/2/3、1024 tokens、retry=0、120秒。Scope额外绑定历史数据合同和来源版本；candidate、enabled=false，既不加入普通请求，也不开放Streaming。离线Fake证明模型响应可以选择任一工具、按首个真实结果继续选择第二个、提前Final及拒绝第三个调用；不证明真实LLM的选择稳定性。开放条件和启动操作见[BUILD_RUN](PROTOTYPE_RUN_REFERENCE.md#r2d-1h可用状态与三工具候选)。
 
 离线验收（各层含重叠，不相加）：Backend 175项通过（28.382秒）；随后候选专项7项通过（1.885秒，含追加的JSON不得自行升级/启用门禁）；FAST 165项通过；管理HTTP/API 93项通过；历史/Streaming/批次资格基础设施46项通过；前端Node 60项通过。原六条Normal/Streaming路径与已冻结资格计划哈希对比通过，未改写基线。浏览器Fake SDK经真实HTTP完成历史查询并恢复普通提问；1280×900和390×844下无横向溢出，长禁用原因与输入/发送均未被卡片裁切，页面JS错误为0。Markdown本地链接/锚点、Python/JS/JSON语法、常见敏感模式和diff检查通过。未调用真实Provider/NPU，未更改真实数据、用户授权或现有发布范围。
 | 当前文档 | apps/docs 的BUILD_RUN、HISTORY_QUALIFICATION、INTEGRATION、STRUCTURE、README、AI_BACKEND_DEVELOPMENT_GUIDE；apps/ai_service/runtime/README.md |

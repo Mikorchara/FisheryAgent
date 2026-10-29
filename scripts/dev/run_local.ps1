@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('normal','low_oxygen','oxygen_drop_recovery','suspected_disease','reduced_feeding','combined_anomaly','device_offline')]
     [string]$Scenario = 'normal',
     [ValidateRange(1,65535)][int]$Port = 8766,
@@ -8,7 +8,8 @@ param(
     [switch]$NoMultiRound,
     [switch]$NoHistory,
     [string]$DataRoot,
-    [switch]$UserData
+    [switch]$UserData,
+    [switch]$ShowTerminals, [switch]$InteractiveScenario, [switch]$OpenBrowser
 )
 $ErrorActionPreference = 'Stop'
 $workspaceRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -22,6 +23,9 @@ if ($NoAssistant) { $launchArgs += '--no-assistant' }
 if ($NoStreaming) { $launchArgs += '--no-streaming' }
 if ($NoMultiRound) { $launchArgs += '--no-multi-round' }
 if ($NoHistory) { $launchArgs += '--no-history' }
+if ($ShowTerminals) { $launchArgs += '--show-terminals' }
+if ($InteractiveScenario) { $launchArgs += '--interactive-scenario' }
+if ($OpenBrowser) { $launchArgs += '--open-browser' }
 # Approved Qwen unified trial follows History/transport switches in the supervisor.
 # Foreground supervisor owns only its two children; no Provider call on startup.
 & $pythonPath @launchArgs

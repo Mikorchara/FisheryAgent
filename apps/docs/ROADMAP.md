@@ -52,7 +52,7 @@
 
 - 失联提醒人工结束（仅Prototype，待验收）：原因/确认/幂等/事务校验，稳定周期或旧单条ID，独立于监测恢复；历史保留，新可靠HIT重新提醒，自动裁剪/删除保护。Schema保持v2，未同步Management。[实现及限制](deep-dive/EVENT_MANUAL_END.md)。
 
-- SIMPLIFY-1 收尾（仅 Prototype，待验收）：恢复“已确认/未确认”列，低氧名称随当前可靠等级变化；用户明确批准后，可单独永久删除可靠结束的整个 ACK 周期及其确认历史，事务校验、普通批量清理仍受保护，Schema 保持 v2。新增 `oxygen_drop_recovery` 快降慢升场景及启动枚举。[操作说明](BUILD_RUN.md#溶解氧快速下降--逐步回升)。
+- SIMPLIFY-1 收尾（仅 Prototype，待验收）：恢复“已确认/未确认”列，低氧名称随当前可靠等级变化；用户明确批准后，可单独永久删除可靠结束的整个 ACK 周期及其确认历史，事务校验、普通批量清理仍受保护，Schema 保持 v2。新增 `oxygen_drop_recovery` 快降慢升场景及启动枚举。[操作说明](deep-dive/PROTOTYPE_RUN_REFERENCE.md#溶解氧快速下降--逐步回升)。
 - SIMPLIFY-1（仅 Prototype，待验收）：一风险周期一行，服务端全留存整合后筛选分页，首页共用周期摘要；原详情、ACK 与删除保护不变，未实现归档。[实现与验收](deep-dive/EVENT_CYCLE_UI.md)。
 - 旧版已结束事件兼容（仅 Prototype）：明确“旧版已结束（未复核）”；有效原结束信息且无活动/引用/ACK 审计关联时，可经原确认流程清理。保留原 payload 与观测状态，不改 Schema，不自动删除真实记录。[条件与边界](deep-dive/EVENT_MANAGEMENT.md#旧版已结束记录兼容仅-prototype)。
 
@@ -117,4 +117,9 @@ R2D-2A已补Policy锁初始化、管理测试入口、一行启动和全屏/阅�
 - R2B-5B 后端已离线实现：管理独立 candidate/关闭开关、精确 revision、唯一 claim、POST SSE 与原 Streaming Runtime；Qwen 两工具，512 上限 / 2/2/3 / 120 秒。用户已报告 Qwen 管理 Normal 多轮初步验收通过，但未因此发布 Streaming。
 - R2B-5C 前端已离线接通：模式选择、严格 SSE 消费、原卡片预览转 Final、Stop/断线撤销、共用成功 History、内部滚动和问题导航。Normal 默认，未启用或不匹配的 Streaming 仍拒绝真实发送。
 - R2B-5D 管理独立单案例入口已完成三个真实技术 PASS（Direct Final、当前水质、低氧双 Tool），共六次模型请求；安全报告不保存正文，人工回答质量仍未批准，CLI 未覆盖真实浏览器。见 [逐案例操作与审批](deep-dive/STREAMING_QUALIFICATION.md)。
-- R2B-5E 用户明确批准 Qwen OFF / 两工具 Streaming local_experimental；`--assistant-streaming-trial` 进程内启用，默认关闭，非 released。R2C-1E 用户已报告新 Backend 基本网页体验通过，回答质量另行研究。Ollama、评分/三工具、其他 Provider 不继承范围。启动和回滚见 [BUILD_RUN](BUILD_RUN.md#r2b-5eqwen-streaming-本地实验)。
+- R2B-5E 用户明确批准 Qwen OFF / 两工具 Streaming local_experimental；`--assistant-streaming-trial` 进程内启用，默认关闭，非 released。R2C-1E 用户已报告新 Backend 基本网页体验通过，回答质量另行研究。Ollama、评分/三工具、其他 Provider 不继承范围。启动和回滚见 [BUILD_RUN](deep-dive/PROTOTYPE_RUN_REFERENCE.md#r2b-5eqwen-streaming-本地实验)。
+
+
+## Prototype 启动操作整理（2026-10-29）
+
+新增两/三终端 CMD、七场景菜单、独立 Bot 审批及有界进程回收；新建隔离演示实例，保留原数据和脚本默认值。相关 Python 119、Node 116 通过，Hybrid Scope 不变；[操作](BUILD_RUN.md) / [边界与验收](deep-dive/PROTOTYPE_LAUNCHER_ACCEPTANCE.md)。未进行真实联网、未同步 Management。

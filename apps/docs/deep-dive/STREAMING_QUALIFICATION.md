@@ -94,7 +94,7 @@ SDK 不公开原始 `[DONE]`，只记录 `NOT_OBSERVABLE_BY_SDK`。关闭调用�
 
 启动：`python -m apps.management_web --enable-assistant --assistant-streaming-trial`。启动参数只将本进程冻结配置 enabled 置 true，磁盘仍 false。使用已有 Tool Manager 明确授权精确两工具，不自动改用户 Policy；在管理页选择 Qwen/Streaming，核对 local_experimental、512 tokens、最多三请求并逐次确认。Normal 默认1/1/2；如需其既有多轮可另加 --assistant-multi-round-trial。
 
-网页待人工检查：新问题跟随、向上读历史暂停、编号/键盘跳转、预览原位转 Final、跨模式 History；各请求阶段 Stop、断线和截断撤销；验证只有一条成功回复。失败不自动重发或转 Normal；具体操作见 [BUILD_RUN](../BUILD_RUN.md#r2b-5eqwen-streaming-本地实验)。
+网页待人工检查：新问题跟随、向上读历史暂停、编号/键盘跳转、预览原位转 Final、跨模式 History；各请求阶段 Stop、断线和截断撤销；验证只有一条成功回复。失败不自动重发或转 Normal；具体操作见 [BUILD_RUN](PROTOTYPE_RUN_REFERENCE.md#r2b-5eqwen-streaming-本地实验)。
 
 回滚：Stop 后停止自己启动的 Web，去掉 --assistant-streaming-trial，以 `python -m apps.management_web --enable-assistant` 重启（可保留独立 Normal 多轮参数）。新 epoch 撤销旧确认/Session，Streaming 再次拒绝，保留数据库、Policy 和 Credential。Ollama、DeepSeek、评分及三工具 Streaming 未开放，History/真实数据老化与回答质量没有因这次授权获得资格结论。
 

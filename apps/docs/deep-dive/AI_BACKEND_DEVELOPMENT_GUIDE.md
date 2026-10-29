@@ -79,7 +79,7 @@ flowchart TD
 
 当前管理默认请求 Registry 只有水质查询与 Knowledge。评分名称只为旧 Policy 合法存储兼容保留，没有评分 Handler。内置默认只授权水质；Knowledge 必须 opt-in。用户现有文件优先于默认值，不应为了联调覆盖它。
 
-历史水质Tool已完成15个真实样本技术验证，获用户批准为local_experimental、默认关闭。默认请求Registry仍只有上述两项；单独formal/per-Turn Registry包含历史定义，只有服务器绑定的Qwen Normal历史查询操作暴露它。共享Policy仍拒绝历史名称；管理设置opt-in与`--assistant-history-trial`分别必需，不能从旧Tool Manager写入或扩大两工具Scope。操作见[BUILD_RUN](../BUILD_RUN.md#r2d-1g历史水质单工具本地试用)。
+历史水质Tool已完成15个真实样本技术验证，获用户批准为local_experimental、默认关闭。默认请求Registry仍只有上述两项；单独formal/per-Turn Registry包含历史定义，只有服务器绑定的Qwen Normal历史查询操作暴露它。共享Policy仍拒绝历史名称；管理设置opt-in与`--assistant-history-trial`分别必需，不能从旧Tool Manager写入或扩大两工具Scope。操作见[BUILD_RUN](PROTOTYPE_RUN_REFERENCE.md#r2d-1g历史水质单工具本地试用)。
 
 ### 2.2 准确修改地图：历史候选与后续新 Tool
 
@@ -291,7 +291,7 @@ node --test apps/management_web/tests/*.test.mjs
 
 ## 管理端 Tool 授权与历史候选
 
-[management_policy.py](../../ai_service/management_policy.py) 是管理 Assistant 的授权 owner；`runtime/policy.py` 保留共享旧格式与缺省选择。不存在管理覆盖文件时只读继承，不创建目录/文件；首次明确保存时才独立持有完整选择。设置入口、并发与撤销语义见 [运行说明](../BUILD_RUN.md#管理端-tool-授权与历史候选r2d-1d)，合同见 [集成说明](../INTEGRATION.md#历史-tool-授权与候选边界r2d-1d)。
+[management_policy.py](../../ai_service/management_policy.py) 是管理 Assistant 的授权 owner；`runtime/policy.py` 保留共享旧格式与缺省选择。不存在管理覆盖文件时只读继承，不创建目录/文件；首次明确保存时才独立持有完整选择。设置入口、并发与撤销语义见 [运行说明](PROTOTYPE_RUN_REFERENCE.md#管理端-tool-授权与历史候选r2d-1d)，合同见 [集成说明](../INTEGRATION.md#历史-tool-授权与候选边界r2d-1d)。
 
 新增 Tool 必须分别完成：业务 Definition/Handler 装配、用户 Policy 授权、维护者精确 Scope 发布。历史候选仅允许 Qwen OFF / Normal / 历史单工具 / 1/1/2；Web 仍没有真实执行开关；已建立独立的历史单案例资格 CLI，默认 Dry-run，需逐案例新批准，不能复用 Streaming 三案例授权。既有两工具 Scope 和定义不变；管理授权保存会有意更新联网确认 revision。
 
@@ -307,4 +307,4 @@ node --test apps/management_web/tests/*.test.mjs
 
 [settings.py](../../ai_service/settings.py)负责默认偏好、固定 Preset 展示与 Provider 凭据操作；[settings_api.py](../../management_web/settings_api.py)负责本机 HTTP。底层[project_env.py](../../ai_backend/project_env.py)沿用既有 Writer，不是第二个 CredentialStore。R2D-4B 的[credential_test.py](../../ai_service/credential_test.py)只做用户主动的单请求连接测试，临时 Snapshot 不写正式 Store；成功保存需短期绑定凭证。
 
-[settings_store.py](../../ai_service/settings_store.py)延续同一 JSON/CAS，v1 兼容、明确保存时写 v2；[output_budget.py](../../ai_service/output_budget.py)仅在原精确门禁通过后应用 Qwen 本地 1–4096 输出合同。范围、选定值、预算版本及基础 Scope 绑定 revision；通用 Adapter 的新内部 ceiling 不授予模型能力，不放宽默认限制或 2/2/3。默认偏好与预算均不重配进行中的 Turn。自定义模型发布入口仍未开放。见[运行说明](../BUILD_RUN.md#r2d-4b连接测试与可调输出预算)。
+[settings_store.py](../../ai_service/settings_store.py)延续同一 JSON/CAS，v1 兼容、明确保存时写 v2；[output_budget.py](../../ai_service/output_budget.py)仅在原精确门禁通过后应用 Qwen 本地 1–4096 输出合同。范围、选定值、预算版本及基础 Scope 绑定 revision；通用 Adapter 的新内部 ceiling 不授予模型能力，不放宽默认限制或 2/2/3。默认偏好与预算均不重配进行中的 Turn。自定义模型发布入口仍未开放。见[运行说明](PROTOTYPE_RUN_REFERENCE.md#r2d-4b连接测试与可调输出预算)。

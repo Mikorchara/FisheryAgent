@@ -177,7 +177,7 @@ Activity + Preview + 唯一终态]
 - POST /api/ai/messages/stream 复用原门禁/控制 API，事件来自同一 AssistantEventChannel；包含累计安全 Activity、临时 Preview/Reset、唯一 Final/Error/Cancelled。关闭响应取消原 Handle；已完成状态不被迟到取消或投递故障改写。
 - Fake SDK 的三路径确认真实 Monitoring Result 进入后续请求，两个 Ledger Receipt 独立；所有实际 Streaming 请求编码 stream=true、max_tokens=512，Runtime 默认响应仍为 normal。候选/关闭/Scope/Policy/revision 错配全部在模型 I/O 前拒绝。
 - R2B-5B 当时未实现前端；现已由下节 R2B-5C 接通。后端技术测试不代表真实模型资格或回答质量。
-- 当前边界与离线验证入口见 [INTEGRATION](../../INTEGRATION.md#r2b-5b管理-streaming-后端) 和 [BUILD_RUN](../../BUILD_RUN.md#r2b-5bstreaming-后端离线验证)。
+- 当前边界与离线验证入口见 [INTEGRATION](../../INTEGRATION.md#r2b-5b管理-streaming-后端) 和 [BUILD_RUN](../PROTOTYPE_RUN_REFERENCE.md#r2b-5bstreaming-后端离线验证)。
 
 ## R2B-5C 实施补记
 
@@ -195,4 +195,4 @@ Activity + Preview + 唯一终态]
 
 ## R2B-5E 本地实验开放
 
-用户完成三个真实案例（Direct Final / 当前水质 / 低氧双 Tool）技术 PASS 后，另行明确批准 Qwen 精确两工具 local_experimental，回答质量留待后续。管理资源只更新发布状态，qualification_id/validated_at 为空、enabled=false；`--assistant-streaming-trial` 在启动 composition 时启用当前 epoch，不修改磁盘、Policy 或原型配置。Normal 默认，两个试用参数独立。精确门禁、512/2/2/3/120秒、Stop、Ledger、Commit Gate 和原 SSE/预览流程复用；未开放其他 Provider/Tool 组合，也不自动重跑或降级。R2C-1E 用户已另行报告独立 Backend 的基本真实网页验收通过，回答质量仍待专项研究；详见 [迁移收尾](R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。操作和回滚以 [BUILD_RUN](../../BUILD_RUN.md#r2b-5eqwen-streaming-本地实验) 为准。
+用户完成三个真实案例（Direct Final / 当前水质 / 低氧双 Tool）技术 PASS 后，另行明确批准 Qwen 精确两工具 local_experimental，回答质量留待后续。管理资源只更新发布状态，qualification_id/validated_at 为空、enabled=false；`--assistant-streaming-trial` 在启动 composition 时启用当前 epoch，不修改磁盘、Policy 或原型配置。Normal 默认，两个试用参数独立。精确门禁、512/2/2/3/120秒、Stop、Ledger、Commit Gate 和原 SSE/预览流程复用；未开放其他 Provider/Tool 组合，也不自动重跑或降级。R2C-1E 用户已另行报告独立 Backend 的基本真实网页验收通过，回答质量仍待专项研究；详见 [迁移收尾](R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。操作和回滚以 [BUILD_RUN](../PROTOTYPE_RUN_REFERENCE.md#r2b-5eqwen-streaming-本地实验) 为准。

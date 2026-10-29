@@ -379,7 +379,7 @@ Phase I 的五个 runtime 准备模块和三份重复测试已移除；当前 Se
 
 历史资格 CLI 位于 [scripts/qualification/qualify_management_history.py](../../scripts/qualification/qualify_management_history.py)；默认 Dry-run，只用新 Backend 和正式单轮业务 Assistant，不是 Web 发布开关。见 [逐案例操作](deep-dive/HISTORY_QUALIFICATION.md)。
 
-历史产品试用使用`python -m apps.management_web --enable-assistant --assistant-history-trial`，由Service/Scope/Policy/现有Adapter共同执行，未导入development资格代码。R2D-2B普通聊天由Qwen自主选择已授权三工具，不暴露Profile或历史快捷操作。统一Normal/Streaming需独立服务器试用许可；原两工具与旧历史单工具API/资格保留，不继承真实资格。启动与回滚见[BUILD_RUN](BUILD_RUN.md#r2d-1g历史水质单工具本地试用)。
+历史产品试用使用`python -m apps.management_web --enable-assistant --assistant-history-trial`，由Service/Scope/Policy/现有Adapter共同执行，未导入development资格代码。R2D-2B普通聊天由Qwen自主选择已授权三工具，不暴露Profile或历史快捷操作。统一Normal/Streaming需独立服务器试用许可；原两工具与旧历史单工具API/资格保留，不继承真实资格。启动与回滚见[BUILD_RUN](deep-dive/PROTOTYPE_RUN_REFERENCE.md#r2d-1g历史水质单工具本地试用)。
 
 [qualify_management_history_batch.py](../../scripts/qualification/qualify_management_history_batch.py) 是固定3案例×5的薄进程编排入口：每个子进程仍只运行一个案例，默认Dry-run，真实执行需三个新计划的一次性明确批准；无重试、补跑或自动恢复。
 
@@ -392,3 +392,13 @@ Phase I 的五个 runtime 准备模块和三份重复测试已移除；当前 Se
 `scripts/dev/Test-HybridProvider.ps1` 为独立本地Hybrid研究入口，Check不读取库/密钥/网络，Run逐项批准多个独立五轮内Run；不启动QQ、不复用旧许可。见 [C1研究实验](deep-dive/BOT3GC1_LOCAL_HYBRID_RESEARCH.md)。
 
 `scripts/dev/Test-QQHybrid.ps1` 为独立真实QQ Hybrid实验入口；Check纯离线，Run须新一次`APPROVE HYBRID`风险/网络批准，原Session控制器与唯一发送Owner不变。见 [最终装配与人工验收](deep-dive/BOT3G_FINAL_HYBRID_QQ_TRIAL.md)。
+
+## Prototype 可见终端入口
+
+- `scripts/dev/启动演示系统.cmd` / `启动QQ演示系统.cmd`：两/三终端薄入口，显式准备新隔离演示目录。
+- `scripts/dev/Start-PrototypeStack.ps1` / `Stop-PrototypeStack.ps1`：本机启动、离线检查与按本次目录停止。
+- `scripts/dev/prototype_stack.py`：复用原 local_session 配对启动，冻结同一实例、独占锁、PID与报告；不实现模型审批。
+- `scripts/dev/prototype_console.py`：每服务独立控制台与本次 Job；Bot 委托原 hybrid_trial_cli，协作取消后有界回收。
+- `scripts/dev/windows_job.py` / `console_job.py`：Windows 进程回收辅助，源自已验证的 Management 通用实现，使用 Prototype 独立命名；无跨项目导入。
+- `apps/management_web/tests/test_prototype_stack.py`：新建合成实例、Fake Bot、实际Windows控制台与原审批拒绝测试。
+- `apps/docs/BUILD_RUN.md`：日常简明入口；`deep-dive/PROTOTYPE_RUN_REFERENCE.md` 保留详细配置和阶段材料。

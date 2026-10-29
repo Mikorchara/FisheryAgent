@@ -4,6 +4,10 @@
 
 ## 阅读入口
 
+- [Prototype 日常启动：两终端 / 三终端](BUILD_RUN.md)
+- [运行维护与历史实验入口](deep-dive/PROTOTYPE_RUN_REFERENCE.md)
+- [启动器边界与验收](deep-dive/PROTOTYPE_LAUNCHER_ACCEPTANCE.md)
+
 - [BOT-3G-FINAL 实验性真实QQ Hybrid](deep-dive/BOT3G_FINAL_HYBRID_QQ_TRIAL.md)（独立Prompt/Scope、一次Run审批、General/Water混合记忆；Check离线，Run须操作者单独批准General风险与联网）
 
 - [BOT-3G-C1-D 48题真实Hybrid综合评估](deep-dive/BOT3GC1D_REAL_HYBRID_EVALUATION.md)（84次HTTP/36次Tool；General 0/12、Water 34/36；原文缺失限制、逐题初审与候选对照计划；不开放真实QQ）
@@ -51,8 +55,8 @@
 - [R2D-2B 三工具本地开放与操作栏修复](deep-dive/R2D2B_UNIFIED_TOOLS.md)（Qwen OFF、独立Normal/Streaming、权限求交、非released）
 - [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)（请求链、Tool/Prompt 扩展、Scope 与测试清单）
 - [启动、模拟器与验证](BUILD_RUN.md)
-- [系统设置与 API 密钥操作](BUILD_RUN.md#r2d-4a系统设置中心)（默认偏好、私有凭据、真实预算展示与限制）
-- [连接测试与可调输出预算](BUILD_RUN.md#r2d-4b连接测试与可调输出预算)（先测试后保存、Qwen 双模式 1–4096 本地范围）
+- [系统设置与 API 密钥操作](deep-dive/PROTOTYPE_RUN_REFERENCE.md#r2d-4a系统设置中心)（默认偏好、私有凭据、真实预算展示与限制）
+- [连接测试与可调输出预算](deep-dive/PROTOTYPE_RUN_REFERENCE.md#r2d-4b连接测试与可调输出预算)（先测试后保存、Qwen 双模式 1–4096 本地范围）
 - [上报 DTO、存储和集成边界](INTEGRATION.md)
 - [EVT-1 视觉事件恢复与首页异常概况](deep-dive/EVENT_LIFECYCLE.md)（Prototype 实验，连续三个可靠 CLEAR，待人工验收）
 - [EVT-2 等级关联、时间筛选与历史清理](deep-dive/EVENT_MANAGEMENT.md)（Prototype 实验，服务端分页、受控硬删除，待人工验收）
@@ -95,7 +99,7 @@ Flask + 原生 ES Modules / CSS / SVG，无新依赖。默认 8766，读取 SQLi
 
 R1：9 Python + 8 Node；原 Prototype 相关 64 Python + 219 Browser。七页在 1440 / 1024 / 390px 下完成布局检查。
 
-R2A：监测 23、模拟器 12、管理 API 11 项 Python，前端 14 项 Node；真实本机默认周期联调三批，接收间隔 10.00 / 10.00 秒。模拟器停止后页面明确显示过期/中断；七页 390px 无页面级横向溢出，浏览器无错误。原 Prototype FAST 149、FULL PRODUCT 1047、Browser 219 通过。当前具体测试命令见 [BUILD_RUN](BUILD_RUN.md#验证)。
+R2A：监测 23、模拟器 12、管理 API 11 项 Python，前端 14 项 Node；真实本机默认周期联调三批，接收间隔 10.00 / 10.00 秒。模拟器停止后页面明确显示过期/中断；七页 390px 无页面级横向溢出，浏览器无错误。原 Prototype FAST 149、FULL PRODUCT 1047、Browser 219 通过。当前具体测试命令见 [BUILD_RUN](deep-dive/PROTOTYPE_RUN_REFERENCE.md#验证)。
 
 R2A.1：按有效检测记录加权体长、有效帧可见数均值（含零鱼帧）、逐样本/逐帧质量过滤、阻塞跳过窗口，以及北京时间到秒显示。监测 26、模拟器 17、管理 API 11 项 Python 和前端 16 项 Node 通过；前端涵盖实际页面代码、统一时间显示及不同主机时区转换。本轮未重复运行原 AI Runtime 全量回归，未调用真实 Provider/NPU。统计合同见 [INTEGRATION](INTEGRATION.md#3-窗口与业务语义)。
 
@@ -105,13 +109,13 @@ R2B-2：新增 7 项业务服务和 3 项调度测试；监测 51、模拟器 20
 
 R2B-3：新增管理 Assistant 17 项 Python 与 8 项前端行为测试；管理测试合计 28 Python / 25 Node、Monitoring 51、Simulator 20 通过。原 Runtime Assistant 140、Tool 296、FAST 149、原 Web Browser 219 通过；仅离线 Fake Provider 与临时本机浏览器联调，不调用真实模型/NPU，不将结果视为真实回答质量验收。
 
-R2B-4：Normal 多轮已完成离线集成。Qwen/Ollama 独立 local_experimental Scope、默认关闭；不复制 Runtime 循环，不继承真实资格。参见 [启用与回滚](BUILD_RUN.md#r2b-4normal-multi-round-本地试用) 和 [执行边界](INTEGRATION.md#r2b-4管理独立-normal-多轮执行范围)。
+R2B-4：Normal 多轮已完成离线集成。Qwen/Ollama 独立 local_experimental Scope、默认关闭；不复制 Runtime 循环，不继承真实资格。参见 [启用与回滚](deep-dive/PROTOTYPE_RUN_REFERENCE.md#r2b-4normal-multi-round-本地试用) 和 [执行边界](INTEGRATION.md#r2b-4管理独立-normal-多轮执行范围)。
 
 R2B-4 离线验证：AI Service 11、管理 Web Python 64、Monitoring 相关 37、原 Runtime Assistant 140、Tool 相关 95、原 Web Assistant 52、Analysis/普通 Streaming 39、管理前端 Node 29 全部通过；Python/JS/JSON 语法、本地 Markdown 链接和 diff 检查通过，改动文件敏感模式扫描未发现命中。未请求真实 Provider/Ollama，未修改核心 Runtime 或用户 Policy。
 
 
 R2B-5B 后端离线结果：新增 Streaming/配置专项 25 项通过（23 项管理 HTTP/SSE、2 项配置）；既有管理 Python 64 项、AI Service 13 项（含上述配置测试）、核心 Assembler/Streaming 多轮/Prototype SSE 96 项及管理 Node 36 项相关回归通过。Python/JSON 语法、98 条 Markdown 本地文件链接、diff/空白检查与敏感模式扫描通过。未改前端、核心 Runtime 或真实资格；未执行 Provider/NPU。后端已完成而 Final 投递失败时不重写完成 Trace，也不替客户端恢复 History。
 
-R2B-5C：已增加默认 Normal 的双模式选择、安全 SSE parser、原消息内预览转 Final、失败撤销、滚动跟随/暂停与问题导航。管理 Node 51、管理 Web Python 88、AI Service 13、相关核心 Streaming/来源回归 154 项通过；真实管理 HTTP 的三条 Fake SDK 路径进入正式前端 parser/会话，均只提交一条最终回答。隔离本机浏览器双 Tool 完成，1280/390px 无横向溢出。没有调用真实 Provider/NPU、改核心 Runtime 或打开 candidate；[运行与验收](BUILD_RUN.md#r2b-5c聊天前端离线验收)。
+R2B-5C：已增加默认 Normal 的双模式选择、安全 SSE parser、原消息内预览转 Final、失败撤销、滚动跟随/暂停与问题导航。管理 Node 51、管理 Web Python 88、AI Service 13、相关核心 Streaming/来源回归 154 项通过；真实管理 HTTP 的三条 Fake SDK 路径进入正式前端 parser/会话，均只提交一条最终回答。隔离本机浏览器双 Tool 完成，1280/390px 无横向溢出。没有调用真实 Provider/NPU、改核心 Runtime 或打开 candidate；[运行与验收](deep-dive/PROTOTYPE_RUN_REFERENCE.md#r2b-5c聊天前端离线验收)。
 
 以上各 R 阶段数字与描述保留其当时基线；独立 Backend 的最终离线结果和用户基本人工验收分别见 [迁移记录 §14 / §15](deep-dive/research/R2C1B_AI_BACKEND_FORK_MIGRATION_PLAN.md#15-r2c-1e-工程收尾与人工验收)。

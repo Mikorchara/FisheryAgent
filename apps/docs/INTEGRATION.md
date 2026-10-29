@@ -4,7 +4,7 @@
 
 AI 的扩展操作见 [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)；本文件维护当前数据/应用边界。带 R 阶段编号的章节保留来源脉络；MIG-1 后正式管理运行链及 Monitoring 领域合同均不导入旧 fishery_ai。
 
-R2D-2C 本机聊天确认方式：主动点击「发送」或 Ctrl+Enter 授权一个 Turn，前端随冻结的设备、epoch/revision 提交 `confirm_network=true`，不再保存勾选状态。底层确认合同及 Host/Origin、浏览器令牌、Tool Policy、Scope、预算、唯一 claim、取消和提交校验不变；缺少确认或配置过期仍在凭据/模型 I/O 前拒绝。刷新可用状态、切换模式与 History 恢复只读，不自动重发。此规则不扩展到远程生产接口或人工资格 CLI；下文旧阶段关于勾选确认的操作以此为准。[当前网页操作](BUILD_RUN.md#一行式常用命令)。
+R2D-2C 本机聊天确认方式：主动点击「发送」或 Ctrl+Enter 授权一个 Turn，前端随冻结的设备、epoch/revision 提交 `confirm_network=true`，不再保存勾选状态。底层确认合同及 Host/Origin、浏览器令牌、Tool Policy、Scope、预算、唯一 claim、取消和提交校验不变；缺少确认或配置过期仍在凭据/模型 I/O 前拒绝。刷新可用状态、切换模式与 History 恢复只读，不自动重发。此规则不扩展到远程生产接口或人工资格 CLI；下文旧阶段关于勾选确认的操作以此为准。[当前网页操作](deep-dive/PROTOTYPE_RUN_REFERENCE.md#一行式常用命令)。
 
 R2D-3B：管理知识只读写统一SQLite，导入内置与用户知识均可管理；不再导入旧 KnowledgeService/Evidence，也不运行时读取旧JSON。下列R阶段对旧固定资源/共享Policy的描述保留历史脉络，当前知识入口以[统一知识库](deep-dive/KNOWLEDGE_CONTENT.md)为准。迁移须单独批准，旧文件不移动或覆盖。
 
@@ -366,7 +366,7 @@ R2C-1E：迁移主线和基本真实网页人工验收已结束；Qwen Normal �
 - 水质 Tool 仍执行一次 `capture_water`，冻结设备而非旧读数，保留 batch/time/quality/coverage/Findings/PROTOTYPE Rule Identity。Knowledge 独立检索，Ledger 每次执行留独立 Receipt，不把知识 Evidence 合并为现场事实。后续错误保留已有 Ledger 审计，但不提交成功回答。
 - 前端沿用通用有序 Steps、每 Tool 独立卡片、聚合 Usage、Stop 和唯一 Final。只有完整通过门禁的最终文本 pair 进入 History；不保存中间模型正文、Tool 协议、Ledger 或 payload。网络确认动态显示最多 2 或 3 次，请求结束清除确认。
 
-关闭管理开关并重启即可回滚，新 epoch 不自动续用旧确认/历史。此本地实验不等于管理链路真实资格验收；模型选择与回答质量仍需用户另行授权测试。启动与人工验收见 [BUILD_RUN](BUILD_RUN.md#r2b-4normal-multi-round-本地试用)。
+关闭管理开关并重启即可回滚，新 epoch 不自动续用旧确认/历史。此本地实验不等于管理链路真实资格验收；模型选择与回答质量仍需用户另行授权测试。启动与人工验收见 [BUILD_RUN](deep-dive/PROTOTYPE_RUN_REFERENCE.md#r2b-4normal-multi-round-本地试用)。
 
 ## R2B-4.1：历史趋势显示与 Ollama 调查
 
@@ -410,7 +410,7 @@ Web 的 streaming.py 只投递现有 AssistantEventChannel，不另写 Tool 或�
 
 `ai_service.development.streaming_qualification` 只由单案例 CLI/离线测试导入。先按正式 definitions/绑定/Scope 计算无副作用计划；获批后创建临时 Monitoring SQLite 与 Policy，经正式 ManagementAssistantService 冻结设备、Credential/Runtime 和执行 2/2/3。它仅为单案例资格构造服务器内 PreparedAssistantTurn 的执行许可，保留当时的 Scope 发布状态；不更改配置或 Web prepare_turn 门禁，不提供浏览器可控的 bypass。
 
-执行观察复用既有 QualificationAdapter / Streaming observer / ExperimentGateway；Tool 循环、Source Ledger、Commit Gate 均来自原 Runtime。实际 SDK 分片/清理和 Result 上下文比较可成为管理业务链证据；CLI 不走 HTTP/SSE，报告明确该缺口。产品结果完成与实验路径合格分别记录；人工预览不写 JSON，也不作为发布批准。具体审批/回滚见 [资格说明](deep-dive/STREAMING_QUALIFICATION.md) 和 [本地启动](BUILD_RUN.md#r2b-5eqwen-streaming-本地实验)。
+执行观察复用既有 QualificationAdapter / Streaming observer / ExperimentGateway；Tool 循环、Source Ledger、Commit Gate 均来自原 Runtime。实际 SDK 分片/清理和 Result 上下文比较可成为管理业务链证据；CLI 不走 HTTP/SSE，报告明确该缺口。产品结果完成与实验路径合格分别记录；人工预览不写 JSON，也不作为发布批准。具体审批/回滚见 [资格说明](deep-dive/STREAMING_QUALIFICATION.md) 和 [本地启动](deep-dive/PROTOTYPE_RUN_REFERENCE.md#r2b-5eqwen-streaming-本地实验)。
 
 ## 历史 Tool 授权与候选边界（R2D-1D）
 
@@ -437,4 +437,4 @@ R2D-1E 已新增开发层的历史单案例计划（默认 dry-run，见 [操作
 
 R2D-4B 在原精确 execution 准入之后叠加 `management-qwen-output-range@1`，仅对本地 Qwen OFF / 2/2/3 允许 1–4096 输出上限；原 Scope、Policy、Prompt/History/Tool/数据绑定 matcher 不变。预算在同一设置文件 v2 中分模式保存，版本与基础 Scope/选定值一起进入 execution revision；prepare/claim 防过期，运行中使用原冻结 Runtime。未配置覆盖时保持旧编码和资格计划。聊天 HTTP 仍拒绝客户端直接注入 Token/ceiling、Tool 预算、Prompt 或连接地址。Generic Adapter 仅新增服务器内部 ceiling 校验，默认 1024/512 限制保留，不改变循环或能力证据。
 
-显式连接测试复用固定 Provider、ProfileRegistry 的临时 environ Snapshot、已有 Adapter 和 RequestHandle，只有 1 次 Normal 请求 / 8 output tokens / 20秒 / retry=0，无 Tool、History 或领域 Receipt。成功且清理完成后发放短期一次性保存凭证，仅保留有盐摘要/Provider/文件版本；正常保存仍由既有私有 Writer 原子执行，PROCESS_ENV 只读。测试成功不授予产品资格。操作见[设置说明](BUILD_RUN.md#r2d-4b连接测试与可调输出预算)。自定义模型与 RAG 高级配置继续暂缓。
+显式连接测试复用固定 Provider、ProfileRegistry 的临时 environ Snapshot、已有 Adapter 和 RequestHandle，只有 1 次 Normal 请求 / 8 output tokens / 20秒 / retry=0，无 Tool、History 或领域 Receipt。成功且清理完成后发放短期一次性保存凭证，仅保留有盐摘要/Provider/文件版本；正常保存仍由既有私有 Writer 原子执行，PROCESS_ENV 只读。测试成功不授予产品资格。操作见[设置说明](deep-dive/PROTOTYPE_RUN_REFERENCE.md#r2d-4b连接测试与可调输出预算)。自定义模型与 RAG 高级配置继续暂缓。

@@ -30,7 +30,7 @@
 
 一行：`.\scripts\dev\run_local.ps1 -Scenario low_oxygen`。原CLI默认仍关；启动器追加`--assistant-tools-trial`，并尊重Normal多轮/Streaming/History开关。启动不请求模型、不解析私有Key、不修改Policy；CredentialSnapshot在明确确认后的执行阶段解析。
 
-在设置中授权三工具，Qwen默认Normal，选择设备、确认联网后直接提问。Streaming需用户主动切换；失败不重试或降级。Ctrl+C停止自己的两个进程；`-NoHistory`重启回到原两工具，`-NoStreaming`仅关Streaming，`-NoStreaming -NoMultiRound -NoHistory`回到Normal单轮。新epoch撤销旧确认。[完整命令](../BUILD_RUN.md#一行式常用命令)。
+在设置中授权三工具，Qwen默认Normal，选择设备、确认联网后直接提问。Streaming需用户主动切换；失败不重试或降级。Ctrl+C停止自己的两个进程；`-NoHistory`重启回到原两工具，`-NoStreaming`仅关Streaming，`-NoStreaming -NoMultiRound -NoHistory`回到Normal单轮。新epoch撤销旧确认。[完整命令](PROTOTYPE_RUN_REFERENCE.md#一行式常用命令)。
 
 ## 离线验证与人工验收
 

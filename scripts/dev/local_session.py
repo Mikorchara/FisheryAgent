@@ -9,8 +9,41 @@ import socket
 import subprocess
 import sys
 import time
+import webbrowser
 
 ROOT = Path(__file__).resolve().parents[2]
+# Script execution with -I must bind imports to this project, not another checkout.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+# Deliberately limited to the seven user-facing demos; fault-injection scenarios
+# remain available only through the original Simulator CLI.
+DEMO_SCENARIOS = (
+    ('normal', '正常水质'), ('low_oxygen', '低溶解氧'),
+    ('suspected_disease', '疑似疾病'), ('reduced_feeding', '摄食减少'),
+    ('combined_anomaly', '复合异常'), ('device_offline', '设备离线'),
+    ('oxygen_drop_recovery', '溶解氧快速下降后逐步回升'),
+)
+
+
+def choose_scenario(*, read=input, emit=print):
+    emit('请选择模拟场景（开始发送数据前选择）：')
+    for number, (key, label) in enumerate(DEMO_SCENARIOS, 1):
+        emit(f'  {number}. {label} ({key})')
+    emit('  0. 退出（8 也可退出）')
+    while True:
+        try:
+            value = read('输入 1–7，Enter 默认正常水质，0 退出：').strip()
+        except (EOFError, KeyboardInterrupt):
+            return None
+        if value in ('0', '8'):
+            return None
+        if value == '':
+            return DEMO_SCENARIOS[0]
+        if value in tuple(str(i) for i in range(1, len(DEMO_SCENARIOS)+1)):
+            return DEMO_SCENARIOS[int(value)-1]
+        emit('输入无效，请输入 1–7 或 0；直接 Enter 选择正常水质。')
+
 
 
 def require_free_port(port):
@@ -58,8 +91,10 @@ def ready(port):
 
 def run_local(scenario='normal', port=8766, seed=42, *, root=ROOT, python=None,
               assistant=True, streaming=True, multi_round=True, history=True,
-              data_root=None, user_data=False,
-              launch=subprocess.Popen, is_ready=ready, sleep=time.sleep, emit=print):
+              data_root=None, user_data=False, show_terminals=False, open_browser=False, interactive_scenario=False,
+              browse=webbrowser.open, launch=subprocess.Popen, is_ready=ready, sleep=time.sleep, emit=print):
+    if interactive_scenario and not show_terminals:
+        raise RuntimeError('LOCAL_SCENARIO_MENU_REQUIRES_TERMINALS')
     require_free_port(port)
     child_env = os.environ.copy()
     # Installed/source management startup must not inherit an old repository path.
@@ -72,10 +107,21 @@ def run_local(scenario='normal', port=8766, seed=42, *, root=ROOT, python=None,
             assistant=assistant,streaming=streaming,multi_round=multi_round,history=history,
             data_root=data_root,user_data=user_data)
         options = dict(cwd=root,env=child_env)
-        if os.name == 'nt':
-            options['creationflags'] = subprocess.CREATE_NO_WINDOW
-        # Never echo command environments or child output (which may contain local paths).
-        options.update(stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        if show_terminals:
+            if os.name != 'nt':
+                raise RuntimeError('LOCAL_WINDOWS_REQUIRED')
+            options['creationflags'] = subprocess.CREATE_NEW_CONSOLE
+            # Same modules/flags, wrapped only to label the two visible consoles.
+            def visible(command, role):
+                return [command[0], '-I', '-B', '-u', str(Path(__file__).resolve()),
+                        '--console-role', role,
+                        *(['--interactive-scenario'] if role == 'simulator' and interactive_scenario else []),
+                        '--', *command[1:]]
+            server, simulator = visible(server, 'web'), visible(simulator, 'simulator')
+        else:
+            if os.name == 'nt':
+                options['creationflags'] = subprocess.CREATE_NO_WINDOW
+            options.update(stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         children.append(launch(server,**options))
         deadline = time.monotonic()+20
         while not is_ready(port):
@@ -87,10 +133,16 @@ def run_local(scenario='normal', port=8766, seed=42, *, root=ROOT, python=None,
         if children[0].poll() is not None:
             raise RuntimeError('LOCAL_SERVER_START_FAILED')
         children.append(launch(simulator,**options))
-        emit(f'本机服务 http://127.0.0.1:{port} · 场景 {scenario} · 每10秒上报。Ctrl+C 停止两进程。')
+        scene = '请在 Simulator 窗口选择场景；选择前不上报' if interactive_scenario else f'场景 {scenario} · 每10秒上报'
+        emit(f'本机服务 http://127.0.0.1:{port} · {scene}。Ctrl+C 停止本次服务。')
         emit('Qwen三工具本地实验按启动参数启用；Tool仍须用户授权。启动不调用模型。')
+        if open_browser:
+            try:
+                if not browse(f'http://127.0.0.1:{port}'):emit('请手动打开以上网页地址。')
+            except OSError:emit('请手动打开以上网页地址。')
         while all(child.poll() is None for child in children):
             sleep(.2)
+        if show_terminals and any(child.poll() in (0, 0xC000013A) for child in children):return 0
         raise RuntimeError('LOCAL_CHILD_EXITED')
     except KeyboardInterrupt:
         emit('正在停止本次启动的服务器和模拟器。')
@@ -111,9 +163,46 @@ def run_local(scenario='normal', port=8766, seed=42, *, root=ROOT, python=None,
         child_env.pop('FISHERY_SIM_INGEST_TOKEN',None)
 
 
+def console_role(argv):
+    import ctypes
+    import runpy
+    role, *remaining = argv
+    interactive = remaining[:1] == ['--interactive-scenario']
+    if interactive:
+        remaining = remaining[1:]
+    separator, *arguments = remaining
+    if role not in ('web', 'simulator') or interactive and role != 'simulator':
+        raise RuntimeError('INVALID_LOCAL_CONSOLE')
+    if separator != '--' or arguments[:1] != ['-m'] or arguments[1:2] != [
+            'apps.management_web' if role == 'web' else 'apps.simulator']:
+        raise RuntimeError('INVALID_LOCAL_CONSOLE')
+    port = arguments[arguments.index('--port')+1] if role == 'web' else arguments[arguments.index('--server')+1].rsplit(':',1)[1]
+    ctypes.windll.kernel32.SetConsoleTitleW('Prototype · '+('Web' if role == 'web' else 'Simulator')+' · '+port)
+    print('AI 监测系统 · '+('Web 服务' if role == 'web' else '模拟器（每10秒更新水质与视觉数据）'), flush=True)
+    print('按 Ctrl+C 或关闭任一窗口停止本次 Web/Simulator；统一启动器会回收本次 Bot。', flush=True)
+    try:
+        if interactive:
+            choice = choose_scenario()
+            if choice is None:
+                print('已取消模拟；正在停止本次 Web / Simulator。', flush=True)
+                return 0
+            scenario, label = choice
+            arguments[arguments.index('--scenario')+1] = scenario
+            print(f'当前场景：{label} ({scenario})', flush=True)
+            print('模拟上报状态：已启动；首个完整窗口约10秒，之后每10秒上报。', flush=True)
+            print('下方 window 状态为实际发送结果；device offline / no report 表示未发送。', flush=True)
+        sys.argv = [arguments[1], *arguments[2:]]
+        runpy.run_module(arguments[1], run_name='__main__', alter_sys=True)
+        return 0
+    except KeyboardInterrupt:
+        return 0
+
 def main(argv=None):
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ['--console-role']:return console_role(arguments[1:])
+
     parser=argparse.ArgumentParser(description='本机管理服务+模拟器；不会发起模型请求')
-    parser.add_argument('--scenario',choices=('normal','low_oxygen','oxygen_drop_recovery','suspected_disease','reduced_feeding','combined_anomaly','device_offline'),default='normal')
+    parser.add_argument('--scenario',choices=tuple(key for key, _ in DEMO_SCENARIOS),default='normal')
     parser.add_argument('--port',type=int,default=8766)
     parser.add_argument('--seed',type=int,default=42)
     locations=parser.add_mutually_exclusive_group()
@@ -121,13 +210,21 @@ def main(argv=None):
     locations.add_argument('--user-data',action='store_true')
     for name in ('assistant','streaming','multi-round','history'):
         parser.add_argument('--no-'+name,action='store_true')
-    args=parser.parse_args(argv)
+    parser.add_argument('--show-terminals',action='store_true')
+    parser.add_argument('--interactive-scenario',action='store_true')
+    parser.add_argument('--open-browser',action='store_true')
+    args=parser.parse_args(arguments)
+    if args.interactive_scenario and not args.show_terminals:parser.error('LOCAL_SCENARIO_MENU_REQUIRES_TERMINALS')
     if not 1 <= args.port <= 65535:
         parser.error('INVALID_LOCAL_PORT')
     try:
+        if args.show_terminals:
+            from scripts.dev.windows_job import own_process_tree
+            own_process_tree()
         return run_local(args.scenario,args.port,args.seed,assistant=not args.no_assistant,
             streaming=not args.no_streaming,multi_round=not args.no_multi_round,history=not args.no_history,
-            data_root=args.data_root,user_data=args.user_data)
+            data_root=args.data_root,user_data=args.user_data,show_terminals=args.show_terminals,
+            open_browser=args.open_browser,interactive_scenario=args.interactive_scenario)
     except RuntimeError as error:
         print(str(error)+' · 未关闭任何外部进程；请检查端口或手动使用原CLI。',file=sys.stderr)
         return 1
