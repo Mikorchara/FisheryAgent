@@ -154,7 +154,7 @@ class AIServiceTests(unittest.TestCase):
         self.assertEqual(error.exception.code,'USER_CANCELLED')
         self.assertEqual(self.gateway.requests,[])
 
-    def test_local_composition_preserves_existing_storage_locations_without_private_access(self):
+    def test_local_composition_uses_daily_storage_without_private_access(self):
         location = SimpleNamespace(env_path=self.root/'not-read.env')
         with patch('apps.ai_service.runtime.locations.private_project_location',return_value=location) as locate, \
              patch('apps.ai_service.service.CredentialStore') as credentials:
@@ -162,8 +162,8 @@ class AIServiceTests(unittest.TestCase):
         locate.assert_called_once_with(self.root.resolve())
         credentials.assert_called_once_with(location.env_path,private_location=location)
         self.assertIs(backend.monitoring,self.monitoring)
-        self.assertEqual(backend.traces.path,self.root/'outputs/management_web/assistant-traces.jsonl')
-        self.assertEqual(backend.policy_store.directory,self.root/'outputs/tool-policies')
+        self.assertEqual(backend.traces.path,self.root/'apps/data/logs/assistant-traces.jsonl')
+        self.assertEqual(backend.policy_store.directory,self.root/'apps/data/tool-policies')
 
     def test_local_streaming_opt_in_is_independent_of_normal_mode_and_creates_new_epoch(self):
         location=SimpleNamespace(env_path=self.root/'not-read.env')
@@ -175,4 +175,4 @@ class AIServiceTests(unittest.TestCase):
         self.assertFalse(trial._execution_config.multi_round_enabled)
         self.assertFalse(rollback._streaming_config.enabled)
         self.assertNotEqual(trial.epoch,rollback.epoch)
-        self.assertFalse((self.root/'outputs/tool-policies').exists())
+        self.assertFalse((self.root/'apps/data/tool-policies').exists())

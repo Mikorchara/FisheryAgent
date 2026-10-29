@@ -31,7 +31,8 @@ class WebAIBoundaryTests(unittest.TestCase):
 
     def test_cli_streaming_opt_in_requires_assistant_and_preserves_local_startup(self):
         import io
-        from apps.management_web.__main__ import main
+        from apps.management_web.__main__ import main,project_root
+        from apps.management_paths import ManagementPaths
         with patch('sys.argv',['management_web','--assistant-streaming-trial']), \
              patch('sys.stderr',new_callable=io.StringIO), \
              patch('apps.management_web.ai_adapter.ManagementAssistant.local') as local:
@@ -46,6 +47,7 @@ class WebAIBoundaryTests(unittest.TestCase):
                         ['--assistant-tools-trial','--assistant-multi-round-trial','--assistant-streaming-trial'],
                         ['--assistant-streaming-trial','--assistant-multi-round-trial','--assistant-history-trial']):
             with patch('sys.argv',['management_web','--enable-assistant',*options]), \
+                 patch('apps.management_web.instance.validate_instance'), \
                  patch('apps.monitoring.repository.MonitoringRepository'), \
                  patch('apps.monitoring.service.MonitoringService'), \
                  patch('apps.management_web.ai_adapter.ManagementAssistant.local') as local, \
@@ -56,6 +58,7 @@ class WebAIBoundaryTests(unittest.TestCase):
                 'streaming_trial':'--assistant-streaming-trial' in options,
                 'history_trial':'--assistant-history-trial' in options,
                 'unified_tools_trial':'--assistant-tools-trial' in options,
+                'data_paths':ManagementPaths.resolve(project_root()),
                 'knowledge':self.knowledge_factory.return_value})
             self.assertEqual(factory.return_value.run.call_args.kwargs,
                 {'host':'127.0.0.1','port':8766,'debug':False,'load_dotenv':False})

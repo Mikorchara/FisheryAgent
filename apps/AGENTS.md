@@ -1,6 +1,6 @@
 # 管理平台开发规则
 
-MIG-2：业务数据位置统一由 `apps/management_paths.py` 装配。默认旧工作区路径不变；显式独立实例缺库不得自动建库或回退，初始化必须明确操作。Credentials 仍使用独立私有 Store，不进入业务数据根。下文固定知识路径指兼容默认；独立实例使用其 knowledge.sqlite3。
+业务数据位置统一由 `apps/management_paths.py` 装配。Prototype 日常默认统一为 `apps/data`；原分散数据仅经显式复制准备后保留，不自动回退或合并。缺库不得自动建库、迁移或修复，初始化必须明确操作。Credentials 仍使用独立私有 Store，不进入业务数据根。测试使用临时合成实例，不能使用日常数据。
 
 本文件适用于 `apps/`，同时遵守根目录 AGENTS.md。[主要文档入口](docs/README.md)。
 
@@ -20,4 +20,4 @@ MIG-2：业务数据位置统一由 `apps/management_paths.py` 装配。默认�
 - 行为变更补离线 Python / Node 测试和中文文档；UI 变更检查导航、空状态和响应式布局。相关 Runtime 桥接还须运行对应原型回归。真实请求须本轮明确授权，禁止测试自动调用 Provider / Ollama。
 - `apps/docs/` 描述管理平台及独立 Backend 当前状态；根 `docs/` 描述旧 AI Prototype 实验平台。两侧 Runtime 与领域实现独立演进，不要求自动同步；管理端水质阈值仅在 monitoring/diagnosis.py 定义，rules.py 负责证据门禁，不复制阈值。以源码、测试为事实，规划明确标为未实现。保护未提交改动，不修改 `D:\Fishery_Project` 或工作区外文件。
 
-- 管理知识文本仅由 `apps/knowledge_data/knowledge.sqlite3` 权威存储（Git忽略/不打包），`apps/knowledge/` 放程序。旧JSON只供显式备份迁移和隔离资格夹具，正常管理链不再导入旧Knowledge/Evidence；不将实际用户库迁移夹带进启动。知识写操作不是LLM Tool，原始来源与编辑版本分离。
+- 管理知识文本日常由 `apps/data/knowledge.sqlite3` 权威存储（Git忽略/不打包），`apps/knowledge/` 放程序。旧 `apps/knowledge_data` 保留作数据统一前副本，不自动读取。旧JSON只供显式备份迁移和隔离资格夹具，正常管理链不再导入旧Knowledge/Evidence。知识写操作不是LLM Tool，原始来源与编辑版本分离。

@@ -79,7 +79,7 @@ class PrototypeStackTests(unittest.TestCase):
         self.assertEqual(inputs.ai_config, self.fixture.inputs.ai_config)
         self.assertEqual(inputs.policy_directory, self.fixture.inputs.policy_directory)
         self.assertEqual(summary['data_root'], str(self.demo))
-        self.assertEqual(summary['instance_id'], 'prototype-launcher')
+        self.assertEqual(summary['instance_id'], 'prototype-daily')
         self.assertEqual(self.count(), 0)
         stack.prepare_demo(True)
         (self.demo/'knowledge.sqlite3').unlink()  # Newly created synthetic fixture only.
@@ -165,7 +165,7 @@ subprocess.Popen=launch
 raise SystemExit(stack.main())'''
         log = self.root/('controller-'+str(time.monotonic_ns())+'.log')
         output = log.open('wb'); self.addCleanup(output.close)
-        args = ['--port', str(self.port)]
+        args = ['--port', str(self.port), '--no-assistant']  # No private credentials in console integration fixtures.
         if bot: args += ['--with-bot']
         if interactive: args += ['--interactive-scenario']
         child = subprocess.Popen([sys.executable, '-X', 'utf8', '-I', '-B', '-u', '-c', inject,
@@ -239,3 +239,9 @@ raise SystemExit(stack.main())'''
         self.assertIn(b'PROTOTYPE_STACK_CHECKED', result.stdout)
         for name in ('Start-PrototypeStack.ps1', 'Stop-PrototypeStack.ps1', 'run_local.ps1'):
             self.assertTrue((ROOT/'scripts/dev'/name).read_bytes().startswith(b'\xef\xbb\xbf'))
+
+    def test_default_stack_enables_web_assistant_and_explicit_disable_is_retained(self):
+        for options,expected in (([],True),(['--no-assistant'],False)):
+            with patch.object(stack,'launch_stack',return_value=0) as launch:
+                self.assertEqual(stack.main(options),0)
+                self.assertEqual(launch.call_args.kwargs['assistant'],expected)

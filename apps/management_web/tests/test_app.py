@@ -106,8 +106,10 @@ class ManagementTests(unittest.TestCase):
         def guarded(key,*args):
             if key=='FISHERY_SIM_INGEST_TOKEN':raise AssertionError('read-only startup must not read token')
             return original_get(key,*args)
-        with patch('sys.argv',['management_web']),patch('apps.monitoring.repository.MonitoringRepository') as repository,patch('apps.monitoring.service.MonitoringService') as service,patch('apps.management_web.__main__.create_app') as factory,patch('apps.management_web.__main__.os.environ.get',side_effect=guarded),patch('builtins.print'):
+        with patch('sys.argv',['management_web']),patch('apps.management_web.instance.validate_instance') as validate,patch('apps.monitoring.repository.MonitoringRepository') as repository,patch('apps.monitoring.service.MonitoringService') as service,patch('apps.management_web.__main__.create_app') as factory,patch('apps.management_web.__main__.os.environ.get',side_effect=guarded),patch('builtins.print'):
             main()
+        validate.assert_called_once()
+        self.assertTrue(repository.call_args.kwargs['require_existing'])
         service.assert_called_once_with(repository.return_value)
         self.assertIs(factory.call_args.kwargs['data_service'],service.return_value)
         self.assertIsNone(factory.call_args.kwargs['ingestion_token'])
@@ -121,7 +123,7 @@ class ManagementTests(unittest.TestCase):
         for value,allowed in (('',False),('fake-token',False),('t'*64,True)):
             def supplied(key,*args):
                 return value if key=='FISHERY_SIM_INGEST_TOKEN' else original_get(key,*args)
-            with self.subTest(allowed=allowed),patch('sys.argv',['management_web','--enable-ingestion']),patch('apps.management_web.__main__.os.environ.get',side_effect=supplied),patch('apps.management_web.__main__.create_app') as factory,patch('apps.monitoring.repository.MonitoringRepository') as repository,patch('apps.monitoring.service.MonitoringService'),patch('sys.stderr',new_callable=io.StringIO),patch('builtins.print'):
+            with self.subTest(allowed=allowed),patch('sys.argv',['management_web','--enable-ingestion']),patch('apps.management_web.instance.validate_instance'),patch('apps.management_web.__main__.os.environ.get',side_effect=supplied),patch('apps.management_web.__main__.create_app') as factory,patch('apps.monitoring.repository.MonitoringRepository') as repository,patch('apps.monitoring.service.MonitoringService'),patch('sys.stderr',new_callable=io.StringIO),patch('builtins.print'):
                 if allowed:
                     main()
                     self.assertEqual(factory.call_args.kwargs['ingestion_token'],value)

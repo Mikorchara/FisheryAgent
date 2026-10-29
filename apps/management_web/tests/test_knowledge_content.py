@@ -58,7 +58,7 @@ class KnowledgeHTTPTests(unittest.TestCase):
 
     def test_content_without_ai_and_restart_through_actual_startup_factory(self):
         from apps.management_web.__main__ import knowledge_content
-        seed(self.fixture.root/'apps/knowledge_data/knowledge.sqlite3')
+        seed(self.fixture.root/'apps/data/knowledge.sqlite3')
         service=knowledge_content(self.fixture.root)
         app=create_app(knowledge_service=service);client=app.test_client()
         token=client.get('/api/knowledge').get_json()['write_token']

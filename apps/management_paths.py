@@ -23,6 +23,8 @@ class ManagementPaths:
             if not base or not Path(base).is_absolute():
                 raise ValueError('LOCALAPPDATA_REQUIRED')
             data_root = Path(base) / 'FisheryManagement'
+        if data_root is None:
+            data_root = Path(workspace).resolve() / 'apps/data'
         if data_root is not None:
             root = Path(data_root)
             if not root.is_absolute():
@@ -31,8 +33,3 @@ class ManagementPaths:
             root = Path(os.path.abspath(root))
             return cls(root/'monitoring.sqlite3', root/'knowledge.sqlite3', root/'settings.json',
                        root/'tool-policies', root/'logs/assistant-traces.jsonl', root)
-        root = Path(workspace).resolve()
-        return cls(root/'outputs/management_web/monitoring.sqlite3',
-                   root/'apps/knowledge_data/knowledge.sqlite3',
-                   root/'outputs/management_web/settings.json', root/'outputs/tool-policies',
-                   root/'outputs/management_web/assistant-traces.jsonl')

@@ -1,6 +1,6 @@
 # 管理平台目录与职责
 
-MIG-2：新增 `apps/management_paths.py`（统一业务数据位置）与 `management_web/instance.py`（显式初始化/只读预检）；独立发行和测试入口见 [独立运行准备](deep-dive/MANAGEMENT_STANDALONE.md)。默认工作区路径及根混合发行合同不变。
+Prototype 日常数据统一为 `apps/data`（Git 忽略，不打包），由 `apps/management_paths.py` 装配；原分散文件保留作历史副本。`scripts/dev/prepare_prototype_data.py` 只向新目录复制并校验，不迁移 Schema 或覆盖来源；显式测试实例仍通过 `management_web/instance.py` 初始化/预检。
 
 当前实际结构；缓存不展开。完整仓库见根 [地图](../../docs/STRUCTURE.md)。Tool/Prompt/Scope 的开发步骤见 [开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)。
 

@@ -265,6 +265,7 @@ class ManagementMultiRoundTests(unittest.TestCase):
             with self.assertRaises(SystemExit):main()
         adapter.assert_not_called()
         with patch('sys.argv',['management_web','--enable-assistant','--assistant-multi-round-trial']), \
+             patch('apps.management_web.instance.validate_instance'), \
              patch('apps.monitoring.repository.MonitoringRepository'), \
              patch('apps.monitoring.service.MonitoringService'), \
              patch('apps.management_web.ai_adapter.ManagementAssistant.local') as adapter, \

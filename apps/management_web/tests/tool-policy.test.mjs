@@ -29,6 +29,9 @@ test('settings load never saves; history opt-in preserves choices and publicatio
   const p=settingsFixture();await tick();
   assert.equal(p.writes.length,0);assert.match(p.root.textContent,/Normal：未启用 · Streaming：未启用/);
   let inputs=walk(p.root).filter(n=>n.tagName==='input');
+  assert.equal(p.root.className,'tool-policy-panel');
+  assert.equal(walk(p.root).filter(n=>n.className==='tool-policy-option').length,4);
+  assert.equal(walk(p.root).find(n=>n.getAttribute('role')==='group').getAttribute('aria-label'),'允许 Assistant 使用的工具');
   assert.equal(inputs[2].getAttribute('checked'),null);
   assert.equal(inputs[3].getAttribute('disabled'),'disabled');
   inputs[2].events.change({target:{checked:true}});

@@ -1,5 +1,19 @@
 # Prototype 两/三终端启动整理
 
+> 后续日常数据收尾已取代下方的初版默认：统一使用 `apps/data`，从原日常数据非覆盖复制，旧目录保留；Web Assistant 默认启用，仍可 `-NoAssistant` 关闭。当前命令和复制边界见 [BUILD_RUN](../BUILD_RUN.md)。下文保留初版实施依据与隔离验证记录。
+
+## 日常数据统一与授权界面收尾（2026-10-29）
+
+用户选择以原日常监测、知识和偏好为主，复制到新 `apps/data`；未混入 `launcher-demo-instance` 或 `bot2c-instance`。Monitoring/Knowledge 均保持 Schema v2。1440 个批次、720 条历史、3 条事件、2 条操作记录及32条知识记录的表计数、Schema摘要、逻辑摘要和外键检查一致。来源文件不修改，旧日志留在原位置；设置和两份 Tool Policy 按字节复制，不重新授权，不读取/迁移私有凭据。详细非敏感校验凭证在本机 `apps/data/data-preparation.json`。
+
+默认路径解析、普通 Web、`run_local.ps1` 和双/三终端均使用同一日常目录。QQ 新生成 `outputs/qq-daily-config`，只更换 Monitoring 引用，保留原群/成员/AI/Policy配置引用；新实例 ID 为 `prototype-daily`，必须按本次绑定重新审批，不导入旧批准或余额。
+
+原启动器强制 `assistant=False` 是设置/Tool不可读取的原因。现在默认沿用原 `run_local` 的 Assistant、三工具和 Normal/Streaming 试用开关；`-NoAssistant` 仍可关闭。没有替用户勾选工具，模型发送、来源和 SDK 门禁不变。Tool选择改为38px紧凑行，复选框15px；390px窄屏、浅色与深蓝主题均可操作。
+
+验证：新增日常数据合成复制测试覆盖不覆盖、不补残库、损坏拒绝、失败不发布、来源与配置完整性；已有启动、权限、保存与网络零调用断言保留。所有自动化仅使用临时合成数据，不连接 QQ/Qwen。当前日常入口见 BUILD_RUN；下方均为初版历史记录。
+
+最终管理独立回归：1241 Python、121 Node 全通过。原同mtime绑定变更测试存在原地重写JSON与监督线程的竞态；仅将合成测试夹具改为完整文件原子替换，保留同mtime、同长度及拒绝变更的原断言，重复10次通过，未修改Bot业务校验。Hybrid候选Scope记录与原脚本保持一致。相关测试日志与合成界面截图在本机 `outputs/ui-theme-review`，不包含真实密钥或聊天正文。
+
 2026-10-29，Prototype `main / dcb70a2`，开始时工作树干净。仅修改 Prototype 的启动脚本、测试和文档，没有同步或修改 Management，没有修改旧 `src/fishery_ai`。
 
 ## 1. 实际能力

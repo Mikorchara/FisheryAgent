@@ -63,7 +63,7 @@ def main(argv=None):
             args.assistant_multi_round_trial or args.assistant_streaming_trial)):
         parser.error('TOOLS_TRIAL_REQUIRES_ASSISTANT_AND_TRANSPORT_TRIAL')
     from .instance import initialize_instance, validate_instance, InstanceError
-    if paths.data_root is not None and args.legacy_demo:
+    if (args.data_root is not None or args.user_data) and args.legacy_demo:
         parser.error('LEGACY_DEMO_CANNOT_USE_DATA_ROOT')
     if args.init_data:
         try:
@@ -72,7 +72,7 @@ def main(argv=None):
             parser.error(error.code)
         print('MANAGEMENT_INSTANCE_INITIALIZED: empty Monitoring and Knowledge; no user data migrated.')
         return
-    if paths.data_root is not None:
+    if paths.data_root is not None and not args.legacy_demo:
         try:
             validate_instance(paths)
         except InstanceError as error:

@@ -10,7 +10,8 @@ def main():
     root=Path(__file__).resolve().parents[2]
     parser=argparse.ArgumentParser(description='统一知识库迁移；先关闭管理服务器，备份并创建新库，不覆盖旧库。')
     parser.add_argument('--source',type=Path,default=root/'outputs/management_web/knowledge.sqlite3')
-    parser.add_argument('--target',type=Path,default=root/'apps/knowledge_data/knowledge.sqlite3')
+    from apps.management_paths import ManagementPaths
+    parser.add_argument('--target',type=Path,default=ManagementPaths.resolve(root).knowledge)
     parser.add_argument('--legacy-json',type=Path,default=root/'src/fishery_ai/resources/knowledge/eel_knowledge.json')
     parser.add_argument('--without-user-db',action='store_true',help='仅首次安装且没有旧用户库时使用；不迁入用户条目')
     mode=parser.add_mutually_exclusive_group()

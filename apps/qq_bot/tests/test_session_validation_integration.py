@@ -56,7 +56,13 @@ class SessionValidationIntegrationTests(unittest.TestCase):
         path=self.case.root/'source.json';old=path.stat()
         data=path.read_bytes();changed=data.replace(b'test-instance',b'next-instance')
         self.assertEqual(len(changed),len(data));self.assertNotEqual(changed,data)
-        path.write_bytes(changed);os.utime(path,ns=(old.st_atime_ns,old.st_mtime_ns))
+        # Publish one valid, same-size/same-mtime replacement. An in-place truncate
+        # races the live watchdog and tests INVALID_MONITORING_CONFIG instead of
+        # the intended valid binding-change boundary.
+        staged=path.with_name('source-replacement.json')
+        staged.write_bytes(changed);os.utime(staged,ns=(old.st_atime_ns,old.st_mtime_ns))
+        os.replace(staged,path)
+        self.assertEqual(path.stat().st_mtime_ns,old.st_mtime_ns)
         with self.assertRaisesRegex(BotError,'TRIAL_BINDINGS_CHANGED'):self.case.host.check()
         self.assertEqual(self.case.http,[])
 

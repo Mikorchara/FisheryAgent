@@ -33,13 +33,13 @@ class InstanceTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.paths = ManagementPaths.resolve(self.root, data_root=self.root/'instance')
 
-    def test_legacy_paths_and_explicit_user_data_do_not_touch_files(self):
+    def test_daily_paths_and_explicit_user_data_do_not_touch_files(self):
         legacy = ManagementPaths.resolve(self.root)
-        self.assertEqual(legacy.monitoring, self.root/'outputs/management_web/monitoring.sqlite3')
-        self.assertEqual(legacy.knowledge, self.root/'apps/knowledge_data/knowledge.sqlite3')
-        self.assertEqual(legacy.settings, self.root/'outputs/management_web/settings.json')
-        self.assertEqual(legacy.policy_directory, self.root/'outputs/tool-policies')
-        self.assertEqual(legacy.traces, self.root/'outputs/management_web/assistant-traces.jsonl')
+        self.assertEqual(legacy.monitoring, self.root/'apps/data/monitoring.sqlite3')
+        self.assertEqual(legacy.knowledge, self.root/'apps/data/knowledge.sqlite3')
+        self.assertEqual(legacy.settings, self.root/'apps/data/settings.json')
+        self.assertEqual(legacy.policy_directory, self.root/'apps/data/tool-policies')
+        self.assertEqual(legacy.traces, self.root/'apps/data/logs/assistant-traces.jsonl')
         selected = ManagementPaths.resolve(self.root, user_data=True, environment={'LOCALAPPDATA':str(self.root)})
         self.assertEqual(selected.data_root, self.root/'FisheryManagement')
         self.assertFalse(selected.data_root.exists())

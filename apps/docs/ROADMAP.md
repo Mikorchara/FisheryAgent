@@ -4,6 +4,8 @@
 
 ## 当前审阅与待批准
 
+- 2026-10-29 日常数据与启动收尾：统一默认 `apps/data`，显式复制旧监测/知识/偏好/Tool选择，保留来源与旧演示数据；启动器恢复 Web Assistant，Tool列表紧凑化。1241 Python / 121 Node通过，仍保留逐请求确认与QQ独立审批。
+
 - 2026-10-29 深蓝 UI：保留浅色默认，顶部切换并记住浏览器偏好；首页、图表、表格、详情与 AI 容器适配。121 Node / 84 Web Python 通过，1440/1024/900/390px 虚构预览检查完成；仅 Prototype，待人工验收。
 
 - 2026-10-29 Hybrid Check：补齐启动 JSON 与脱敏原生错误分类，兼容 `APPROVE HYBRID`；Bot 657、Web/SDK 41、Node 116 通过。Scope 快照刷新，旧批准不可复用；原始失败未重现，[诊断与命令](deep-dive/BOT3G_FINAL_HYBRID_QQ_TRIAL.md#8-2026-10-29check-原生状态诊断修复)。

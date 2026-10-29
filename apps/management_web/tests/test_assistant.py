@@ -398,6 +398,7 @@ class ManagementAssistantTests(unittest.TestCase):
     def test_cli_opt_in_never_starts_model_request_and_legacy_demo_rejected(self):
         from apps.management_web.__main__ import main
         with patch('sys.argv', ['management_web', '--enable-assistant']), \
+            patch('apps.management_web.instance.validate_instance'), \
             patch('apps.monitoring.repository.MonitoringRepository'), \
             patch('apps.monitoring.service.MonitoringService') as monitoring, \
             patch('apps.management_web.ai_adapter.ManagementAssistant.local') as adapter, \

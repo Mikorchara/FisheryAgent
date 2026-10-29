@@ -15,20 +15,20 @@ function validatePolicy(value){
 
 // Local development authorization only; publication/assembly remain server decisions.
 export function createToolPolicySettings(api,{onSaved=()=>{}}={}){
-  const root=el('div');let config=null,selected=new Set(),busy=false,loaded=false,message='';
+  const root=el('div',{class:'tool-policy-panel'});let config=null,selected=new Set(),busy=false,loaded=false,message='';
   function render(){
     root.replaceChildren(el('p',{text:'本机开发授权，尚未实现生产账户权限。保存只影响管理 Assistant；不修改旧 Prototype 或 Analysis。'}),
       el('p',{class:'muted',text:'授权、工具装配和模型发布分别校验。服务器启用Qwen三工具本地试用后，模型在已授权工具中自行选择；普通聊天不需要历史查询快捷操作。未启用该试用时，历史不会进入原两工具范围。'}),
       ...(config?[rows([['选择来源',config.source==='MANAGEMENT_OVERRIDE'?'管理端独立配置':'只读继承原有选择'],
         ['三工具本地试用',`Normal：${config.tool_trials?.normal_enabled?'已启用':'未启用'} · Streaming：${config.tool_trials?.streaming_enabled?'已启用':'未启用'}`]]),
-      ...config.tools.map(tool=>el('label',{class:'field'},[
+      el('div',{class:'tool-policy-list',role:'group','aria-label':'允许 Assistant 使用的工具'},config.tools.map(tool=>el('label',{class:'tool-policy-option'},[
         el('input',{type:'checkbox',...(selected.has(tool.name)?{checked:'checked'}:{}),
           ...(busy||tool.compatibility_only?{disabled:'disabled'}:{}),
           'aria-label':labels[tool.name]||tool.name,onchange:e=>{
             if(e.target.checked)selected.add(tool.name);else selected.delete(tool.name);}}),
-        el('span',{text:labels[tool.name]||tool.name})]))]:[]),
-      el('p',{role:'status',text:message}),
-      el('div',{class:'actions'},[el('button',{class:'button primary',text:'保存 Tool 授权',
+        el('span',{text:labels[tool.name]||tool.name})])))]:[]),
+      el('p',{class:'tool-policy-status',role:'status',text:message}),
+      el('div',{class:'settings-actions'},[el('button',{class:'button primary',text:'保存 Tool 授权',
         ...(!config||busy?{disabled:'disabled'}:{}),onclick:()=>void save()}),
         button('重新读取',()=>void load())]));
   }

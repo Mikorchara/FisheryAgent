@@ -13,10 +13,10 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path: sys.path.insert(0, str(ROOT))
-DEMO = ROOT/'outputs/launcher-demo-instance'
-CONFIG = ROOT/'outputs/launcher-qq-config'
+DEMO = ROOT/'apps/data'
+CONFIG = ROOT/'outputs/qq-daily-config'
 SOURCE = ROOT/'outputs/qq-bot/conversation.request.json'
-MARKER = 'prototype-launcher-demo@1'
+MARKER = 'prototype-daily-data@1'
 
 
 def emit(code, **fields):
@@ -31,6 +31,14 @@ def local_output(path):
     return path
 
 
+def local_data(path):
+    from apps.management_web.instance import safe_path
+    path = Path(os.path.abspath(path))
+    safe_path(path)
+    if path == ROOT/'apps/data': return path
+    return local_output(path)  # Explicit synthetic/test instances remain supported.
+
+
 def selected(request=None):
     from apps.qq_bot.trial_configuration import TrialInputs, read_json
     from apps.qq_bot.hybrid_trial import check_configuration
@@ -40,12 +48,12 @@ def selected(request=None):
 
 
 def prepare_demo(with_bot=False):
-    """Explicit new demo only. Never fill missing files in an existing instance."""
+    """Prepare the one daily instance explicitly; retain every legacy source."""
     from apps.management_paths import ManagementPaths
     from apps.management_web.instance import initialize_instance, validate_instance
     from apps.qq_bot.trial_configuration import read_json, write_new
     from dataclasses import replace
-    root, cfg = local_output(DEMO), local_output(CONFIG)
+    root, cfg = local_data(DEMO), local_output(CONFIG)
     original = summary = None
     if with_bot:
         original, summary = selected(SOURCE)
@@ -57,8 +65,12 @@ def prepare_demo(with_bot=False):
             raise RuntimeError('PROTOTYPE_DEMO_MARKER_REQUIRED')
         validate_instance(ManagementPaths.resolve(ROOT, data_root=root))
     else:
-        initialize_instance(ManagementPaths.resolve(ROOT, data_root=root))
-        write_new(root/'launcher-instance.json', marker)
+        if root == ROOT/'apps/data':
+            from scripts.dev.prepare_prototype_data import prepare_daily_data
+            prepare_daily_data(ROOT)
+        else:
+            initialize_instance(ManagementPaths.resolve(ROOT, data_root=root))
+            write_new(root/'launcher-instance.json', marker)
         emit('PROTOTYPE_DEMO_CREATED', data_root=str(root))
     if with_bot:
         origin = hashlib.sha256(SOURCE.read_bytes()).hexdigest()
@@ -69,7 +81,7 @@ def prepare_demo(with_bot=False):
         else:
             from apps.qq_bot.monitoring_source import load_monitoring_config
             cfg.mkdir()
-            write_new(cfg/'monitoring.json', dict(schema_version=1, instance_id='prototype-launcher',
+            write_new(cfg/'monitoring.json', dict(schema_version=1, instance_id='prototype-daily',
                 data_root=str(root), devices=list(load_monitoring_config(original.monitoring_config).devices)))
             # Reference approved metadata/Policy in place; no credentials or approvals are copied.
             inputs = replace(original, monitoring_config=cfg/'monitoring.json')
@@ -99,7 +111,7 @@ def preflight(*, request=None, data_root=None, with_bot=False, bot_only=False, p
             raise RuntimeError('PROTOTYPE_INSTANCE_MISMATCH')
     else:
         root = Path(data_root) if data_root else DEMO
-    root = local_output(root)
+    root = local_data(root)
     if not root.exists():
         if root != DEMO: raise RuntimeError('PROTOTYPE_INSTANCE_MISSING')
         pending = True
@@ -129,7 +141,7 @@ def request_stop(directory, role='all'):
 
 def launch_stack(*, request=None, data_root=None, with_bot=False, bot_only=False,
                  port=8766, scenario='normal', seed=42, interactive=False, browser=False,
-                 prepare=False, seconds=1800):
+                 prepare=False, seconds=1800, assistant=True):
     from scripts.dev.local_session import run_local
     from scripts.dev.windows_job import own_process_tree
     from scripts.dev.console_job import ConsoleJob
@@ -162,7 +174,8 @@ def launch_stack(*, request=None, data_root=None, with_bot=False, bot_only=False
             request = Path(request) if request else CONFIG/'request.json'
             directory = parent/('stack-'+uuid.uuid4().hex); directory.mkdir()
             write_new(directory/'stack.json', dict(contract='prototype-stack@1', nonce=uuid.uuid4().hex,
-                controller_pid=os.getpid(), data_root=str(root), with_bot=with_bot))
+                controller_pid=os.getpid(), data_root=str(root), with_bot=with_bot,
+                web_assistant_enabled=assistant and not bot_only))
             emit('PROTOTYPE_STACK_STARTING', run_directory=str(directory))
 
             def spawn(role, command=None, options=None):
@@ -192,7 +205,7 @@ def launch_stack(*, request=None, data_root=None, with_bot=False, bot_only=False
                 while child.poll() is None: sleep(.1)
                 result = child.returncode
             else:
-                result = run_local(scenario, port, seed, assistant=False, data_root=root,
+                result = run_local(scenario, port, seed, assistant=assistant, data_root=root,
                     show_terminals=True, interactive_scenario=interactive, open_browser=browser,
                     launch=launch, sleep=sleep)
         except FileBusyError: raise RuntimeError('PROTOTYPE_INSTANCE_OR_BOT_ALREADY_RUNNING') from None
@@ -244,6 +257,7 @@ def main(argv=None):
     for flag in ('with-bot', 'bot-only', 'check', 'prepare-demo', 'interactive-scenario', 'open-browser'):
         p.add_argument('--'+flag, action='store_true')
     p.add_argument('--seconds', type=int, default=1800)
+    p.add_argument('--no-assistant', action='store_true', help='Disable Web AI and Settings; never affects QQ consent')
     p.add_argument('--stop-directory', type=Path); p.add_argument('--stop-bot', action='store_true')
     args = p.parse_args(argv)
     try:
@@ -256,11 +270,12 @@ def main(argv=None):
         if args.check:
             _, summary = preflight(request=args.request_file, data_root=args.data_root,
                 with_bot=with_bot, bot_only=args.bot_only, port=args.port)
+            summary['web_assistant_enabled'] = not args.no_assistant and not args.bot_only
             emit(**summary); return 0
         return launch_stack(request=args.request_file, data_root=args.data_root, with_bot=with_bot,
             bot_only=args.bot_only, port=args.port, scenario=args.scenario, seed=args.seed,
             interactive=args.interactive_scenario, browser=args.open_browser,
-            prepare=args.prepare_demo, seconds=args.seconds)
+            prepare=args.prepare_demo, seconds=args.seconds, assistant=not args.no_assistant)
     except Exception as error:
         code = getattr(error, 'code', str(error) if isinstance(error, RuntimeError) else 'PROTOTYPE_STACK_FAILED')
         if not re.fullmatch('[A-Z][A-Z0-9_]{0,80}', str(code)): code = 'PROTOTYPE_STACK_FAILED'
