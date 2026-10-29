@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI 监测系统 · 智慧渔业管理</title>
+  <script src="/static/theme.js"></script>
   <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/theme-dark.css">
   <script type="module" src="/static/app.js"></script>
 </head>
 <body>
@@ -17,7 +19,7 @@
     <header class="topbar">
       <button class="icon-button menu-toggle" id="menu-toggle" aria-label="展开导航" aria-expanded="false">☰</button>
       <div class="breadcrumbs"><span>智慧渔业管理</span><span class="crumb-divider">/</span><strong id="breadcrumb">综合总览</strong></div>
-      <div class="topbar-right"><span class="environment">DEMO 环境</span><span class="topbar-divider"></span><span class="avatar">访</span><div class="user-label">本地访客<small>尚未启用认证</small></div></div>
+      <div class="topbar-right"><button type="button" id="theme-toggle" class="theme-toggle" aria-label="切换到深蓝主题" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M12 4a8 8 0 0 1 0 16Z" fill="currentColor"/></svg><span class="theme-label">浅色主题</span></button><span class="environment">DEMO 环境</span><span class="topbar-divider"></span><span class="avatar">访</span><div class="user-label">本地访客<small>尚未启用认证</small></div></div>
     </header>
     <main id="main" tabindex="-1">
       <div class="page-heading"><div><p class="eyebrow" id="page-eyebrow">OVERVIEW</p><h1 id="page-title">综合总览</h1><p id="page-description">从数据到决策，了解养殖环境的每一个环节。</p></div><div class="page-meta"><span class="status-dot"></span><span id="refresh-status">等待服务器状态</span></div></div>

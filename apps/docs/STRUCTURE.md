@@ -266,6 +266,8 @@ apps/
 │  │  ├─ services.js                                                     # 同源监测与受控 Assistant API
 │  │  ├─ settings.js                                                     # 六区设置中心、稳定草稿、默认偏好与密钥显式操作
 │  │  ├─ styles.css                                                      # 样式与响应式布局
+│  │  ├─ theme.js                                                        # 深浅主题切换；仅存浏览器外观偏好
+│  │  ├─ theme-dark.css                                                  # 可选深蓝主题、图表和语义状态对比色
 │  │  └─ view-model.js                                                   # 展示转换、来源和状态
 │  ├─ tests/                                                             # 离线测试及Fake SDK
 │  │  ├─ assistant-events.test.mjs                                       # SSE 分片、重复/乱序、身份、终态与有界拒绝
