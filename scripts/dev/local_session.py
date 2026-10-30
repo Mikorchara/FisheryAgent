@@ -62,12 +62,13 @@ def require_free_port(port):
 
 
 def commands(python, scenario, port, seed, *, assistant=True, streaming=True, multi_round=True, history=True,
-             data_root=None, user_data=False):
+             data_root=None, user_data=False, demo_video=None):
     server = [python,'-m','apps.management_web','--port',str(port),'--enable-ingestion']
     if data_root is not None:
         server += ['--data-root',str(data_root)]
     if user_data:
         server += ['--user-data']
+    if demo_video is not None: server += ['--demo-video',str(Path(demo_video).absolute())]
     if assistant:
         server += ['--enable-assistant']
         server += [flag for enabled,flag in ((multi_round,'--assistant-multi-round-trial'),
@@ -92,7 +93,7 @@ def ready(port):
 def run_local(scenario='normal', port=8766, seed=42, *, root=ROOT, python=None,
               assistant=True, streaming=True, multi_round=True, history=True,
               data_root=None, user_data=False, show_terminals=False, open_browser=False, interactive_scenario=False,
-              browse=webbrowser.open, launch=subprocess.Popen, is_ready=ready, sleep=time.sleep, emit=print):
+              browse=webbrowser.open, launch=subprocess.Popen, is_ready=ready, sleep=time.sleep, emit=print, demo_video=None):
     if interactive_scenario and not show_terminals:
         raise RuntimeError('LOCAL_SCENARIO_MENU_REQUIRES_TERMINALS')
     require_free_port(port)
@@ -105,7 +106,7 @@ def run_local(scenario='normal', port=8766, seed=42, *, root=ROOT, python=None,
     try:
         server,simulator = commands(python or sys.executable,scenario,port,seed,
             assistant=assistant,streaming=streaming,multi_round=multi_round,history=history,
-            data_root=data_root,user_data=user_data)
+            data_root=data_root,user_data=user_data,demo_video=demo_video)
         options = dict(cwd=root,env=child_env)
         if show_terminals:
             if os.name != 'nt':
@@ -213,6 +214,7 @@ def main(argv=None):
     parser.add_argument('--show-terminals',action='store_true')
     parser.add_argument('--interactive-scenario',action='store_true')
     parser.add_argument('--open-browser',action='store_true')
+    parser.add_argument('--demo-video',type=Path)
     args=parser.parse_args(arguments)
     if args.interactive_scenario and not args.show_terminals:parser.error('LOCAL_SCENARIO_MENU_REQUIRES_TERMINALS')
     if not 1 <= args.port <= 65535:
@@ -224,7 +226,7 @@ def main(argv=None):
         return run_local(args.scenario,args.port,args.seed,assistant=not args.no_assistant,
             streaming=not args.no_streaming,multi_round=not args.no_multi_round,history=not args.no_history,
             data_root=args.data_root,user_data=args.user_data,show_terminals=args.show_terminals,
-            open_browser=args.open_browser,interactive_scenario=args.interactive_scenario)
+            open_browser=args.open_browser,interactive_scenario=args.interactive_scenario,demo_video=args.demo_video)
     except RuntimeError as error:
         print(str(error)+' · 未关闭任何外部进程；请检查端口或手动使用原CLI。',file=sys.stderr)
         return 1

@@ -67,6 +67,16 @@
 
 需要菜单则增加 `-InteractiveScenario`。端口可加 `-Port 8767`；不加 `-WithBot` 时只启动 Web+Simulator。显式使用其他已初始化隔离实例时可传 `-DataRoot`，或用 `-RequestFile` 指定已有完整实例的 QQ request；这两种情况不使用 `-PrepareDemo`，也不自动建库。仅 Bot 可增加 `-BotOnly -WithBot`。
 
+**展示本地视频：**在启动命令增加 `-DemoVideo .\sample.mp4`，进入网页「视频监控」页：
+
+```powershell
+.\scripts\dev\Start-PrototypeStack.ps1 -PrepareDemo -InteractiveScenario -OpenBrowser -DemoVideo .\sample.mp4
+```
+
+这是两终端；需要 QQ 第三终端时加 `-WithBot`，仍须原人工审批。只看监测可加 `-NoAssistant`。先检查参数可用 `Start-PrototypeStack.ps1 -DemoVideo .\sample.mp4 -Check`，不会启动服务。
+
+录像通过本机同源 HTTP 播放，默认静音循环，可暂停/拖动；统计刷新不重建播放器。仅支持显式 MP4，推荐 H.264/AAC；更换文件后重启。当前 sample.mp4 为60秒1080p H.264/AAC，保留在本机并被 Git 忽略。不加参数保留原无视频状态。录像水印不是当前观测时间；播放不产生检测统计、事件或摄像头在线状态，不代表实时推流接入已完成。见[边界与验证](deep-dive/LOCAL_VIDEO_DEMO.md)。
+
 **停止整组：**在最初启动的 PowerShell 按 Ctrl+C。关闭 Web 或 Simulator 任一窗口也会结束本次配对并回收本次 Bot；关闭或停止 Bot 不结束 Web/Simulator。
 
 另开终端也可用 `Stop-PrototypeStack.ps1 -RunDirectory '本次输出的完整目录'`；仅停 Bot 再加 `-BotOnly`。目录以 `PROTOTYPE_STACK_STARTING` 输出为准，位于 `outputs/prototype-stack/stack-<随机ID>/`。

@@ -1,5 +1,32 @@
 import {metricText,chartGeometry,normalizedChartGeometry,trendMetrics,timeText,qualityNames,freshnessNames,sourceName,connectionName} from './view-model.js';
 
+// A separate, stable media region. Polling statistics never recreates the player.
+export function createLocalVideoPreview(host){
+  let player=null,shown=false,key=null;
+  function update(metadata,visible=false){
+    const valid=metadata?.kind==='local_file'&&metadata.url==='/media/local-demo.mp4';
+    if(!valid){
+      if(player){player.pause?.();player.removeAttribute('src');player.load?.();}
+      player=null;key=null;shown=false;host.hidden=true;host.replaceChildren();return;
+    }
+    host.hidden=!visible;
+    if(!visible){player?.pause?.();shown=false;return;}
+    if(key!==metadata.url||!player){
+      const notice=el('p',{class:'muted',role:'status',text:'本地录制素材，支持暂停、拖动和循环播放。'});
+      player=el('video',{class:'demo-video-player',src:metadata.url,controls:'',autoplay:'',muted:'',loop:'',playsinline:'',preload:'metadata','aria-label':'本地演示视频（非实时设备）'});
+      player.muted=true;
+      player.addEventListener('error',()=>{notice.textContent='视频无法读取或解码，请检查文件或转为 H.264/AAC MP4；未回退为其他视频。';});
+      host.replaceChildren(card('本地演示视频（非实时设备）','仅用于展示播放效果，不代表当前鱼塘状态。',[
+        badge('LOCAL VIDEO · 录制素材','demo'),player,notice,
+        el('p',{class:'muted',text:'画面与下方模拟统计、事件及时间戳独立；未执行实时视频分析，不生成观测或事件。'})]));
+      key=metadata.url;
+    }
+    if(!shown){const pending=player.play?.();pending?.catch(()=>{});}
+    shown=true;
+  }
+  return {update,suspend(){player?.pause?.();shown=false;}};
+}
+
 export function el(tag,attrs={},children=[]) {
   const node=document.createElement(tag);
   for (const [key,value] of Object.entries(attrs)) {

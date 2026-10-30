@@ -141,7 +141,7 @@ def request_stop(directory, role='all'):
 
 def launch_stack(*, request=None, data_root=None, with_bot=False, bot_only=False,
                  port=8766, scenario='normal', seed=42, interactive=False, browser=False,
-                 prepare=False, seconds=1800, assistant=True):
+                 prepare=False, seconds=1800, assistant=True, demo_video=None):
     from scripts.dev.local_session import run_local
     from scripts.dev.windows_job import own_process_tree
     from scripts.dev.console_job import ConsoleJob
@@ -151,6 +151,9 @@ def launch_stack(*, request=None, data_root=None, with_bot=False, bot_only=False
     from apps.management_paths import ManagementPaths
     from apps.qq_bot.trial_configuration import write_new
     own_process_tree()
+    if demo_video is not None:
+        from apps.management_web.demo_video import LocalDemoVideo
+        LocalDemoVideo.open(demo_video)
     root, checked = preflight(request=request, data_root=data_root, with_bot=with_bot,
                               bot_only=bot_only, port=port)
     parent = local_output(ROOT/'outputs/prototype-stack'); parent.mkdir(parents=True, exist_ok=True)
@@ -207,7 +210,7 @@ def launch_stack(*, request=None, data_root=None, with_bot=False, bot_only=False
             else:
                 result = run_local(scenario, port, seed, assistant=assistant, data_root=root,
                     show_terminals=True, interactive_scenario=interactive, open_browser=browser,
-                    launch=launch, sleep=sleep)
+                    launch=launch, sleep=sleep,demo_video=demo_video)
         except FileBusyError: raise RuntimeError('PROTOTYPE_INSTANCE_OR_BOT_ALREADY_RUNNING') from None
         except KeyboardInterrupt: result = 0
         except Exception:
@@ -257,6 +260,7 @@ def main(argv=None):
     for flag in ('with-bot', 'bot-only', 'check', 'prepare-demo', 'interactive-scenario', 'open-browser'):
         p.add_argument('--'+flag, action='store_true')
     p.add_argument('--seconds', type=int, default=1800)
+    p.add_argument('--demo-video',type=Path)
     p.add_argument('--no-assistant', action='store_true', help='Disable Web AI and Settings; never affects QQ consent')
     p.add_argument('--stop-directory', type=Path); p.add_argument('--stop-bot', action='store_true')
     args = p.parse_args(argv)
@@ -268,6 +272,9 @@ def main(argv=None):
             raise RuntimeError('PROTOTYPE_INVALID_PORT_OR_DURATION')
         with_bot = args.with_bot or args.bot_only
         if args.check:
+            if args.demo_video is not None:
+                from apps.management_web.demo_video import LocalDemoVideo
+                LocalDemoVideo.open(args.demo_video)
             _, summary = preflight(request=args.request_file, data_root=args.data_root,
                 with_bot=with_bot, bot_only=args.bot_only, port=args.port)
             summary['web_assistant_enabled'] = not args.no_assistant and not args.bot_only
@@ -275,7 +282,7 @@ def main(argv=None):
         return launch_stack(request=args.request_file, data_root=args.data_root, with_bot=with_bot,
             bot_only=args.bot_only, port=args.port, scenario=args.scenario, seed=args.seed,
             interactive=args.interactive_scenario, browser=args.open_browser,
-            prepare=args.prepare_demo, seconds=args.seconds, assistant=not args.no_assistant)
+            prepare=args.prepare_demo, seconds=args.seconds, assistant=not args.no_assistant,demo_video=args.demo_video)
     except Exception as error:
         code = getattr(error, 'code', str(error) if isinstance(error, RuntimeError) else 'PROTOTYPE_STACK_FAILED')
         if not re.fullmatch('[A-Z][A-Z0-9_]{0,80}', str(code)): code = 'PROTOTYPE_STACK_FAILED'

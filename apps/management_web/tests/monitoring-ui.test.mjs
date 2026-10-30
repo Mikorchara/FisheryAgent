@@ -82,6 +82,22 @@ test('uniform server state renders dashboard, monitoring and visual summaries wi
   assert.match(p.node('content').textContent,/不代表鱼池存量/);assert.match(p.node('content').textContent,/无视频流/);
 });
 
+test('actual polling page retains local video node and playback position independently of statistics',async()=>{
+  const data=fixture();data.video_preview={kind:'local_file',url:'/media/local-demo.mp4'};
+  const p=page(data);await p.ready();
+  p.run("location.hash='#video';render()");
+  const walk=n=>[n,...n.children.flatMap(walk)],host=p.node('local-video-preview');
+  const player=walk(host).find(n=>n.tagName==='video');assert.ok(player);player.currentTime=12;
+  data.cameras[0].summary.anomaly_counts.suspected_lesion=7;
+  await p.run('refresh()');
+  assert.equal(walk(host).find(n=>n.tagName==='video'),player);assert.equal(player.currentTime,12);
+  assert.match(p.node('content').textContent,/观测统计与演示画面独立/);
+  p.run("location.hash='#monitoring';render()");assert.equal(host.hidden,true);
+  p.run("location.hash='#video';render()");assert.equal(walk(host).find(n=>n.tagName==='video'),player);
+  delete data.video_preview;await p.run('refresh()');assert.equal(host.hidden,true);
+  assert.match(p.node('content').textContent,/无视频流/);
+});
+
 test('EVT-2 homepage collapses risk grades but retains unknown evidence and original detail',async()=>{
   const d=fixture();const common={...d.events[0],device_id:'sim-pond-1',channel:'water',
     risk_family:{episode_id:'same-low-oxygen',label:'溶解氧偏低风险',transitions:[]},family_current_event_id:'critical',family_current_code:'OXYGEN_CRITICAL_LOW'};

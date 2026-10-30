@@ -198,3 +198,6 @@ body:has(.management-assistant.view-reading) main{padding:18px;max-width:1300px;
 .tool-policy-option span{min-width:0;overflow-wrap:anywhere}.tool-policy-option:has(input:disabled){cursor:default;color:var(--muted)}
 .tool-policy-option:focus-within{outline:2px solid var(--teal);outline-offset:-2px}
 .tool-policy-status{font-size:12px;color:var(--muted)}
+
+.local-video-preview[hidden]{display:none}
+.demo-video-player{display:block;width:100%;aspect-ratio:16/9;max-height:68vh;background:#030914;object-fit:contain;border-radius:8px;margin:14px 0}

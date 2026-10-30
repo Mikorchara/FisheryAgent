@@ -47,11 +47,14 @@ class PreviewMonitoring(DemoMonitoring):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8786)
+    parser.add_argument('--demo-video',type=Path,help='Explicit local MP4 preview, independent of fictional observations')
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error('INVALID_PORT')
     from werkzeug.serving import make_server
-    app = create_app(monitoring=PreviewMonitoring(), allowed_hosts=(f'127.0.0.1:{args.port}',))
+    from apps.management_web.demo_video import LocalDemoVideo
+    app = create_app(monitoring=PreviewMonitoring(), allowed_hosts=(f'127.0.0.1:{args.port}',),
+                     demo_video=LocalDemoVideo.open(args.demo_video) if args.demo_video else None)
     stopped = False
 
     @app.post('/__chart_preview__/stop')

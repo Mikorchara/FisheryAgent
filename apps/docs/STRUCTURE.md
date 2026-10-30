@@ -4,6 +4,8 @@ Prototype 日常数据统一为 `apps/data`（Git 忽略，不打包），由 `a
 
 当前实际结构；缓存不展开。完整仓库见根 [地图](../../docs/STRUCTURE.md)。Tool/Prompt/Scope 的开发步骤见 [开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)。
 
+`management_web/demo_video.py` 提供显式本地 MP4 演示，只开放固定本机媒体 URL；`--demo-video` / 启动器 `-DemoVideo` 可选，播放与 Monitoring 观测分离。
+
 ```text
 apps/
 ├─ management_paths.py                                                  # 统一数据路径；默认旧路径、显式独立实例

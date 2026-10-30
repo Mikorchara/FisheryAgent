@@ -4,6 +4,8 @@
 
 ## 当前审阅与待批准
 
+- 2026-10-30：显式 `-DemoVideo` 本地MP4演示，独立播放器不随轮询重建、不产生观测或事件；设备JSON适配仅完成[设计](deep-dive/research/DEVICE_REPORT_ADAPTER_PLAN.md)，未接真实设备。[演示与验证](deep-dive/LOCAL_VIDEO_DEMO.md)。
+
 - 2026-10-29 日常数据与启动收尾：统一默认 `apps/data`，显式复制旧监测/知识/偏好/Tool选择，保留来源与旧演示数据；启动器恢复 Web Assistant，Tool列表紧凑化。1241 Python / 121 Node通过，仍保留逐请求确认与QQ独立审批。
 
 - 2026-10-29 深蓝 UI：保留浅色默认，顶部切换并记住浏览器偏好；首页、图表、表格、详情与 AI 容器适配。121 Node / 84 Web Python 通过，1440/1024/900/390px 虚构预览检查完成；仅 Prototype，待人工验收。

@@ -14,8 +14,11 @@ from .event_api import register_event_api
 
 def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
                allowed_hosts=("127.0.0.1:8766", "localhost:8766", "localhost"),
-               data_service=None, ingestion_token=None, knowledge_service=None, settings_service=None):
+               data_service=None, ingestion_token=None, knowledge_service=None, settings_service=None, demo_video=None):
     app = Flask(__name__, static_folder="static", static_url_path="/static")
+    if demo_video is not None:
+        from .demo_video import register_demo_video
+        register_demo_video(app,demo_video)
     app.config["MAX_CONTENT_LENGTH"] = 8 * 1024
     if ingestion_token is not None and (data_service is None or not valid_token(ingestion_token)):
         raise ValueError("INVALID_INGESTION_CONFIG")
@@ -57,7 +60,7 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
 
     @app.after_request
     def response_headers(response):
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; media-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cache-Control"] = "no-store"
@@ -83,7 +86,8 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
                 pass  # Monitoring remains usable; Settings exposes the bounded storage error.
         original_events = events.events()
         from apps.monitoring.event_cycles import summarize_cycles
-        return jsonify(schema_version=1, application="management-web-r1", data_mode=mode, preferences=preferences,
+        return jsonify(**({'video_preview':demo_video.metadata()} if demo_video is not None else {}),
+            schema_version=1, application="management-web-r1", data_mode=mode, preferences=preferences,
             devices=devices, monitoring=snapshot, cameras=video.cameras(),
             event_management=event_access(),
             events=original_events, event_cycles=summarize_cycles(original_events) if data_service is not None else None,

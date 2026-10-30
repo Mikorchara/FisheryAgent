@@ -8,6 +8,7 @@
     [switch]$NoMultiRound,
     [switch]$NoHistory,
     [string]$DataRoot,
+    [string]$DemoVideo,
     [switch]$UserData,
     [switch]$ShowTerminals, [switch]$InteractiveScenario, [switch]$OpenBrowser
 )
@@ -18,6 +19,7 @@ if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) { throw 'LOCAL_VEN
 $launchArgs = @((Join-Path $PSScriptRoot 'local_session.py'),'--scenario',$Scenario,'--port',"$Port",'--seed',"$Seed")
 if ($DataRoot -and $UserData) { throw 'DATA_ROOT_OPTIONS_CONFLICT' }
 if ($DataRoot) { $launchArgs += @('--data-root',$DataRoot) }
+if ($DemoVideo) { $launchArgs += @('--demo-video',$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DemoVideo)) }
 if ($UserData) { $launchArgs += '--user-data' }
 if ($NoAssistant) { $launchArgs += '--no-assistant' }
 if ($NoStreaming) { $launchArgs += '--no-streaming' }

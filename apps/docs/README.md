@@ -7,6 +7,8 @@
 - [Prototype 日常启动：两终端 / 三终端](BUILD_RUN.md)
 - [运行维护与历史实验入口](deep-dive/PROTOTYPE_RUN_REFERENCE.md)
 - [启动器边界与验收](deep-dive/PROTOTYPE_LAUNCHER_ACCEPTANCE.md)
+- [本地 MP4 视频演示](deep-dive/LOCAL_VIDEO_DEMO.md)（显式启用，仅播放，不生成观测或事件）
+- [设备报告适配方案](deep-dive/research/DEVICE_REPORT_ADAPTER_PLAN.md)（待审核设计；真实视觉与模拟水质分开）
 
 - [BOT-3G-FINAL 实验性真实QQ Hybrid](deep-dive/BOT3G_FINAL_HYBRID_QQ_TRIAL.md)（独立Prompt/Scope、一次Run审批、General/Water混合记忆；Check离线，Run须操作者单独批准General风险与联网）
 

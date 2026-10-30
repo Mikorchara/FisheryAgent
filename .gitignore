@@ -8,6 +8,7 @@ __pycache__/
 outputs/
 apps/knowledge_data/
 apps/data/
+/sample.mp4
 apps/.prototype-data-*/
 *.egg-info/
 build/

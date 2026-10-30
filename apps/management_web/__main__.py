@@ -27,6 +27,7 @@ def project_root(*, module_file=None, working_directory=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Fishery management Web (local monitoring, optional Assistant)")
     parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument('--demo-video',type=Path,help='Explicit local MP4 demonstration, never observation evidence')
     locations = parser.add_mutually_exclusive_group()
     locations.add_argument('--data-root', type=Path, help='Explicit existing management instance; no workspace fallback')
     locations.add_argument('--user-data', action='store_true', help='Use LOCALAPPDATA/FisheryManagement; explicit opt-in')
@@ -49,6 +50,11 @@ def main(argv=None):
         parser.error(str(error))
     if not 1 <= args.port <= 65535:
         parser.error("port must be between 1 and 65535")
+    demo_video = None
+    if args.demo_video is not None:
+        from .demo_video import LocalDemoVideo
+        try: demo_video = LocalDemoVideo.open(args.demo_video)
+        except ValueError as error: parser.error(str(error))
     if args.legacy_demo and args.enable_ingestion:
         parser.error("LEGACY_DEMO_CANNOT_INGEST")
     if args.legacy_demo and args.enable_assistant:
@@ -121,6 +127,7 @@ def main(argv=None):
     if args.enable_assistant:
         from apps.ai_service.settings import ManagementSettingsService
         settings = ManagementSettingsService(ai_options['ai'].backend, paths.settings)
+    if demo_video is not None: ai_options['demo_video'] = demo_video
     app = create_app(allowed_hosts=(f"127.0.0.1:{args.port}", f"localhost:{args.port}"),
                      data_service=data_service, ingestion_token=token, knowledge_service=knowledge,
                      settings_service=settings, **ai_options)
