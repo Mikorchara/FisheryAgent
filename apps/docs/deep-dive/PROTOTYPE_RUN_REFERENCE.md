@@ -23,17 +23,17 @@ BOT-3G-C1新增[本地Hybrid研究入口](BOT3GC1_LOCAL_HYBRID_RESEARCH.md)：48
 .\scripts\dev\Test-HybridProvider.ps1 -Check -RequestFile '.\outputs\qq-bot\conversation.request.json' -InstanceRoot 'D:\CodexProject\Fishery_AI_Prototype\outputs\bot2c-instance' -TotalBudgetCny '80'
 ```
 
-`-Run`、分组、重复采样、费用预留与私有报告说明见上述文档；本轮没有自动执行真实实验。BOT-3G-B的[QQ Fake-only Hybrid](BOT3GB_HYBRID_OFFLINE.md)继续保留：可离线运行 `.\.venv\Scripts\python.exe -X utf8 -B -m unittest apps.qq_bot.tests.test_hybrid_run -v`。原QQ脚本没有`-Mode Hybrid`，本地General审阅不授予QQ自动发布资格。
+`-Run`、分组、重复采样、费用预留与私有报告说明见上述文档；本轮没有自动执行真实实验。BOT-3G-B的[QQ Fake-only Hybrid](../patches/2026-10-31-stages/BOT3GB_HYBRID_OFFLINE.md)继续保留：可离线运行 `.\.venv\Scripts\python.exe -X utf8 -B -m unittest apps.qq_bot.tests.test_hybrid_run -v`。原QQ脚本没有`-Mode Hybrid`，本地General审阅不授予QQ自动发布资格。
 
 BOT-3F-B1/B2：新持续会话默认 Chat；本机可用 `-Mode Session -Presentation detailed -Check` 核对完整 A/B/C 模式。两种模式各自绑定新 Scope，旧批准不可复用；旧 TwoTurn/FAST 展示不变，没有群聊切换指令。[实现、性能与重新验收](BOT3FB12_CHAT_VALIDATION_OPTIMIZATION.md)。本轮未开展真实联网。
 
-BOT-3E-C已完成[真实类型化持续会话装配的离线验证](BOT3EC_REAL_SESSION_ASSEMBLY.md)。配置检查：`.\scripts\dev\Test-QQConversation.ps1 -Mode Session -Check`；复用明确的旧request，默认5轮/1800秒/8.02元候选总预算，不打开库、不读密钥、不联网或消费批准。真实`-Mode Session -Run`须3E-D另行批准，启动时只审批一次。旧默认TwoTurn继续逐轮审批，不能复用旧批准或放大旧参数开启持续运行。
+BOT-3E-C已完成[真实类型化持续会话装配的离线验证](../patches/2026-10-31-stages/BOT3EC_REAL_SESSION_ASSEMBLY.md)。配置检查：`.\scripts\dev\Test-QQConversation.ps1 -Mode Session -Check`；复用明确的旧request，默认5轮/1800秒/8.02元候选总预算，不打开库、不读密钥、不联网或消费批准。真实`-Mode Session -Run`须3E-D另行批准，启动时只审批一次。旧默认TwoTurn继续逐轮审批，不能复用旧批准或放大旧参数开启持续运行。
 
-BOT-3E-B的Fake-only合同仍可独立检查：`.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot.session_run_cli --check-contract`。[B阶段记录](BOT3EB_BOUNDED_SESSION_OFFLINE.md)。新真实试用Scope与Fake-only candidate独立。
+BOT-3E-B的Fake-only合同仍可独立检查：`.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot.session_run_cli --check-contract`。[B阶段记录](../patches/2026-10-31-stages/BOT3EB_BOUNDED_SESSION_OFFLINE.md)。新真实试用Scope与Fake-only candidate独立。
 
-BOT-3D-2C-1新增独立双轮试用入口：`.\scripts\dev\Test-QQConversation.ps1 -Check`，只检查本机request引用与合同，不打开数据库、不读密钥、不联网。默认request为 `outputs/qq-bot/conversation.request.json`，先按[双轮说明](BOT3D2C1_REAL_CONVERSATION_TRIAL.md)人工填写。`-Run`需另行批准C-2，并在同一进程内逐Turn两次挑战确认；普通QQ CLI和旧FAST许可不扩大。
+BOT-3D-2C-1新增独立双轮试用入口：`.\scripts\dev\Test-QQConversation.ps1 -Check`，只检查本机request引用与合同，不打开数据库、不读密钥、不联网。默认request为 `outputs/qq-bot/conversation.request.json`，先按[双轮说明](../patches/2026-10-31-stages/BOT3D2C1_REAL_CONVERSATION_TRIAL.md)人工填写。`-Run`需另行批准C-2，并在同一进程内逐Turn两次挑战确认；普通QQ CLI和旧FAST许可不扩大。
 
-BOT-3D-2B的Fake Mention/记忆仍可离线复验：`.\.venv\Scripts\python.exe -X utf8 -B -m unittest apps.qq_bot.tests.test_conversations apps.qq_bot.tests.test_mention_conversation -v`。[2B阶段记录](BOT3D2B_MENTION_CONVERSATIONS.md)。普通QQ入口仍默认AI_DISABLED，不支持真实Mention或多Turn参数；真实执行只能经独立双轮或持续会话试用入口及其对应审批。不要给旧批准增加history或Turn数；共享实现指纹已变，旧批准和Provider回执不授权新代码。
+BOT-3D-2B的Fake Mention/记忆仍可离线复验：`.\.venv\Scripts\python.exe -X utf8 -B -m unittest apps.qq_bot.tests.test_conversations apps.qq_bot.tests.test_mention_conversation -v`。[2B阶段记录](../patches/2026-10-31-stages/BOT3D2B_MENTION_CONVERSATIONS.md)。普通QQ入口仍默认AI_DISABLED，不支持真实Mention或多Turn参数；真实执行只能经独立双轮或持续会话试用入口及其对应审批。不要给旧批准增加history或Turn数；共享实现指纹已变，旧批准和Provider回执不授权新代码。
 
 QQ试用收到回复后优先等待`run-seconds`自动结束，确认最终`result.json`存在且`summary.json`中`report_saved=true`。中断报告缺失已补充处理，新增单次`result.delivery.json`交付快照；Ctrl+C/关窗仍不能承诺最终报告必定写完。[根因、状态和历史取证](BOT3D1_RESULT_REPORTING.md)。
 
@@ -50,21 +50,21 @@ BOT-3D-1已实现受限中文解释：Qwen选择要点，程序按同轮可信�
 
 此前用户报告FAST端到端成功；随后人工收到BOT-3D-1完整A/B/C，但中断导致QQ最终报告缺失。本次修复仅离线复验，历史Backend trace和客户端人工观察不能补造API接受回执。模型自由文本仍不展示，普通`apps.qq_bot --connect`的`/问AI`仍是AI_DISABLED。[阶段总结](BOT_STAGE_SUMMARY.md)、[本次报告修复与指纹](BOT3D1_RESULT_REPORTING.md)。
 
-原 FAST 的 5 项 Fake QQ 失败已在 BOT-REGRESSION-1 最小修复：不改真实期限，成功路径按任务合同观察，合并同次复核的重复 Scope 构建。[完整结果与诊断](BOT_REGRESSION1_FAST_STABILITY.md)。FAST 实现指纹已变，以前的计划/批准和 Provider 前置回执不可复用，真实实验必须重新生成并审批。
+原 FAST 的 5 项 Fake QQ 失败已在 BOT-REGRESSION-1 最小修复：不改真实期限，成功路径按任务合同观察，合并同次复核的重复 Scope 构建。[完整结果与诊断](../patches/2026-10-31-stages/BOT_REGRESSION1_FAST_STABILITY.md)。FAST 实现指纹已变，以前的计划/批准和 Provider 前置回执不可复用，真实实验必须重新生成并审批。
 
 ### BOT-3C-FAST：Qwen + QQ 受控单轮试用
 
-独立维护入口 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot.trial --help`，按“计划 → 交互审批 → 只读检查 → 另行批准后单轮执行”操作。Provider/QQ分别批准，每个批准仅一次；普通QQ CLI仍AI_DISABLED，SDK清理失败门禁保留；未使用的进程隔离草稿已在 BOT-CLEANUP-1 删除。[审批、费用与完整命令](BOT3C_FAST_QWEN_TRIAL.md)。本轮未执行真实联网。
+独立维护入口 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot.trial --help`，按“计划 → 交互审批 → 只读检查 → 另行批准后单轮执行”操作。Provider/QQ分别批准，每个批准仅一次；普通QQ CLI仍AI_DISABLED，SDK清理失败门禁保留；未使用的进程隔离草稿已在 BOT-CLEANUP-1 删除。[审批、费用与完整命令](../patches/2026-10-31-stages/BOT3C_FAST_QWEN_TRIAL.md)。本轮未执行真实联网。
 
-本机准备已提供独立 `outputs/qq-bot/ai.qwen-fast.provider.json`，仅绑定BOT-2C的sim-pond-1及原有一个成员。Prototype与独立Management的私有Store按项目根隔离，不能自动共享Key；当前窗口仅做路径/ACL元数据检查，未读Key。[第7节：实际路径、凭据复用条件及可复制PowerShell步骤](BOT3C_FAST_QWEN_TRIAL.md)。
+本机准备已提供独立 `outputs/qq-bot/ai.qwen-fast.provider.json`，仅绑定BOT-2C的sim-pond-1及原有一个成员。Prototype与独立Management的私有Store按项目根隔离，不能自动共享Key；当前窗口仅做路径/ACL元数据检查，未读Key。[第7节：实际路径、凭据复用条件及可复制PowerShell步骤](../patches/2026-10-31-stages/BOT3C_FAST_QWEN_TRIAL.md)。
 
 ### BOT-2B 指定 Monitoring 实例只读查询
 
 BOT-3C-2A 的 SDK清理失败会报SDK_CLEANUP_FAILED/TIMEOUT并隔离后续AI请求；不要循环重试或清空状态。仍未取得不合作线程的硬退出保证，进程隔离设计仅保留历史文档；FAST 仅通过独立一次性试用入口执行。[状态区分与剩余风险](BOT3C2A_SDK_RESOURCE_GATE.md)
 
-BOT-3C-1：在 Prototype 根执行 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot --check-ai-readiness`，仅核对维护者候选Scope，不读取密钥/实例或联网。退出0表示候选一致且**仍禁止真实AI**；`/问AI`保持AI_DISABLED。SDK不合作清理、真实Scope/费用/实例和QQ批准、真实装配仍是前置条件。[准备结果与人工验收清单](BOT3C1_REAL_AI_PREPARATION.md)
+BOT-3C-1：在 Prototype 根执行 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot --check-ai-readiness`，仅核对维护者候选Scope，不读取密钥/实例或联网。退出0表示候选一致且**仍禁止真实AI**；`/问AI`保持AI_DISABLED。SDK不合作清理、真实Scope/费用/实例和QQ批准、真实装配仍是前置条件。[准备结果与人工验收清单](../patches/2026-10-31-stages/BOT3C1_REAL_AI_PREPARATION.md)
 
-BOT-3B-1/2 提供 AI 服务边界、有界队列、取消及单次交付；普通 QQ CLI 的 `/问AI` 仍禁用。独立 AI 配置不能代替 FAST 的真实模型审批。[边界](BOT3B1_QQ_AI_BOUNDARY.md)、[调度/交付](BOT3B2_QQ_AI_SCHEDULING.md)
+BOT-3B-1/2 提供 AI 服务边界、有界队列、取消及单次交付；普通 QQ CLI 的 `/问AI` 仍禁用。独立 AI 配置不能代替 FAST 的真实模型审批。[边界](../patches/2026-10-31-stages/BOT3B1_QQ_AI_BOUNDARY.md)、[调度/交付](../patches/2026-10-31-stages/BOT3B2_QQ_AI_SCHEDULING.md)
 
 新增 `--monitoring-config`，与 `--help-only` / `--fictional-data` 互斥。仅在用户单独批准实例和设备后使用；不会自动选择工作区或正式库。先运行 `--check-config` 做纯配置检查，再显式 `--check-monitoring` 只读预检，最后另行批准 QQ 联网。配置模板、完整命令及安全边界见 [BOT-2B 验收](BOT2B_MONITORING_READ_ONLY.md#5-真实实例人工接入步骤待单独批准)。本轮只完成隔离数据验证，未打开真实实例。
 
@@ -74,7 +74,7 @@ Prototype 已增加官方 WebSocket 通信层。不要将密钥写入源码或�
 
 ### BOT-1A 离线实验
 
-在 `D:\CodexProject\Fishery_AI_Prototype` 执行 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot --offline-demo`；可加 `--command '/历史水质 30'`。只创建并清理本仓 `outputs/test-tmp` 内虚构实例，不读取现有数据、不连接 QQ/AI。后续 Bot 功能先在 Prototype 开发并人工验收，获批提交后再选择性同步 Management。[实现、限制及本轮验证](BOT1A_OFFLINE_PROTOTYPE.md)
+在 `D:\CodexProject\Fishery_AI_Prototype` 执行 `.\.venv\Scripts\python.exe -X utf8 -B -m apps.qq_bot --offline-demo`；可加 `--command '/历史水质 30'`。只创建并清理本仓 `outputs/test-tmp` 内虚构实例，不读取现有数据、不连接 QQ/AI。后续 Bot 功能先在 Prototype 开发并人工验收，获批提交后再选择性同步 Management。[实现、限制及本轮验证](../patches/2026-10-31-stages/BOT1A_OFFLINE_PROTOTYPE.md)
 
 ### Web 与 Simulator
 

@@ -1,3 +1,5 @@
+> 历史归档（2026-10-31）：本阶段已被后续实现替代。保留设计与验收证据；当前操作见 [启动指南](../../BUILD_RUN.md) 和 [文档入口](../../README.md)。
+
 # BOT-3G-B：Hybrid Agent 离线实现
 
 日期：2026-10-28。项目：Fishery_AI_Prototype；开始 HEAD `a8470a2258c1e0684cde3688ebea9fce509dbd87`。开始已有3F-C/3G研究文档、索引和审计测试未提交，本轮保留。
@@ -24,17 +26,17 @@
 
 | 文件 | 职责 |
 |---|---|
-| [channel_hybrid.py](../../ai_service/channel_hybrid.py) | `QQ_HYBRID_DIALOGUE@1`、独立Scope/HybridQwenTurn、实际步骤分支及HybridResult；继承原SDK执行能力 |
-| [hybrid_presentation.py](../../ai_service/hybrid_presentation.py) | 严格JSON封装、General长度/字符/现场及操作断言防护、Water旧计划校验/安全降级 |
-| [hybrid_run.py](../../qq_bot/hybrid_run.py) | 复用Run账本/Windows所有权/私有Service；独立Fake计划及普通自然语言收费摘要 |
-| [hybrid_intent.py](../../qq_bot/hybrid_intent.py) | 有限免费程序分支，其余返回Agent；不新增水质业务关键词白名单 |
-| [hybrid_conversations.py](../../qq_bot/hybrid_conversations.py) | 独立快照/历史codec，复用原Store的容量、TTL、ticket、revision和CAS |
+| [channel_hybrid.py](../../../ai_service/channel_hybrid.py) | `QQ_HYBRID_DIALOGUE@1`、独立Scope/HybridQwenTurn、实际步骤分支及HybridResult；继承原SDK执行能力 |
+| [hybrid_presentation.py](../../../ai_service/hybrid_presentation.py) | 严格JSON封装、General长度/字符/现场及操作断言防护、Water旧计划校验/安全降级 |
+| [hybrid_run.py](../../../qq_bot/hybrid_run.py) | 复用Run账本/Windows所有权/私有Service；独立Fake计划及普通自然语言收费摘要 |
+| [hybrid_intent.py](../../../qq_bot/hybrid_intent.py) | 有限免费程序分支，其余返回Agent；不新增水质业务关键词白名单 |
+| [hybrid_conversations.py](../../../qq_bot/hybrid_conversations.py) | 独立快照/历史codec，复用原Store的容量、TTL、ticket、revision和CAS |
 | `service.py` | 仅精确HybridQwenTurn采用新Prompt/AUTO中间执行及Hybrid后置Source判断；旧路径仍CURRENT_OBSERVATION_QUERY |
 | `channel_conversation.py`、`conversations.py` | 默认不变的snapshot/turn工厂扩展点，旧快照仍按旧精确类型验证 |
 | `ai_coordinator.py`、`ai_routing.py` | 精确HybridRun装配、原句传递、分支校验及无现场来源的历史处理 |
 | `ai_delivery.py`、`ai_scheduler.py` | Hybrid只允许精确OfflineQQGateway；统一发送Owner，拒绝真实Transport混入 |
 | `session_run.py` | Store与分支完成判定钩子；旧模式默认仍恰好2请求才verified |
-| [test_hybrid_run.py](../../qq_bot/tests/test_hybrid_run.py) | 真实SDK类+MockTransport、Fake QQ、新建合成SQLite的集成/故障测试 |
+| [test_hybrid_run.py](../../../qq_bot/tests/test_hybrid_run.py) | 真实SDK类+MockTransport、Fake QQ、新建合成SQLite的集成/故障测试 |
 
 没有修改Backend/SDK Adapter、Agent工具循环、Monitoring规则或SQLite Schema。没有访问已有实例/密钥，没有修改Management、旧src或其他项目。所有测试只使用新建临时实例、虚构配置和内存HTTP。
 
@@ -74,7 +76,7 @@ General硬上限600字符/封装4096字节，严格拒绝重复/额外字段、�
 
 ## 4. Prompt 与多轮历史
 
-最终Prompt常量位于 [channel_hybrid.INSTRUCTION](../../ai_service/channel_hybrid.py)，ID `QQ_HYBRID_DIALOGUE@1`，包含在新Scope实现/Prompt摘要中。要点：
+最终Prompt常量位于 [channel_hybrid.INSTRUCTION](../../../ai_service/channel_hybrid.py)，ID `QQ_HYBRID_DIALOGUE@1`，包含在新Scope实现/Prompt摘要中。要点：
 
 - 中文自然简短，通常一到两小段；普通交流与一般概念可直接回答。
 - 当前鱼塘事实、可靠性、过期、缺测、低氧风险要取本轮Tool；设备/实例/工具/预算不从正文接收。
@@ -155,7 +157,7 @@ AI 建议（已校验，未执行）：请人工复核规则与观测证据，�
 
 ## 7. Scope 与兼容性
 
-新候选资源 [qq_hybrid_candidate.json](../../ai_service/resources/qq_hybrid_candidate.json) 绑定新Prompt、工具、原预算、来源分支、混合历史、发布防护、Run/SDK与所有相关实现。`status=candidate`、`environment=OFFLINE_FAKE_ONLY`、`qualification_id=null`、两个真实执行/交付标志均false。
+新候选资源 [qq_hybrid_candidate.json](../../../ai_service/resources/qq_hybrid_candidate.json) 绑定新Prompt、工具、原预算、来源分支、混合历史、发布防护、Run/SDK与所有相关实现。`status=candidate`、`environment=OFFLINE_FAKE_ONLY`、`qualification_id=null`、两个真实执行/交付标志均false。
 
 新Hybrid Scope：`d73493b9ca867bb99e1e55987e0167d0a938f11bc6e8b10a052f7521a20309b4`。
 

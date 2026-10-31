@@ -1,5 +1,5 @@
 ﻿[CmdletBinding()]
-param([string]$RequestFile, [string]$DataRoot, [string]$DemoVideo, [int]$Port=8766,
+param([ValidateSet("full","water-only")][string]$SimulationMode="full", [switch]$InteractiveMode, [string]$DeviceReportDirectory, [string]$DeviceReportDeviceId, [string]$RequestFile, [string]$DataRoot, [string]$DemoVideo, [int]$Port=8766,
       [string]$Scenario='normal', [int]$Seed=42, [switch]$WithBot, [switch]$BotOnly,
       [switch]$Check, [switch]$PrepareDemo, [switch]$InteractiveScenario,
       [switch]$OpenBrowser, [switch]$NoAssistant, [int]$RunSeconds=1800)
@@ -16,5 +16,9 @@ if ($DemoVideo) { $taskArgs+=@('--demo-video',$ExecutionContext.SessionState.Pat
 foreach ($item in @(@($WithBot,'--with-bot'),@($BotOnly,'--bot-only'),@($Check,'--check'),@($PrepareDemo,'--prepare-demo'),@($InteractiveScenario,'--interactive-scenario'),@($OpenBrowser,'--open-browser'))) {
     if ($item[0]) { $taskArgs+=$item[1] }
 }
+$taskArgs+=@('--simulation-mode',$SimulationMode)
+if ($InteractiveMode) { $taskArgs+='--interactive-mode' }
+if ($DeviceReportDirectory) { $taskArgs+=@('--device-report-directory',$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DeviceReportDirectory)) }
+if ($DeviceReportDeviceId) { $taskArgs+=@('--device-report-device-id',$DeviceReportDeviceId) }
 & $taskPython @taskArgs
 if ($LASTEXITCODE -ne 0) { throw "PROTOTYPE_STACK_COMMAND_FAILED ($LASTEXITCODE)" }

@@ -1,3 +1,5 @@
+> 历史归档（2026-10-31）：本阶段已被后续实现替代。保留设计与验收证据；当前操作见 [启动指南](../../BUILD_RUN.md) 和 [文档入口](../../README.md)。
+
 # BOT-3E-B：受控持续会话授权（离线实现）
 
 后续C阶段的独立真实类型与PS Session模式已完成Mock装配，见[3E-C说明](BOT3EC_REAL_SESSION_ASSEMBLY.md)。本文件保留B阶段事实；B的类型与Scope继续Fake-only，真实联网仍须另行批准。
@@ -10,7 +12,7 @@
 
 **仅Fake-only candidate。** 普通QQ CLI、旧FAST和双轮入口不会启用此模式。`SessionRun`必须显式注入Fake SDK工厂，`SessionQwenTurn`只接受真实SDK类搭配精确`httpx.MockTransport`、零重试、禁代理环境及重定向；QQ仅使用原`OfflineQQGateway`。没有读取实际密钥、配置现有业务实例或连接QQ/Qwen。
 
-前一轮[3E-A设计](research/BOT3EA_BOUNDED_SESSION_CONSENT_DESIGN.md)由用户批准：不恢复余额、保守预留、分级故障、一个群/实例/设备、1～4名明确成员共享额度。这里不把离线批准当作真实模型资格。
+前一轮[3E-A设计](../../deep-dive/research/BOT3EA_BOUNDED_SESSION_CONSENT_DESIGN.md)由用户批准：不恢复余额、保守预留、分级故障、一个群/实例/设备、1～4名明确成员共享额度。这里不把离线批准当作真实模型资格。
 
 ## 2. 文件与调用边界
 

@@ -1,5 +1,7 @@
 # 管理平台目录与职责
 
+`apps/device_reports/`：默认不启动的独立设备报告收件箱（v1），与Monitoring数据库/规则分离；Web仅只读展示。`Start-DeviceReports.ps1` 为薄封装。历史阶段文档迁至 `apps/docs/patches/2026-10-31-stages/`，保留索引与原始摘要。
+
 Prototype 日常数据统一为 `apps/data`（Git 忽略，不打包），由 `apps/management_paths.py` 装配；原分散文件保留作历史副本。`scripts/dev/prepare_prototype_data.py` 只向新目录复制并校验，不迁移 Schema 或覆盖来源；显式测试实例仍通过 `management_web/instance.py` 初始化/预检。
 
 当前实际结构；缓存不展开。完整仓库见根 [地图](../../docs/STRUCTURE.md)。Tool/Prompt/Scope 的开发步骤见 [开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)。
@@ -391,7 +393,7 @@ Phase I 的五个 runtime 准备模块和三份重复测试已移除；当前 Se
 
 `scripts/dev/Test-QQBot.ps1`、`Test-QwenProvider.ps1`、`Test-QQAI.ps1` 为 PowerShell 7 人工验收入口，公共串联逻辑位于 `qq_bot_test_common.ps1`。默认 Check，复用原 CLI 的权限/审批/费用/单次执行；不参与应用启动。见 [操作说明](deep-dive/BOT_TEST_WORKFLOW.md)。
 
-`scripts/dev/Test-QQConversation.ps1` 为独立双轮入口，复用上述路径/目录/联网确认辅助函数；Check不打开数据库，Run逐Turn人工审批，同进程私有Service共享RAM。见 [2C-1与待授权C-2](deep-dive/BOT3D2C1_REAL_CONVERSATION_TRIAL.md)。
+`scripts/dev/Test-QQConversation.ps1` 为独立双轮入口，复用上述路径/目录/联网确认辅助函数；Check不打开数据库，Run逐Turn人工审批，同进程私有Service共享RAM。见 [2C-1与待授权C-2](patches/2026-10-31-stages/BOT3D2C1_REAL_CONVERSATION_TRIAL.md)。
 
 `scripts/dev/Test-HybridProvider.ps1` 为独立本地Hybrid研究入口，Check不读取库/密钥/网络，Run逐项批准多个独立五轮内Run；不启动QQ、不复用旧许可。见 [C1研究实验](deep-dive/BOT3GC1_LOCAL_HYBRID_RESEARCH.md)。
 

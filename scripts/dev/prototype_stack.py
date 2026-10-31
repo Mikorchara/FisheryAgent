@@ -141,7 +141,7 @@ def request_stop(directory, role='all'):
 
 def launch_stack(*, request=None, data_root=None, with_bot=False, bot_only=False,
                  port=8766, scenario='normal', seed=42, interactive=False, browser=False,
-                 prepare=False, seconds=1800, assistant=True, demo_video=None):
+                 prepare=False, seconds=1800, assistant=True, demo_video=None, simulation_mode="full", device_report_directory=None, device_report_device_id=None):
     from scripts.dev.local_session import run_local
     from scripts.dev.windows_job import own_process_tree
     from scripts.dev.console_job import ConsoleJob
@@ -210,7 +210,8 @@ def launch_stack(*, request=None, data_root=None, with_bot=False, bot_only=False
             else:
                 result = run_local(scenario, port, seed, assistant=assistant, data_root=root,
                     show_terminals=True, interactive_scenario=interactive, open_browser=browser,
-                    launch=launch, sleep=sleep,demo_video=demo_video)
+                    launch=launch, sleep=sleep,demo_video=demo_video,simulation_mode=simulation_mode,
+                    device_report_directory=device_report_directory,device_report_device_id=device_report_device_id)
         except FileBusyError: raise RuntimeError('PROTOTYPE_INSTANCE_OR_BOT_ALREADY_RUNNING') from None
         except KeyboardInterrupt: result = 0
         except Exception:
@@ -261,6 +262,10 @@ def main(argv=None):
         p.add_argument('--'+flag, action='store_true')
     p.add_argument('--seconds', type=int, default=1800)
     p.add_argument('--demo-video',type=Path)
+    p.add_argument('--simulation-mode',choices=('full','water-only'),default='full')
+    p.add_argument('--interactive-mode',action='store_true')
+    p.add_argument('--device-report-directory',type=Path)
+    p.add_argument('--device-report-device-id')
     p.add_argument('--no-assistant', action='store_true', help='Disable Web AI and Settings; never affects QQ consent')
     p.add_argument('--stop-directory', type=Path); p.add_argument('--stop-bot', action='store_true')
     args = p.parse_args(argv)
@@ -270,6 +275,20 @@ def main(argv=None):
             emit('PROTOTYPE_STACK_STOP_REQUESTED'); return 0
         if not 1 <= args.port <= 65535 or not 1 <= args.seconds <= 1800:
             raise RuntimeError('PROTOTYPE_INVALID_PORT_OR_DURATION')
+        if args.interactive_mode and not args.check:
+            print('运行模式：1. 完整模拟（默认）  2. 设备联调（仅模拟水质）  0. 退出')
+            while True:
+                choice=input('选择模式 [1/2/0]：').strip()
+                if choice=='0':return 0
+                if choice in ('','1','2'):
+                    args.simulation_mode='water-only' if choice=='2' else 'full';break
+                print('输入无效。')
+        if args.device_report_directory is not None or args.device_report_device_id is not None:
+            if args.simulation_mode!='water-only' or not args.device_report_directory or not args.device_report_device_id:
+                raise RuntimeError('DEVICE_REPORT_BINDING_REQUIRED')
+            from apps.device_reports.storage import safe_directory
+            from apps.monitoring.contracts import identifier
+            safe_directory(args.device_report_directory);identifier(args.device_report_device_id)
         with_bot = args.with_bot or args.bot_only
         if args.check:
             if args.demo_video is not None:
@@ -277,12 +296,15 @@ def main(argv=None):
                 LocalDemoVideo.open(args.demo_video)
             _, summary = preflight(request=args.request_file, data_root=args.data_root,
                 with_bot=with_bot, bot_only=args.bot_only, port=args.port)
+            summary['simulation_mode']=args.simulation_mode
+            summary['device_report_binding']=args.device_report_directory is not None
             summary['web_assistant_enabled'] = not args.no_assistant and not args.bot_only
             emit(**summary); return 0
         return launch_stack(request=args.request_file, data_root=args.data_root, with_bot=with_bot,
             bot_only=args.bot_only, port=args.port, scenario=args.scenario, seed=args.seed,
             interactive=args.interactive_scenario, browser=args.open_browser,
-            prepare=args.prepare_demo, seconds=args.seconds, assistant=not args.no_assistant,demo_video=args.demo_video)
+            prepare=args.prepare_demo, seconds=args.seconds, assistant=not args.no_assistant,demo_video=args.demo_video,simulation_mode=args.simulation_mode,
+            device_report_directory=args.device_report_directory,device_report_device_id=args.device_report_device_id)
     except Exception as error:
         code = getattr(error, 'code', str(error) if isinstance(error, RuntimeError) else 'PROTOTYPE_STACK_FAILED')
         if not re.fullmatch('[A-Z][A-Z0-9_]{0,80}', str(code)): code = 'PROTOTYPE_STACK_FAILED'

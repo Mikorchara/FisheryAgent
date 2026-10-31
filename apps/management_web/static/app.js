@@ -187,7 +187,7 @@ function dashboard(){
     el('div',{class:'section-caption'},[el('h2',{text:'水质指标概览'}),link('查看水质监测','monitoring')]),metadata(snapshot),metricCards(snapshot),currentAnomalies(d),
     el('div',{class:'dashboard-grid dashboard-overview'},[trend(),
       el('div',{class:'side-stack dashboard-sidebar'},[
-        card('视觉监测概况','只有模拟窗口统计，真实视频 / NPU 未接入。',[rows([['设备',d.cameras[0]?.name||'无设备'],['上报状态',connectionName(d.cameras[0]?.status)],['视觉新鲜度',freshnessNames[d.cameras[0]?.freshness]||'未知'],['窗口帧数',d.cameras[0]?.summary?.frames_processed??'暂无上报']]),videoPlaceholder(true),el('div',{class:'card-foot'},[el('span',{text:'无实际视频流'}),link('视觉窗口详情','video')])]),
+        (d.integration?.simulation_mode==='water-only'?deviceReports():card('视觉监测概况','只有模拟窗口统计，真实视频 / NPU 未接入。',[rows([['设备',d.cameras[0]?.name||'无设备'],['上报状态',connectionName(d.cameras[0]?.status)],['视觉新鲜度',freshnessNames[d.cameras[0]?.freshness]||'未知'],['窗口帧数',d.cameras[0]?.summary?.frames_processed??'暂无上报']]),videoPlaceholder(true),el('div',{class:'card-foot'},[el('span',{text:'无实际视频流'}),link('视觉窗口详情','video')])])),
         card('AI 智能助手','从环境事实到可解释的辅助建议。',[el('div',{class:'assistant-entry'},[el('span',{class:'assistant-emblem'},[icon('spark')]),el('p',{text:d.ai?.connected?'Normal 助手已启用；当前水质查询与网页共用监测存储。':'启用 Assistant 后，复用现有模型与只读 Tool Runtime。'}),el('a',{href:'#assistant',class:'button primary'},['打开助手工作区',icon('arrow')])])]),
         card('连接状态','未连接不代表设备离线。',[el('div',{class:'connection-list'},d.connections.map(c=>el('div',{class:'connection-row'},[
           el('span',{text:c.name}),badge(connectionName(c.status),c.status==='online'?'success':c.status==='offline'?'warning':'neutral')])))] )]),recentEvents])];
@@ -217,7 +217,30 @@ function assistant(){if(state.data.ai?.connected)return [assistantWorkspace.moun
     card('工具执行','未来仅展示安全 Activity。',[empty('暂无执行记录','Tool 调用、步骤和来源证明将在服务接入后展示。','settings')]),
     card('开发验证','与管理平台的正式工作区分开。',[el('p',{class:'muted',text:'现有 AI Prototype Web 保留在独立端口，模型和凭据由原 Runtime 管理。'}),el('a',{class:'text-link',href:'http://127.0.0.1:8765',target:'_blank',rel:'noopener noreferrer',text:'打开现有 AI 原型 ↗'})])])])];}
 
-function video(){const cameras=state.data.cameras;const camera=cameras.find(c=>c.id===state.camera)||cameras[0];const summary=camera?.summary;
+const openedDeviceReports=new Set();
+function deviceReports(){
+  const inbox=state.data.integration?.device_reports;
+  const items=inbox?.items||[];
+  return card('设备视觉报告','设备联调 · 水质仍为 SIMULATOR；报告不等于疾病确诊或事件恢复证据。',[
+    badge('DEVICE REPORT · 独立视觉来源','demo'),
+    el('p',{text:inbox?.error_code?'设备报告读取失败 · 状态未知':!inbox?'尚未绑定设备报告目录 · 状态未知':`设备 ${inbox.device_id} · 最近 ${items.length} 份留存报告`}),
+    el('p',{class:'muted',text:'仅异常上报时，沉默不能证明正常或离线。任务覆盖与连续性尚未确认；设备报告暂不生成 Monitoring 事件。旧模拟视觉与事件保留历史，不作为设备状态。'}),
+    ...items.map(({report:r,received_at,warnings,freshness})=>el('details',{class:'device-report',
+      ...(openedDeviceReports.has(`${r.device_id}:${r.report_id}`)?{open:''}:{}),
+      ontoggle:event=>{const key=`${r.device_id}:${r.report_id}`;if(event.target.open){openedDeviceReports.add(key);if(openedDeviceReports.size>100)openedDeviceReports.delete(openedDeviceReports.values().next().value);}else openedDeviceReports.delete(key);}},[
+      el('summary',{text:`${timeText(r.window.end)} · ${freshness==='fresh'?'近期报告':'过期／未知，仅供回看'} · ${r.has_abnormality?'设备报告含异常信号（非确诊）':'设备报告未标异常（不代表全部正常）'}`}),
+      rows([['设备',r.device_id],['报告ID',r.report_id],['窗口结束',timeText(r.window.end)],['服务器接收',timeText(received_at)],
+        ['可见跟踪目标（非存量）',r.detection.unique_tracks],['处理帧',r.window.frames_processed],['行为任务',r.behavior===null?'未提供':'已提供原始对象，尚未解释'],['体长任务',r.measurement===null?'未提供':'已提供原始对象，尚未解释']]),
+      ...(warnings?.length?[el('p',{text:`报文校验提示：${warnings.map(code=>({WINDOW_DURATION_MISMATCH:'窗口时长与起止时间不一致（WINDOW_DURATION_MISMATCH）',ABNORMALITY_FLAG_INCONSISTENT:'异常标志与列表不一致（ABNORMALITY_FLAG_INCONSISTENT）'}[code]||code)).join('、')}；不作为恢复证据。`})]:[]),
+      ...r.abnormalities.map(a=>el('p',{text:`${a.name}（模型标签 ${a.label}）：${a.targets} 个目标，${a.count} 帧次；检测信号，非确诊。`})),
+      el('pre',{class:'device-report-text',text:r.report_text})
+    ])),
+    ...(!items.length?[empty('尚无可显示设备报告','不会用模拟视觉填补设备报告。','camera')]:[])
+  ]);
+}
+function video(){
+  if(state.data.integration?.simulation_mode==='water-only')return [deviceReports()];
+  const cameras=state.data.cameras;const camera=cameras.find(c=>c.id===state.camera)||cameras[0];const summary=camera?.summary;
   const behaviors={normal_activity:'正常活动',reduced_activity:'活动减少',feeding:'摄食',feeding_anomaly:'摄食异常',unknown:'未知'};
   const anomalies={suspected_lesion:'疑似病灶',surface_anomaly:'体表异常',suspected_dead:'疑似死亡个体'};
   return [el('div',{class:'video-layout'},[
@@ -323,7 +346,7 @@ async function refresh(force=false){
     if(!data.devices.some(d=>d.id===state.device))state.device=data.devices[0]?.id||'';
     if(!data.cameras.some(c=>c.id===state.camera))state.camera=data.cameras[0]?.id||'';
     $('source-label').textContent=sourceName(data.data_mode);
-    $('source-notice').textContent=data.data_mode==='simulator'?'水质与视觉来自模拟器 HTTP 上报，非真实设备或疾病诊断。页面与已启用的水质 Tool 共用统一存储。':'独立 R1 Demo；不是传感器、NPU 或正式 AI 数据。';
+    $('source-notice').textContent=data.integration?.simulation_mode==='water-only'?'设备联调：水质为 SIMULATOR；视觉来自独立设备报告。原模拟视觉与事件仅保留历史，未确认设备恢复。':data.data_mode==='simulator'?'水质与视觉来自模拟器 HTTP 上报，非真实设备或疾病诊断。页面与已启用的水质 Tool 共用统一存储。':'独立 R1 Demo；不是传感器、NPU 或正式 AI 数据。';
     document.querySelector('.environment').textContent=data.data_mode==='simulator'?'本机模拟接入':'DEMO 环境';
     $('refresh-status').textContent='服务器状态已更新';
     const active=document.activeElement;

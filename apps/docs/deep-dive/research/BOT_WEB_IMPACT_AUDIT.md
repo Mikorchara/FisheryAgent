@@ -2,9 +2,9 @@
 
 2026-10-26 后续：[BOT-3D-1](../BOT3D1_BOUNDED_EXPLANATION.md)增加服务端内部单轮Prompt注入点，仅渠道授权装配传入；默认Web单轮/多轮Prompt、公开DTO、工具循环及SDK门禁均未改。90项Web相关定向回归通过；真实Web联网/长稳态本轮未测，不能据离线通过声称全部运行场景无影响。本页以下内容保留原BOT审计依据。
 
-2026-10-26 后续：BOT-CLEANUP-1 已按本页建议删除四个暂停草稿及专用测试，保留 SDK 资源门禁和历史设计；本页第3节记录清理前证据，不是当前文件清单。[清理与验证](../BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。
+2026-10-26 后续：BOT-CLEANUP-1 已按本页建议删除四个暂停草稿及专用测试，保留 SDK 资源门禁和历史设计；本页第3节记录清理前证据，不是当前文件清单。[清理与验证](../../patches/2026-10-31-stages/BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。
 
-后续状态：原 FAST 5 项失败已由 [BOT-REGRESSION-1](../BOT_REGRESSION1_FAST_STABILITY.md) 定位和最小修复；本页保留前次审计的失败数据与风险分析，当前测试结果及 Scope 以修复报告为准。
+后续状态：原 FAST 5 项失败已由 [BOT-REGRESSION-1](../../patches/2026-10-31-stages/BOT_REGRESSION1_FAST_STABILITY.md) 定位和最小修复；本页保留前次审计的失败数据与风险分析，当前测试结果及 Scope 以修复报告为准。
 
 日期：2026-10-25。源码审计：`8d90d07..ddb9ecf`；该范围 `apps/ scripts/` 共 78 文件、+10435/-164 行，并非每一行都属于 BOT。四个阶段提交为 `6f2fee2`、`fb140f0`、`7322f0d`、`ddb9ecf`。本轮开始工作树为空；没有读取真实数据或凭据，没有联网。
 
@@ -67,7 +67,7 @@ Fake Gateway 失败探针记录到 `QQ_REPLY_API_ACCEPTED → AI_ADMITTED → GA
 
 `rg -n 'sdk_process_|SDK_PROCESS_DEVELOPMENT_PAUSED' apps scripts` 的生产调用引用闭包限于上述草稿；`qq_bot/tests/test_qwen_trial.py` 另有“Scope 不含草稿”的反向断言。离线导入探针在阻断 socket、Popen、Thread.start 后导入 Web Service / QQ CLI / trial，输出 `PRODUCTION_IMPORTS_DRAFT_MODULES=0`；再显式导入四份草稿，输出 `DRAFT_IMPORT_STARTS_THREADS=0`、`WORKER_IMPORT_MUTATES_SYS_PATH=True`。`pyproject.toml` 自动发现 ai_backend 包，草稿仍可能随 wheel 分发，属于维护与误读负担，并非当前网络执行依赖。
 
-原审计建议删除这 4 个源码和 1 个专用测试；BOT-CLEANUP-1 已获批准并执行，目录和现行命令同步更新。[暂停设计与代价](../BOT3C2B_SDK_PROCESS_ISOLATION.md) 继续保留为历史，SDK 资源门禁不在删除范围内。
+原审计建议删除这 4 个源码和 1 个专用测试；BOT-CLEANUP-1 已获批准并执行，目录和现行命令同步更新。[暂停设计与代价](../../patches/2026-10-31-stages/BOT3C2B_SDK_PROCESS_ISOLATION.md) 继续保留为历史，SDK 资源门禁不在删除范围内。
 
 必须保留：`sdk_resources.py`、共享 Adapter 的资源确认、`execution.py` 的 Handle/Registry 防线、资源测试、QQ Scheduler/Commit/Delivery 门禁。草稿未参与 FAST Scope，所以未来删除不应改变 FAST 执行资格；仍需重新计算并比对指纹，不靠推测。
 

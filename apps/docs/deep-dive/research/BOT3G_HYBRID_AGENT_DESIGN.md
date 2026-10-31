@@ -1,6 +1,6 @@
 # BOT-3G：Hybrid 自然语言 Agent 最小设计
 
-> 2026-10-28：本设计已获批进入离线B阶段，实际行为与回归见 [BOT-3G-B](../BOT3GB_HYBRID_OFFLINE.md)。本文保留为设计记录；真实General自动发布和QQ/Qwen联网仍未获批。
+> 2026-10-28：本设计已获批进入离线B阶段，实际行为与回归见 [BOT-3G-B](../../patches/2026-10-31-stages/BOT3GB_HYBRID_OFFLINE.md)。本文保留为设计记录；真实General自动发布和QQ/Qwen联网仍未获批。
 
 日期：2026-10-28。项目：Fishery_AI_Prototype；HEAD `a8470a2258c1e0684cde3688ebea9fce509dbd87`。
 

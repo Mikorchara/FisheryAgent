@@ -77,6 +77,7 @@ def run(simulator, reporter, *, interval_s=10, windows=None, switch_to=None, swi
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Local monitoring simulator; no AI or NPU inference")
     parser.add_argument("--scenario", choices=SCENARIOS, default="normal")
+    parser.add_argument('--mode',choices=('full','water-only'),default='full')
     parser.add_argument("--server", default="http://127.0.0.1:8766")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--interval", type=float, default=10)
@@ -92,7 +93,7 @@ def main(argv=None):
     reporter = None
     try:
         simulator = Simulator(start=datetime.now(timezone.utc), scenario=args.scenario, seed=args.seed,
-                              sample_period_s=args.sample_period, frame_period_s=args.frame_period)
+                              sample_period_s=args.sample_period, frame_period_s=args.frame_period,mode=args.mode)
         # Validate before any network I/O; discard the detached preflight producer.
         Simulator(start=simulator.start, sample_period_s=args.sample_period, frame_period_s=args.frame_period).advance(args.interval)
         if not args.dry_run:

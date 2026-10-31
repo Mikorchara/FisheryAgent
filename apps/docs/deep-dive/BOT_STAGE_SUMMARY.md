@@ -10,9 +10,9 @@ QQ 是原 AI Service 的接入渠道，没有建立第二套 Agent。固定指�
 
 **人工验收证据**：本轮用户报告最近一次真实 Qwen → Monitoring Tool Calling → QQ 实验成功，SDK 正常关闭，QQ API 接受且用户在客户端看到消息。本轮没有重新联网或读取该实验的私有记录。程序的 `api_accepted` 与人工观察仍分开；不能把客户端可见自动写成机器已经验证的事实。模型自由文本继续不展示，展示的是同轮工具产生的可信来源摘要。
 
-**后续 BOT-REGRESSION-1**：已定位原 5 项失败的短观察窗口、Fake Gateway 断言误入重连及重复 Scope 构建；每次完整复核 3→1 次构建，不跨调用缓存。五项连续三轮、Bot 275 项、Web 相关 78 项，以及完整 874 Python / 116 Node 全部通过；结果和新的实现 Scope 见 [修复与验证报告](BOT_REGRESSION1_FAST_STABILITY.md)。前次审计的 866 项中 4 错误 / 1 失败保留为历史证据，不代表修复后结果。
+**后续 BOT-REGRESSION-1**：已定位原 5 项失败的短观察窗口、Fake Gateway 断言误入重连及重复 Scope 构建；每次完整复核 3→1 次构建，不跨调用缓存。五项连续三轮、Bot 275 项、Web 相关 78 项，以及完整 874 Python / 116 Node 全部通过；结果和新的实现 Scope 见 [修复与验证报告](../patches/2026-10-31-stages/BOT_REGRESSION1_FAST_STABILITY.md)。前次审计的 866 项中 4 错误 / 1 失败保留为历史证据，不代表修复后结果。
 
-**2026-10-26 BOT-CLEANUP-1 当前基线**：未使用草稿及专用测试已删除，完整 **868 Python / 116 Node 全部通过**；减少的6项仅为暂停测试，两个Scope及现有资源门禁不变。[清理报告](BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。
+**2026-10-26 BOT-CLEANUP-1 当前基线**：未使用草稿及专用测试已删除，完整 **868 Python / 116 Node 全部通过**；减少的6项仅为暂停测试，两个Scope及现有资源门禁不变。[清理报告](../patches/2026-10-31-stages/BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。
 
 | 阶段 | 已实现的职责 | 当前使用状态 / 证据边界 |
 |---|---|---|
@@ -79,7 +79,7 @@ Web 与 Bot 通常为不同 Python 进程，资源隔离门禁不跨进程传播
 ## 4. 下一阶段建议
 
 1. 复核 BOT-REGRESSION-1 的完整结果，再做三个薄测试入口的人工检查；FAST 实现指纹已变，更换源码后旧计划/批准和 Provider 前置回执不可复用。
-2. BOT-CLEANUP-1 已按授权移除暂停草稿和专用测试，保留研究结论与 C2A 防线；清理后基线见 [验证记录](BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。
+2. BOT-CLEANUP-1 已按授权移除暂停草稿和专用测试，保留研究结论与 C2A 防线；清理后基线见 [验证记录](../patches/2026-10-31-stages/BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。
 3. BOT-3D-1已完成受限解释的离线实现，下一步单独批准新Provider/QQ人工验收；任意自由正文和多轮会话尚未开放，不同时引入记忆、更多工具和主动推送。
 4. 成熟代码按共享依赖集合选择性同步 Management，独立回归；不复制批准文件、业务实例、trace 或凭据。
 

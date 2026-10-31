@@ -48,13 +48,27 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8786)
     parser.add_argument('--demo-video',type=Path,help='Explicit local MP4 preview, independent of fictional observations')
+    parser.add_argument('--device-reports-fixture',action='store_true',help='Temporary synthetic report DB only; no business data')
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error('INVALID_PORT')
     from werkzeug.serving import make_server
     from apps.management_web.demo_video import LocalDemoVideo
+    from contextlib import ExitStack
+    resources=ExitStack()
+    report_options={}
+    if args.device_reports_fixture:
+        from tempfile import TemporaryDirectory
+        from apps.device_reports.storage import ReportStore
+        from apps.device_reports.tests.test_reports import report,DEVICE
+        import json
+        directory=Path(resources.enter_context(TemporaryDirectory()))
+        store=ReportStore.initialize(directory)
+        value=report()
+        store.receive(json.dumps(value).encode(),device_id=DEVICE,now=datetime.now(timezone.utc))
+        report_options=dict(simulation_mode='water-only',device_report_store=ReportStore(directory,read_only=True),device_report_device_id=DEVICE)
     app = create_app(monitoring=PreviewMonitoring(), allowed_hosts=(f'127.0.0.1:{args.port}',),
-                     demo_video=LocalDemoVideo.open(args.demo_video) if args.demo_video else None)
+                     demo_video=LocalDemoVideo.open(args.demo_video) if args.demo_video else None,**report_options)
     stopped = False
 
     @app.post('/__chart_preview__/stop')
@@ -66,7 +80,8 @@ def main():
     server = make_server('127.0.0.1', args.port, app)
     server.timeout = .5
     deadline = time.monotonic()+600
-    print(f'FICTIONAL_CHART_PREVIEW http://127.0.0.1:{args.port} · no database or model calls', flush=True)
+    print(f'FICTIONAL_CHART_PREVIEW http://127.0.0.1:{args.port} · '+
+          ('temporary synthetic report DB only; no business DB or model calls' if args.device_reports_fixture else 'no database or model calls'),flush=True)
     try:
         while not stopped and time.monotonic() < deadline:
             server.handle_request()
@@ -74,6 +89,7 @@ def main():
         pass
     finally:
         server.server_close()
+        resources.close()
 
 
 if __name__ == '__main__':

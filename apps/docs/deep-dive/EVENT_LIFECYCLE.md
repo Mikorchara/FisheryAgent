@@ -1,6 +1,6 @@
 # EVT-1：视觉事件连续恢复与首页异常概况
 
-EVT-1 已同步 Management 并经人工验收；连续三个可靠 CLEAR 是实验参数，不是疾病恢复标准。当前仅 Prototype 新增独立 [ACK 知晓记录](EVENT_ACK.md)，不改变本文恢复机制；没有派单、Close/Snooze 或设备控制。
+EVT-1 已同步 Management 并经人工验收；连续三个可靠 CLEAR 是实验参数，不是疾病恢复标准。当前仅 Prototype 新增独立 [ACK 知晓记录](EVENT_MANAGEMENT.md)，不改变本文恢复机制；没有派单、Close/Snooze 或设备控制。
 
 ## 状态与证据
 

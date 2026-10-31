@@ -4,6 +4,9 @@
 
 ## 阅读入口
 
+- [设备联调：仅模拟水质 + Jetson 报告](deep-dive/DEVICE_INTEGRATION.md)
+- [历史阶段归档（13份，保留证据）](patches/2026-10-31-stages/README.md)
+
 - [Prototype 日常启动：两终端 / 三终端](BUILD_RUN.md)
 - [运行维护与历史实验入口](deep-dive/PROTOTYPE_RUN_REFERENCE.md)
 - [启动器边界与验收](deep-dive/PROTOTYPE_LAUNCHER_ACCEPTANCE.md)
@@ -14,31 +17,19 @@
 
 - [BOT-3G-C1-D 48题真实Hybrid综合评估](deep-dive/BOT3GC1D_REAL_HYBRID_EVALUATION.md)（84次HTTP/36次Tool；General 0/12、Water 34/36；原文缺失限制、逐题初审与候选对照计划；不开放真实QQ）
 - [BOT-3G-C1 本地Hybrid研究实验](deep-dive/BOT3GC1_LOCAL_HYBRID_RESEARCH.md)（48题、分组重复/独立五轮Run、受保护审阅与统计；离线验证，真实Qwen须新审批，不连接QQ）
-- [BOT-3G-B Hybrid离线实现](deep-dive/BOT3GB_HYBRID_OFFLINE.md)（General/Water、原Agent、混合RAM历史与Run额度；仅Fake发布，不开放真实General/QQ/Qwen）
 - [BOT-3G Hybrid Agent与Prompt设计](deep-dive/research/BOT3G_HYBRID_AGENT_DESIGN.md)（固定指令+其余授权自然语言进入原Agent；Mock已验证，Source/General输出合同待审）
 - [BOT-3G Hybrid来源与输出独立合同](deep-dive/research/BOT3G_HYBRID_SOURCE_OUTPUT_CONTRACT.md)（工具可选、一般文本语义风险、1/2请求与混合历史；未开放真实入口）
 - [BOT-3G-A 水质意图现状基线](deep-dive/research/BOT3GA_WATER_INTENT_CHAT_DESIGN.md)（36表达/72项投影及原收费差异；关键词扩充路线已由Hybrid设计替代）
 - [BOT-3F-C 真实双轮验收与性能复核](deep-dive/BOT3FC_REAL_ACCEPTANCE_PERFORMANCE_REVIEW.md)（两轮交付/历史/SDK通过、正文哈希匹配；客户端约6～7秒，真实HTTP分段证据不足）
 - [BOT-3F-B1/B2 聊天展示与 QQ 校验优化](deep-dive/BOT3FB12_CHAT_VALIDATION_OPTIMIZATION.md)（Session 默认 Chat，旧调用保留 A/B/C；词法校验复用与新 Scope，联网另批）
-- [BOT-3E-C 真实持续会话装配与简化启动](deep-dive/BOT3EC_REAL_SESSION_ASSEMBLY.md)（独立Scope/类型、一次Run审批、PS显式Session模式；本轮只做Mock验证，联网留3E-D）
-- [BOT-3E-B 有界持续会话离线实现](deep-dive/BOT3EB_BOUNDED_SESSION_OFFLINE.md)（新RunConsent、额度日志、跨进程所有权及Fake多轮；真实入口仍禁用）
 - [BOT-3E-A 持续会话授权审计与设计](deep-dive/research/BOT3EA_BOUNDED_SESSION_CONSENT_DESIGN.md)（A阶段设计记录；后续B/C实现见上，5轮保守预留仍为8.013825元）
-- [BOT-3D-2C-1 逐Turn真实类型装配（离线）](deep-dive/BOT3D2C1_REAL_CONVERSATION_TRIAL.md)（代码与离线证据；用户已反馈C-2真实双轮验收通过，本轮未重读原始私有回执）
-- [BOT-3D-2B Mention与有界记忆离线实现](deep-dive/BOT3D2B_MENTION_CONVERSATIONS.md)（Fake阶段记录；服务器快照与交付后记忆，后续真实类型装配见2C-1）
 - [BOT-3D-2A Mention与会话记忆设计](deep-dive/research/BOT3D2A_MENTION_CONVERSATION_DESIGN.md)（设计依据；获批的离线2B实现见上，真实逐Turn许可留2C）
 - [BOT-3D-1 QQ停止与报告缺失修复](deep-dive/BOT3D1_RESULT_REPORTING.md)（Ctrl+C路径、提前保存交付快照、核实result文件；用户客户端确认与程序状态分开，不重跑历史实验）
 - [BOT-3D-1 受限解释与可信展示](deep-dive/BOT3D1_BOUNDED_EXPLANATION.md)（模型选择要点、程序核对同轮来源并生成中文；原始正文不展示，新Scope需重新审批）
-- [BOT-CLEANUP-1 草稿清理与验证](deep-dive/BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)（移除4份暂停源码和6项专用测试；保留资源门禁，两个Scope不变）
-- [BOT-REGRESSION-1 FAST 稳定性修复](deep-dive/BOT_REGRESSION1_FAST_STABILITY.md)（5s夹具/断言误入重连、同次Scope构建3→1；保留90s预算与权限时间边界，新Scope需重新审批）
 - [BOT 当前阶段总结](deep-dive/BOT_STAGE_SUMMARY.md)（FAST历史真实验收与本轮受限解释分开；普通QQ CLI仍禁用AI）
 - [BOT Web 影响与清理审计](deep-dive/research/BOT_WEB_IMPACT_AUDIT.md)（共享 SDK 行为变化、兼容性证据、暂停草稿与后续同步边界）
 - [QQ / Qwen 简化验收入口](deep-dive/BOT_TEST_WORKFLOW.md)（PowerShell 7；默认不联网，原审批和单次消费保留）
-- [BOT-3C-FAST Qwen单轮试用准备](deep-dive/BOT3C_FAST_QWEN_TRIAL.md)（阶段实施记录与原 CLI；当前验收状态见上方总结）
-- [BOT-3C-2B 历史设计与暂停记录](deep-dive/BOT3C2B_SDK_PROCESS_ISOLATION.md)（草稿及专用测试已在 BOT-CLEANUP-1 删除，非可运行模块；2A 门禁保留）
 - [BOT-3C-2A SDK资源门禁与取消](deep-dive/BOT3C2A_SDK_RESOURCE_GATE.md)（租约、失败隔离、Commit/交付保护；硬退出仍需进程隔离，真实AI仍关闭）
-- [BOT-3C-1 真实 AI 联调前置准备](deep-dive/BOT3C1_REAL_AI_PREPARATION.md)（独立candidate、统一回复离线装配、真实SDK内存HTTP验证；真实AI仍关闭）
-- [BOT-3B-2 有界 AI 调度与单次交付](deep-dive/BOT3B2_QQ_AI_SCHEDULING.md)（仅 Fake：1执行/2等待、取消、交付未知不重试；真实 QQ AI 仍关闭）
-- [BOT-3B-1 QQ AI 服务边界与权限装配](deep-dive/BOT3B1_QQ_AI_BOUNDARY.md)（Monitoring-only、渠道权限、同轮来源摘要、Fake candidate；真实 QQ AI 仍关闭）
 
 - [BOT-3A QQ 与 AI Service 集成架构调查](deep-dive/research/BOT3A_QQ_AI_SERVICE_INTEGRATION.md)（历史设计依据；BOT-3B/FAST 的后续实现见当前总结）
 
@@ -46,7 +37,6 @@
 
 - [BOT-1B QQ 官方通信联调](deep-dive/BOT1B_QQ_TRANSPORT.md)（用户已完成基本测试群验收；长断网恢复及未授权成员拒绝仍待补充，未同步 Management）
 
-- [BOT-1A QQ Bot 离线原型与移植记录](deep-dive/BOT1A_OFFLINE_PROTOTYPE.md)（从 Management 保留成果移植；后续 BOT-1B/BOT-1C 先在 Prototype 开发，验收提交后再选择性同步）
 
 - [SIMPLIFY-1 风险周期列表](deep-dive/EVENT_CYCLE_UI.md)（Prototype 待验收；服务端整合、原始详情、保留 ACK 审计保护）
 - [事件管理现状与简化方案](deep-dive/research/EVENT_MANAGEMENT_SIMPLIFICATION.md)（讨论稿：为什么已恢复仍删不掉、一周期一行、归档与永久删除的取舍；未实施）

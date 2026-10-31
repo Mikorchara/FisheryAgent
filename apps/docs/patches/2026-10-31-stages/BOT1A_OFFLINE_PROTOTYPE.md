@@ -1,6 +1,8 @@
+> 历史归档（2026-10-31）：本阶段已被后续实现替代。保留设计与验收证据；当前操作见 [启动指南](../../BUILD_RUN.md) 和 [文档入口](../../README.md)。
+
 # BOT-1A：QQ Bot 离线原型
 
-> 本文保留 BOT-1A 阶段记录。后续 [BOT-1B](BOT1B_QQ_TRANSPORT.md) 已在 Prototype 增加显式启用的官方通信层，原 `--offline-demo` 仍不联网。当前入口与新增文件以 BOT-1B 文档为准；两边核心不再逐字节相同，Management 尚未同步本轮通信实现。
+> 本文保留 BOT-1A 阶段记录。后续 [BOT-1B](../../deep-dive/BOT1B_QQ_TRANSPORT.md) 已在 Prototype 增加显式启用的官方通信层，原 `--offline-demo` 仍不联网。当前入口与新增文件以 BOT-1B 文档为准；两边核心不再逐字节相同，Management 尚未同步本轮通信实现。
 
 日期：2026-10-24。项目：`D:\CodexProject\Fishery_AI_Prototype`，移植起始 HEAD `8d90d07`。
 

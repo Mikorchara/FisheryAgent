@@ -4,6 +4,8 @@
 
 ## 当前审阅与待批准
 
+- 2026-10-31 设备联调：原Simulator新增water-only，Web拒绝模拟视觉混入；独立Jetson报告接收/幂等持久化/只读展示，设备报告暂不生成Monitoring事件。13份已替代阶段文档归档，未永久删除。[使用与边界](deep-dive/DEVICE_INTEGRATION.md)。
+
 - 2026-10-30：显式 `-DemoVideo` 本地MP4演示，独立播放器不随轮询重建、不产生观测或事件；设备JSON适配仅完成[设计](deep-dive/research/DEVICE_REPORT_ADAPTER_PLAN.md)，未接真实设备。[演示与验证](deep-dive/LOCAL_VIDEO_DEMO.md)。
 
 - 2026-10-29 日常数据与启动收尾：统一默认 `apps/data`，显式复制旧监测/知识/偏好/Tool选择，保留来源与旧演示数据；启动器恢复 Web Assistant，Tool列表紧凑化。1241 Python / 121 Node通过，仍保留逐请求确认与QQ独立审批。
@@ -15,38 +17,38 @@
 - 2026-10-29 BOT-3G-FINAL：独立真实Hybrid试用装配、Prompt/输出@2和`Test-QQHybrid.ps1`；General风险须本机单独批准，代码验证只用Mock，真实QQ/Qwen留操作者执行。[边界与验收](deep-dive/BOT3G_FINAL_HYBRID_QQ_TRIAL.md)。
 
 - 2026-10-28 BOT-3G-C1：本地独立Hybrid研究Scope/入口、48题分组重复、多个五轮内Run、私有捕获及失败统计完成离线准备；真实Qwen须新人工批准，不连接QQ，不放行General自动发布。[装配、预算与步骤](deep-dive/BOT3GC1_LOCAL_HYBRID_RESEARCH.md)。
-- 2026-10-28 BOT-3G-B：独立Fake-only Hybrid复用原Agent，General 1请求/0Tool、Water 2请求/1Tool；混合RAM历史与原额度/SDK/交付门禁保留，真实发布待审。[实现与回归](deep-dive/BOT3GB_HYBRID_OFFLINE.md)。
+- 2026-10-28 BOT-3G-B：独立Fake-only Hybrid复用原Agent，General 1请求/0Tool、Water 2请求/1Tool；混合RAM历史与原额度/SDK/交付门禁保留，真实发布待审。[实现与回归](patches/2026-10-31-stages/BOT3GB_HYBRID_OFFLINE.md)。
 - 2026-10-27 BOT-3F-B1/B2：Session 默认 Chat，旧 FAST/TwoTurn 保持 A/B/C；同步校验复用后 fresh QQ 中位数 2307→1049 ms、Scope 151→76 次，600 样本通过。1105 Python / 116 Node，联网与新 Scope 另批。[实现与对照](deep-dive/BOT3FB12_CHAT_VALIDATION_OPTIMIZATION.md)。
-- 2026-10-27 BOT-3E-C：独立真实Scope/类型、一次Run审批与PS Session模式完成Mock验证；修正读锁误BUSY和异常收尾，新增40项，最终1077 Python / 116 Node通过（含Bot484）。旧双轮默认不变，联网留3E-D另批。[装配与人工步骤](deep-dive/BOT3EC_REAL_SESSION_ASSEMBLY.md)。
-- 2026-10-27 BOT-3E-B：离线RunConsent、原子预留/日志、Windows所有权及Fake持续会话完成；新增54项，最终1037 Python / 116 Node通过。新Scope仍Fake-only candidate，真实装配与PS新模式留3E-C。[实现、故障与验收](deep-dive/BOT3EB_BOUNDED_SESSION_OFFLINE.md)。
+- 2026-10-27 BOT-3E-C：独立真实Scope/类型、一次Run审批与PS Session模式完成Mock验证；修正读锁误BUSY和异常收尾，新增40项，最终1077 Python / 116 Node通过（含Bot484）。旧双轮默认不变，联网留3E-D另批。[装配与人工步骤](patches/2026-10-31-stages/BOT3EC_REAL_SESSION_ASSEMBLY.md)。
+- 2026-10-27 BOT-3E-B：离线RunConsent、原子预留/日志、Windows所有权及Fake持续会话完成；新增54项，最终1037 Python / 116 Node通过。新Scope仍Fake-only candidate，真实装配与PS新模式留3E-C。[实现、故障与验收](patches/2026-10-31-stages/BOT3EB_BOUNDED_SESSION_OFFLINE.md)。
 - 2026-10-27 BOT-3E-A完成审计：107项基础回归通过；持续许可需新审批/Scope/原子额度与跨进程所有权合同，按停止条件暂不实施B/C。现有算法5轮预留8.013825元，预算规则待审。[方案与测试边界](deep-dive/research/BOT3EA_BOUNDED_SESSION_CONSENT_DESIGN.md)。
 - 用户在本次任务附件反馈BOT-3D-2C真实双轮、客户端回复及清空验收通过；Usage费用为估算、账单未确认。本轮未读取原始私有运行记录，不据此扩大长期许可。
 
 ## 已实现
 
-- 2026-10-26 BOT-3D-2C-1：独立双轮逐Turn合同、每轮私有Service共享Store、可取消审批与报告；新增31项，Bot390、完整983 Python / 116 Node通过。仅Fake验证，C-2联网待授权。[装配、预算与验收](deep-dive/BOT3D2C1_REAL_CONVERSATION_TRIAL.md)。
-- 2026-10-26 BOT-3D-2B：获批实现Fake-only Mention、6Turn/15分钟有界RAM、可信历史快照和API接受后提交；专项51、Bot359、完整952 Python / 116 Node通过。真实多轮仍关闭，FAST须新审批。[实现与2C前置条件](deep-dive/BOT3D2B_MENTION_CONVERSATIONS.md)。
+- 2026-10-26 BOT-3D-2C-1：独立双轮逐Turn合同、每轮私有Service共享Store、可取消审批与报告；新增31项，Bot390、完整983 Python / 116 Node通过。仅Fake验证，C-2联网待授权。[装配、预算与验收](patches/2026-10-31-stages/BOT3D2C1_REAL_CONVERSATION_TRIAL.md)。
+- 2026-10-26 BOT-3D-2B：获批实现Fake-only Mention、6Turn/15分钟有界RAM、可信历史快照和API接受后提交；专项51、Bot359、完整952 Python / 116 Node通过。真实多轮仍关闭，FAST须新审批。[实现与2C前置条件](patches/2026-10-31-stages/BOT3D2B_MENTION_CONVERSATIONS.md)。
 - 2026-10-26 BOT-3D-2A调查完成：13边界探针、217项相关回归通过；经用户批准后进入上述离线2B，逐Turn真实许可留2C。[设计、证据与分步计划](deep-dive/research/BOT3D2A_MENTION_CONVERSATION_DESIGN.md)。
 
 - 2026-10-26 BOT-3D-1报告修复：处理中断/失败停止报告、提前保存交付快照、PS核实result；Bot308项、完整901 Python / 116 Node通过。历史记录只读取证、不补造或重跑；FAST指纹变化，后续新试用须重新审批。[调查与验证](deep-dive/BOT3D1_RESULT_REPORTING.md)。
 
 - 2026-10-26 BOT-3D-1：封闭JSON解释计划→同轮来源校验→固定中文，失效退回事实；不新增模型请求/工具。v3 candidate与FAST指纹更新，887 Python / 116 Node、Bot 294项通过；旧批准不可复用，真实Qwen/QQ待另批。[合同与验收](deep-dive/BOT3D1_BOUNDED_EXPLANATION.md)。
 
-- 2026-10-26 BOT-CLEANUP-1：移除4份 SDK 进程隔离草稿及6项暂停测试，历史设计保留；两个Scope/资源门禁不变，868 Python / 116 Node通过，离线Wheel及导入检查通过。[清理与验证](deep-dive/BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。
+- 2026-10-26 BOT-CLEANUP-1：移除4份 SDK 进程隔离草稿及6项暂停测试，历史设计保留；两个Scope/资源门禁不变，868 Python / 116 Node通过，离线Wheel及导入检查通过。[清理与验证](patches/2026-10-31-stages/BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md)。
 
-- 2026-10-25 BOT-REGRESSION-1：修复 FAST 5s观察/Gateway夹具和同次Scope构建，90s预算/失效门禁保持；五项三轮、Bot 275/Web 78专项及完整874 Python / 116 Node通过，[结果与新Scope](deep-dive/BOT_REGRESSION1_FAST_STABILITY.md)。不复用旧FAST批准，暂停SDK草稿仍保留。
+- 2026-10-25 BOT-REGRESSION-1：修复 FAST 5s观察/Gateway夹具和同次Scope构建，90s预算/失效门禁保持；五项三轮、Bot 275/Web 78专项及完整874 Python / 116 Node通过，[结果与新Scope](patches/2026-10-31-stages/BOT_REGRESSION1_FAST_STABILITY.md)。不复用旧FAST批准，暂停SDK草稿仍保留。
 
 - 2026-10-25 BOT 阶段审计：区分 QQ 专用与 Web 共享 SDK 影响，保留资源门禁和暂停草稿；增加三个默认不联网的 PowerShell 7 薄验收入口。用户报告 FAST 真实端到端已通过，模型自由文本仍不展示。[当前总结](deep-dive/BOT_STAGE_SUMMARY.md)、[审计](deep-dive/research/BOT_WEB_IMPACT_AUDIT.md)、[测试入口](deep-dive/BOT_TEST_WORKFLOW.md)。下列 BOT 条目为阶段完成时记录，不是最新联网资格。
 
-- 2026-10-25 BOT-3C-FAST：Monitoring-only Qwen本机/QQ试用准备，限时独立审批、防重复消费、保守费用预留、单次交付；仅离线验证，真实联网待另批，SDK资源门禁保留、进程隔离暂停。[说明与操作](deep-dive/BOT3C_FAST_QWEN_TRIAL.md)。
+- 2026-10-25 BOT-3C-FAST：Monitoring-only Qwen本机/QQ试用准备，限时独立审批、防重复消费、保守费用预留、单次交付；仅离线验证，真实联网待另批，SDK资源门禁保留、进程隔离暂停。[说明与操作](patches/2026-10-31-stages/BOT3C_FAST_QWEN_TRIAL.md)。
 
 - 2026-10-25 BOT-3C-2A：SDK租约/有限清理/粘性隔离，Handle/Commit/QQ防线；20新专项、810 Python / 116 Node通过，Scope v2仍candidate。硬退出仍需进程隔离，真实QQ AI关闭。[实施与评估](deep-dive/BOT3C2A_SDK_RESOURCE_GATE.md)。
 
-- 2026-10-25 BOT-3C-1（Prototype离线准备）：独立candidate预检、统一回复Fake装配、真实SDK内存HTTP取消、事实/解释分区；28专项、790 Python / 116 Node通过，真实授权/装配与SDK不合作清理仍阻塞。[准备与BOT-3C-2清单](deep-dive/BOT3C1_REAL_AI_PREPARATION.md)。
+- 2026-10-25 BOT-3C-1（Prototype离线准备）：独立candidate预检、统一回复Fake装配、真实SDK内存HTTP取消、事实/解释分区；28专项、790 Python / 116 Node通过，真实授权/装配与SDK不合作清理仍阻塞。[准备与BOT-3C-2清单](patches/2026-10-31-stages/BOT3C1_REAL_AI_PREPARATION.md)。
 
-- 2026-10-25 BOT-3B-2（仅 Prototype Fake）：1执行/2等待、10s排队/90s总期限、权限失效与I/O取消、单次提交及未知不重试；40专项、762 Python / 116 Node通过，保留 candidate 与真实 AI_DISABLED。[实现、验证与 BOT-3C 前置条件](deep-dive/BOT3B2_QQ_AI_SCHEDULING.md)。
+- 2026-10-25 BOT-3B-2（仅 Prototype Fake）：1执行/2等待、10s排队/90s总期限、权限失效与I/O取消、单次提交及未知不重试；40专项、762 Python / 116 Node通过，保留 candidate 与真实 AI_DISABLED。[实现、验证与 BOT-3C 前置条件](patches/2026-10-31-stages/BOT3B2_QQ_AI_SCHEDULING.md)。
 
-- 2026-10-25 BOT-3B-1（仅 Prototype 离线）：Monitoring-only、QQ AI 权限交集/失效、单轮 Fake Tool Calling 与同轮 SourceSummary；31 专项、722 Python / 116 Node 完整回归通过。模型正文隔离、真实 Provider/QQ 未开放。[实现与 BOT-3B-2](deep-dive/BOT3B1_QQ_AI_BOUNDARY.md)。
+- 2026-10-25 BOT-3B-1（仅 Prototype 离线）：Monitoring-only、QQ AI 权限交集/失效、单轮 Fake Tool Calling 与同轮 SourceSummary；31 专项、722 Python / 116 Node 完整回归通过。模型正文隔离、真实 Provider/QQ 未开放。[实现与 BOT-3B-2](patches/2026-10-31-stages/BOT3B1_QQ_AI_BOUNDARY.md)。
 
 - 2026-10-25 BOT-3A 架构调查完成：建议同进程 AI Service＋有界 AI worker，先补 Monitoring-only 与渠道权限装配，再做单轮 Fake 联调；48 项无数据库离线检查通过。[研究、风险与 BOT-3B 计划](deep-dive/research/BOT3A_QQ_AI_SERVICE_INTEGRATION.md)。未实现 QQ AI、未调用模型或连接 QQ。
 
@@ -54,7 +56,7 @@
 
 - 2026-10-24 BOT-1B：Prototype 增加官方 HTTPS/WSS、心跳/Resume、有界重连与被动回复，复用 BOT-1A 门禁及私有 CredentialStore；只开放 help/临时虚构数据。管理 640 Python / 116 Node（含 73 Bot）通过，真实群联调待用户配置，不接 LLM、不主动通知、不同步 Management。[配置与验收](deep-dive/BOT1B_QQ_TRANSPORT.md)。
 
-- 2026-10-24 BOT-1A：从 Management 选择性移植 9 个离线 Adapter/测试文件，保留原实现；固定只读命令与群/成员门禁，虚构 SQLite，无 QQ/Provider 调用。后续 BOT-1B/BOT-1C 统一先 Prototype 开发→人工验收与获批提交→Management 选择性同步。[边界与验证](deep-dive/BOT1A_OFFLINE_PROTOTYPE.md)。
+- 2026-10-24 BOT-1A：从 Management 选择性移植 9 个离线 Adapter/测试文件，保留原实现；固定只读命令与群/成员门禁，虚构 SQLite，无 QQ/Provider 调用。后续 BOT-1B/BOT-1C 统一先 Prototype 开发→人工验收与获批提交→Management 选择性同步。[边界与验证](patches/2026-10-31-stages/BOT1A_OFFLINE_PROTOTYPE.md)。
 
 - 失联提醒人工结束（仅Prototype，待验收）：原因/确认/幂等/事务校验，稳定周期或旧单条ID，独立于监测恢复；历史保留，新可靠HIT重新提醒，自动裁剪/删除保护。Schema保持v2，未同步Management。[实现及限制](deep-dive/EVENT_MANUAL_END.md)。
 

@@ -1,6 +1,6 @@
 # 设备报告适配方案：保留现有运行模式
 
-状态：2026-10-30 设计稿，未实现接收器，未连接设备，未修改数据合同或数据库。依据组员提供的 `TEXT_PACKAGE_API.md` v1.0 与当前 Prototype 源码。先在 Prototype 验证，人工审核后再选择性同步 Management。
+状态：2026-10-30 原始设计。2026-10-31 已完成第一阶段接收、去重、独立存储与只读展示，以及 water-only 联调模式；当前操作见 [设备联调](../DEVICE_INTEGRATION.md)。后续真实视觉领域映射仍待审核，未连接真实设备或修改现有 Monitoring Schema。依据组员提供的 `TEXT_PACKAGE_API.md` v1.0 与当前 Prototype 源码。先在 Prototype 验证，人工审核后再选择性同步 Management。
 
 ## 1. 建议结论
 

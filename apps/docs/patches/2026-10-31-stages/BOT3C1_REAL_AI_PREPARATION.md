@@ -1,10 +1,12 @@
+> 历史归档（2026-10-31）：本阶段已被后续实现替代。保留设计与验收证据；当前操作见 [启动指南](../../BUILD_RUN.md) 和 [文档入口](../../README.md)。
+
 # BOT-3C-1：真实 AI 联调前置准备
 
 后续状态：[BOT-3C-FAST](BOT3C_FAST_QWEN_TRIAL.md)已新增独立限时审批和Provider/QQ试用入口的离线装配；本页保留3C-1阶段记录。普通QQ CLI及旧v2 candidate仍不能启用真实AI，实际联网须另批。
 
 核验日期：2026-10-25。仅 Prototype；[B-1 服务边界](BOT3B1_QQ_AI_BOUNDARY.md)、[B-2 调度交付](BOT3B2_QQ_AI_SCHEDULING.md)。本轮没有读取真实凭据、打开已有实例或连接 QQ / Provider / NPU。
 
-后续维护见 [BOT-3C-2A](BOT3C2A_SDK_RESOURCE_GATE.md)：现已增加资源失败门禁、默认2s清理等待和粘性隔离，候选Scope更新v2；下文5s join描述为C-1时的历史状态。不合作线程仍不能硬终止，真实入口依然关闭。
+后续维护见 [BOT-3C-2A](../../deep-dive/BOT3C2A_SDK_RESOURCE_GATE.md)：现已增加资源失败门禁、默认2s清理等待和粘性隔离，候选Scope更新v2；下文5s join描述为C-1时的历史状态。不合作线程仍不能硬终止，真实入口依然关闭。
 
 ## 1. 结论与范围
 

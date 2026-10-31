@@ -14,7 +14,15 @@ from .event_api import register_event_api
 
 def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
                allowed_hosts=("127.0.0.1:8766", "localhost:8766", "localhost"),
-               data_service=None, ingestion_token=None, knowledge_service=None, settings_service=None, demo_video=None):
+               data_service=None, ingestion_token=None, knowledge_service=None, settings_service=None, demo_video=None,
+               simulation_mode='full',device_report_store=None,device_report_device_id=None):
+    if simulation_mode not in ('full','water-only'):raise ValueError('INVALID_SIMULATION_MODE')
+    if device_report_store is not None:
+        from apps.device_reports.storage import ReportStore
+        from apps.monitoring.contracts import identifier
+        if simulation_mode!='water-only' or type(device_report_store) is not ReportStore or not device_report_store.read_only:
+            raise ValueError('DEVICE_REPORT_READ_ONLY_BINDING_REQUIRED')
+        identifier(device_report_device_id)
     app = Flask(__name__, static_folder="static", static_url_path="/static")
     if demo_video is not None:
         from .demo_video import register_demo_video
@@ -85,9 +93,16 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
             except SettingsError:
                 pass  # Monitoring remains usable; Settings exposes the bounded storage error.
         original_events = events.events()
+        device_reports=None
+        if device_report_store is not None:
+            from apps.device_reports.contracts import ReportError
+            from datetime import datetime,timezone
+            try:device_reports=device_report_store.recent(device_report_device_id,now=datetime.now(timezone.utc))
+            except ReportError:device_reports=dict(device_id=device_report_device_id,items=[],error_code='DEVICE_REPORT_READ_UNAVAILABLE')
         from apps.monitoring.event_cycles import summarize_cycles
         return jsonify(**({'video_preview':demo_video.metadata()} if demo_video is not None else {}),
             schema_version=1, application="management-web-r1", data_mode=mode, preferences=preferences,
+            **({'integration':dict(simulation_mode=simulation_mode,device_reports=device_reports)} if simulation_mode!='full' else {}),
             devices=devices, monitoring=snapshot, cameras=video.cameras(),
             event_management=event_access(),
             events=original_events, event_cycles=summarize_cycles(original_events) if data_service is not None else None,
@@ -113,6 +128,8 @@ def create_app(*, monitoring=None, ai=None, video=None, files=None, events=None,
         if request.headers.get("Origin") or request.mimetype != "application/json":
             return jsonify(error_code="INGESTION_TRANSPORT_REJECTED"), 403
         value = strict_json(request.get_data(cache=False))
+        if simulation_mode=='water-only' and isinstance(value,dict) and value.get('visual') is not None:
+            return jsonify(error_code='SIMULATED_VISUAL_DISABLED'),403
         return jsonify(data_service.ingest(value))
 
     @app.get("/api/monitoring")

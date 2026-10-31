@@ -1,3 +1,5 @@
+> 历史归档（2026-10-31）：本阶段已被后续实现替代。保留设计与验收证据；当前操作见 [启动指南](../../BUILD_RUN.md) 和 [文档入口](../../README.md)。
+
 # BOT-3B-1：QQ AI 服务边界与权限装配
 
 实施日期：2026-10-25。仅 `D:\CodexProject\Fishery_AI_Prototype`，基线 `main@fb140f0`；保留 BOT-2B/BOT-3A 未提交改动。本阶段完成离线基础装配，**不是可连接真实 Provider/QQ 的 AI 发布版本**。
@@ -22,16 +24,16 @@
 
 | 文件 | 改动 |
 |---|---|
-| [qq_bot/monitoring_source.py](../../qq_bot/monitoring_source.py) | 补 `devices()`、守护后的 `bind()`、`binding_revision` 和历史 `metrics` 参数；委托既有 Service，不复制 SQL/规则/统计 |
-| [qq_bot/adapter.py](../../qq_bot/adapter.py) | 提取共享 ingress 执行入口；新增仅 OFFLINE_NOT_SENT 可用的准备回调，不在锁内执行模型 |
-| [qq_bot/ai_configuration.py](../../qq_bot/ai_configuration.py) | 独立严格 AI 配置，默认关闭；群/成员/设备/工具许可和 token/时间预算 |
-| [qq_bot/ai_coordinator.py](../../qq_bot/ai_coordinator.py) | 离线 prepare/execute/check_delivery/discard；无 worker 队列、聊天历史或 QQ sender |
-| [ai_service/channel.py](../../ai_service/channel.py) | 服务器内部授权、candidate Scope、canned Fake Provider、SourceSummary 和隔离的渠道结果 |
-| [ai_service/service.py](../../ai_service/service.py) | Knowledge 可缺席；新增内部渠道 prepare/execute/validate，仍复用原 claim 和执行链 |
-| [ai_service/contracts.py](../../ai_service/contracts.py) | Prepared Turn 可携带内部授权对象；不进入 Web 输入或公开 DTO |
-| [business_tools/registry.py](../../ai_service/business_tools/registry.py) | Knowledge 缺席时完全不注册对应 Definition/Handler；沿用唯一工具 owner |
-| [test_ai_coordinator.py](../../qq_bot/tests/test_ai_coordinator.py) | 新建隔离库、Fake Provider、模拟 QQ 的专项测试 |
-| [ai.example.json](../../qq_bot/examples/ai.example.json) | 仅独立离线配置模板，enabled=false、grants=[]；未创建实际 AI 配置文件 |
+| [qq_bot/monitoring_source.py](../../../qq_bot/monitoring_source.py) | 补 `devices()`、守护后的 `bind()`、`binding_revision` 和历史 `metrics` 参数；委托既有 Service，不复制 SQL/规则/统计 |
+| [qq_bot/adapter.py](../../../qq_bot/adapter.py) | 提取共享 ingress 执行入口；新增仅 OFFLINE_NOT_SENT 可用的准备回调，不在锁内执行模型 |
+| [qq_bot/ai_configuration.py](../../../qq_bot/ai_configuration.py) | 独立严格 AI 配置，默认关闭；群/成员/设备/工具许可和 token/时间预算 |
+| [qq_bot/ai_coordinator.py](../../../qq_bot/ai_coordinator.py) | 离线 prepare/execute/check_delivery/discard；无 worker 队列、聊天历史或 QQ sender |
+| [ai_service/channel.py](../../../ai_service/channel.py) | 服务器内部授权、candidate Scope、canned Fake Provider、SourceSummary 和隔离的渠道结果 |
+| [ai_service/service.py](../../../ai_service/service.py) | Knowledge 可缺席；新增内部渠道 prepare/execute/validate，仍复用原 claim 和执行链 |
+| [ai_service/contracts.py](../../../ai_service/contracts.py) | Prepared Turn 可携带内部授权对象；不进入 Web 输入或公开 DTO |
+| [business_tools/registry.py](../../../ai_service/business_tools/registry.py) | Knowledge 缺席时完全不注册对应 Definition/Handler；沿用唯一工具 owner |
+| [test_ai_coordinator.py](../../../qq_bot/tests/test_ai_coordinator.py) | 新建隔离库、Fake Provider、模拟 QQ 的专项测试 |
+| [ai.example.json](../../../qq_bot/examples/ai.example.json) | 仅独立离线配置模板，enabled=false、grants=[]；未创建实际 AI 配置文件 |
 
 ## 3. Monitoring-only 与 Scope
 

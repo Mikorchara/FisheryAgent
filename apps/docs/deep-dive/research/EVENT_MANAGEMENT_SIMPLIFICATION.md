@@ -192,6 +192,6 @@
 | [event_api.py](../../../management_web/event_api.py)：`register_event_api` | 当前只有 ACK、删除预览和删除维护接口，没有归档或人工处理完成接口 |
 | [app.js](../../../management_web/static/app.js)：`currentAnomalies / eventsTable / events` | 首页按族提示、历史按事件行展示、清理确认 |
 | [view-model.js](../../../management_web/static/view-model.js)：`eventStateName / eventHandlingName` | 观测状态和人工文案 |
-| [EVT-3A](../EVENT_ACK.md)、[EVT-2](../EVENT_MANAGEMENT.md)、[EVT-1](../EVENT_LIFECYCLE.md) | 已有设计、恢复边界、原回归记录 |
+| [EVT-3A](../EVENT_MANAGEMENT.md)、[EVT-2](../EVENT_MANAGEMENT.md)、[EVT-1](../EVENT_LIFECYCLE.md) | 已有设计、恢复边界、原回归记录 |
 
 本文没有重新执行软件回归，因为本轮没有改功能。前一轮旧记录兼容修复已完成 515 项 Python / 111 项 Node；这是上一轮结果，不是本轮重新验证的统计。当前截图案例本轮以只读 API 复核，无写入、无清理操作。

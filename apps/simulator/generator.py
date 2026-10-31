@@ -100,7 +100,9 @@ def summarize_visual_frames(frames):
 
 class Simulator:
     def __init__(self, *, start, scenario="normal", seed=42, device_id="sim-pond-1", session_id=None,
-                 sample_period_s=1, frame_period_s=.5):
+                 sample_period_s=1, frame_period_s=.5, mode='full'):
+        if mode not in ('full','water-only'):raise ValueError('INVALID_SIMULATION_MODE')
+        self.mode=mode
         if start.tzinfo is None or scenario not in SCENARIOS:
             raise ValueError("INVALID_SIMULATOR_CONFIG")
         if type(seed) is not int:
@@ -144,7 +146,8 @@ class Simulator:
         water, visual = None, None
         state_at = lambda elapsed: at_time(SCENARIOS[self.scenario], elapsed)
         water = self.water_generator.generate(begin, end, phase, state_at) if phase["water_online"] else None
-        visual = self.visual_generator.generate(begin, end, phase, state_at) if phase["visual_online"] else None
+        visual = self.visual_generator.generate(begin, end, phase, state_at) if self.mode=='full' and phase["visual_online"] else None
+        if water is None and visual is None:return None
         stamp = self.start+timedelta(seconds=end)
         return {"schema_version": 1, "batch_id": uuid.uuid5(uuid.NAMESPACE_URL, f"{self.session_id}:{sequence}").hex,
             "session_id": self.session_id, "sequence": sequence, "device_id": self.device_id,

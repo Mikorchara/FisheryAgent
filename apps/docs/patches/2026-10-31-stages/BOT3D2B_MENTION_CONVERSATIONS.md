@@ -1,10 +1,12 @@
+> 历史归档（2026-10-31）：本阶段已被后续实现替代。保留设计与验收证据；当前操作见 [启动指南](../../BUILD_RUN.md) 和 [文档入口](../../README.md)。
+
 # BOT-3D-2B：Mention AI 与有界会话记忆（离线）
 
 核验日期：2026-10-26。项目：Fishery_AI_Prototype；起始 HEAD `3dcc2ac`。
 
 后续状态：[2C-1 已增加逐Turn真实类型装配并离线验证](BOT3D2C1_REAL_CONVERSATION_TRIAL.md)，尚未执行C-2联网。本文件保留2B阶段的实现与历史Scope；当前指纹以新说明及资源文件为准，普通QQ入口仍未开放Mention AI。
 
-本阶段实现了经批准的 [2A 设计](research/BOT3D2A_MENTION_CONVERSATION_DESIGN.md)，仅允许精确 Fake Provider / Fake QQ Transport 装配。普通 QQ CLI 和真实 FAST 单轮入口没有接入会话记忆；没有调用 QQ/Qwen，没有读取密钥或现有业务实例，没有修改 Management。
+本阶段实现了经批准的 [2A 设计](../../deep-dive/research/BOT3D2A_MENTION_CONVERSATION_DESIGN.md)，仅允许精确 Fake Provider / Fake QQ Transport 装配。普通 QQ CLI 和真实 FAST 单轮入口没有接入会话记忆；没有调用 QQ/Qwen，没有读取密钥或现有业务实例，没有修改 Management。
 
 ## 1. 调用链与修改范围
 

@@ -98,6 +98,32 @@ test('actual polling page retains local video node and playback position indepen
   assert.match(p.node('content').textContent,/无视频流/);
 });
 
+test('device integration renders original reports as text and never mixes old simulated vision into device facts',async()=>{
+  const data=fixture();data.integration={simulation_mode:'water-only',device_reports:{device_id:'test-board',items:[{
+    report:{device_id:'test-board',report_id:'original-1',window:{end:data.monitoring.observed_at,frames_processed:3},
+      detection:{unique_tracks:2},behavior:null,measurement:null,has_abnormality:true,
+      abnormalities:[{label:'body_ulceration',name:'疑似病灶',targets:1,count:1}],report_text:'<script>untrusted</script>'},
+    received_at:data.monitoring.observed_at,warnings:['WINDOW_DURATION_MISMATCH'],freshness:'stale'
+  }]}};
+  const p=page(data);await p.ready();
+  assert.match(p.node('source-notice').textContent,/水质为 SIMULATOR/);
+  p.run("location.hash='#video';render()");
+  const text=p.node('content').textContent;
+  assert.match(text,/设备视觉报告/);assert.match(text,/过期／未知/);assert.match(text,/未提供/);
+  assert.match(text,/暂不生成 Monitoring 事件/);assert.match(text,/WINDOW_DURATION_MISMATCH/);
+  assert.match(text,/<script>untrusted<\/script>/);
+  const walk=n=>[n,...n.children.flatMap(walk)];
+  assert.equal(walk(p.node('content')).filter(n=>n.tagName==='script').length,0);
+  assert.doesNotMatch(text,/3 \/ 20 有效帧/);
+  const expanded=walk(p.node('content')).find(n=>n.tagName==='details'&&n.className==='device-report');
+  expanded.open=true;expanded.events.toggle({target:expanded});
+  await p.run('refresh()');
+  const retained=walk(p.node('content')).find(n=>n.tagName==='details'&&n.className==='device-report');
+  assert.equal(retained.getAttribute('open'),'');
+  data.integration.device_reports={items:[],error_code:'DEVICE_REPORT_READ_UNAVAILABLE'};
+  await p.run('refresh()');assert.match(p.node('content').textContent,/状态未知/);
+});
+
 test('EVT-2 homepage collapses risk grades but retains unknown evidence and original detail',async()=>{
   const d=fixture();const common={...d.events[0],device_id:'sim-pond-1',channel:'water',
     risk_family:{episode_id:'same-low-oxygen',label:'溶解氧偏低风险',transitions:[]},family_current_event_id:'critical',family_current_code:'OXYGEN_CRITICAL_LOW'};

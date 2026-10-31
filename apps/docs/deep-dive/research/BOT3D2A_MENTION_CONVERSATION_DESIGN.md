@@ -2,7 +2,7 @@
 
 2026-10-26，Fishery_AI_Prototype，`main / 3dcc2ac`。开始时工作树为空。本轮完成源码调查、13项隔离探针与相关离线回归，只新增设计文档及索引；**没有实施BOT-3D-2B，没有启用Mention AI或会话记忆**。
 
-后续状态：用户批准三项设计方向后，已完成 [BOT-3D-2B Fake-only 实现与回归](../BOT3D2B_MENTION_CONVERSATIONS.md)。本文保留2A调查时的设计与停止条件，不表示当前缺少离线实现；真实逐Turn许可仍留2C，普通QQ入口未开放Mention AI。
+后续状态：用户批准三项设计方向后，已完成 [BOT-3D-2B Fake-only 实现与回归](../../patches/2026-10-31-stages/BOT3D2B_MENTION_CONVERSATIONS.md)。本文保留2A调查时的设计与停止条件，不表示当前缺少离线实现；真实逐Turn许可仍留2C，普通QQ入口未开放Mention AI。
 
 ## 1. 结论与实施边界
 

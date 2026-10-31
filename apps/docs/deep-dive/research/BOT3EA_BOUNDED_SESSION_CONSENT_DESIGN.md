@@ -1,6 +1,6 @@
 # BOT-3E-A：受控持续会话授权设计与架构审计
 
-后续进度：本设计已获用户批准，3E-B的Fake-only实现见[离线持续授权](../BOT3EB_BOUNDED_SESSION_OFFLINE.md)。下文保留A阶段审阅事实和当时停止点，不代表B已开放真实执行。
+后续进度：本设计已获用户批准，3E-B的Fake-only实现见[离线持续授权](../../patches/2026-10-31-stages/BOT3EB_BOUNDED_SESSION_OFFLINE.md)。下文保留A阶段审阅事实和当时停止点，不代表B已开放真实执行。
 
 审阅日期：2026-10-27（北京时间）。项目：`Fishery_AI_Prototype`，`main / e8c9654`；开始时工作树干净。
 

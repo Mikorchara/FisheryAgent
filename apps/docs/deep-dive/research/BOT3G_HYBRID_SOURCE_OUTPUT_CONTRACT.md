@@ -1,6 +1,6 @@
 # BOT-3G：Hybrid Source / 输出 / Commit 独立合同提案
 
-状态：**已获批Fake-only离线实施，无真实执行/General发布资格**。日期：2026-10-28。实现与兼容性见 [BOT-3G-B](../BOT3GB_HYBRID_OFFLINE.md)；下文保留设计推导与真实发布风险审阅边界。
+状态：**已获批Fake-only离线实施，无真实执行/General发布资格**。日期：2026-10-28。实现与兼容性见 [BOT-3G-B](../../patches/2026-10-31-stages/BOT3GB_HYBRID_OFFLINE.md)；下文保留设计推导与真实发布风险审阅边界。
 配套：[Hybrid 架构与 Prompt](BOT3G_HYBRID_AGENT_DESIGN.md)。本提案不能用来修改当前旧合同或生成有效批准。
 
 ## 1. 为什么需要新合同

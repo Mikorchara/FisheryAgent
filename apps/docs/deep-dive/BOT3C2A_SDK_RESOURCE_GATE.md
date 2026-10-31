@@ -1,8 +1,8 @@
 # BOT-3C-2A：SDK资源门禁与取消可靠性
 
-后续状态：[BOT-3C-FAST](BOT3C_FAST_QWEN_TRIAL.md)按用户调整的优先级准备独立单轮试用审批，明确接受线程硬退出不足的实验风险；本页资源失败门禁不放宽，进程隔离仍暂停。本页后续阶段建议保留为当时记录，不代表FAST已获实际联网授权。
+后续状态：[BOT-3C-FAST](../patches/2026-10-31-stages/BOT3C_FAST_QWEN_TRIAL.md)按用户调整的优先级准备独立单轮试用审批，明确接受线程硬退出不足的实验风险；本页资源失败门禁不放宽，进程隔离仍暂停。本页后续阶段建议保留为当时记录，不代表FAST已获实际联网授权。
 
-核验日期：2026-10-25，仅Prototype。[上一阶段](BOT3C1_REAL_AI_PREPARATION.md)。本轮不连接QQ/Provider/NPU、不读取实际凭据或现有业务实例。
+核验日期：2026-10-25，仅Prototype。[上一阶段](../patches/2026-10-31-stages/BOT3C1_REAL_AI_PREPARATION.md)。本轮不连接QQ/Provider/NPU、不读取实际凭据或现有业务实例。
 
 ## 1. 结论与尚未解决的边界
 

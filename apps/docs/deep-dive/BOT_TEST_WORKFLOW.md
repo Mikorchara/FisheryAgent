@@ -91,9 +91,9 @@ SDK 清理失败继续触发粘性隔离。停止当前实验，保留记录，�
 
 2026-10-26 BOT-3D-1：脚本14项通过（增加Provider解释未过时禁止转QQ的状态测试）；QQ专项294项、完整887 Python / 116 Node通过。新解释合同与完整回归见[实施报告](BOT3D1_BOUNDED_EXPLANATION.md)，以下保留各历史阶段数字。
 
-2026-10-26 [BOT-CLEANUP-1](BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md) 仅删除未使用的四份进程隔离草稿和专用测试文件（6项）；清理后 **868 Python / 116 Node 全部通过**，与此前874的差额仅为6项暂停测试。两个 Scope 与 BOT-REGRESSION-1 相同，不影响原测试入口或 SDK 资源门禁。下方更早的数量为历史记录。
+2026-10-26 [BOT-CLEANUP-1](../patches/2026-10-31-stages/BOT_CLEANUP1_SDK_DRAFT_REMOVAL.md) 仅删除未使用的四份进程隔离草稿和专用测试文件（6项）；清理后 **868 Python / 116 Node 全部通过**，与此前874的差额仅为6项暂停测试。两个 Scope 与 BOT-REGRESSION-1 相同，不影响原测试入口或 SDK 资源门禁。下方更早的数量为历史记录。
 
-后续 [BOT-REGRESSION-1 修复报告](BOT_REGRESSION1_FAST_STABILITY.md) 已完成 FAST 短窗口/夹具修复与同次 Scope 构建去重；五项三轮、Bot 275 项、Web 相关 78 项通过，完整基线为 **874 Python / 116 Node 全部通过**。FAST 实现指纹已改变，旧计划/批准和 Provider 前置回执必须重新生成/审批，不能修改 JSON 复用。下面是首次脚本审计的历史记录。
+后续 [BOT-REGRESSION-1 修复报告](../patches/2026-10-31-stages/BOT_REGRESSION1_FAST_STABILITY.md) 已完成 FAST 短窗口/夹具修复与同次 Scope 构建去重；五项三轮、Bot 275 项、Web 相关 78 项通过，完整基线为 **874 Python / 116 Node 全部通过**。FAST 实现指纹已改变，旧计划/批准和 Provider 前置回执必须重新生成/审批，不能修改 JSON 复用。下面是首次脚本审计的历史记录。
 
 本轮所有执行均离线、合成数据库、Fake Provider / Fake QQ；没有重新进行真实群或模型验收。
 

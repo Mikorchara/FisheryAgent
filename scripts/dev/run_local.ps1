@@ -1,4 +1,6 @@
 ﻿param(
+    [ValidateSet("full","water-only")][string]$SimulationMode="full",
+    [string]$DeviceReportDirectory, [string]$DeviceReportDeviceId,
     [ValidateSet('normal','low_oxygen','oxygen_drop_recovery','suspected_disease','reduced_feeding','combined_anomaly','device_offline')]
     [string]$Scenario = 'normal',
     [ValidateRange(1,65535)][int]$Port = 8766,
@@ -30,5 +32,8 @@ if ($InteractiveScenario) { $launchArgs += '--interactive-scenario' }
 if ($OpenBrowser) { $launchArgs += '--open-browser' }
 # Approved Qwen unified trial follows History/transport switches in the supervisor.
 # Foreground supervisor owns only its two children; no Provider call on startup.
+$launchArgs+=@('--simulation-mode',$SimulationMode)
+if ($DeviceReportDirectory) { $launchArgs+=@('--device-report-directory',$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DeviceReportDirectory)) }
+if ($DeviceReportDeviceId) { $launchArgs+=@('--device-report-device-id',$DeviceReportDeviceId) }
 & $pythonPath @launchArgs
 exit $LASTEXITCODE

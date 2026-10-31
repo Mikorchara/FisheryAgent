@@ -62,20 +62,24 @@ def require_free_port(port):
 
 
 def commands(python, scenario, port, seed, *, assistant=True, streaming=True, multi_round=True, history=True,
-             data_root=None, user_data=False, demo_video=None):
+             data_root=None, user_data=False, demo_video=None, simulation_mode="full", device_report_directory=None, device_report_device_id=None):
+    if simulation_mode not in ("full","water-only"):raise RuntimeError("INVALID_SIMULATION_MODE")
     server = [python,'-m','apps.management_web','--port',str(port),'--enable-ingestion']
     if data_root is not None:
         server += ['--data-root',str(data_root)]
     if user_data:
         server += ['--user-data']
     if demo_video is not None: server += ['--demo-video',str(Path(demo_video).absolute())]
+    if simulation_mode!='full':server += ['--simulation-mode',simulation_mode]
+    if device_report_directory is not None:
+        server += ['--device-report-directory',str(Path(device_report_directory).absolute()),'--device-report-device-id',device_report_device_id or '']
     if assistant:
         server += ['--enable-assistant']
         server += [flag for enabled,flag in ((multi_round,'--assistant-multi-round-trial'),
             (streaming,'--assistant-streaming-trial'),(history,'--assistant-history-trial')) if enabled]
         if history and (multi_round or streaming):server += ['--assistant-tools-trial']
     return (server,[python,'-m','apps.simulator','--scenario',scenario,'--server',f'http://127.0.0.1:{port}',
-                    '--seed',str(seed),'--interval','10'])
+                    '--seed',str(seed),'--interval','10',*(['--mode',simulation_mode] if simulation_mode!='full' else [])])
 
 
 def ready(port):
@@ -93,7 +97,7 @@ def ready(port):
 def run_local(scenario='normal', port=8766, seed=42, *, root=ROOT, python=None,
               assistant=True, streaming=True, multi_round=True, history=True,
               data_root=None, user_data=False, show_terminals=False, open_browser=False, interactive_scenario=False,
-              browse=webbrowser.open, launch=subprocess.Popen, is_ready=ready, sleep=time.sleep, emit=print, demo_video=None):
+              browse=webbrowser.open, launch=subprocess.Popen, is_ready=ready, sleep=time.sleep, emit=print, demo_video=None, simulation_mode="full", device_report_directory=None, device_report_device_id=None):
     if interactive_scenario and not show_terminals:
         raise RuntimeError('LOCAL_SCENARIO_MENU_REQUIRES_TERMINALS')
     require_free_port(port)
@@ -106,7 +110,8 @@ def run_local(scenario='normal', port=8766, seed=42, *, root=ROOT, python=None,
     try:
         server,simulator = commands(python or sys.executable,scenario,port,seed,
             assistant=assistant,streaming=streaming,multi_round=multi_round,history=history,
-            data_root=data_root,user_data=user_data,demo_video=demo_video)
+            data_root=data_root,user_data=user_data,demo_video=demo_video,simulation_mode=simulation_mode,
+            device_report_directory=device_report_directory,device_report_device_id=device_report_device_id)
         options = dict(cwd=root,env=child_env)
         if show_terminals:
             if os.name != 'nt':
@@ -191,6 +196,8 @@ def console_role(argv):
             arguments[arguments.index('--scenario')+1] = scenario
             print(f'当前场景：{label} ({scenario})', flush=True)
             print('模拟上报状态：已启动；首个完整窗口约10秒，之后每10秒上报。', flush=True)
+            if '--mode' in arguments:
+                print('设备联调：仅模拟水质，视觉由独立设备报告入口提供；视觉场景参数不在本模式生效。',flush=True)
             print('下方 window 状态为实际发送结果；device offline / no report 表示未发送。', flush=True)
         sys.argv = [arguments[1], *arguments[2:]]
         runpy.run_module(arguments[1], run_name='__main__', alter_sys=True)
@@ -215,6 +222,9 @@ def main(argv=None):
     parser.add_argument('--interactive-scenario',action='store_true')
     parser.add_argument('--open-browser',action='store_true')
     parser.add_argument('--demo-video',type=Path)
+    parser.add_argument('--simulation-mode',choices=('full','water-only'),default='full')
+    parser.add_argument('--device-report-directory',type=Path)
+    parser.add_argument('--device-report-device-id')
     args=parser.parse_args(arguments)
     if args.interactive_scenario and not args.show_terminals:parser.error('LOCAL_SCENARIO_MENU_REQUIRES_TERMINALS')
     if not 1 <= args.port <= 65535:
@@ -226,7 +236,8 @@ def main(argv=None):
         return run_local(args.scenario,args.port,args.seed,assistant=not args.no_assistant,
             streaming=not args.no_streaming,multi_round=not args.no_multi_round,history=not args.no_history,
             data_root=args.data_root,user_data=args.user_data,show_terminals=args.show_terminals,
-            open_browser=args.open_browser,interactive_scenario=args.interactive_scenario,demo_video=args.demo_video)
+            open_browser=args.open_browser,interactive_scenario=args.interactive_scenario,demo_video=args.demo_video,simulation_mode=args.simulation_mode,
+            device_report_directory=args.device_report_directory,device_report_device_id=args.device_report_device_id)
     except RuntimeError as error:
         print(str(error)+' · 未关闭任何外部进程；请检查端口或手动使用原CLI。',file=sys.stderr)
         return 1

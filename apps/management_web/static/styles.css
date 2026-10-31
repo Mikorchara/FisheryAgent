@@ -200,4 +200,5 @@ body:has(.management-assistant.view-reading) main{padding:18px;max-width:1300px;
 .tool-policy-status{font-size:12px;color:var(--muted)}
 
 .local-video-preview[hidden]{display:none}
+.device-report{margin-top:12px;border-top:1px solid var(--border);padding-top:12px}.device-report-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}.device-report summary{cursor:pointer}
 .demo-video-player{display:block;width:100%;aspect-ratio:16/9;max-height:68vh;background:#030914;object-fit:contain;border-radius:8px;margin:14px 0}

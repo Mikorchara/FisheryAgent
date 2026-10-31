@@ -1,6 +1,6 @@
 # EVT-2：事件族、时间筛选与历史清理
 
-EVT-1/EVT-2 及文案收尾已同步 Management 并经人工验收。本文保留 EVT-2 的机制与原验收记录；当前 Prototype 另实现 [EVT-3A ACK](EVENT_ACK.md)，Monitoring Schema 为 v2，只有 ACK 尚未同步 Management。水质阈值、视觉三窗恢复、AI Tool/Prompt/Scope 均不变，没有修改真实数据库。
+EVT-1/EVT-2 及文案收尾已同步 Management 并经人工验收。本文保留 EVT-2 的机制与原验收记录；当前 Prototype 另实现 [EVT-3A ACK](EVENT_MANAGEMENT.md)，Monitoring Schema 为 v2，只有 ACK 尚未同步 Management。水质阈值、视觉三窗恢复、AI Tool/Prompt/Scope 均不变，没有修改真实数据库。
 
 ## 1. 两个低氧事件为什么并排
 

@@ -1,6 +1,6 @@
 # BOT-3A：QQ Bot 与 AI Service / Agent 集成架构调查
 
-后续：BOT-3B-1 已实现本报告中的离线服务边界、Monitoring-only、渠道权限及来源摘要；本研究保留实施前快照。当前实现与限制见 [BOT-3B-1](../BOT3B1_QQ_AI_BOUNDARY.md)，队列/真实交付尚未实现，QQ AI 仍关闭。
+后续：BOT-3B-1 已实现本报告中的离线服务边界、Monitoring-only、渠道权限及来源摘要；本研究保留实施前快照。当前实现与限制见 [BOT-3B-1](../../patches/2026-10-31-stages/BOT3B1_QQ_AI_BOUNDARY.md)，队列/真实交付尚未实现，QQ AI 仍关闭。
 
 核验日期：2026-10-25。研究仓库：`D:\CodexProject\Fishery_AI_Prototype`，`main@fb140f0`，包含尚未提交的 BOT-2B 工作区实现。
 

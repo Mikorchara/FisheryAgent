@@ -1,6 +1,6 @@
 # 统一监测协议与集成边界
 
-当前 Prototype 的 EVT-3A 新增本机 ACK，人工状态与 Monitoring 生命周期独立；Schema v2 和独立人工/操作/成员表不改变 v1 上报 DTO、规则阈值或 AI Tool Scope。旧 v1 库须显式维护，ACK 审计周期同时受删除和自动裁剪保护。[当前合同](deep-dive/EVENT_ACK.md)。下文 R2B/EVT-1/EVT-2 的 Schema v1 描述保留当时实现脉络。
+当前 Prototype 的 EVT-3A 新增本机 ACK，人工状态与 Monitoring 生命周期独立；Schema v2 和独立人工/操作/成员表不改变 v1 上报 DTO、规则阈值或 AI Tool Scope。旧 v1 库须显式维护，ACK 审计周期同时受删除和自动裁剪保护。[当前合同](deep-dive/EVENT_MANAGEMENT.md)。下文 R2B/EVT-1/EVT-2 的 Schema v1 描述保留当时实现脉络。
 
 AI 的扩展操作见 [AI Backend 与 Assistant 开发指南](deep-dive/AI_BACKEND_DEVELOPMENT_GUIDE.md)；本文件维护当前数据/应用边界。带 R 阶段编号的章节保留来源脉络；MIG-1 后正式管理运行链及 Monitoring 领域合同均不导入旧 fishery_ai。
 

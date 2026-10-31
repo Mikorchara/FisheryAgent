@@ -1,3 +1,5 @@
+> 历史归档（2026-10-31）：本阶段已被后续实现替代。保留设计与验收证据；当前操作见 [启动指南](../../BUILD_RUN.md) 和 [文档入口](../../README.md)。
+
 # BOT-3D-2C-1：逐 Turn 真实类型装配（离线准备）
 
 日期：2026-10-26；仓库 `Fishery_AI_Prototype`，起始 `main / 96f8a23`、工作树干净。
@@ -125,14 +127,14 @@ Ctrl+C、审批拒绝、超时、撤权或Gateway失败会取消待执行任务�
 .\.venv\Scripts\python.exe -X utf8 -B scripts/dev/run_tests.py management
 ```
 
-维护者candidate位于 [qq_conversation_trial.json](../../ai_service/resources/qq_conversation_trial.json)，`status=candidate / qualification_id=null`。只存在该文件不授予真实执行许可；批准必须经新合同的本机挑战、当前绑定验证和一次性消费。
+维护者candidate位于 [qq_conversation_trial.json](../../../ai_service/resources/qq_conversation_trial.json)，`status=candidate / qualification_id=null`。只存在该文件不授予真实执行许可；批准必须经新合同的本机挑战、当前绑定验证和一次性消费。
 
 Fake candidate 和FAST完整实现指纹也会随共享装配改动变化；没有改写旧真实批准、回执或发布资格。旧单轮批准不兼容新多轮合同，新多轮批准不能通过旧FAST加载。普通QQ CLI不支持本轮真实多轮开关。
 
 ## 7. C-2 人工验收准备（尚未执行、仍需授权）
 
 1. 人工确定隔离SIMULATOR实例、设备、专用群和一个授权成员；保留原只读实例和Monitoring-only Policy。不读取或复制凭据，继续用现有Prototype私有存储。确认本机已保存Qwen/QQ凭据，但本轮未检查其存在或有效性。
-2. 将 [request示例](../../qq_bot/examples/conversation-trial.request.example.json) 的六项引用填入自己新建的 `outputs/qq-bot/conversation.request.json`。路径及群/成员必须对应已有获批配置；不新建空Policy来绕过原配置，不改真实实例。示例路径不是对本机现有文件的存在保证。
+2. 将 [request示例](../../../qq_bot/examples/conversation-trial.request.example.json) 的六项引用填入自己新建的 `outputs/qq-bot/conversation.request.json`。路径及群/成员必须对应已有获批配置；不新建空Policy来绕过原配置，不改真实实例。示例路径不是对本机现有文件的存在保证。
    如已有相同六字段的本机request，可用 `-RequestFile '绝对路径'` 指向它；这只复用配置引用，不复用旧批准或Provider回执。
 3. 在Prototype根执行安全检查（不联网、不打开Monitoring数据库、不读密钥、不创建批准）：
 

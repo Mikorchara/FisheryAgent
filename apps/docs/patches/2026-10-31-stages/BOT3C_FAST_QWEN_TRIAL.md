@@ -1,6 +1,8 @@
+> 历史归档（2026-10-31）：本阶段已被后续实现替代。保留设计与验收证据；当前操作见 [启动指南](../../BUILD_RUN.md) 和 [文档入口](../../README.md)。
+
 # BOT-3C-FAST：受控 Qwen 单轮实验准备
 
-后续：用户报告旧版FAST真实端到端成功，见[阶段总结](BOT_STAGE_SUMMARY.md)。2026-10-26 [BOT-3D-1](BOT3D1_BOUNDED_EXPLANATION.md)新增受限解释合同及新Scope；原始正文仍不展示，旧计划/批准/Provider回执不能用于新代码，操作优先用[简化入口](BOT_TEST_WORKFLOW.md)。下文保留FAST初始实施和审批合同的历史说明。
+后续：用户报告旧版FAST真实端到端成功，见[阶段总结](../../deep-dive/BOT_STAGE_SUMMARY.md)。2026-10-26 [BOT-3D-1](../../deep-dive/BOT3D1_BOUNDED_EXPLANATION.md)新增受限解释合同及新Scope；原始正文仍不展示，旧计划/批准/Provider回执不能用于新代码，操作优先用[简化入口](../../deep-dive/BOT_TEST_WORKFLOW.md)。下文保留FAST初始实施和审批合同的历史说明。
 
 2026-10-25，仅 Prototype。本轮完成代码、离线装配和测试，**没有真实 Qwen / QQ 验收结果，没有创建真实试用批准文件**。普通 `python -m apps.qq_bot --connect ...` 仍不启用 `/问AI`。
 
